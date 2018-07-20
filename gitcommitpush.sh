@@ -1,2 +1,2 @@
 git commit -a -m "No Message"
-git push origin master
+git push origin master:master
