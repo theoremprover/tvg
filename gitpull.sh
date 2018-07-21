@@ -1,2 +1,2 @@
 #!/bin/bash
-git pull origin master:master
+git pull origin master

@@ -1,0 +1,3 @@
+https://solarianprogrammer.com/2016/10/07/building-gcc-ubuntu-linux/
+
+https://stackoverflow.com/questions/9450394/how-to-install-gcc-piece-by-piece-with-gmp-mpfr-mpc-elf-without-shared-libra
