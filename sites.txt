@@ -2,14 +2,9 @@ https://solarianprogrammer.com/2016/10/07/building-gcc-ubuntu-linux/
 
 https://stackoverflow.com/questions/9450394/how-to-install-gcc-piece-by-piece-with-gmp-mpfr-mpc-elf-without-shared-libra
 
-sudo apt-get install gcc-multilib
-apt-get install gcc-4.7
+/tvg/build# ../gcc-4.7.4/configure --disable-checking --enable-languages=c --enable-multiarch
+--enable-shared --enable-threads=posix --program-suffix=4.7 --with-gmp=/usr/local/lib
+--with-mpc=/usr/lib --with-mpfr=/usr/lib --without-included-gettext --with-system-zlib
+--with-tune=generic --prefix=/tvg/install/gcc-4.7.4 --disable-bootstrap --disable-build-with-cxx
 
-Configure:
-export CC=gcc-4.7
-../gcc-4.7.4/configure -v --disable-build-with-cxx
---build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu
---prefix=/tvg/local/gcc-4.7.4 --enable-checking=release --enable-languages=c
---disable-multilib --program-suffix=-4.7.4 --with-gmp=/tvg/gcc-prerequisites
---with-mpfr=/tvg/gcc-prerequisites --with-mpc=/tvg/gcc-prerequisites
-
+make -j4
