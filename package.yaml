@@ -22,6 +22,8 @@ dependencies:
 - language-c
 - process
 - directory
+- pretty
+- syb
 
 library:
   source-dirs: src

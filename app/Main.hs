@@ -9,9 +9,9 @@ import System.Exit
 import Data.List
 import Control.Monad
 import System.Directory
-import Language.C.Analysis
+import Language.C
 import Language.C.System.GCC
-
+import Text.PrettyPrint
 
 {-
 export CC="stack exec --allow-different-user --stack-yaml /tvg/tvg/stack.yaml -- tvg-exe"
@@ -20,8 +20,10 @@ root@robert-VirtualBox:/tvg/build# ../gcc-4.7.4/configure --disable-checking --e
 make -j4
 -}
 
+logFileName = "/tvg/calls.log"
+
 printLog msg = do
-	appendFile "/tvg/calls.log" (msg++"\n")
+	appendFile logFileName (msg++"\n")
 	putStrLn $ "######## LOG ######## " ++ msg
 
 main = do
@@ -29,9 +31,10 @@ main = do
 	let cmd = "gcc"
 	printLog $ cmd ++ " " ++ intercalate " " args
 	
-	forM args handleArg >>= rawSystem cmd >>= exitWith
+	let preprocess_args = filter (\ arg -> or (map (`isPrefixOf` arg) ["-I","-D"])) args
+	forM args (handleArg preprocess_args) >>= rawSystem cmd >>= exitWith
 
-handleArg arg = do
+handleArg preprocess_args arg = do
 	case ".c" `isSuffixOf` arg of
 		False -> return arg
 		True -> do
@@ -42,11 +45,16 @@ handleArg arg = do
 					return arg
 				True -> do
 					printLog $ "Found source file " ++ arg
-					handleSrcFile arg
+					handleSrcFile preprocess_args arg
 
-handleSrcFile arg = do
-	parse_result <- parseCFile (newGCC "gcc") Nothing [] arg
+handleSrcFile preprocess_args arg = do
+	printLog $ "preprocess_args = " ++ show preprocess_args
+	parse_result <- parseCFile (newGCC "gcc") Nothing preprocess_args arg
 	case parse_result of
-		Left parse_err -> error (show parse_err)
-		Right ast      -> return ast
+		Left parse_err -> do
+			let errtxt = "HASKELL parseCFile: " ++ show parse_err
+			printLog $ "=============== " ++ errtxt
+			--error errtxt
+		Right ast -> do
+			printLog $ arg ++ " LOC=" ++ show (length $ lines $ render $ pretty ast)
 	return arg
