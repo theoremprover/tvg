@@ -7,6 +7,7 @@ import System.Environment
 import System.IO
 import System.Exit
 import Data.List
+import Control.Monad
 
 {-
 export CC="stack exec --allow-different-user --stack-yaml /tvg/tvg/stack.yaml -- tvg-exe"
@@ -21,5 +22,11 @@ main = do
 	let outputstr = cmd ++ " " ++ intercalate " " args ++ "\n"
 	appendFile "/tvg/calls.log" outputstr
 	putStrLn $ "####################### " ++ outputstr
-	exitcode <- rawSystem cmd args
+
+	args' <- forM_ args handleSrcFile
+		
+	exitcode <- rawSystem cmd args'
 	exitWith exitcode
+
+handleSrcFile arg = do
+	
