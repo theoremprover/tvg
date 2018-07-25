@@ -9,6 +9,9 @@ import System.Exit
 import Data.List
 import Control.Monad
 import System.Directory
+import Language.C.Analysis
+import Language.C.System.GCC
+
 
 {-
 export CC="stack exec --allow-different-user --stack-yaml /tvg/tvg/stack.yaml -- tvg-exe"
@@ -42,4 +45,8 @@ handleArg arg = do
 					handleSrcFile arg
 
 handleSrcFile arg = do
+	parse_result <- parseCFile (newGCC "gcc") Nothing [] arg
+	case parse_result of
+		Left parse_err -> error (show parse_err)
+		Right ast      -> return ast
 	return arg
