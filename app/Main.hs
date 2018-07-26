@@ -17,7 +17,8 @@ import System.FilePath
 {-
 export CC="stack exec --allow-different-user --stack-yaml /tvg/tvg/stack.yaml -- tvg-exe"
 
-root@robert-VirtualBox:/tvg/build# ../gcc-4.7.4/configure --disable-checking --enable-languages=c --enable-multiarch --enable-shared --enable-threads=posix --program-suffix=4.7 --with-gmp=/usr/local/lib --with-mpc=/usr/lib --with-mpfr=/usr/lib --without-included-gettext --with-system-zlib --with-tune=generic --prefix=/tvg/install/gcc-4.7.4 --disable-bootstrap --disable-build-with-cxx
+root@robert-VirtualBox:/tvg/build#
+../gcc-4.7.4/configure --disable-checking --enable-languages=c --enable-multiarch --enable-shared --enable-threads=posix --program-suffix=-instr --with-gmp=/usr/local/lib --with-mpc=/usr/lib --with-mpfr=/usr/lib --without-included-gettext --with-system-zlib --with-tune=generic --prefix=/tvg/install/gcc-4.7.4 --disable-bootstrap --disable-build-with-cxx
 make -j4
 -}
 
@@ -28,15 +29,13 @@ printLog msg = do
 	putStrLn $ "######## LOG ######## " ++ msg
 
 main = do
-	cmd:args <- getArgs
-	printLog $ cmd ++ " " ++ intercalate " " args
+	args <- getArgs
+	printLog $ intercalate " " args
 	
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
 	args' <- forM args (handleArg preprocess_args)
-	exitWith $ case cmd of
-		"gcc" -> rawSystem cmd args'
-		_ -> do
-			print $ pretty 
+	exitcode <- rawSystem "gcc" args'
+	exitWith exitcode
 
 handleArg preprocess_args arg = do
 	case ".c" `isSuffixOf` arg of
@@ -64,15 +63,18 @@ handleSrcFile preprocess_args arg = do
 				src' = render $ pretty $ processAST ast
 				(filename,extension) = splitExtension arg
 				name' = filename ++ "_instrumented" ++ extension
-			writeFile name' src'
-			return name'
+			printLog $ arg ++ ": LOC=" ++ show (length $ lines src')
+			return arg
+--			writeFile name' src'
+--			return name'
 
 processAST :: CTranslUnit -> CTranslUnit
-processAST = everywhere (mkT processStat)
-
+processAST = id --everywhere (mkT processStat)
+{-
 processStat :: CStatement -> CStatement
 processStat (CCompound labels blockitems nodeinfo) = CCompound labels (concatMap instrumentStmt blockitems) nodeinfo
 processStat other = other
 
 instrumentStmt 
 instrumentStmt x = [x]
+-}
