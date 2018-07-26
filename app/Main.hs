@@ -61,8 +61,18 @@ handleSrcFile preprocess_args arg = do
 			error errtxt
 		Right ast -> do
 			let
-				src' = render $ pretty ast
-				(filename,extension) = (dropExtension arg,takeExtension arg)
+				src' = render $ pretty $ processAST ast
+				(filename,extension) = splitExtension arg
 				name' = filename ++ "_instrumented" ++ extension
 			writeFile name' src'
 			return name'
+
+processAST :: CTranslUnit -> CTranslUnit
+processAST = everywhere (mkT processStat)
+
+processStat :: CStatement -> CStatement
+processStat (CCompound labels blockitems nodeinfo) = CCompound labels (concatMap instrumentStmt blockitems) nodeinfo
+processStat other = other
+
+instrumentStmt 
+instrumentStmt x = [x]
