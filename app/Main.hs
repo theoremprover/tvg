@@ -12,6 +12,7 @@ import System.Directory
 import Language.C
 import Language.C.System.GCC
 import Text.PrettyPrint
+import System.FilePath
 
 {-
 export CC="stack exec --allow-different-user --stack-yaml /tvg/tvg/stack.yaml -- tvg-exe"
@@ -27,12 +28,15 @@ printLog msg = do
 	putStrLn $ "######## LOG ######## " ++ msg
 
 main = do
-	args <- getArgs
-	let cmd = "gcc"
+	cmd:args <- getArgs
 	printLog $ cmd ++ " " ++ intercalate " " args
 	
-	let preprocess_args = filter (\ arg -> or (map (`isPrefixOf` arg) ["-I","-D"])) args
-	forM args (handleArg preprocess_args) >>= rawSystem cmd >>= exitWith
+	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
+	args' <- forM args (handleArg preprocess_args)
+	exitWith $ case cmd of
+		"gcc" -> rawSystem cmd args'
+		_ -> do
+			print $ pretty 
 
 handleArg preprocess_args arg = do
 	case ".c" `isSuffixOf` arg of
@@ -54,7 +58,11 @@ handleSrcFile preprocess_args arg = do
 		Left parse_err -> do
 			let errtxt = "HASKELL parseCFile: " ++ show parse_err
 			printLog $ "=============== " ++ errtxt
-			--error errtxt
+			error errtxt
 		Right ast -> do
-			printLog $ arg ++ " LOC=" ++ show (length $ lines $ render $ pretty ast)
-	return arg
+			let
+				src' = render $ pretty ast
+				(filename,extension) = (dropExtension arg,takeExtension arg)
+				name' = filename ++ "_instrumented" ++ extension
+			writeFile name' src'
+			return name'
