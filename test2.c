@@ -1,4 +1,4 @@
-#import <stdio.h>
+#include <stdio.h>
 
 int abs(int x)
 {

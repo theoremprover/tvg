@@ -10,6 +10,7 @@ import Data.List
 import Control.Monad
 import System.Directory
 import Language.C
+import Language.C.Data.Ident
 import Language.C.System.GCC
 import Text.PrettyPrint
 import System.FilePath
@@ -26,7 +27,7 @@ make -j4
 logFileName = "calls.log"
 
 printLog msg = do
-	appendFile logFileName (msg++"\n")
+--	appendFile logFileName (msg++"\n")
 	putStrLn $ "######## LOG ######## " ++ msg
 
 main = do
@@ -35,7 +36,7 @@ main = do
 	
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
 	args' <- forM args (handleArg preprocess_args)
-	exitcode <- rawSystem "gcc" args'
+	exitcode <- rawSystem "gcc-4.7" args'
 	exitWith exitcode
 
 handleArg preprocess_args arg = do
@@ -51,9 +52,9 @@ handleArg preprocess_args arg = do
 					printLog $ "Found source file " ++ arg
 					handleSrcFile preprocess_args arg
 
-handleSrcFile preprocess_args arg = do
+handleSrcFile preprocess_args name = do
 	printLog $ "preprocess_args = " ++ show preprocess_args
-	parse_result <- parseCFile (newGCC "gcc") Nothing preprocess_args arg
+	parse_result <- parseCFile (newGCC "gcc") Nothing preprocess_args name
 	case parse_result of
 		Left parse_err -> do
 			let errtxt = "HASKELL parseCFile: " ++ show parse_err
@@ -62,12 +63,12 @@ handleSrcFile preprocess_args arg = do
 		Right ast -> do
 			let
 				src' = render $ pretty $ processAST ast
-				(filename,extension) = splitExtension arg
-				name' = filename ++ "_instrumented" ++ extension
-			writeFile (filename ++ ".ast") (show ast)
-			printLog $ arg ++ ": LOC=" ++ show (length $ lines src')
-			writeFile name' src'
-			return name'
+				(filename,extension) = splitExtension name
+				--name' = filename ++ "_instrumented" ++ extension
+--			writeFile (filename ++ ".ast") (show ast)
+--			printLog $ name ++ ": LOC=" ++ show (length $ lines src')
+			writeFile name src'
+			return name
 
 processAST :: CTranslUnit -> CTranslUnit
 processAST = everywhere (mkT processStat)
@@ -76,10 +77,11 @@ processStat :: [CBlockItem] -> [CBlockItem]
 processStat blockitems = concatMap instrIfStmt blockitems
 
 instrIfStmt :: CBlockItem -> [CBlockItem]
---instrIfStmt (bs@CBlockStmt (CExpr (Just expr) _)) = [instrExpr expr,bs]
+instrIfStmt (bs@(CBlockStmt (CExpr (Just (CAssign _ _ _ ni)) _))) = [instrExpr ni,bs]
 instrIfStmt x = [x]
 
-{-
-instrExpr :: CExpr -> CBlockItem
-instrExpr (CStatExpr nodeinfo) = CBlockStmt (CCall () () undefNode)
--}
+instrExpr :: NodeInfo -> CBlockItem
+instrExpr nodeinfo = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "printf") undefNode) args undefNode)) undefNode)
+	where
+	str = show $ posOfNode nodeinfo
+	args = [CConst (CStrConst (cString $ "TRACE: " ++ str ++ "\n") undefNode)]
