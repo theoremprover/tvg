@@ -72,10 +72,14 @@ handleSrcFile preprocess_args arg = do
 processAST :: CTranslUnit -> CTranslUnit
 processAST = everywhere (mkT processStat)
 
-processStat :: CStatement -> CStatement
-processStat (CCompound labels blockitems nodeinfo) = CCompound labels (concatMap mkInstr blockitems) nodeinfo
-processStat other = other
+processStat :: [CBlockItem] -> [CBlockItem]
+processStat blockitems = concatMap instrIfStmt blockitems
 
-mkInstr :: CBlockItem -> [CBlockItem]
---instrumentStmt blockitem@(CExpr (Just (CAssign op expr1 expr2 ni2)) ni) = [CExpr (Just ) ni,blockitem]
-mkInstr x = [x]
+instrIfStmt :: CBlockItem -> [CBlockItem]
+--instrIfStmt (bs@CBlockStmt (CExpr (Just expr) _)) = [instrExpr expr,bs]
+instrIfStmt x = [x]
+
+{-
+instrExpr :: CExpr -> CBlockItem
+instrExpr (CStatExpr nodeinfo) = CBlockStmt (CCall () () undefNode)
+-}
