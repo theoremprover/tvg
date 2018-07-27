@@ -13,6 +13,7 @@ import Language.C
 import Language.C.System.GCC
 import Text.PrettyPrint
 import System.FilePath
+import Data.Generics
 
 {-
 export CC="stack exec --allow-different-user --stack-yaml /tvg/tvg/stack.yaml -- tvg-exe"
@@ -22,7 +23,7 @@ root@robert-VirtualBox:/tvg/build#
 make -j4
 -}
 
-logFileName = "/tvg/calls.log"
+logFileName = "calls.log"
 
 printLog msg = do
 	appendFile logFileName (msg++"\n")
@@ -63,18 +64,18 @@ handleSrcFile preprocess_args arg = do
 				src' = render $ pretty $ processAST ast
 				(filename,extension) = splitExtension arg
 				name' = filename ++ "_instrumented" ++ extension
+			writeFile (filename ++ ".ast") (show ast)
 			printLog $ arg ++ ": LOC=" ++ show (length $ lines src')
-			return arg
---			writeFile name' src'
---			return name'
+			writeFile name' src'
+			return name'
 
 processAST :: CTranslUnit -> CTranslUnit
-processAST = id --everywhere (mkT processStat)
-{-
+processAST = everywhere (mkT processStat)
+
 processStat :: CStatement -> CStatement
-processStat (CCompound labels blockitems nodeinfo) = CCompound labels (concatMap instrumentStmt blockitems) nodeinfo
+processStat (CCompound labels blockitems nodeinfo) = CCompound labels (concatMap mkInstr blockitems) nodeinfo
 processStat other = other
 
-instrumentStmt 
-instrumentStmt x = [x]
--}
+mkInstr :: CBlockItem -> [CBlockItem]
+--instrumentStmt blockitem@(CExpr (Just (CAssign op expr1 expr2 ni2)) ni) = [CExpr (Just ) ni,blockitem]
+mkInstr x = [x]
