@@ -25,6 +25,7 @@ make -j4
 -}
 
 logFileName = "calls.log"
+instrumentedMagicText = "#define INSTRUMENTED"
 
 printLog msg = do
 --	appendFile logFileName (msg++"\n")
@@ -53,22 +54,20 @@ handleArg preprocess_args arg = do
 					handleSrcFile preprocess_args arg
 
 handleSrcFile preprocess_args name = do
-	printLog $ "preprocess_args = " ++ show preprocess_args
-	parse_result <- parseCFile (newGCC "gcc") Nothing preprocess_args name
-	case parse_result of
-		Left parse_err -> do
-			let errtxt = "HASKELL parseCFile: " ++ show parse_err
-			printLog $ "=============== " ++ errtxt
-			error errtxt
-		Right ast -> do
-			let
-				src' = render $ pretty $ processAST ast
-				(filename,extension) = splitExtension name
-				--name' = filename ++ "_instrumented" ++ extension
---			writeFile (filename ++ ".ast") (show ast)
---			printLog $ name ++ ": LOC=" ++ show (length $ lines src')
-			writeFile name src'
-			return name
+	cfile <- readFile name
+	when ("stdio.h" `isInfixOf` cfile && not (instrumentedMagicText `isInfixOf` cfile)) $ do
+		printLog $ "Instrumenting " ++ name
+		writeFile name $ instrumentedMagicText ++ "\n#include <stdio.h>\n" ++ cfile
+		parse_result <- parseCFile (newGCC "gcc-4.7") Nothing preprocess_args name
+		case parse_result of
+			Left parse_err -> do
+				let errtxt = "HASKELL parseCFile: " ++ show parse_err
+				printLog $ "=============== " ++ errtxt
+				error errtxt
+			Right ast -> do
+				let processed_src = render $ pretty $ processAST ast
+				writeFile name processed_src
+	return name
 
 processAST :: CTranslUnit -> CTranslUnit
 processAST = everywhere (mkT processStat)
