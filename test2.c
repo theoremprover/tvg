@@ -1,3 +1,6 @@
+void mytrace(char *);
+void opentrace(char *);
+void closetrace();
 typedef int INSTRUMENTED_ALREADY;
 typedef unsigned int size_t;
 typedef unsigned char __u_char;
@@ -260,7 +263,6 @@ extern int putw(int __w, FILE * __stream);
 extern char * fgets(char * __restrict __s,
                     int __n,
                     FILE * __restrict __stream);
-extern char * gets(char * __s) __attribute__((__deprecated__));
 extern __ssize_t __getdelim(char * * __restrict __lineptr,
                             size_t * __restrict __n,
                             int __delimiter,
@@ -334,7 +336,7 @@ int g_rev(int x, int y)
     if (x > 1)
     {
         {
-            printf("// TRACE: (\"test2.c\": line 20)\n");
+            mytrace("TRACE: (\"test2.c\": line 21)\n");
             e = e * 2;
         }
     }
@@ -347,18 +349,18 @@ int f(int x, int y)
     if (x < 0)
     {
         {
-            printf("// TRACE: (\"test2.c\": line 30)\n");
+            mytrace("TRACE: (\"test2.c\": line 31)\n");
             f = -1;
         }
     }
     for (int i = 1; i <= abs(x); i++)
     {
         {
-            printf("// TRACE: (\"test2.c\": line 34)\n");
+            mytrace("TRACE: (\"test2.c\": line 35)\n");
             erg = erg + f * y;
         }
         {
-            printf("// TRACE: (\"test2.c\": line 35)\n");
+            mytrace("TRACE: (\"test2.c\": line 36)\n");
             erg = erg;
         }
     }
@@ -366,7 +368,10 @@ int f(int x, int y)
 }
 int main()
 {
-    printf("%i", f(-2, -3));
+    opentrace("/tvg/trace.txt");
+    {
+        printf("%i", f(-2, -3));
+    }
 }
 int h(int x)
 {
