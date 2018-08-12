@@ -1,4 +1,4 @@
-#include <stdio.h>
+typedef int INSTRUMENTED_ALREADY;
 typedef unsigned int size_t;
 typedef unsigned char __u_char;
 typedef unsigned short int __u_short;
@@ -333,8 +333,10 @@ int g_rev(int x, int y)
     int e = y;
     if (x > 1)
     {
-        printf("TRACE: (\"test2.c\": line 14)\n");
-        e = e * 2;
+        {
+            printf("// TRACE: (\"test2.c\": line 20)\n");
+            e = e * 2;
+        }
     }
     return e - 1;
 }
@@ -344,13 +346,21 @@ int f(int x, int y)
     int f = 1;
     if (x < 0)
     {
-        printf("TRACE: (\"test2.c\": line 27)\n");
-        f = -1;
+        {
+            printf("// TRACE: (\"test2.c\": line 30)\n");
+            f = -1;
+        }
     }
     for (int i = 1; i <= abs(x); i++)
     {
-        printf("TRACE: (\"test2.c\": line 32)\n");
-        erg = erg + f * y;
+        {
+            printf("// TRACE: (\"test2.c\": line 34)\n");
+            erg = erg + f * y;
+        }
+        {
+            printf("// TRACE: (\"test2.c\": line 35)\n");
+            erg = erg;
+        }
     }
     return erg;
 }
