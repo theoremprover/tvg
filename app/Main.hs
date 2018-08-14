@@ -16,6 +16,8 @@ import Text.PrettyPrint
 import System.FilePath
 import Data.Generics
 
+import ShowAST
+
 {-
 export CC="stack exec --allow-different-user --stack-yaml /tvg/tvg/stack.yaml -- tvg-exe"
 export CC="/root/.local/bin/tvg-exe"
@@ -76,16 +78,16 @@ handleSrcFile preprocess_args name = do
 				printLog $ "=============== " ++ errtxt
 				error errtxt
 			Right ast -> do
---				writeFile (name++".ast") $ showAST ast
+				writeFile (name++".ast") $ showDataTree ast
 				writeFile name $ render $ pretty $ processAST ast
 	return ()
 
 processAST :: CTranslUnit -> CTranslUnit
-processAST = everywhere (mkT instrumentMain) . everywhere (mkT processStat)
+processAST = everywhere (mkT instrumentMain) . everywhere (mkT instrAssign)
 
-processStat :: CStat -> CStat
-processStat cstat@(CExpr (Just (CAssign _ _ _ ni)) _) = CCompound [] [ instrExpr ni, CBlockStmt cstat ] ni
-processStat x = x
+instrAssign :: CStat -> CStat
+instrAssign cstat@(CExpr (Just (CAssign _ _ _ ni)) _) = CCompound [] [ instrExpr ni, CBlockStmt cstat ] ni
+instrAssign x = x
 
 instrExpr :: NodeInfo -> CBlockItem
 instrExpr nodeinfo = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "mytrace") undefNode) args undefNode)) undefNode)
@@ -100,4 +102,3 @@ instrumentMain (CFunDef declspecs declr@(CDeclr (Just (Ident name _ _)) _ _ _ _)
 	args = [CConst (CStrConst (cString $ tvg_path ++ "/" ++ traceFileName) undefNode)]
 instrumentMain x = x
 
---showAST ast =
