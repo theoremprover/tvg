@@ -66,6 +66,10 @@ handleArg preprocess_args arg = when (".c" `isSuffixOf` arg) $ do
 handleSrcFile preprocess_args name = do
 	cfile <- readFile name
 	let filename = takeFileName name
+{- SHOW ORIGINAL AST
+	Right ast <- parseCFile (newGCC "gcc") Nothing preprocess_args name
+	writeFile (name++".ast") $ showDataTree ast
+-}
 	when (not (instrumentedMarker `isInfixOf` cfile) && not ("conftest.c" `isInfixOf` name)) $ do
 		printLog $ "Instrumenting " ++ name ++ "..."
 		writeFile name $ include_tvg ++ "\n" ++ instrumentedMarker ++ "\n" ++ cfile
@@ -78,16 +82,18 @@ handleSrcFile preprocess_args name = do
 				printLog $ "=============== " ++ errtxt
 				error errtxt
 			Right ast -> do
-				writeFile (name++".ast") $ showDataTree ast
 				writeFile name $ render $ pretty $ processAST ast
 	return ()
 
 processAST :: CTranslUnit -> CTranslUnit
-processAST = everywhere (mkT instrumentMain) . everywhere (mkT instrAssign)
+processAST = everywhere (mkT instrumentMain) . everywhere (mkT instrCompound) . everywhere (mkT instrStmt)
 
+instrAssign :: CCompound 
+{-
 instrAssign :: CStat -> CStat
 instrAssign cstat@(CExpr (Just (CAssign _ _ _ ni)) _) = CCompound [] [ instrExpr ni, CBlockStmt cstat ] ni
 instrAssign x = x
+-}
 
 instrExpr :: NodeInfo -> CBlockItem
 instrExpr nodeinfo = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "mytrace") undefNode) args undefNode)) undefNode)
