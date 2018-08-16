@@ -1,3 +1,4 @@
+
 {-# LANGUAGE TypeOperators,FlexibleInstances,FlexibleContexts,ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
@@ -16,7 +17,7 @@ instance ShowData V1 where
 	showData _ _ = error "showData of empty type!"
 
 instance ShowData U1 where
-	showData i _ = ""
+	showData _ _ = ""
 
 instance {-# OVERLAPS #-} ShowData (K1 i NodeInfo) where
 	showData i (K1 c) = ind i ++ show c ++ "\n"
