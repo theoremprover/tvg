@@ -12,6 +12,7 @@ void mytrace(char *text)
 {
 #ifndef FORBUILD
 	fprintf(tracefile,text);
+	printf(text);
 #endif
 }
 
