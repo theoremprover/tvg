@@ -28,9 +28,8 @@ export LD_LIBRARY_PATH=/tvg/tvg/incs:$LD_LIBRARY_PATH
 root@robert-VirtualBox:/tvg/build#
 ../gcc-4.7.4/configure --disable-checking --enable-languages=c --disable-multiarch --disable-multilib --enable-shared --enable-threads=posix --program-suffix=-instr --with-gmp=/usr --with-mpc=/usr/lib --with-mpfr=/usr/lib --without-included-gettext --with-system-zlib --with-tune=generic --prefix=/tvg/install/gcc-4.7.4 --disable-bootstrap --disable-build-with-cxx
 
+export LIBRARY_PATH=/usr/lib/i386-linux-gnu:$LIBRARY_PATH
 make
-
-NOETIG?: export LIBRARY_PATH=/usr/lib/i386-linux-gnu:$LIBRARY_PATH
 
 make install
 
@@ -46,14 +45,8 @@ include_tvg = "#include <tvg.h>"
 tvg_path = "/tvg/tvg/incs"
 traceFileName = "trace.txt"
 
-printLog msg = do
---	appendFile logFileName (msg++"\n")
---	putStrLn $ "######## LOG ######## " ++ msg
-	return ()
-
 main = do
 	args <- getArgs
-	printLog $ intercalate " " args
 	
 	let args' = ["-I"++tvg_path] ++ args
 
@@ -64,7 +57,6 @@ main = do
 	exitWith exitcode
 
 handleArg preprocess_args arg | ".c" `isSuffixOf` arg && takeFileName arg /= "conftest.c" = do
-	printLog $ "Found source file " ++ arg
 	handleSrcFile preprocess_args arg
 handleArg _ _ = return $ return ()
 
@@ -73,36 +65,34 @@ handleSrcFile preprocess_args name = do
 	renameFile name bak_name
 
 {-
---	SHOW ORIGINAL AST
+--	OUTPUT ORIGINAL AST
 	Right ast <- parseCFile (newGCC "gcc") Nothing preprocess_args name
 	writeFile (name++".ast") $ showDataTree ast
 -}
 
 	cfile <- readFile bak_name
-	printLog $ "Instrumenting " ++ name ++ "..."
 	writeFile name $ include_tvg ++ "\n" ++ cfile
 
-	printLog $ "Preprocessing " ++ name ++ " with args: " ++ intercalate " " preprocess_args
 	parseresult <- parseCFile (newGCC "gcc") Nothing preprocess_args name
 	case parseresult of
 		Left errmsg -> error $ show errmsg
 		Right ast -> do
 			writeFile name $ render $ pretty $ processAST ast
-			writeFile (name++".instr") $ render $ pretty $ processAST ast	
+			writeFile (tvg_path ++ "/instrs/" ++ takeFileName name) $ render $ pretty $ processAST ast
 			return $ removeFile name >> renameFile bak_name name
 
 processAST :: CTranslUnit -> CTranslUnit
-processAST = everywhere (mkT instrumentMain) . everywhere (mkT instrAssign)
+processAST = everywhere (mkT instrumentMain) . everywhere (mkT instrumentStmt)
 
-instrAssign :: CStat -> CStat
-instrAssign cstat@(CExpr (Just (CAssign _ _ _ ni)) _) = CCompound [] [ instrexpr ni, CBlockStmt cstat ] ni
+instrumentStmt :: CStat -> CStat
+instrumentStmt cstat = CCompound [] [ instr (nodeInfo cstat), CBlockStmt cstat ] undefNode
 	where
-	instrexpr :: NodeInfo -> CBlockItem
-	instrexpr nodeinfo = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "mytrace") undefNode) args undefNode)) undefNode)
+	instr :: NodeInfo -> CBlockItem
+	instr nodeinfo = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "mytrace") undefNode) args undefNode)) undefNode)
 		where
-		str = show $ posOfNode nodeinfo
-		args = [CConst (CStrConst (cString $ "TRACE: " ++ str ++ "\n") undefNode)]
-instrAssign x = x
+		pos = posOfNode nodeinfo
+		str = posFile pos ++ show (posRow pos,posColumn pos)
+		args = [CConst (CStrConst (cString $ str ++ "\n") undefNode)]
 
 instrumentMain :: CTranslUnit -> CTranslUnit
 instrumentMain = everywhere (mkT insertopen)
@@ -118,7 +108,6 @@ instrumentMain = everywhere (mkT insertopen)
 	callclosetrace = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "closetrace") undefNode) [] undefNode)) undefNode)
 
 	insertbeforereturns = everywhere (mkT insertclose)
-
 	insertclose :: CStat -> CStat
 	insertclose cret@(CReturn (Just ret_expr) _) = CCompound [] [
 		CBlockDecl $ CDecl [CTypeSpec $ CIntType undefNode]

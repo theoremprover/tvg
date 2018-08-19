@@ -12,7 +12,7 @@ char buf[10];
 void mytrace(char *text)
 {
 #ifndef FORBUILD
-	printf(text);
+//	printf(text);
 	if(tracefile==NULL) { printf("tracefile==NULL!\nPress [RETURN]\n"); gets(buf); }
 	fprintf(tracefile,text);
 #endif
