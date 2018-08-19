@@ -21,26 +21,26 @@ import ShowAST
 {-
 configure ENVVARS:
 export CC="/root/.local/bin/tvg-exe"
-export CFLAGS="-w"
+export CFLAGS="-w -I/usr/include/i386-linux-gnu"
 
-export LIBRARY_PATH=/usr/lib/x86_64-linux-gnu:/usr/lib/i386-linux-gnu:$LIBRARY_PATH
 export LD_LIBRARY_PATH=/tvg/tvg/incs:$LD_LIBRARY_PATH
 
 root@robert-VirtualBox:/tvg/build#
-../gcc-4.7.4/configure --disable-checking --enable-languages=c --disable-multiarch --disable-multilib --enable-shared --enable-threads=posix --program-suffix=-instr --with-gmp=/usr/local/lib --with-mpc=/usr/lib --with-mpfr=/usr/lib --without-included-gettext --with-system-zlib --with-tune=generic --prefix=/tvg/install/gcc-4.7.4 --disable-bootstrap --disable-build-with-cxx
+../gcc-4.7.4/configure --disable-checking --enable-languages=c --disable-multiarch --disable-multilib --enable-shared --enable-threads=posix --program-suffix=-instr --with-gmp=/usr --with-mpc=/usr/lib --with-mpfr=/usr/lib --without-included-gettext --with-system-zlib --with-tune=generic --prefix=/tvg/install/gcc-4.7.4 --disable-bootstrap --disable-build-with-cxx
 
 make
+
+NOETIG?: export LIBRARY_PATH=/usr/lib/i386-linux-gnu:$LIBRARY_PATH
+
+make install
 
 GCC-Executable in
 /tvg/install/gcc-4.7.4/bin/gcc4.7
 
-stack exec install
+stack install --allow-different-user
 -}
 
 logFileName = "/tvg/build/calls.log"
-
--- The instrumentedMarker has to survive the preprocessor, which a typedef does (other than a comment,e.g.)
---instrumentedMarker = "typedef int INSTRUMENTED_ALREADY;"
 
 include_tvg = "#include <tvg.h>"
 tvg_path = "/tvg/tvg/incs"
@@ -63,9 +63,10 @@ main = do
 	sequence_ restore_files
 	exitWith exitcode
 
-handleArg preprocess_args arg = when (".c" `isSuffixOf` arg) $ do
+handleArg preprocess_args arg | ".c" `isSuffixOf` arg && takeFileName arg /= "conftest.c" = do
 	printLog $ "Found source file " ++ arg
 	handleSrcFile preprocess_args arg
+handleArg _ _ = return $ return ()
 
 handleSrcFile preprocess_args name = do
 	let bak_name = name ++ ".preinstr"
@@ -78,19 +79,17 @@ handleSrcFile preprocess_args name = do
 -}
 
 	cfile <- readFile bak_name
-	case "conftest.c" `isInfixOf` name of
-		True -> return $ return ()
-		False -> do
-			printLog $ "Instrumenting " ++ name ++ "..."
-			writeFile name $ include_tvg ++ "\n" ++ cfile
+	printLog $ "Instrumenting " ++ name ++ "..."
+	writeFile name $ include_tvg ++ "\n" ++ cfile
 
-			printLog $ "Preprocessing " ++ name ++ " with args: " ++ intercalate " " preprocess_args
-			parseresult <- parseCFile (newGCC "gcc") Nothing preprocess_args name
-			case parseresult of
-				Left errmsg -> error $ show errmsg
-				Right ast -> do
-					writeFile name $ render $ pretty $ processAST ast
-					return $ removeFile name >> renameFile bak_name name
+	printLog $ "Preprocessing " ++ name ++ " with args: " ++ intercalate " " preprocess_args
+	parseresult <- parseCFile (newGCC "gcc") Nothing preprocess_args name
+	case parseresult of
+		Left errmsg -> error $ show errmsg
+		Right ast -> do
+			writeFile name $ render $ pretty $ processAST ast
+			writeFile (name++".instr") $ render $ pretty $ processAST ast	
+			return $ removeFile name >> renameFile bak_name name
 
 processAST :: CTranslUnit -> CTranslUnit
 processAST = everywhere (mkT instrumentMain) . everywhere (mkT instrAssign)
@@ -109,8 +108,8 @@ instrumentMain :: CTranslUnit -> CTranslUnit
 instrumentMain = everywhere (mkT insertopen)
 	where
 	insertopen :: CFunDef -> CFunDef
-	insertopen (CFunDef declspecs declr@(CDeclr (Just (Ident name _ _)) _ _ _ _) decls cstat ni) | name=="main" =
-		CFunDef declspecs declr decls (CCompound [] [callopentrace,CBlockStmt (insertbeforereturns cstat),callclosetrace] undefNode) ni where
+	insertopen (CFunDef declspecs declr@(CDeclr (Just (Ident "main" _ _)) _ _ _ _) decls cstat ni) =
+		CFunDef declspecs declr decls (CCompound [] [callopentrace,CBlockStmt (insertbeforereturns cstat),callclosetrace] undefNode) ni
 	insertopen x = x
 
 	callopentrace = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "opentrace") undefNode) opentrace_args undefNode)) undefNode)
@@ -121,5 +120,11 @@ instrumentMain = everywhere (mkT insertopen)
 	insertbeforereturns = everywhere (mkT insertclose)
 
 	insertclose :: CStat -> CStat
-	insertclose cret@(CReturn _ _) = CCompound [] [callclosetrace,CBlockStmt cret] undefNode
+	insertclose cret@(CReturn (Just ret_expr) _) = CCompound [] [
+		CBlockDecl $ CDecl [CTypeSpec $ CIntType undefNode]
+			[ ( Just $ CDeclr (Just my_ret) [] Nothing [] undefNode, Just $ CInitExpr ret_expr undefNode, Nothing ) ] undefNode,
+		callclosetrace,
+		CBlockStmt $ CReturn (Just $ CVar my_ret undefNode) undefNode
+		] undefNode where
+		my_ret = internalIdent "my_ret"
 	insertclose x = x

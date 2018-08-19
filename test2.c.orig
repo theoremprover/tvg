@@ -12,7 +12,8 @@ int f(int x, int y)
 		z++;
 	}
 
-    for (int i = 1; i <= x; i++)
+	int i;
+    for (i = 1; i <= x; i++)
     {
 		erg = erg + g * y;
 		erg = erg;
@@ -22,5 +23,5 @@ int f(int x, int y)
 
 int main()
 {
-	return 0;
+	return f(0,1);
 }
