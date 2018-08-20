@@ -24,6 +24,7 @@ export CC="/root/.local/bin/tvg-exe"
 export CFLAGS="-w -I/usr/include/i386-linux-gnu"
 
 export LD_LIBRARY_PATH=/tvg/tvg/incs:$LD_LIBRARY_PATH
+export LIBRARY_PATH=
 
 root@robert-VirtualBox:/tvg/build#
 ../gcc-4.7.4/configure --disable-checking --enable-languages=c --disable-multiarch --disable-multilib --enable-shared --enable-threads=posix --program-suffix=-instr --with-gmp=/usr --with-mpc=/usr/lib --with-mpfr=/usr/lib --without-included-gettext --with-system-zlib --with-tune=generic --prefix=/tvg/install/gcc-4.7.4 --disable-bootstrap --disable-build-with-cxx
@@ -78,7 +79,7 @@ handleSrcFile preprocess_args name = do
 		Left errmsg -> error $ show errmsg
 		Right ast -> do
 			writeFile name $ render $ pretty $ processAST ast
-			writeFile (tvg_path ++ "/instrs/" ++ takeFileName name) $ render $ pretty $ processAST ast
+--			writeFile (tvg_path ++ "/instrs/" ++ takeFileName name) $ render $ pretty $ processAST ast
 			return $ removeFile name >> renameFile bak_name name
 
 processAST :: CTranslUnit -> CTranslUnit
