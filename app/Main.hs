@@ -88,7 +88,7 @@ instrumentStmt :: CStat -> CStat
 instrumentStmt cstat = CCompound [] [ instr (nodeInfo cstat), CBlockStmt cstat ] undefNode
 	where
 	instr :: NodeInfo -> CBlockItem
-	instr nodeinfo = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "mytrace") undefNode) args undefNode)) undefNode)
+	instr nodeinfo = CBlockStmt $ CExpr (Just $ CCall (CVar (builtinIdent "mytrace") undefNode) args undefNode) undefNode
 		where
 		pos = posOfNode nodeinfo
 		str = posFile pos ++ show (posRow pos,posColumn pos)
@@ -101,7 +101,6 @@ instrumentMain = everywhere (mkT insertopen)
 	insertopen (CFunDef declspecs declr@(CDeclr (Just (Ident "main" _ _)) _ _ _ _) decls cstat ni) =
 		CFunDef declspecs declr decls (CCompound [] [callopentrace,CBlockStmt (insertbeforereturns cstat),callclosetrace] undefNode) ni
 	insertopen x = x
-
 	callopentrace = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "opentrace") undefNode) opentrace_args undefNode)) undefNode)
 	opentrace_args = [CConst (CStrConst (cString $ tvg_path ++ "/" ++ traceFileName) undefNode)]
 
