@@ -1,6 +1,12 @@
+
 typedef struct {
-	char filename[100];
+	int line, column;
+	int cnt = 0; }
+	COUNTER;
 
-SRCFILE abc_def_xyz_c;
+typedef struct {
+	char sourcefilename[100];
+	COUNTER counters[1234];
+} SRCFILE;
 
-int abc_ghj_ttt_c_80_7 = 0;
+SRCFILE abc_def_xyz_c = { "abc/def/xyz.c" };
