@@ -84,7 +84,12 @@ handleSrcFile preprocess_args name = do
 --			writeFile (tvg_path ++ "/instrs/" ++ takeFileName name) $ render $ pretty $ processAST ast
 			return $ removeFile name >> renameFile bak_name name
 
---SRCFILE abc_def_xyz_c = { "abc/def/xyz.c" };
+{-
+SRCFILE s1 = { "abc/def/xyz.c", {
+{ 34,3,0 },
+{ 35,4,0 }
+} };
+-}
 
 processAST :: CTranslUnit -> CTranslUnit
 processAST = everywhere (mkT instrumentMain) . everywhere (mkT instrumentStmt)
