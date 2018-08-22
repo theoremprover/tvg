@@ -25,6 +25,7 @@ dependencies:
 - pretty
 - syb
 - filepath
+- transformers
 
 library:
   source-dirs: src

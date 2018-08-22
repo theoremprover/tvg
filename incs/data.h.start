@@ -1,0 +1,10 @@
+typedef struct {
+	long line, column;
+	long cnt; }
+	COUNTER;
+
+typedef struct {
+	char sourcefilename[250];
+	COUNTER counters[];
+} SRCFILE;
+
