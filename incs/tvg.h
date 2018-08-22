@@ -9,5 +9,5 @@ typedef struct {
 
 typedef struct {
 	char sourcefilename[100];
-	COUNTER *counters;
+	COUNTER counters[];
 } SRCFILE;
