@@ -29,8 +29,6 @@ export CFLAGS="-w -I/usr/include/i386-linux-gnu"
 export LD_LIBRARY_PATH=/tvg/tvg/incs:$LD_LIBRARY_PATH
 export LIBRARY_PATH=
 
-echo "#include <tvg.h>" > /tvg/tvg/incs/data.c
-
 root@robert-VirtualBox:/tvg/build#
 ../gcc-4.7.4/configure --disable-checking --enable-languages=c --disable-multiarch --disable-multilib --enable-shared --enable-threads=posix --program-suffix=-instr --with-gmp=/usr --with-mpc=/usr/lib --with-mpfr=/usr/lib --without-included-gettext --with-system-zlib --with-tune=generic --prefix=/tvg/install/gcc-4.7.4 --disable-bootstrap --disable-build-with-cxx
 
@@ -39,6 +37,8 @@ export LIBRARY_PATH=/usr/lib/i386-linux-gnu:$LIBRARY_PATH
 cp /tvg/tvg/incs/data.c.start /tvg/tvg/incs/data.c
 cp /tvg/tvg/incs/data.h.start /tvg/tvg/incs/data.h
 
+stack install --allow-different-user
+
 make
 
 make install
@@ -46,8 +46,11 @@ make install
 GCC-Executable in
 /tvg/install/gcc-4.7.4/bin/gcc4.7
 
-stack install --allow-different-user
+gcc -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
+
 -}
+
+gccExe = "gcc"
 
 main = do
 	tvg_path:args <- getArgs
@@ -61,8 +64,7 @@ main = do
 	let args' = ["-I" ++ incs_path] ++ args
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args'
 	restore_files <- forM args (handleArg preprocess_args incs_path)
-	wait "before rawSystem"
-	exitcode <- rawSystem "gcc" $ ["-L"++incs_path] ++ args ++ ["-ltvg"]
+	exitcode <- rawSystem gccExe $ ["-L"++incs_path] ++ args ++ ["-ldata"]
 	sequence_ restore_files
 	exitWith exitcode
 
@@ -84,39 +86,49 @@ handleSrcFile preprocess_args incs_path name = do
 	let bak_name = name ++ ".preinstr"
 	renameFile name bak_name
 
+	let filenameid = take 25 $ map (\ c -> if isAlphaNum c then c else '_') name
+	let varname = "src_" ++ filenameid
+	let tracefunname = "trace_" ++ filenameid
+
+	appendFile (incs_path </> "data.h") $ printf "void %s(int);\n" tracefunname
+
 	cfile <- readFile bak_name
-	writeFile name $ "#include <tvg.h>\n#include <data.h>\n" ++ "\n" ++ cfile
-	wait "wrote includes"
+	writeFile name $ "#include <data.h>\n\n" ++ cfile
 
 	parseresult <- parseCFile (newGCC "gcc") Nothing preprocess_args name
 	case parseresult of
 		Left errmsg -> error $ show errmsg
 		Right ast -> do
-			let filenameid = take 31 $ "src_" ++ map (\ c -> if isAlphaNum c then c else '_') name
-			(ast',InstrS _ _ locs) <- runStateT (processASTM ast) $ InstrS name filenameid []
-			writeFile name $ render $ pretty ast'
-			wait "wrote instrumented"
+			(ast',InstrS _ _ locs) <- runStateT (processASTM ast) $ InstrS name tracefunname []
+			writeFile name $ render (pretty ast')
 
-			appendFile (incs_path </> "data.h") $
-				printf "extern SRCFILE %s;\n" filenameid
-			appendFile (incs_path </> "data.c") $
-				printf "SRCFILE %s = { %s, {\n" filenameid (show name) ++
+			insertInFile (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
+				printf "SRCFILE %s = { %s, %i, {\n" varname (show name) (length locs) ++
 				intercalate ",\n" (map (\ (l,c) -> printf "{ %li,%li,0 }" l c) locs) ++
-				"\n} };\n\n"
+				"\n} };\n" ++
+				printf "void %s(int i) { %s.counters[i].cnt++; }\n" tracefunname varname 
+
+			insertInFile (incs_path </> "data.c") "/*INSERT_SRCPTR_HERE*/" $
+				printf ",\n&%s" varname
+
+			(exitcode,stdout,stderr) <- readProcessWithExitCode gccExe
+				["-shared", "-fPIC", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
+			when (exitcode /= ExitSuccess) $ error $ "Compile data.c failed:\n" ++ stdout ++ stderr
 
 			copyFile name (incs_path </> "instrs" </> takeFileName name)
 			return $ removeFile name >> renameFile bak_name name
 
-{-
-SRCFILE src_abc_def_xyz_c = { "abc/def/xyz.c", {
-{ 34,3,0 },
-{ 35,4,0 }
-} };
 
-src_abc_def_xyz_c.counters[45].cnt++;
--}
 
-data InstrS = InstrS { fileNameS :: String, fileNameIdS :: String, locationsS :: [(Int,Int)] }
+insertInFile filename pos text = do
+	f <- readFile filename
+	length f `seq` (writeFile filename $ insert_at pos text f)
+	where
+	insert_at pos _ [] = error $ "did not find " ++ pos
+	insert_at pos text rest | pos `isPrefixOf` rest = text ++ rest
+	insert_at pos text (r:rest) = r : insert_at pos text rest
+
+data InstrS = InstrS { fileNameS :: String, traceFunNameS :: String, locationsS :: [(Int,Int)] }
 type InstrM a = StateT InstrS IO a
 
 processASTM :: CTranslUnit -> InstrM CTranslUnit
@@ -126,20 +138,16 @@ processASTM ast = do
 
 instrumentStmt :: CStat -> InstrM CStat
 instrumentStmt cstat = do
-	filenameid <- gets fileNameIdS
+	InstrS _ tracefunname locs <- get
 	modify $ \ s -> s { locationsS = locationsS s ++ [(line,col)] }
-	locs <- gets locationsS
 	let index = length locs
-	return $ CCompound [] [ instr filenameid index, CBlockStmt cstat ] undefNode
+	return $ CCompound [] [ instr tracefunname index, CBlockStmt cstat ] undefNode
 	where
 	pos = posOfNode $ nodeInfo cstat
 	(line,col) = (posRow pos,posColumn pos)
 	str = posFile pos ++ show (posRow pos,posColumn pos)
-	instr filenameid index = CBlockStmt $ CExpr (Just $ CUnary CPostIncOp (incexpr filenameid index) undefNode) undefNode
-	incexpr filenameid index = CMember (CIndex
-		( CMember (CVar (internalIdent filenameid) undefNode) (builtinIdent "counters") False undefNode)
-		(CConst $ CIntConst (cInteger $ fromIntegral index) undefNode) undefNode)
-		(builtinIdent "cnt") False undefNode
+	instr tracefunname index = CBlockStmt $ CExpr (Just $ CCall (CVar (builtinIdent tracefunname) undefNode)
+		[CConst $ CIntConst (cInteger $ fromIntegral index) undefNode] undefNode) undefNode
 
 instrumentMain :: CTranslUnit -> CTranslUnit
 instrumentMain = everywhere (mkT insertopen)

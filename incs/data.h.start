@@ -1,3 +1,6 @@
+void opentrace();
+void closetrace();
+
 typedef struct {
 	long line, column;
 	long cnt; }
@@ -5,6 +8,7 @@ typedef struct {
 
 typedef struct {
 	char sourcefilename[250];
+	long num_counters;
 	COUNTER counters[];
 } SRCFILE;
 

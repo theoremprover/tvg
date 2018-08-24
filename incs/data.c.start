@@ -1,2 +1,47 @@
-#include <data.h>
+/*
+gcc -w -DQUIET -shared -fPIC data.c -o libdata.so
 
+*/
+
+#include <data.h>
+#ifndef QUIET
+#include <stdio.h>
+#endif
+
+/*INSERT_SRCFILE_HERE*/
+
+SRCFILE* all_srcfiles[] = { NULL/*INSERT_SRCPTR_HERE*/
+};
+
+void opentrace()
+{
+#ifndef QUIET
+#endif
+}
+
+void closetrace()
+{
+#ifndef QUIET
+	long overall_num_stmts = 0;
+	long overall_reached_stmts = 0;
+
+	for(int i=1;i<sizeof(all_srcfiles)/sizeof(all_srcfiles[0]);i++)
+	{
+		SRCFILE* srcfile = all_srcfiles[i];
+		long num_stmts = srcfile->num_counters;
+		long reached_stmts = 0;
+
+		for(int j=0;j<num_stmts;j++)
+		{
+			COUNTER* counter = &(srcfile->counters[j]);
+			if(counter->cnt > 0) reached_stmts++;
+		}
+
+		overall_num_stmts += num_stmts;
+		overall_reached_stmts += reached_stmts;
+		printf("Coverage of %s =\n  %.2f %%\n",srcfile->sourcefilename,100.0*(float)reached_stmts/(float)num_stmts);
+	}
+
+	printf("Overall Coverage =\n  %.2f %%\n",100.0*(float)overall_reached_stmts/(float)overall_num_stmts);	
+#endif
+}

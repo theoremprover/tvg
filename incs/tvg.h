@@ -1,2 +1,0 @@
-void opentrace();
-void closetrace();
