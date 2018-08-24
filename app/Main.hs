@@ -52,18 +52,29 @@ stack install --allow-different-user
 main = do
 	tvg_path:args <- getArgs
 	let incs_path = tvg_path </> "incs"
+
+--	Remove me when in production
+	copyFile "test2.c.orig" "test2.c"
+	copyFile (incs_path </> "data.c.start") (incs_path </> "data.c") 
+	copyFile (incs_path </> "data.h.start") (incs_path </> "data.h") 
+
 	let args' = ["-I" ++ incs_path] ++ args
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args'
-	restore_files <- forM args (handleArg preprocess_args)
+	restore_files <- forM args (handleArg preprocess_args incs_path)
+	wait "before rawSystem"
 	exitcode <- rawSystem "gcc" $ ["-L"++incs_path] ++ args ++ ["-ltvg"]
 	sequence_ restore_files
 	exitWith exitcode
 
-handleArg preprocess_args arg | ".c" `isSuffixOf` arg && takeFileName arg /= "conftest.c" = do
-	handleSrcFile preprocess_args arg
-handleArg _ _ = return $ return ()
+handleArg preprocess_args incs_path arg | ".c" `isSuffixOf` arg && takeFileName arg /= "conftest.c" = do
+	handleSrcFile preprocess_args incs_path arg
+handleArg _ _ _ = return $ return ()
 
-handleSrcFile preprocess_args name = do
+wait msg = do
+	putStrLn $ msg ++ " Press [RETURN]"
+	getLine
+
+handleSrcFile preprocess_args incs_path name = do
 {-
 --	OUTPUT ORIGINAL AST
 	Right ast <- parseCFile (newGCC "gcc") Nothing preprocess_args name
@@ -75,6 +86,7 @@ handleSrcFile preprocess_args name = do
 
 	cfile <- readFile bak_name
 	writeFile name $ "#include <tvg.h>\n#include <data.h>\n" ++ "\n" ++ cfile
+	wait "wrote includes"
 
 	parseresult <- parseCFile (newGCC "gcc") Nothing preprocess_args name
 	case parseresult of
@@ -83,6 +95,7 @@ handleSrcFile preprocess_args name = do
 			let filenameid = take 31 $ "src_" ++ map (\ c -> if isAlphaNum c then c else '_') name
 			(ast',InstrS _ _ locs) <- runStateT (processASTM ast) $ InstrS name filenameid []
 			writeFile name $ render $ pretty ast'
+			wait "wrote instrumented"
 
 			appendFile (incs_path </> "data.h") $
 				printf "extern SRCFILE %s;\n" filenameid
