@@ -49,20 +49,13 @@ GCC-Executable in
 stack install --allow-different-user
 -}
 
-logFileName = "/tvg/build/calls.log"
-
-include_tvg = "#include <tvg.h>\n#include <data.h>"
-tvg_path = "/tvg/tvg/incs"
-dataFileName = "data"
-
 main = do
-	args <- getArgs
-	
-	let args' = ["-I"++tvg_path] ++ args
-
+	tvg_path:args <- getArgs
+	let incs_path = tvg_path </> "incs"
+	let args' = ["-I" ++ incs_path] ++ args
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args'
 	restore_files <- forM args (handleArg preprocess_args)
-	exitcode <- rawSystem "gcc" $ ["-L"++tvg_path] ++ args ++ ["-ltvg"]
+	exitcode <- rawSystem "gcc" $ ["-L"++incs_path] ++ args ++ ["-ltvg"]
 	sequence_ restore_files
 	exitWith exitcode
 
@@ -81,7 +74,7 @@ handleSrcFile preprocess_args name = do
 	renameFile name bak_name
 
 	cfile <- readFile bak_name
-	writeFile name $ include_tvg ++ "\n" ++ cfile
+	writeFile name $ "#include <tvg.h>\n#include <data.h>\n" ++ "\n" ++ cfile
 
 	parseresult <- parseCFile (newGCC "gcc") Nothing preprocess_args name
 	case parseresult of
@@ -91,14 +84,14 @@ handleSrcFile preprocess_args name = do
 			(ast',InstrS _ _ locs) <- runStateT (processASTM ast) $ InstrS name filenameid []
 			writeFile name $ render $ pretty ast'
 
-			appendFile (tvg_path ++ "/" ++ dataFileName ++ ".h") $
+			appendFile (incs_path </> "data.h") $
 				printf "extern SRCFILE %s;\n" filenameid
-			appendFile (tvg_path ++ "/" ++ dataFileName ++ ".c") $
+			appendFile (incs_path </> "data.c") $
 				printf "SRCFILE %s = { %s, {\n" filenameid (show name) ++
 				intercalate ",\n" (map (\ (l,c) -> printf "{ %li,%li,0 }" l c) locs) ++
 				"\n} };\n\n"
 
-			copyFile name (tvg_path ++ "/instrs/" ++ takeFileName name)
+			copyFile name (incs_path </> "instrs" </> takeFileName name)
 			return $ removeFile name >> renameFile bak_name name
 
 {-
