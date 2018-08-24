@@ -23,7 +23,7 @@ import ShowAST
 
 {-
 configure ENVVARS:
-export CC="/root/.local/bin/tvg-exe"
+export CC="/root/.local/bin/tvg-exe /tvg/tvg"
 export CFLAGS="-w -I/usr/include/i386-linux-gnu"
 
 export LD_LIBRARY_PATH=/tvg/tvg/incs:$LD_LIBRARY_PATH
@@ -56,10 +56,12 @@ main = do
 	tvg_path:args <- getArgs
 	let incs_path = tvg_path </> "incs"
 
+{-
 --	Remove me when in production
 	copyFile "test2.c.orig" "test2.c"
 	copyFile (incs_path </> "data.c.start") (incs_path </> "data.c") 
 	copyFile (incs_path </> "data.h.start") (incs_path </> "data.h") 
+-}
 
 	let args' = ["-I" ++ incs_path] ++ args
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args'
@@ -115,7 +117,7 @@ handleSrcFile preprocess_args incs_path name = do
 				["-shared", "-fPIC", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
 			when (exitcode /= ExitSuccess) $ error $ "Compile data.c failed:\n" ++ stdout ++ stderr
 
-			copyFile name (incs_path </> "instrs" </> takeFileName name)
+--			copyFile name (incs_path </> "instrs" </> takeFileName name)
 			return $ removeFile name >> renameFile bak_name name
 
 
