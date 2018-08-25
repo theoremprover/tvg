@@ -1,3 +1,6 @@
+#ifndef DATA_H
+#define DATA_H
+
 void opentrace();
 void closetrace();
 
@@ -11,4 +14,4 @@ typedef struct {
 	long num_counters;
 	COUNTER counters[];
 } SRCFILE;
-
+#endif

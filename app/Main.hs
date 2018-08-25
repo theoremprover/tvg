@@ -88,18 +88,18 @@ handleSrcFile preprocess_args incs_path name = do
 	let bak_name = name ++ ".preinstr"
 	renameFile name bak_name
 
-	let filenameid = take 25 $ map (\ c -> if isAlphaNum c then c else '_') name
+	let filenameid = map (\ c -> if isAlphaNum c then c else '_') name
 	let varname = "src_" ++ filenameid
 	let tracefunname = "trace_" ++ filenameid
 
 	appendFile (incs_path </> "data.h") $ printf "void %s(int);\n" tracefunname
 
 	cfile <- readFile bak_name
-	writeFile name $ "#include <data.h>\n\n" ++ cfile
+	length cfile `seq` (writeFile name $ "#include <data.h>\n\n" ++ cfile)
 
 	parseresult <- parseCFile (newGCC "gcc") Nothing preprocess_args name
-	case parseresult of
-		Left errmsg -> error $ show errmsg
+	mb_err <- case parseresult of
+		Left errmsg -> return $ Just $ show errmsg
 		Right ast -> do
 			(ast',InstrS _ _ locs) <- runStateT (processASTM ast) $ InstrS name tracefunname []
 			writeFile name $ render (pretty ast')
@@ -115,16 +115,21 @@ handleSrcFile preprocess_args incs_path name = do
 
 			(exitcode,stdout,stderr) <- readProcessWithExitCode gccExe
 				["-shared", "-fPIC", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
-			when (exitcode /= ExitSuccess) $ error $ "Compile data.c failed:\n" ++ stdout ++ stderr
+			case exitcode of
+				ExitSuccess   -> return Nothing
+				ExitFailure _ -> return $ Just $ "Compile data.c failed:\n" ++ stdout ++ stderr
 
---			copyFile name (incs_path </> "instrs" </> takeFileName name)
+	case mb_err of
+		Nothing -> do
+			copyFile name (name++".instr")
 			return $ removeFile name >> renameFile bak_name name
-
-
+		Just errmsg -> do
+			removeFile name >> renameFile bak_name name
+			error errmsg
 
 insertInFile filename pos text = do
 	f <- readFile filename
-	length f `seq` (writeFile filename $ insert_at pos text f)
+	unless (text `isInfixOf` f) $ writeFile filename $ insert_at pos text f
 	where
 	insert_at pos _ [] = error $ "did not find " ++ pos
 	insert_at pos text rest | pos `isPrefixOf` rest = text ++ rest
