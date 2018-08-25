@@ -2,8 +2,9 @@
 
 module Main where
 
+import Prelude hiding (readFile)
 import System.Process
-import System.IO
+import System.IO.Strict as Strict
 import System.Environment
 import System.Exit
 import Data.List
@@ -50,18 +51,19 @@ gcc -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
 
 -}
 
-gccExe = "gcc"
+_OUTPUT_AST = True
+_INIT_DATA = True
+
+gccExe = "gcc-4.7"
 
 main = do
 	tvg_path:args <- getArgs
 	let incs_path = tvg_path </> "incs"
 
-{-
---	Remove me when in production
-	copyFile "test2.c.orig" "test2.c"
-	copyFile (incs_path </> "data.c.start") (incs_path </> "data.c") 
-	copyFile (incs_path </> "data.h.start") (incs_path </> "data.h") 
--}
+	when _INIT_DATA $ do
+--		copyFile "test2.c.orig" "test2.c"
+		copyFile (incs_path </> "data.c.start") (incs_path </> "data.c") 
+		copyFile (incs_path </> "data.h.start") (incs_path </> "data.h") 
 
 	let args' = ["-I" ++ incs_path] ++ args
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args'
@@ -79,11 +81,10 @@ wait msg = do
 	getLine
 
 handleSrcFile preprocess_args incs_path name = do
-{-
---	OUTPUT ORIGINAL AST
-	Right ast <- parseCFile (newGCC "gcc") Nothing preprocess_args name
-	writeFile (name++".ast") $ showDataTree ast
--}
+	when _OUTPUT_AST $ do
+--		OUTPUT ORIGINAL AST
+		Right ast <- parseCFile (newGCC gccExe) Nothing preprocess_args name
+		writeFile (name++".ast") $ showDataTree ast
 
 	let bak_name = name ++ ".preinstr"
 	renameFile name bak_name
@@ -95,14 +96,14 @@ handleSrcFile preprocess_args incs_path name = do
 	appendFile (incs_path </> "data.h") $ printf "void %s(int);\n" tracefunname
 
 	cfile <- readFile bak_name
-	length cfile `seq` (writeFile name $ "#include <data.h>\n\n" ++ cfile)
+	writeFile name $ "#include <data.h>\n\n" ++ cfile
 
 	parseresult <- parseCFile (newGCC "gcc") Nothing preprocess_args name
 	mb_err <- case parseresult of
 		Left errmsg -> return $ Just $ show errmsg
 		Right ast -> do
 			(ast',InstrS _ _ locs) <- runStateT (processASTM ast) $ InstrS name tracefunname []
-			writeFile name $ render (pretty ast')
+			writeFile name $ render $ pretty ast'
 
 			insertInFile (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
 				printf "SRCFILE %s = { %s, %i, {\n" varname (show name) (length locs) ++

@@ -25,13 +25,15 @@ void closetrace()
 	long overall_num_stmts = 0;
 	long overall_reached_stmts = 0;
 
-	for(int i=1;i<sizeof(all_srcfiles)/sizeof(all_srcfiles[0]);i++)
+	int i;
+	for(i=1;i<sizeof(all_srcfiles)/sizeof(all_srcfiles[0]);i++)
 	{
 		SRCFILE* srcfile = all_srcfiles[i];
 		long num_stmts = srcfile->num_counters;
 		long reached_stmts = 0;
 
-		for(int j=0;j<num_stmts;j++)
+		int j;
+		for(j=0;j<num_stmts;j++)
 		{
 			COUNTER* counter = &(srcfile->counters[j]);
 			if(counter->cnt > 0) reached_stmts++;

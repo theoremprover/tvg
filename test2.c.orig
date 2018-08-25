@@ -18,10 +18,10 @@ int f(int x, int y)
 		erg = erg + g * y;
 		erg = erg;
     }
-    return erg;
+    return f(0,1);
 }
 
 int main()
 {
-	return f(0,1);
+	return f(1,2);
 }
