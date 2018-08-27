@@ -27,6 +27,7 @@ dependencies:
 - filepath
 - transformers
 - strict
+- lens
 
 library:
   source-dirs: src

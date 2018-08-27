@@ -3,8 +3,9 @@
 module Main where
 
 import Prelude hiding (readFile)
+import System.IO.Strict
+
 import System.Process
-import System.IO.Strict as Strict
 import System.Environment
 import System.Exit
 import Data.List
@@ -21,6 +22,7 @@ import Data.Char
 import Text.Printf
 
 import ShowAST
+import ASTLenses
 
 {-
 configure ENVVARS:
