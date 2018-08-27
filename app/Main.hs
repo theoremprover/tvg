@@ -115,13 +115,13 @@ handleSrcFile preprocess_args incs_path name = do
 			(ast',InstrS _ _ locs) <- runStateT (processASTM ast) $ InstrS name tracefunname []
 			writeFile name $ render $ pretty ast'
 
-			insertInFile (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
+			insertInFile tracefunname (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
 				printf "SRCFILE %s = { %s, %i, {\n" varname (show name) (length locs) ++
 				intercalate ",\n" (map (\ (l,c) -> printf "{ %li,%li,0 }" l c) locs) ++
 				"\n} };\n" ++
 				printf "void %s(int i) { %s.counters[i].cnt++; }\n" tracefunname varname 
 
-			insertInFile (incs_path </> "data.c") "/*INSERT_SRCPTR_HERE*/" $
+			insertInFile varname (incs_path </> "data.c") "/*INSERT_SRCPTR_HERE*/" $
 				printf ",\n&%s" varname
 
 			(exitcode,stdout,stderr) <- readProcessWithExitCode gccExe
@@ -138,9 +138,9 @@ handleSrcFile preprocess_args incs_path name = do
 			removeFile name >> renameFile bak_name name
 			error errmsg
 
-insertInFile filename pos text = do
+insertInFile ident filename pos text = do
 	f <- readFile filename
-	unless (text `isInfixOf` f) $ writeFile filename $ insert_at pos text f
+	unless (ident `isInfixOf` f) $ writeFile filename $ insert_at pos text f
 	where
 	insert_at pos _ [] = error $ "did not find " ++ pos
 	insert_at pos text rest | pos `isPrefixOf` rest = text ++ rest
