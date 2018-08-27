@@ -2,7 +2,7 @@
 
 module ASTLenses where
 
-import Control.Lenses
+import Control.Lens
 import Language.C.Syntax.AST
 --import Language.C.Data.Node
 --import Language.C.Data.Ident
