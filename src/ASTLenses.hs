@@ -3,9 +3,9 @@
 module ASTLenses where
 
 import Control.Lens
-import Language.C.Syntax.AST
---import Language.C.Data.Node
---import Language.C.Data.Ident
+import Language.C.Syntax
+import Language.C.Data.Node
+import Language.C.Data.Ident
 
 makeLenses ''NodeInfo
 makeLenses ''Ident
