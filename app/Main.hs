@@ -99,7 +99,7 @@ handleSrcFile preprocess_args incs_path name = do
 	let varname = "src_" ++ filenameid
 	let tracefunname = "trace_" ++ filenameid
 
-	insertInFile tracefunname (incs_path </> "data.h") "/*INSERT_HERE*/" $ printf "void %s(int);\n"
+	insertInFile tracefunname (incs_path </> "data.h") "/*INSERT_HERE*/" $ printf "void %s(int);\n" tracefunname
 
 	cfile <- readFile bak_name
 	writeFile name $ "#include <data.h>\n\n" ++ cfile
