@@ -57,8 +57,9 @@ gcc -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
 -}
 
 _OUTPUT_AST = False
-_INIT_DATA = False
-_WRITE_PREPROCESSED = False
+_INIT_DATA = True
+_WRITE_PREPROCESSED = True
+_WRITE_INSTRUMENTED = True
 
 gccExe = "gcc-4.7"
 
@@ -74,6 +75,7 @@ main = do
 	let args' = ["-I" ++ incs_path] ++ args
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args'
 	restore_files <- forM args (handleArg preprocess_args incs_path)
+	putStrLn $ gccExe ++ " " ++ intercalate " " (["-L"++incs_path] ++ args ++ ["-ldata"])
 	exitcode <- rawSystem gccExe $ ["-L"++incs_path] ++ args ++ ["-ldata"]
 	sequence_ restore_files
 	exitWith exitcode
@@ -92,6 +94,10 @@ handleSrcFile preprocess_args incs_path name = do
 		Right ast <- parseCFile (newGCC gccExe) Nothing preprocess_args name
 		writeFile (name++".ast") $ showDataTree ast
 
+	when _WRITE_PREPROCESSED $ do
+		Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs preprocess_args name)
+		writeFile (name++".orig.i") $ inputStreamToString inputstream
+
 	let bak_name = name ++ ".preinstr"
 	renameFile name bak_name
 
@@ -105,15 +111,18 @@ handleSrcFile preprocess_args incs_path name = do
 	writeFile name $ "#include <data.h>\n\n" ++ cfile
 
 	when _WRITE_PREPROCESSED $ do
-		Right inputstream <- runPreprocessor (newGCC "gcc") (rawCppArgs preprocess_args name)
+		Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs preprocess_args name)
 		writeFile (name++".i") $ inputStreamToString inputstream
 
-	parseresult <- parseCFile (newGCC "gcc") Nothing preprocess_args name
+	parseresult <- parseCFile (newGCC gccExe) Nothing preprocess_args name
 	mb_err <- case parseresult of
 		Left errmsg -> return $ Just $ show errmsg
 		Right ast -> do
 			(ast',InstrS _ _ locs) <- runStateT (processASTM ast) $ InstrS name tracefunname []
 			writeFile name $ render $ pretty ast'
+
+			when _WRITE_INSTRUMENTED $ do
+				copyFile name (name++".instr.c")
 
 			insertInFile tracefunname (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
 				printf "SRCFILE %s = { %s, %i, {\n" varname (show name) (length locs) ++
