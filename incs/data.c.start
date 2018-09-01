@@ -1,9 +1,11 @@
 /*
-gcc -w -DQUIET -shared -fPIC data.c -o libdata.so
+In .../incs:
+gcc -w -DQUIET -shared -fPIC -I. data.c -o libdata.so
 
 */
 
 #include <data.h>
+#include <stdlib.h>
 #ifndef QUIET
 #include <stdio.h>
 #endif

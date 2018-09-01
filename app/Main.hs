@@ -57,8 +57,8 @@ gcc -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
 -}
 
 _OUTPUT_AST = False
-_INIT_DATA = True
-_WRITE_PREPROCESSED = True
+_INIT_DATA = False
+_WRITE_PREPROCESSED = False
 _WRITE_INSTRUMENTED = True
 
 gccExe = "gcc-4.7"
@@ -134,7 +134,7 @@ handleSrcFile preprocess_args incs_path name = do
 				printf ",\n&%s" varname
 
 			(exitcode,stdout,stderr) <- readProcessWithExitCode gccExe
-				["-shared", "-fPIC", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
+				["-shared", "-fPIC", "-DQUIET", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
 			case exitcode of
 				ExitSuccess   -> return Nothing
 				ExitFailure _ -> return $ Just $ "Compile data.c failed:\n" ++ stdout ++ stderr
@@ -161,7 +161,7 @@ type InstrM a = StateT InstrS IO a
 processASTM :: CTranslUnit -> InstrM CTranslUnit
 processASTM ast = do
 	ast' <- everywhereM (mkM instrumentStmt) ast
-	return $ everywhere (mkT elimNestedCompounds) $ everywhere (mkT instrumentMain) ast'
+	return $ everywhere (mkT elimInStatExprs) $ everywhere (mkT instrumentMain) ast'
 
 instrumentStmt :: CStat -> InstrM CStat
 instrumentStmt cstat = do
@@ -175,6 +175,10 @@ instrumentStmt cstat = do
 	str = posFile pos ++ show (posRow pos,posColumn pos)
 	instr tracefunname index = CBlockStmt $ CExpr (Just $ CCall (CVar (builtinIdent tracefunname) undefNode)
 		[CConst $ CIntConst (cInteger $ fromIntegral index) undefNode] undefNode) undefNode
+
+elimInStatExprs :: CExpr -> CExpr
+elimInStatExprs (CStatExpr stat nodeinfo) = CStatExpr (everywhere (mkT elimNestedCompounds) stat) nodeinfo
+elimInStatExprs x = x
 
 elimNestedCompounds :: CStat -> CStat
 elimNestedCompounds (CCompound ids cbis nodeinfo) = CCompound ids (concatMap flatten cbis) nodeinfo where

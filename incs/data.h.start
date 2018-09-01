@@ -14,6 +14,7 @@ typedef struct {
 	long num_counters;
 	COUNTER counters[];
 } SRCFILE;
-#endif
 
 /*INSERT_HERE*/
+
+#endif
