@@ -17,7 +17,8 @@ import Language.C.System.GCC
 import Text.PrettyPrint
 import System.FilePath
 import Data.Generics
-import Control.Monad.Trans.State.Strict
+import Control.Monad.Trans.State
+import Control.Monad.IO.Class (liftIO)
 import Data.Char
 import Text.Printf
 
@@ -75,7 +76,7 @@ main = do
 	let args' = ["-I" ++ incs_path] ++ args
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args'
 	restore_files <- forM args (handleArg preprocess_args incs_path)
-	putStrLn $ gccExe ++ " " ++ intercalate " " (["-L"++incs_path] ++ args ++ ["-ldata"])
+--	putStrLn $ gccExe ++ " " ++ intercalate " " (["-L"++incs_path] ++ args ++ ["-ldata"])
 	exitcode <- rawSystem gccExe $ ["-L"++incs_path] ++ args ++ ["-ldata"]
 	sequence_ restore_files
 	exitWith exitcode
@@ -169,6 +170,7 @@ instrumentStmt :: CStat -> InstrM CStat
 instrumentStmt cstat = do
 	InstrS _ tracefunname locs <- get
 	modify $ \ s -> s { locationsS = locationsS s ++ [(line,col)] }
+	liftIO $ putStrLn $ "locs= " ++ show (length locs)
 	let index = length locs
 	return $ CCompound [] [ instr tracefunname index, CBlockStmt cstat ] undefNode
 	where
