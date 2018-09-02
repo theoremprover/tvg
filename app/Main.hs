@@ -38,7 +38,7 @@ export LIBRARY_PATH=
 root@robert-VirtualBox:/tvg/build#
 ../gcc-4.7.4/configure --disable-checking --enable-languages=c --disable-multiarch --disable-multilib --enable-shared --enable-threads=posix --program-suffix=-instr --with-gmp=/usr --with-mpc=/usr/lib --with-mpfr=/usr/lib --without-included-gettext --with-system-zlib --with-tune=generic --prefix=/tvg/install/gcc-4.7.4 --disable-bootstrap --disable-build-with-cxx
 
-export LIBRARY_PATH=/usr/lib/i386-linux-gnu:$LIBRARY_PATH
+-- Vielleicht doch nichgt benoeitgt?: export LIBRARY_PATH=/usr/lib/i386-linux-gnu:$LIBRARY_PATH
 
 cp /tvg/tvg/incs/data.c.start /tvg/tvg/incs/data.c
 cp /tvg/tvg/incs/data.h.start /tvg/tvg/incs/data.h
@@ -119,19 +119,21 @@ handleSrcFile preprocess_args incs_path name = do
 		Left errmsg -> return $ Just $ show errmsg
 		Right ast -> do
 			(ast',InstrS _ _ locs) <- runStateT (processASTM ast) $ InstrS name tracefunname []
-			writeFile name $ render $ pretty ast'
+			let  instr_filename = name++".instr.c"
+			() <- writeFile instr_filename $ render $ pretty ast'
+			copyFile instr_filename name
+			when (not _WRITE_INSTRUMENTED) $ do
+				removeFile instr_filename 
 
-			when _WRITE_INSTRUMENTED $ do
-				copyFile name (name++".instr.c")
-
-			insertInFile tracefunname (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
+			let fundecl = printf "void %s(int i) { %s.counters[i].cnt++; }\n" tracefunname varname 
+			insertInFile fundecl (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
 				printf "SRCFILE %s = { %s, %i, {\n" varname (show name) (length locs) ++
 				intercalate ",\n" (map (\ (l,c) -> printf "{ %li,%li,0 }" l c) locs) ++
 				"\n} };\n" ++
-				printf "void %s(int i) { %s.counters[i].cnt++; }\n" tracefunname varname 
+				fundecl
 
-			insertInFile varname (incs_path </> "data.c") "/*INSERT_SRCPTR_HERE*/" $
-				printf ",\n&%s" varname
+			let srcptr = printf ",\n&%s " varname
+			insertInFile srcptr (incs_path </> "data.c") "/*INSERT_SRCPTR_HERE*/" srcptr
 
 			(exitcode,stdout,stderr) <- readProcessWithExitCode gccExe
 				["-shared", "-fPIC", "-DQUIET", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
