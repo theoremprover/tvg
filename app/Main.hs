@@ -163,6 +163,7 @@ type InstrM a = StateT InstrS IO a
 
 processASTM :: CTranslUnit -> InstrM CTranslUnit
 processASTM ast = do
+	return ast
 	ast' <- everywhereM (mkM instrumentStmt) ast
 	return $ everywhere (mkT elimInStatExprs) $ everywhere (mkT instrumentMain) ast'
 
