@@ -17,7 +17,7 @@ import Language.C.System.GCC
 import Text.PrettyPrint
 import System.FilePath
 import Data.Generics
-import Control.Monad.Trans.State
+import Control.Monad.Trans.State.Strict
 import Control.Monad.IO.Class (liftIO)
 import Data.Char
 import Text.Printf
@@ -27,6 +27,13 @@ import Language.C.Data.InputStream
 
 import ShowAST
 import ASTLenses
+
+{-
+Profiling:
+stack install [...] --profile
+stack exec -- [...] +RTS -h
+tvg.exe +RTS -h -RTS [...]
+-}
 
 {-
 configure ENVVARS:
@@ -119,19 +126,15 @@ handleSrcFile preprocess_args incs_path name = do
 	mb_err <- case parseresult of
 		Left errmsg -> return $ Just $ show errmsg
 		Right ast -> do
-			(ast',InstrS _ _ locs) <- runStateT (processASTM ast) $ InstrS name tracefunname []
+			putStrLn $ show $ length $ show ast 
+			(ast',InstrS _ _ _ _ _ locs) <- runStateT (processASTM ast) $ InstrS 0 incs_path name varname tracefunname []
 			let  instr_filename = name++".instr.c"
 			() <- writeFile instr_filename $ render $ pretty ast'
 			copyFile instr_filename name
 			when (not _WRITE_INSTRUMENTED) $ do
 				removeFile instr_filename 
 
-			let fundecl = printf "void %s(int i) { %s.counters[i].cnt++; }\n" tracefunname varname 
-			insertInFile fundecl (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
-				printf "SRCFILE %s = { %s, %i, {\n" varname (show name) (length locs) ++
-				intercalate ",\n" (map (\ (l,c) -> printf "{ %li,%li,0 }" l c) locs) ++
-				"\n} };\n" ++
-				fundecl
+			writeLocs incs_path name tracefunname varname locs
 
 			let srcptr = printf ",\n&%s " varname
 			insertInFile srcptr (incs_path </> "data.c") "/*INSERT_SRCPTR_HERE*/" srcptr
@@ -150,6 +153,15 @@ handleSrcFile preprocess_args incs_path name = do
 			removeFile name >> renameFile bak_name name
 			error errmsg
 
+writeLocs incs_path name tracefunname varname locs = do
+	let fundecl = printf "void %s(int i) { %s.counters[i].cnt++; }\n" tracefunname varname 
+	insertInFile fundecl (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
+		printf "SRCFILE %s = { %s, %i, {\n" varname (show name) (length locs) ++
+		intercalate ",\n" (map (\ (l,c) -> printf "{ %li,%li,0 }" l c) locs) ++
+		"\n} };\n" ++
+		fundecl
+
+
 insertInFile ident filename pos text = do
 	f <- readFile filename
 	unless (ident `isInfixOf` f) $ writeFile filename $ insert_at pos text f
@@ -158,22 +170,27 @@ insertInFile ident filename pos text = do
 	insert_at pos text rest | pos `isPrefixOf` rest = text ++ rest
 	insert_at pos text (r:rest) = r : insert_at pos text rest
 
-data InstrS = InstrS { fileNameS :: String, traceFunNameS :: String, locationsS :: [(Int,Int)] }
+data InstrS = InstrS { numLocsS :: Int, incsPath :: String, fileNameS :: String, varNameS :: String, traceFunNameS :: String, locationsS :: [(Int,Int)] } deriving Show
 type InstrM a = StateT InstrS IO a
 
 processASTM :: CTranslUnit -> InstrM CTranslUnit
 processASTM ast = do
-	return ast
 	ast' <- everywhereM (mkM instrumentStmt) ast
+	liftIO $ putStrLn $ show $ length $ show ast'
 	return $ everywhere (mkT elimInStatExprs) $ everywhere (mkT instrumentMain) ast'
 
 instrumentStmt :: CStat -> InstrM CStat
 instrumentStmt cstat = do
-	InstrS _ tracefunname locs <- get
-	modify $ \ s -> s { locationsS = locationsS s ++ [(line,col)] }
-	liftIO $ putStrLn $ "locs= " ++ show (length locs)
+	s@(InstrS numlocs incs_path name varname tracefunname _) <- get
+	modify $ \ s -> s { numLocsS = numLocsS s + 1, locationsS = (line,col) : locationsS s }
+	locs <- gets locationsS
+	when (length locs > 100) $ do
+		liftIO $ writeLocs incs_path name tracefunname varname locs
+		modify $ \ s -> s { locationsS = [] }
 	let index = length locs
-	return $ CCompound [] [ instr tracefunname index, CBlockStmt cstat ] undefNode
+	let ret = CCompound [] [ instr tracefunname index, CBlockStmt cstat ] undefNode
+	liftIO $ putStr $ printf "locs= %8i, len(ret)=%8i, len(s)=%8i\r" numlocs (length $ show ret) (length $ show s)
+	return ret
 	where
 	pos = posOfNode $ nodeInfo cstat
 	(line,col) = (posRow pos,posColumn pos)
