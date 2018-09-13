@@ -16,7 +16,9 @@ import Language.C.Data.Ident
 import Language.C.System.GCC
 import Text.PrettyPrint
 import System.FilePath
-import Data.Generics
+--import Data.Generics
+import Data.Data.Lens
+import Control.Lens.Traversal
 import Control.Monad.Trans.State.Strict
 import Control.Monad.IO.Class (liftIO)
 import Data.Char
@@ -65,9 +67,9 @@ gcc -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
 -}
 
 _OUTPUT_AST = False
-_INIT_DATA = False
+_INIT_DATA = True
 _WRITE_PREPROCESSED = False
-_WRITE_INSTRUMENTED = True
+_WRITE_INSTRUMENTED = False
 
 gccExe = "gcc-4.7"
 
@@ -92,15 +94,14 @@ handleArg preprocess_args incs_path arg | ".c" `isSuffixOf` arg && takeFileName 
 	handleSrcFile preprocess_args incs_path arg
 handleArg _ _ _ = return $ return ()
 
-wait msg = do
-	putStrLn $ msg ++ " Press [RETURN]"
-	getLine
-
 handleSrcFile preprocess_args incs_path name = do
 	when _OUTPUT_AST $ do
 --		OUTPUT ORIGINAL AST
-		Right ast <- parseCFile (newGCC gccExe) Nothing preprocess_args name
-		writeFile (name++".ast") $ showDataTree ast
+		mb_ast <- parseCFile (newGCC gccExe) Nothing preprocess_args name
+		case mb_ast of
+			Left err -> error $ show err
+			Right ast -> do
+				writeFile (name++".ast") $ showDataTree ast
 
 	when _WRITE_PREPROCESSED $ do
 		Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs preprocess_args name)
@@ -161,7 +162,6 @@ writeLocs incs_path name tracefunname varname locs = do
 		"\n} };\n" ++
 		fundecl
 
-
 insertInFile ident filename pos text = do
 	f <- readFile filename
 	unless (ident `isInfixOf` f) $ writeFile filename $ insert_at pos text f
@@ -175,9 +175,15 @@ type InstrM a = StateT InstrS IO a
 
 processASTM :: CTranslUnit -> InstrM CTranslUnit
 processASTM ast = do
+	mapMOf template instrumentStmt ast
+
+{-
+processASTM :: CTranslUnit -> InstrM CTranslUnit
+processASTM ast = do
 	ast' <- everywhereM (mkM instrumentStmt) ast
 	liftIO $ putStrLn $ show $ length $ show ast'
 	return $ everywhere (mkT elimInStatExprs) $ everywhere (mkT instrumentMain) ast'
+-}
 
 instrumentStmt :: CStat -> InstrM CStat
 instrumentStmt cstat = do
@@ -198,6 +204,7 @@ instrumentStmt cstat = do
 	instr tracefunname index = CBlockStmt $ CExpr (Just $ CCall (CVar (builtinIdent tracefunname) undefNode)
 		[CConst $ CIntConst (cInteger $ fromIntegral index) undefNode] undefNode) undefNode
 
+{-
 elimInStatExprs :: CExpr -> CExpr
 elimInStatExprs (CStatExpr stat nodeinfo) = CStatExpr (everywhere (mkT elimNestedCompounds) stat) nodeinfo
 elimInStatExprs x = x
@@ -230,3 +237,4 @@ instrumentMain = everywhere (mkT insertopen)
 		] undefNode where
 		my_ret = internalIdent "my_ret"
 	insertclose x = x
+-}

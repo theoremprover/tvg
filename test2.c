@@ -4,7 +4,7 @@ int f(int a,int b)
 {
 	int erg = a+b;
 
-	return( { x++; erg; } )
+	return( { x++; erg; } );
 }
 
 int main(int argc, char* argv[])
