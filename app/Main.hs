@@ -16,9 +16,9 @@ import Language.C.Data.Ident
 import Language.C.System.GCC
 import Text.PrettyPrint
 import System.FilePath
---import Data.Generics
-import Data.Data.Lens
-import Control.Lens.Traversal
+import Data.Generics
+--import Data.Data.Lens
+--import Control.Lens.Traversal
 import Control.Monad.Trans.State.Strict
 import Control.Monad.IO.Class (liftIO)
 import Data.Char
@@ -67,9 +67,10 @@ gcc -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
 -}
 
 _OUTPUT_AST = False
-_INIT_DATA = True
+_INIT_DATA = False
 _WRITE_PREPROCESSED = False
 _WRITE_INSTRUMENTED = False
+_PROGRESS_OUTPUT = False
 
 gccExe = "gcc-4.7"
 
@@ -127,13 +128,11 @@ handleSrcFile preprocess_args incs_path name = do
 	mb_err <- case parseresult of
 		Left errmsg -> return $ Just $ show errmsg
 		Right ast -> do
-			putStrLn $ show $ length $ show ast 
-			(ast',InstrS _ _ _ _ _ locs) <- runStateT (processASTM ast) $ InstrS 0 incs_path name varname tracefunname []
+--			putStrLn $ show $ length $ show ast 
 			let  instr_filename = name++".instr.c"
-			() <- writeFile instr_filename $ render $ pretty ast'
+			InstrS _ _ _ _ _ _ locs <- execStateT (processASTM ast) $ InstrS 0 incs_path name varname tracefunname instr_filename []
 			copyFile instr_filename name
-			when (not _WRITE_INSTRUMENTED) $ do
-				removeFile instr_filename 
+			when (not _WRITE_INSTRUMENTED) $ removeFile instr_filename 
 
 			writeLocs incs_path name tracefunname varname locs
 
@@ -147,9 +146,7 @@ handleSrcFile preprocess_args incs_path name = do
 				ExitFailure _ -> return $ Just $ "Compile data.c failed:\n" ++ stdout ++ stderr
 
 	case mb_err of
-		Nothing -> do
-			copyFile name (name++".instr")
-			return $ removeFile name >> renameFile bak_name name
+		Nothing -> return $ removeFile name >> renameFile bak_name name
 		Just errmsg -> do
 			removeFile name >> renameFile bak_name name
 			error errmsg
@@ -170,24 +167,32 @@ insertInFile ident filename pos text = do
 	insert_at pos text rest | pos `isPrefixOf` rest = text ++ rest
 	insert_at pos text (r:rest) = r : insert_at pos text rest
 
-data InstrS = InstrS { numLocsS :: Int, incsPath :: String, fileNameS :: String, varNameS :: String, traceFunNameS :: String, locationsS :: [(Int,Int)] } deriving Show
+data InstrS = InstrS {
+	numLocsS :: Int, incsPath :: String, fileNameS :: String, varNameS :: String,
+	traceFunNameS :: String, instrFileNameS :: String, locationsS :: [(Int,Int)] } deriving Show
 type InstrM a = StateT InstrS IO a
-
-processASTM :: CTranslUnit -> InstrM CTranslUnit
-processASTM ast = do
-	mapMOf template instrumentStmt ast
 
 {-
 processASTM :: CTranslUnit -> InstrM CTranslUnit
 processASTM ast = do
-	ast' <- everywhereM (mkM instrumentStmt) ast
-	liftIO $ putStrLn $ show $ length $ show ast'
-	return $ everywhere (mkT elimInStatExprs) $ everywhere (mkT instrumentMain) ast'
+	mapMOf template instrumentStmt ast
 -}
+
+processASTM :: CTranslUnit -> InstrM ()
+processASTM (CTranslUnit extdecls _) = mapM_ instrumentExtDecl extdecls
+	
+instrumentExtDecl :: CExtDecl -> InstrM CExtDecl
+instrumentExtDecl ast = do
+	ast' <- everywhereM (mkM instrumentStmt) ast
+--	liftIO $ putStrLn $ show $ length $ show ast'
+	let instr_ast = everywhere (mkT elimInStatExprs) $ everywhere (mkT instrumentMain) ast'
+	instr_filename <- gets instrFileNameS
+	liftIO $ appendFile instr_filename $ (render $ pretty instr_ast) ++ "\n"
+	return instr_ast
 
 instrumentStmt :: CStat -> InstrM CStat
 instrumentStmt cstat = do
-	s@(InstrS numlocs incs_path name varname tracefunname _) <- get
+	s@(InstrS numlocs incs_path name varname tracefunname instr_filename _) <- get
 	modify $ \ s -> s { numLocsS = numLocsS s + 1, locationsS = (line,col) : locationsS s }
 	locs <- gets locationsS
 	when (length locs > 100) $ do
@@ -195,7 +200,7 @@ instrumentStmt cstat = do
 		modify $ \ s -> s { locationsS = [] }
 	let index = length locs
 	let ret = CCompound [] [ instr tracefunname index, CBlockStmt cstat ] undefNode
-	liftIO $ putStr $ printf "locs= %8i, len(ret)=%8i, len(s)=%8i\r" numlocs (length $ show ret) (length $ show s)
+	when _PROGRESS_OUTPUT $ liftIO $ putStr $ printf "locs= %8i, len(ret)=%8i, len(s)=%8i\r" numlocs (length $ show ret) (length $ show s)
 	return ret
 	where
 	pos = posOfNode $ nodeInfo cstat
@@ -204,7 +209,6 @@ instrumentStmt cstat = do
 	instr tracefunname index = CBlockStmt $ CExpr (Just $ CCall (CVar (builtinIdent tracefunname) undefNode)
 		[CConst $ CIntConst (cInteger $ fromIntegral index) undefNode] undefNode) undefNode
 
-{-
 elimInStatExprs :: CExpr -> CExpr
 elimInStatExprs (CStatExpr stat nodeinfo) = CStatExpr (everywhere (mkT elimNestedCompounds) stat) nodeinfo
 elimInStatExprs x = x
@@ -237,4 +241,3 @@ instrumentMain = everywhere (mkT insertopen)
 		] undefNode where
 		my_ret = internalIdent "my_ret"
 	insertclose x = x
--}
