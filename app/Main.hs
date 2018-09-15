@@ -1,3 +1,4 @@
+{-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 module Main where
@@ -28,7 +29,7 @@ import Language.C.System.Preprocess
 import Language.C.Data.InputStream
 
 import ShowAST
-import ASTLenses
+--import ASTLenses
 
 {-
 Profiling:
@@ -75,6 +76,7 @@ _INIT_DATA = False
 _WRITE_PREPROCESSED = False
 _KEEP_INSTRUMENTED = False
 _PROGRESS_OUTPUT = False
+_DEBUG_OUTPUT = False
 
 gccExe = "gcc-4.7"
 
@@ -83,14 +85,14 @@ main = do
 	let incs_path = tvg_path </> "incs"
 
 	when _INIT_DATA $ do
---		copyFile "test2.c.orig" "test2.c"
+		copyFile "test2.c.orig" "test2.c"
 		copyFile (incs_path </> "data.c.start") (incs_path </> "data.c") 
 		copyFile (incs_path </> "data.h.start") (incs_path </> "data.h") 
 
 	let args' = ["-I" ++ incs_path] ++ args
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args'
 	restore_files <- forM args (handleArg preprocess_args incs_path)
---	putStrLn $ gccExe ++ " " ++ intercalate " " (["-L"++incs_path] ++ args ++ ["-ldata"])
+	when _DEBUG_OUTPUT $ putStrLn $ gccExe ++ " " ++ intercalate " " (["-L"++incs_path] ++ args ++ ["-ldata"])
 	exitcode <- rawSystem gccExe $ ["-L"++incs_path] ++ args ++ ["-ldata"]
 	sequence_ restore_files
 	exitWith exitcode
@@ -101,7 +103,6 @@ handleArg _ _ _ = return $ return ()
 
 handleSrcFile preprocess_args incs_path name = do
 	when _OUTPUT_AST $ do
---		OUTPUT ORIGINAL AST
 		mb_ast <- parseCFile (newGCC gccExe) Nothing preprocess_args name
 		case mb_ast of
 			Left err -> error $ show err
@@ -110,7 +111,7 @@ handleSrcFile preprocess_args incs_path name = do
 
 	when _WRITE_PREPROCESSED $ do
 		Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs preprocess_args name)
-		writeFile (name++".orig.i") $ inputStreamToString inputstream
+		writeFile (name++".i") $ inputStreamToString inputstream
 
 	let bak_name = name ++ ".preinstr"
 	renameFile name bak_name
@@ -124,21 +125,15 @@ handleSrcFile preprocess_args incs_path name = do
 	cfile <- readFile bak_name
 	writeFile name $ "#include <data.h>\n\n" ++ cfile
 
-	when _WRITE_PREPROCESSED $ do
-		Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs preprocess_args name)
-		writeFile (name++".i") $ inputStreamToString inputstream
-
 	parseresult <- parseCFile (newGCC gccExe) Nothing preprocess_args name
 	mb_err <- case parseresult of
 		Left errmsg -> return $ Just $ show errmsg
 		Right ast -> do
---			putStrLn $ show $ length $ show ast 
-			let  instr_filename = name++".instr"
-			InstrS _ _ _ _ _ _ locs <- execStateT (processASTM ast) $ InstrS 0 incs_path name varname tracefunname instr_filename []
+			let instr_filename = name++".instr"
+			writeFile instr_filename ""
+			() <- evalStateT (processASTM ast) $ InstrS incs_path name varname tracefunname instr_filename []
 			copyFile instr_filename name
 			when (not _KEEP_INSTRUMENTED) $ removeFile instr_filename 
-
-			writeLocs incs_path name tracefunname varname locs
 
 			let srcptr = printf ",\n&%s " varname
 			insertInFile srcptr (incs_path </> "data.c") "/*INSERT_SRCPTR_HERE*/" srcptr
@@ -155,14 +150,6 @@ handleSrcFile preprocess_args incs_path name = do
 			removeFile name >> renameFile bak_name name
 			error errmsg
 
-writeLocs incs_path name tracefunname varname locs = do
-	let fundecl = printf "void %s(int i) { %s.counters[i].cnt++; }\n" tracefunname varname 
-	insertInFile fundecl (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
-		printf "SRCFILE %s = { %s, %i, {\n" varname (show name) (length locs) ++
-		intercalate ",\n" (map (\ (l,c) -> printf "{ %li,%li,0 }" l c) locs) ++
-		"\n} };\n" ++
-		fundecl
-
 insertInFile ident filename pos text = do
 	f <- readFile filename
 	unless (ident `isInfixOf` f) $ writeFile filename $ insert_at pos text f
@@ -172,15 +159,9 @@ insertInFile ident filename pos text = do
 	insert_at pos text (r:rest) = r : insert_at pos text rest
 
 data InstrS = InstrS {
-	numLocsS :: Int, incsPath :: String, fileNameS :: String, varNameS :: String,
+	incsPath :: String, fileNameS :: String, varNameS :: String,
 	traceFunNameS :: String, instrFileNameS :: String, locationsS :: [(Int,Int)] } deriving Show
 type InstrM a = StateT InstrS IO a
-
-{-
-processASTM :: CTranslUnit -> InstrM CTranslUnit
-processASTM ast = do
-	mapMOf template instrumentStmt ast
--}
 
 processASTM :: CTranslUnit -> InstrM ()
 processASTM (CTranslUnit extdecls _) = mapM_ instrumentExtDecl extdecls
@@ -188,23 +169,32 @@ processASTM (CTranslUnit extdecls _) = mapM_ instrumentExtDecl extdecls
 instrumentExtDecl :: CExtDecl -> InstrM CExtDecl
 instrumentExtDecl ast = do
 	ast' <- everywhereM (mkM instrumentStmt) ast
---	liftIO $ putStrLn $ show $ length $ show ast'
-	let instr_ast = everywhere (mkT elimInStatExprs) $ everywhere (mkT instrumentMain) ast'
+	let instr_ast =
+		everywhere (mkT elimInStatExprs) $
+		everywhere (mkT insertbeforeexits) $
+		everywhere (mkT insertopen)
+		ast'
 	instr_filename <- gets instrFileNameS
 	liftIO $ appendFile instr_filename $ (render $ pretty instr_ast) ++ "\n"
+
+	InstrS{..} <- get
+	let fundecl = printf "void %s(int i) { %s.counters[i].cnt++; }\n" traceFunNameS varNameS 
+	liftIO $ insertInFile fundecl (incsPath </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
+		printf "SRCFILE %s = { %s, %i, {\n" varNameS (show fileNameS) (length locationsS) ++
+		intercalate ",\n" (map (\ (l,c) -> printf "{ %li,%li,0 }" l c) locationsS) ++
+		"\n} };\n" ++
+		fundecl
+	modify $ \ s -> s { locationsS = [] }
+
 	return instr_ast
 
 instrumentStmt :: CStat -> InstrM CStat
 instrumentStmt cstat = do
-	s@(InstrS numlocs incs_path name varname tracefunname _ _) <- get
-	modify $ \ s -> s { numLocsS = numLocsS s + 1, locationsS = (line,col) : locationsS s }
+	s@(InstrS incs_path name varname tracefunname _ _) <- get
+	modify $ \ s -> s { locationsS = (line,col) : locationsS s }
 	locs <- gets locationsS
-	when (length locs > 100) $ do
-		liftIO $ writeLocs incs_path name tracefunname varname locs
-		modify $ \ s -> s { locationsS = [] }
-	let index = length locs
-	let ret = CCompound [] [ instr tracefunname index, CBlockStmt cstat ] undefNode
-	when _PROGRESS_OUTPUT $ liftIO $ putStr $ printf "locs= %8i, len(ret)=%8i, len(s)=%8i\r" numlocs (length $ show ret) (length $ show s)
+	let ret = CCompound [] [ instr tracefunname (length locs), CBlockStmt cstat ] undefNode
+	when _PROGRESS_OUTPUT $ liftIO $ putStr $ printf "locs= %8i\r" (length locs)
 	return ret
 	where
 	pos = posOfNode $ nodeInfo cstat
@@ -223,25 +213,32 @@ elimNestedCompounds (CCompound ids cbis nodeinfo) = CCompound ids (concatMap fla
 	flatten x = [x]
 elimNestedCompounds x = x
 
-instrumentMain :: CExtDecl -> CExtDecl
-instrumentMain = everywhere (mkT insertopen)
-	where
-	insertopen :: CFunDef -> CFunDef
-	insertopen (CFunDef declspecs declr@(CDeclr (Just (Ident "main" _ _)) _ _ _ _) decls cstat ni) =
-		CFunDef declspecs declr decls (CCompound [] [callopentrace,CBlockStmt (insertbeforereturns cstat),callclosetrace] undefNode) ni
-	insertopen x = x
-	callopentrace = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "opentrace") undefNode) opentrace_args undefNode)) undefNode)
-	opentrace_args = []
+insertopen :: CFunDef -> CFunDef
+insertopen (CFunDef declspecs declr@(CDeclr (Just (Ident "main" _ _)) _ _ _ _) decls cstat ni) =
+	CFunDef declspecs declr decls (CCompound [] [callopentrace,CBlockStmt (insertbeforereturns cstat),callclosetrace] undefNode) ni
+insertopen x = x
 
-	callclosetrace = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "closetrace") undefNode) [] undefNode)) undefNode)
+callopentrace = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "opentrace") undefNode) opentrace_args undefNode)) undefNode)
+opentrace_args = []
 
-	insertbeforereturns = everywhere (mkT insertclose)
+callclosetrace = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "closetrace") undefNode) [] undefNode)) undefNode)
+
+my_ret = internalIdent "my_ret"
+
+insertbeforereturns = everywhere (mkT insertclose) where
 	insertclose :: CStat -> CStat
-	insertclose cret@(CReturn (Just ret_expr) _) = CCompound [] [
-		CBlockDecl $ CDecl [CTypeSpec $ CIntType undefNode]
-			[ ( Just $ CDeclr (Just my_ret) [] Nothing [] undefNode, Just $ CInitExpr ret_expr undefNode, Nothing ) ] undefNode,
-		callclosetrace,
-		CBlockStmt $ CReturn (Just $ CVar my_ret undefNode) undefNode
-		] undefNode where
-		my_ret = internalIdent "my_ret"
+	insertclose (CReturn (Just ret_expr) _) = create_compound ret_expr $
+		CReturn (Just $ CVar my_ret undefNode) undefNode
 	insertclose x = x
+
+insertbeforeexits :: CStat -> CStat
+insertbeforeexits (CExpr (Just (CCall fun@(CVar (Ident "exit" _ _) _) [ret_expr] _)) _) = create_compound ret_expr $
+	CExpr (Just $ CCall fun [CVar my_ret undefNode] undefNode) undefNode
+insertbeforeexits x = x
+
+create_compound ret_expr ret_stmt = CCompound [] [
+	CBlockDecl $ CDecl [CTypeSpec $ CIntType undefNode]
+		[ ( Just $ CDeclr (Just my_ret) [] Nothing [] undefNode, Just $ CInitExpr ret_expr undefNode, Nothing ) ] undefNode,
+	callclosetrace,
+	CBlockStmt ret_stmt
+	] undefNode

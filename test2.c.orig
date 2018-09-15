@@ -1,27 +1,18 @@
-int f(int x, int y)
+#include <stdlib.h>
+
+int x = 1;
+
+int f(int a,int b)
 {
-    int erg = 0;
-    int g = 1;
+	int erg = a+b;
 
-	g = 2;
-
-    if (x < 0) g = -1;
-	else
-	{
-		int z = x;
-		z++;
-	}
-
-	int i;
-    for (i = 1; i <= x; i++)
-    {
-		erg = erg + g * y;
-		erg = erg;
-    }
-    return f(0,1);
+	if(erg==2) exit(b+1);
+	return( { x++; erg; } );
 }
 
-int main()
+int main(int argc, char* argv[])
 {
+	if(argc>1) return 99;
+
 	return f(1,2);
 }
