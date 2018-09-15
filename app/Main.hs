@@ -42,13 +42,14 @@ configure ENVVARS:
 export CC="/root/.local/bin/tvg-exe /tvg/tvg"
 export CFLAGS="-w -I/usr/include/i386-linux-gnu"
 
+Versuche:
+export LDFLAGS="-L/usr/lib/i386-linux-gnu"
+ 
 export LD_LIBRARY_PATH=/tvg/tvg/incs:$LD_LIBRARY_PATH
 export LIBRARY_PATH=
 
 root@robert-VirtualBox:/tvg/build#
 ../gcc-4.7.4/configure --disable-checking --enable-languages=c --disable-multiarch --disable-multilib --enable-shared --enable-threads=posix --program-suffix=-instr --with-gmp=/usr --with-mpc=/usr/lib --with-mpfr=/usr/lib --without-included-gettext --with-system-zlib --with-tune=generic --prefix=/tvg/install/gcc-4.7.4 --disable-bootstrap --disable-build-with-cxx
-
--- Vielleicht doch nichgt benoeitgt?: export LIBRARY_PATH=/usr/lib/i386-linux-gnu:$LIBRARY_PATH
 
 cp /tvg/tvg/incs/data.c.start /tvg/tvg/incs/data.c
 cp /tvg/tvg/incs/data.h.start /tvg/tvg/incs/data.h
@@ -56,6 +57,9 @@ cp /tvg/tvg/incs/data.h.start /tvg/tvg/incs/data.h
 stack install --allow-different-user
 
 make
+
+Nach "Cannot find crti.o":
+export LIBRARY_PATH=/usr/lib/i386-linux-gnu:$LIBRARY_PATH
 
 make install
 
@@ -69,7 +73,7 @@ gcc -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
 _OUTPUT_AST = False
 _INIT_DATA = False
 _WRITE_PREPROCESSED = False
-_WRITE_INSTRUMENTED = False
+_KEEP_INSTRUMENTED = False
 _PROGRESS_OUTPUT = False
 
 gccExe = "gcc-4.7"
@@ -129,10 +133,10 @@ handleSrcFile preprocess_args incs_path name = do
 		Left errmsg -> return $ Just $ show errmsg
 		Right ast -> do
 --			putStrLn $ show $ length $ show ast 
-			let  instr_filename = name++".instr.c"
+			let  instr_filename = name++".instr"
 			InstrS _ _ _ _ _ _ locs <- execStateT (processASTM ast) $ InstrS 0 incs_path name varname tracefunname instr_filename []
 			copyFile instr_filename name
-			when (not _WRITE_INSTRUMENTED) $ removeFile instr_filename 
+			when (not _KEEP_INSTRUMENTED) $ removeFile instr_filename 
 
 			writeLocs incs_path name tracefunname varname locs
 
@@ -192,7 +196,7 @@ instrumentExtDecl ast = do
 
 instrumentStmt :: CStat -> InstrM CStat
 instrumentStmt cstat = do
-	s@(InstrS numlocs incs_path name varname tracefunname instr_filename _) <- get
+	s@(InstrS numlocs incs_path name varname tracefunname _ _) <- get
 	modify $ \ s -> s { numLocsS = numLocsS s + 1, locationsS = (line,col) : locationsS s }
 	locs <- gets locationsS
 	when (length locs > 100) $ do
@@ -219,7 +223,7 @@ elimNestedCompounds (CCompound ids cbis nodeinfo) = CCompound ids (concatMap fla
 	flatten x = [x]
 elimNestedCompounds x = x
 
-instrumentMain :: CTranslUnit -> CTranslUnit
+instrumentMain :: CExtDecl -> CExtDecl
 instrumentMain = everywhere (mkT insertopen)
 	where
 	insertopen :: CFunDef -> CFunDef
