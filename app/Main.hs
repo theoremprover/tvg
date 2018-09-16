@@ -72,9 +72,9 @@ gcc -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
 -}
 
 _OUTPUT_AST = False
-_INIT_DATA = False
+_INIT_DATA = True
 _WRITE_PREPROCESSED = False
-_KEEP_INSTRUMENTED = False
+_KEEP_INSTRUMENTED = True
 _PROGRESS_OUTPUT = False
 _DEBUG_OUTPUT = False
 
@@ -125,15 +125,23 @@ handleSrcFile preprocess_args incs_path name = do
 	cfile <- readFile bak_name
 	writeFile name $ "#include <data.h>\n\n" ++ cfile
 
+	let fundecl = printf "void %s(int i) { %s.counters[i].cnt++; }\n" tracefunname varname
+	insertInFile fundecl (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
+		printf "SRCFILE %s = { %s, /*TVG_NUM_LOCS*/, {\nNULL/*TVG_LOCATIONS*/\n} };\n" varname (show name) ++
+		fundecl ++
+		"\n\n/*INSERT_SRCFILE_HERE*/"
+
 	parseresult <- parseCFile (newGCC gccExe) Nothing preprocess_args name
 	mb_err <- case parseresult of
 		Left errmsg -> return $ Just $ show errmsg
 		Right ast -> do
 			let instr_filename = name++".instr"
 			writeFile instr_filename ""
-			() <- evalStateT (processASTM ast) $ InstrS incs_path name varname tracefunname instr_filename []
+			InstrS{..} <- execStateT (processASTM ast) $ InstrS 0 incs_path name varname tracefunname instr_filename []
 			copyFile instr_filename name
 			when (not _KEEP_INSTRUMENTED) $ removeFile instr_filename 
+			
+			insertInFile "" (incs_path </> "data.c") "/*TVG_NUM_LOCS*/" (show numLocsS)
 
 			let srcptr = printf ",\n&%s " varname
 			insertInFile srcptr (incs_path </> "data.c") "/*INSERT_SRCPTR_HERE*/" srcptr
@@ -152,14 +160,16 @@ handleSrcFile preprocess_args incs_path name = do
 
 insertInFile ident filename pos text = do
 	f <- readFile filename
-	unless (ident `isInfixOf` f) $ writeFile filename $ insert_at pos text f
+	unless (ident `isInfixOf` f) $ do
+		when _DEBUG_OUTPUT $ putStrLn $ "Inserting " ++ text
+		writeFile filename $ insert_at pos text f
 	where
 	insert_at pos _ [] = error $ "did not find " ++ pos
 	insert_at pos text rest | pos `isPrefixOf` rest = text ++ rest
 	insert_at pos text (r:rest) = r : insert_at pos text rest
 
 data InstrS = InstrS {
-	incsPath :: String, fileNameS :: String, varNameS :: String,
+	numLocsS :: Int, incsPathS :: String, fileNameS :: String, varNameS :: String,
 	traceFunNameS :: String, instrFileNameS :: String, locationsS :: [(Int,Int)] } deriving Show
 type InstrM a = StateT InstrS IO a
 
@@ -168,7 +178,9 @@ processASTM (CTranslUnit extdecls _) = mapM_ instrumentExtDecl extdecls
 	
 instrumentExtDecl :: CExtDecl -> InstrM CExtDecl
 instrumentExtDecl ast = do
+	modify $ \ s -> s { locationsS = [] }
 	ast' <- everywhereM (mkM instrumentStmt) ast
+
 	let instr_ast =
 		everywhere (mkT elimInStatExprs) $
 		everywhere (mkT insertbeforeexits) $
@@ -178,21 +190,19 @@ instrumentExtDecl ast = do
 	liftIO $ appendFile instr_filename $ (render $ pretty instr_ast) ++ "\n"
 
 	InstrS{..} <- get
-	let fundecl = printf "void %s(int i) { %s.counters[i].cnt++; }\n" traceFunNameS varNameS 
-	liftIO $ insertInFile fundecl (incsPath </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
-		printf "SRCFILE %s = { %s, %i, {\n" varNameS (show fileNameS) (length locationsS) ++
-		intercalate ",\n" (map (\ (l,c) -> printf "{ %li,%li,0 }" l c) locationsS) ++
-		"\n} };\n" ++
-		fundecl
-	modify $ \ s -> s { locationsS = [] }
+	liftIO $ insertInFile "" (incsPathS </> "data.c") "/*TVG_LOCATIONS*/" $
+		concatMap (\ (l,c) -> printf ",\n{ %li,%li,0 }" l c) locationsS ++
+		"/*TVG_LOCATIONS*/"
+
+	modify $ \ s -> s { numLocsS = numLocsS + length locationsS }
 
 	return instr_ast
 
 instrumentStmt :: CStat -> InstrM CStat
 instrumentStmt cstat = do
-	s@(InstrS incs_path name varname tracefunname _ _) <- get
 	modify $ \ s -> s { locationsS = (line,col) : locationsS s }
 	locs <- gets locationsS
+	tracefunname <- gets traceFunNameS
 	let ret = CCompound [] [ instr tracefunname (length locs), CBlockStmt cstat ] undefNode
 	when _PROGRESS_OUTPUT $ liftIO $ putStr $ printf "locs= %8i\r" (length locs)
 	return ret

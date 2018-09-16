@@ -35,7 +35,7 @@ void closetrace()
 		long reached_stmts = 0;
 
 		int j;
-		for(j=0;j<num_stmts;j++)
+		for(j=1;j<=num_stmts;j++)
 		{
 			COUNTER* counter = &(srcfile->counters[j]);
 			if(counter->cnt > 0) reached_stmts++;
