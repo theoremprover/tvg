@@ -25,6 +25,9 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Char
 import Text.Printf
 
+import Text.Regex
+import Text.Regex.TDFA
+
 import Language.C.System.Preprocess
 import Language.C.Data.InputStream
 
@@ -72,7 +75,7 @@ gcc -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
 -}
 
 _OUTPUT_AST = False
-_INIT_DATA = True
+_INIT_DATA = False
 _WRITE_PREPROCESSED = False
 _KEEP_INSTRUMENTED = True
 _PROGRESS_OUTPUT = False
@@ -85,7 +88,7 @@ main = do
 	let incs_path = tvg_path </> "incs"
 
 	when _INIT_DATA $ do
-		copyFile "test2.c.orig" "test2.c"
+--		copyFile "test2.c.orig" "test2.c"
 		copyFile (incs_path </> "data.c.start") (incs_path </> "data.c") 
 		copyFile (incs_path </> "data.h.start") (incs_path </> "data.h") 
 
@@ -106,8 +109,7 @@ handleSrcFile preprocess_args incs_path name = do
 		mb_ast <- parseCFile (newGCC gccExe) Nothing preprocess_args name
 		case mb_ast of
 			Left err -> error $ show err
-			Right ast -> do
-				writeFile (name++".ast") $ showDataTree ast
+			Right ast -> writeFile (name++".ast") $ showDataTree ast
 
 	when _WRITE_PREPROCESSED $ do
 		Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs preprocess_args name)
@@ -120,16 +122,25 @@ handleSrcFile preprocess_args incs_path name = do
 	let varname = "src_" ++ filenameid
 	let tracefunname = "trace_" ++ filenameid
 
-	insertInFile tracefunname (incs_path </> "data.h") "/*INSERT_HERE*/" $ printf "void %s(int);\n" tracefunname
-
+	-- Prepend "#include <data.h>" to instrumented file
 	cfile <- readFile bak_name
 	writeFile name $ "#include <data.h>\n\n" ++ cfile
 
-	let fundecl = printf "void %s(int i) { %s.counters[i].cnt++; }\n" tracefunname varname
-	insertInFile fundecl (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
-		printf "SRCFILE %s = { %s, /*TVG_NUM_LOCS*/, {\nNULL/*TVG_LOCATIONS*/\n} };\n" varname (show name) ++
-		fundecl ++
-		"\n\n/*INSERT_SRCFILE_HERE*/"
+	-- The trace_function declaration text
+	let tracefundecl = printf "void %s(int i)" tracefunname
+
+	-- Check if this source file has been processed already
+	data_h <- readFile (incs_path </> "data.h")
+	let already_processed = tracefundecl `isInfixOf` data_h
+	unless already_processed $ do
+		-- Insert trace_function declaration
+		insertBeforeMarker (incs_path </> "data.h") "/*INSERT_HERE*/" $ tracefundecl ++ ";\n"
+
+		-- Add definition of trace_function to data.c
+		let fundecl = printf "%s { %s.counters[i].cnt++; }" tracefundecl varname
+		insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
+			printf "SRCFILE %s = { %s, /*%s_NUM_LOCS*/0/*%s_NUM_LOCS*/, {\n{0,0,0}/*DUMMY*//*%s_LOCATIONS*/\n} };\n" varname (show name) filenameid filenameid filenameid ++
+			fundecl ++ "\n\n"
 
 	parseresult <- parseCFile (newGCC gccExe) Nothing preprocess_args name
 	mb_err <- case parseresult of
@@ -137,14 +148,25 @@ handleSrcFile preprocess_args incs_path name = do
 		Right ast -> do
 			let instr_filename = name++".instr"
 			writeFile instr_filename ""
-			InstrS{..} <- execStateT (processASTM ast) $ InstrS 0 incs_path name varname tracefunname instr_filename []
-			copyFile instr_filename name
-			when (not _KEEP_INSTRUMENTED) $ removeFile instr_filename 
-			
-			insertInFile "" (incs_path </> "data.c") "/*TVG_NUM_LOCS*/" (show numLocsS)
 
-			let srcptr = printf ",\n&%s " varname
-			insertInFile srcptr (incs_path </> "data.c") "/*INSERT_SRCPTR_HERE*/" srcptr
+			-- Start with correct index of already_processed
+			startindex <- case already_processed of
+				False -> return 0
+				True -> do
+					f <- readFile (incs_path </> "data.c")
+					let Just [is] = matchRegex (mkRegex $ printf "/[*]%s_NUM_LOCS[*]/([0-9]+)/[*]%s_NUM_LOCS[*]/" filenameid filenameid) f
+					return $ read is
+
+			InstrS{..} <- execStateT (processASTM ast) $ InstrS filenameid startindex incs_path name varname tracefunname instr_filename []
+			copyFile instr_filename name
+			when (not _KEEP_INSTRUMENTED) $ removeFile instr_filename
+
+			print numLocsS
+			replaceInBracket (incs_path </> "data.c") (printf "/*%s_NUM_LOCS*/" filenameid) (show numLocsS)
+
+			unless already_processed $ do
+				let srcptr = printf ",\n&%s " varname
+				insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCPTR_HERE*/" srcptr
 
 			(exitcode,stdout,stderr) <- readProcessWithExitCode gccExe
 				["-shared", "-fPIC", "-DQUIET", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
@@ -158,24 +180,28 @@ handleSrcFile preprocess_args incs_path name = do
 			removeFile name >> renameFile bak_name name
 			error errmsg
 
-insertInFile ident filename pos text = do
+escapeRegex s = subRegex (mkRegex "\\*") s "[*]"
+
+replaceInFile filename marker text = do
 	f <- readFile filename
-	unless (ident `isInfixOf` f) $ do
-		when _DEBUG_OUTPUT $ putStrLn $ "Inserting " ++ text
-		writeFile filename $ insert_at pos text f
-	where
-	insert_at pos _ [] = error $ "did not find " ++ pos
-	insert_at pos text rest | pos `isPrefixOf` rest = text ++ rest
-	insert_at pos text (r:rest) = r : insert_at pos text rest
+	writeFile filename $ subRegex (mkRegex $ escapeRegex marker) f text
+
+replaceInBracket filename bracket text = replaceInFile filename (escapeRegex bracket ++ ".*" ++ escapeRegex bracket) (bracket ++ text ++ bracket)
+
+insertBeforeMarker filename marker text = do
+	f <- readFile filename
+	writeFile filename $ subRegex (mkRegex $ escapeRegex marker) f (text++marker)
 
 data InstrS = InstrS {
-	numLocsS :: Int, incsPathS :: String, fileNameS :: String, varNameS :: String,
+	fileNameIdS :: String, numLocsS :: Int, incsPathS :: String, fileNameS :: String, varNameS :: String,
 	traceFunNameS :: String, instrFileNameS :: String, locationsS :: [(Int,Int)] } deriving Show
 type InstrM a = StateT InstrS IO a
 
 processASTM :: CTranslUnit -> InstrM ()
 processASTM (CTranslUnit extdecls _) = mapM_ instrumentExtDecl extdecls
-	
+
+locString filename (l,c) = printf "{ %li,%li,0 } /*%s*/" l c filename
+
 instrumentExtDecl :: CExtDecl -> InstrM CExtDecl
 instrumentExtDecl ast = do
 	modify $ \ s -> s { locationsS = [] }
@@ -190,11 +216,12 @@ instrumentExtDecl ast = do
 	liftIO $ appendFile instr_filename $ (render $ pretty instr_ast) ++ "\n"
 
 	InstrS{..} <- get
-	liftIO $ insertInFile "" (incsPathS </> "data.c") "/*TVG_LOCATIONS*/" $
-		concatMap (\ (l,c) -> printf ",\n{ %li,%li,0 }" l c) locationsS ++
-		"/*TVG_LOCATIONS*/"
+	data_c <- liftIO $ readFile (incsPathS </> "data.c")
+	let new_locs = filter (not . (`isInfixOf` data_c) . (locString fileNameS)) locationsS
+	liftIO $ insertBeforeMarker (incsPathS </> "data.c") (printf "/*%s_LOCATIONS*/" fileNameIdS) $
+		concatMap ((",\n"++) . locString fileNameS) new_locs
 
-	modify $ \ s -> s { numLocsS = numLocsS + length locationsS }
+	modify $ \ s -> s { numLocsS = numLocsS + length new_locs }
 
 	return instr_ast
 

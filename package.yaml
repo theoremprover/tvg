@@ -28,6 +28,8 @@ dependencies:
 - transformers
 - strict
 - lens
+- regex-tdfa
+- regex-compat
 
 library:
   source-dirs: src

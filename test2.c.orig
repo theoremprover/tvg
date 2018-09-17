@@ -2,6 +2,14 @@
 
 int x = 1;
 
+#ifdef ALT
+int g(int x)
+{
+	int y = x+1;
+	return y;
+}
+#endif
+
 int f(int a,int b)
 {
 	int erg = a+b;
