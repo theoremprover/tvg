@@ -161,7 +161,6 @@ handleSrcFile preprocess_args incs_path name = do
 			copyFile instr_filename name
 			when (not _KEEP_INSTRUMENTED) $ removeFile instr_filename
 
-			print numLocsS
 			replaceInBracket (incs_path </> "data.c") (printf "/*%s_NUM_LOCS*/" filenameid) (show numLocsS)
 
 			unless already_processed $ do
@@ -186,7 +185,9 @@ replaceInFile filename marker text = do
 	f <- readFile filename
 	writeFile filename $ subRegex (mkRegex $ escapeRegex marker) f text
 
-replaceInBracket filename bracket text = replaceInFile filename (escapeRegex bracket ++ ".*" ++ escapeRegex bracket) (bracket ++ text ++ bracket)
+replaceInBracket filename bracket text = do
+	f <- readFile filename
+	writeFile filename $ subRegex (mkRegex $ escapeRegex bracket ++ ".*" ++ escapeRegex bracket) f (bracket ++ text ++ bracket)
 
 insertBeforeMarker filename marker text = do
 	f <- readFile filename
@@ -228,10 +229,9 @@ instrumentExtDecl ast = do
 instrumentStmt :: CStat -> InstrM CStat
 instrumentStmt cstat = do
 	modify $ \ s -> s { locationsS = (line,col) : locationsS s }
-	locs <- gets locationsS
-	tracefunname <- gets traceFunNameS
-	let ret = CCompound [] [ instr tracefunname (length locs), CBlockStmt cstat ] undefNode
-	when _PROGRESS_OUTPUT $ liftIO $ putStr $ printf "locs= %8i\r" (length locs)
+	InstrS{..} <- get
+	let ret = CCompound [] [ instr traceFunNameS (numLocsS + length locationsS), CBlockStmt cstat ] undefNode
+	when _PROGRESS_OUTPUT $ liftIO $ putStr $ printf "locs= %8i\r" (length locationsS)
 	return ret
 	where
 	pos = posOfNode $ nodeInfo cstat
