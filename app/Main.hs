@@ -137,7 +137,7 @@ handleSrcFile preprocess_args incs_path name = do
 		insertBeforeMarker (incs_path </> "data.h") "/*INSERT_HERE*/" $ tracefundecl ++ ";\n"
 
 		-- Add definition of trace_function to data.c
-		let fundecl = printf "%s { %s.counters[i].cnt++; }" tracefundecl varname
+		let fundecl = printf "%s { %s.counters[i+1].cnt++; }" tracefundecl varname
 		insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
 			printf "SRCFILE %s = { %s, /*%s_NUM_LOCS*/0/*%s_NUM_LOCS*/, {\n{0,0,0}/*DUMMY*//*%s_LOCATIONS*/\n} };\n" varname (show name) filenameid filenameid filenameid ++
 			fundecl ++ "\n\n"
@@ -179,7 +179,12 @@ handleSrcFile preprocess_args incs_path name = do
 			removeFile name >> renameFile bak_name name
 			error errmsg
 
-escapeRegex s = subRegex (mkRegex "\\*") s "[*]"
+escapeRegex "" = ""
+escapeRegex ('*':r) = "[*]" ++ escapeRegex r
+escapeRegex ('.':r) = "\\." ++ escapeRegex r
+escapeRegex ('{':r) = "\\{" ++ escapeRegex r
+escapeRegex ('}':r) = "\\}" ++ escapeRegex r
+escapeRegex (c:r) = c : escapeRegex r
 
 replaceInFile filename marker text = do
 	f <- readFile filename
@@ -201,12 +206,14 @@ type InstrM a = StateT InstrS IO a
 processASTM :: CTranslUnit -> InstrM ()
 processASTM (CTranslUnit extdecls _) = mapM_ instrumentExtDecl extdecls
 
-locString filename (l,c) = printf "{ %li,%li,0 } /*%s*/" l c filename
+locString filenameid (l,c) = printf "{ %li,%li,0 } /* %s */" l c filenameid
 
 instrumentExtDecl :: CExtDecl -> InstrM CExtDecl
 instrumentExtDecl ast = do
+	incspath <- gets incsPathS
 	modify $ \ s -> s { locationsS = [] }
-	ast' <- everywhereM (mkM instrumentStmt) ast
+	data_c <- liftIO $ readFile (incspath </> "data.c")
+	ast' <- everywhereM (mkM (instrumentStmt data_c)) ast
 
 	let instr_ast =
 		everywhere (mkT elimInStatExprs) $
@@ -217,25 +224,32 @@ instrumentExtDecl ast = do
 	liftIO $ appendFile instr_filename $ (render $ pretty instr_ast) ++ "\n"
 
 	InstrS{..} <- get
-	data_c <- liftIO $ readFile (incsPathS </> "data.c")
-	let new_locs = filter (not . (`isInfixOf` data_c) . (locString fileNameS)) locationsS
+	let new_locs = filter (not . (`isInfixOf` data_c) . locString fileNameIdS) locationsS
 	liftIO $ insertBeforeMarker (incsPathS </> "data.c") (printf "/*%s_LOCATIONS*/" fileNameIdS) $
-		concatMap ((",\n"++) . locString fileNameS) new_locs
+		concatMap (\ (i,loc) -> (",\n" ++ locString fileNameIdS loc ++ " /*" ++ show i ++ "*/")) (zip [numLocsS..] new_locs)
 
 	modify $ \ s -> s { numLocsS = numLocsS + length new_locs }
 
 	return instr_ast
 
-instrumentStmt :: CStat -> InstrM CStat
-instrumentStmt cstat = do
-	modify $ \ s -> s { locationsS = (line,col) : locationsS s }
+instrumentStmt :: String -> CStat -> InstrM CStat
+instrumentStmt data_c cstat = do
 	InstrS{..} <- get
-	let ret = CCompound [] [ instr traceFunNameS (numLocsS + length locationsS), CBlockStmt cstat ] undefNode
+	let locstring = locString fileNameIdS loc
+	index <- case locstring `isInfixOf` data_c of
+		False -> do
+			modify $ \ s -> s { locationsS = loc : locationsS }
+			return $ numLocsS + length locationsS
+		True -> do
+			let regex = escapeRegex (locstring ++ " /*") ++ "([0-9]+)" ++ escapeRegex "*/"
+			let Just [is] = matchRegex (mkRegex regex) data_c
+			return $ read is
+	let ret = CCompound [] [ instr traceFunNameS index, CBlockStmt cstat ] undefNode
 	when _PROGRESS_OUTPUT $ liftIO $ putStr $ printf "locs= %8i\r" (length locationsS)
 	return ret
 	where
 	pos = posOfNode $ nodeInfo cstat
-	(line,col) = (posRow pos,posColumn pos)
+	loc = (posRow pos,posColumn pos)
 	str = posFile pos ++ show (posRow pos,posColumn pos)
 	instr tracefunname index = CBlockStmt $ CExpr (Just $ CCall (CVar (builtinIdent tracefunname) undefNode)
 		[CConst $ CIntConst (cInteger $ fromIntegral index) undefNode] undefNode) undefNode
