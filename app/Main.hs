@@ -153,6 +153,9 @@ handleSrcFile preprocess_args incs_path name = do
 			let srcptr = printf ",\n&%s " varname
 			insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCPTR_HERE*/" srcptr
 
+			-- Delete LOCATIONS marker (for next source file)
+			replaceInFile (incsPathS </> "data.c") "/*LOCATIONS*/" ""
+
 			(exitcode,stdout,stderr) <- readProcessWithExitCode gccExe
 				["-shared", "-fPIC", "-DQUIET", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
 			case exitcode of
@@ -194,7 +197,7 @@ type InstrM a = StateT InstrS IO a
 processASTM :: CTranslUnit -> InstrM ()
 processASTM (CTranslUnit extdecls _) = mapM_ instrumentExtDecl extdecls
 
-locString filenameid (l,c) = printf "{ %li,%li,0 } /* %s */" l c filenameid
+locString (l,c) = printf "{ %li,%li,0 }" l c
 
 instrumentExtDecl :: CExtDecl -> InstrM CExtDecl
 instrumentExtDecl ast = do
@@ -212,26 +215,20 @@ instrumentExtDecl ast = do
 	liftIO $ appendFile instr_filename $ (render $ pretty instr_ast) ++ "\n"
 
 	InstrS{..} <- get
-	liftIO $ insertBeforeMarker (incsPathS </> "data.c") (printf "/*%s_LOCATIONS*/" fileNameIdS) $
-		concatMap (\ (i,loc) -> (",\n" ++ locString fileNameIdS loc ++ " /*" ++ show i ++ "*/")) (zip [numLocsS..] locationsS)
+	liftIO $ insertBeforeMarker (incsPathS </> "data.c") "/*LOCATIONS*/" $
+		concatMap (\ (i,loc) -> (",\n" ++ locString loc ++ " /*" ++ show i ++ "*/")) (zip [numLocsS..] locationsS)
 
-	modify $ \ s -> s { numLocsS = numLocsS + length new_locs }
+	modify $ \ s -> s { numLocsS = numLocsS + length locationsS, locationsS = [] }
 
 	return instr_ast
 
 instrumentStmt :: String -> CStat -> InstrM CStat
 instrumentStmt data_c cstat = do
 	InstrS{..} <- get
-	let locstring = locString fileNameIdS loc
-	index <- case locstring `isInfixOf` data_c of
-		False -> do
-			modify $ \ s -> s { locationsS = loc : locationsS }
-			return $ numLocsS + length locationsS
-		True -> do
-			let regex = escapeRegex (locstring ++ " /*") ++ "([0-9]+)" ++ escapeRegex "*/"
-			let Just [is] = matchRegex (mkRegex regex) data_c
-			return $ read is
-	let ret = CCompound [] [ instr traceFunNameS index, CBlockStmt cstat ] undefNode
+
+	modify $ \ s -> s { locationsS = loc : locationsS }
+
+	let ret = CCompound [] [ instr traceFunNameS (numLocsS + length locationsS), CBlockStmt cstat ] undefNode
 	when _PROGRESS_OUTPUT $ liftIO $ putStr $ printf "locs= %8i\r" (length locationsS)
 	return ret
 	where

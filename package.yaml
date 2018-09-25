@@ -27,7 +27,6 @@ dependencies:
 - filepath
 - transformers
 - strict
-- lens
 - regex-tdfa
 - regex-compat
 
