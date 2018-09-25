@@ -129,18 +129,13 @@ handleSrcFile preprocess_args incs_path name = do
 	-- The trace_function declaration text
 	let tracefundecl = printf "void %s(int i)" tracefunname
 
-	-- Check if this source file has been processed already
-	data_h <- readFile (incs_path </> "data.h")
-	let already_processed = tracefundecl `isInfixOf` data_h
-	unless already_processed $ do
-		-- Insert trace_function declaration
-		insertBeforeMarker (incs_path </> "data.h") "/*INSERT_HERE*/" $ tracefundecl ++ ";\n"
+	insertBeforeMarker (incs_path </> "data.h") "/*INSERT_HERE*/" $ tracefundecl ++ ";\n"
 
-		-- Add definition of trace_function to data.c
-		let fundecl = printf "%s { %s.counters[i+1].cnt++; }" tracefundecl varname
-		insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
-			printf "SRCFILE %s = { %s, /*%s_NUM_LOCS*/0/*%s_NUM_LOCS*/, {\n{0,0,0}/*DUMMY*//*%s_LOCATIONS*/\n} };\n" varname (show name) filenameid filenameid filenameid ++
-			fundecl ++ "\n\n"
+	-- Add definition of trace_function to data.c
+	let fundecl = printf "%s { %s.counters[i+1].cnt++; }" tracefundecl varname
+	insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
+		printf "SRCFILE %s = { %s, /*NUM_LOCS*/, {\n{0,0,0}/*DUMMY*/\n} };\n" varname (show name) ++
+		fundecl ++ "\n\n"
 
 	parseresult <- parseCFile (newGCC gccExe) Nothing preprocess_args name
 	mb_err <- case parseresult of
@@ -149,23 +144,14 @@ handleSrcFile preprocess_args incs_path name = do
 			let instr_filename = name++".instr"
 			writeFile instr_filename ""
 
-			-- Start with correct index of already_processed
-			startindex <- case already_processed of
-				False -> return 0
-				True -> do
-					f <- readFile (incs_path </> "data.c")
-					let Just [is] = matchRegex (mkRegex $ printf "/[*]%s_NUM_LOCS[*]/([0-9]+)/[*]%s_NUM_LOCS[*]/" filenameid filenameid) f
-					return $ read is
-
-			InstrS{..} <- execStateT (processASTM ast) $ InstrS filenameid startindex incs_path name varname tracefunname instr_filename []
+			InstrS{..} <- execStateT (processASTM ast) $ InstrS filenameid 0 incs_path name varname tracefunname instr_filename []
 			copyFile instr_filename name
 			when (not _KEEP_INSTRUMENTED) $ removeFile instr_filename
 
-			replaceInBracket (incs_path </> "data.c") (printf "/*%s_NUM_LOCS*/" filenameid) (show numLocsS)
+			replaceInFile (incs_path </> "data.c") "/*NUM_LOCS*/" (show numLocsS)
 
-			unless already_processed $ do
-				let srcptr = printf ",\n&%s " varname
-				insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCPTR_HERE*/" srcptr
+			let srcptr = printf ",\n&%s " varname
+			insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCPTR_HERE*/" srcptr
 
 			(exitcode,stdout,stderr) <- readProcessWithExitCode gccExe
 				["-shared", "-fPIC", "-DQUIET", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
@@ -190,9 +176,11 @@ replaceInFile filename marker text = do
 	f <- readFile filename
 	writeFile filename $ subRegex (mkRegex $ escapeRegex marker) f text
 
+{-
 replaceInBracket filename bracket text = do
 	f <- readFile filename
 	writeFile filename $ subRegex (mkRegex $ escapeRegex bracket ++ ".*" ++ escapeRegex bracket) f (bracket ++ text ++ bracket)
+-}
 
 insertBeforeMarker filename marker text = do
 	f <- readFile filename
@@ -224,9 +212,8 @@ instrumentExtDecl ast = do
 	liftIO $ appendFile instr_filename $ (render $ pretty instr_ast) ++ "\n"
 
 	InstrS{..} <- get
-	let new_locs = filter (not . (`isInfixOf` data_c) . locString fileNameIdS) locationsS
 	liftIO $ insertBeforeMarker (incsPathS </> "data.c") (printf "/*%s_LOCATIONS*/" fileNameIdS) $
-		concatMap (\ (i,loc) -> (",\n" ++ locString fileNameIdS loc ++ " /*" ++ show i ++ "*/")) (zip [numLocsS..] new_locs)
+		concatMap (\ (i,loc) -> (",\n" ++ locString fileNameIdS loc ++ " /*" ++ show i ++ "*/")) (zip [numLocsS..] locationsS)
 
 	modify $ \ s -> s { numLocsS = numLocsS + length new_locs }
 
