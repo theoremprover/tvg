@@ -42,6 +42,10 @@ tvg.exe +RTS -h -RTS [...]
 -}
 
 {-
+stack install --allow-different-user --ghc-options -O2 --force-dirty
+
+cp incs/data.h.start incs/data.h; cp incs/data.c.start incs/data.c
+
 configure ENVVARS:
 export CC="/root/.local/bin/tvg-exe /tvg/tvg"
 export CFLAGS="-w -I/usr/include/i386-linux-gnu"
@@ -94,17 +98,25 @@ main = do
 
 	let args' = ["-I" ++ incs_path] ++ args
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args'
-	restore_files <- forM args (handleArg preprocess_args incs_path)
+	let o_arg = case searcharg "-o" args of
+		Nothing -> ""
+		Just (o:_) -> o
+	restore_files <- forM args (handleArg o_arg preprocess_args incs_path)
 	when _DEBUG_OUTPUT $ putStrLn $ gccExe ++ " " ++ intercalate " " (["-L"++incs_path] ++ args ++ ["-ldata"])
 	exitcode <- rawSystem gccExe $ ["-L"++incs_path] ++ args ++ ["-ldata"]
 	sequence_ restore_files
 	exitWith exitcode
 
-handleArg preprocess_args incs_path arg | ".c" `isSuffixOf` arg && takeFileName arg /= "conftest.c" = do
-	handleSrcFile preprocess_args incs_path arg
-handleArg _ _ _ = return $ return ()
+	where
+	searcharg _ [] = Nothing
+	searcharg findarg (arg:arglist) | findarg==arg = Just arglist
+	searcharg findarg (arg:arglist) = searcharg findarg arglist
 
-handleSrcFile preprocess_args incs_path name = do
+handleArg o_arg preprocess_args incs_path arg | ".c" `isSuffixOf` arg && takeFileName arg /= "conftest.c" = do
+	handleSrcFile o_arg preprocess_args incs_path arg
+handleArg _ _ _ _ = return $ return ()
+
+handleSrcFile o_arg preprocess_args incs_path name = do
 	when _OUTPUT_AST $ do
 		mb_ast <- parseCFile (newGCC gccExe) Nothing preprocess_args name
 		case mb_ast of
@@ -118,7 +130,7 @@ handleSrcFile preprocess_args incs_path name = do
 	let bak_name = name ++ ".preinstr"
 	renameFile name bak_name
 
-	let filenameid = map (\ c -> if isAlphaNum c then c else '_') name
+	let filenameid = to_id $ o_arg ++ "__" ++ name
 	let varname = "src_" ++ filenameid
 	let tracefunname = "trace_" ++ filenameid
 
@@ -134,7 +146,7 @@ handleSrcFile preprocess_args incs_path name = do
 	-- Add definition of trace_function to data.c
 	let fundecl = printf "%s { %s.counters[i+1].cnt++; }" tracefundecl varname
 	insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
-		printf "SRCFILE %s = { %s, /*NUM_LOCS*/, {\n{0,0,0}/*DUMMY*/\n} };\n" varname (show name) ++
+		printf "SRCFILE %s = { %s, /*NUM_LOCS*/, {\n{0,0,0}/*DUMMY*//*LOCATIONS*/\n} };\n" varname (show name) ++
 		fundecl ++ "\n\n"
 
 	parseresult <- parseCFile (newGCC gccExe) Nothing preprocess_args name
@@ -168,12 +180,14 @@ handleSrcFile preprocess_args incs_path name = do
 			removeFile name >> renameFile bak_name name
 			error errmsg
 
-escapeRegex "" = ""
-escapeRegex ('*':r) = "[*]" ++ escapeRegex r
-escapeRegex ('.':r) = "\\." ++ escapeRegex r
-escapeRegex ('{':r) = "\\{" ++ escapeRegex r
-escapeRegex ('}':r) = "\\}" ++ escapeRegex r
-escapeRegex (c:r) = c : escapeRegex r
+to_id str = map (\ c -> if isAlphaNum c then c else '_') str
+
+escapeRegex = concatMap $ \case of
+	'*' -> "[*]"
+	'.' ->  "\\."
+	'{' -> "\\{"
+	'}' -> "\\}"
+	c   -> [c]
 
 replaceInFile filename marker text = do
 	f <- readFile filename
@@ -216,7 +230,7 @@ instrumentExtDecl ast = do
 
 	InstrS{..} <- get
 	liftIO $ insertBeforeMarker (incsPathS </> "data.c") "/*LOCATIONS*/" $
-		concatMap (\ (i,loc) -> (",\n" ++ locString loc ++ " /*" ++ show i ++ "*/")) (zip [numLocsS..] locationsS)
+		concatMap (\ loc -> ",\n" ++ locString loc) locationsS
 
 	modify $ \ s -> s { numLocsS = numLocsS + length locationsS, locationsS = [] }
 
