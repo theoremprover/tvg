@@ -47,10 +47,7 @@ cp incs/data.h.start incs/data.h; cp incs/data.c.start incs/data.c
 configure ENVVARS:
 export CC="/root/.local/bin/tvg-exe /tvg/tvg"
 export CFLAGS="-w -I/usr/include/i386-linux-gnu"
-
-Versuche:
 export LDFLAGS="-L/usr/lib/i386-linux-gnu"
- 
 export LD_LIBRARY_PATH=/tvg/tvg/incs:$LD_LIBRARY_PATH
 export LIBRARY_PATH=
 
