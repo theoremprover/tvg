@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards,LambdaCase #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 module Main where
@@ -182,7 +182,7 @@ handleSrcFile o_arg preprocess_args incs_path name = do
 
 to_id str = map (\ c -> if isAlphaNum c then c else '_') str
 
-escapeRegex = concatMap $ \case of
+escapeRegex = concatMap $ \case
 	'*' -> "[*]"
 	'.' ->  "\\."
 	'{' -> "\\{"
