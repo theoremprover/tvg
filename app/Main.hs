@@ -1,11 +1,12 @@
-{-# LANGUAGE RecordWildCards,LambdaCase #-}
+{-# LANGUAGE RecordWildCards,LambdaCase,OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 module Main where
 
-import qualified Data.Text.Lazy.IO as TIO
+import Prelude hiding (readFile)
+import qualified Data.Text.IO as TIO
 import qualified Data.Text as T
---import System.IO.Strict
+import System.IO.Strict
 
 import System.Process
 import System.Environment
@@ -42,9 +43,9 @@ tvg.exe +RTS -h -RTS [...]
 {-
 stack install --allow-different-user --ghc-options -O2 --force-dirty
 
-cp incs/data.h.start incs/data.h; cp incs/data.c.start incs/data.c
+/root/.local/bin/tvg-exe /tvg/tvg test2.c -o test2
 
-configure ENVVARS:
+cp incs/data.h.start incs/data.h; cp incs/data.c.start incs/data.c
 export CC="/root/.local/bin/tvg-exe /tvg/tvg"
 export CFLAGS="-w -I/usr/include/i386-linux-gnu"
 export LDFLAGS="-L/usr/lib/i386-linux-gnu"
@@ -177,9 +178,12 @@ handleSrcFile o_arg preprocess_args incs_path name = do
 
 to_id str = map (\ c -> if isAlphaNum c then c else '_') str
 
-replaceInFile :: String -> String -> String -> T.Text
-replaceInFile filename marker text = readFile filename >>= replace (T.pack marker) (T.pack text) >>= writeFile filename
-insertBeforeMarker filename marker text = replaceInFile filename (T.pack marker) ((T.pack text) `T.append` (T.pack marker))
+replaceInFile :: String -> String -> String -> IO ()
+replaceInFile filename marker text = do
+	f <- TIO.readFile filename
+	TIO.writeFile filename $ T.replace (T.pack marker) (T.pack text) f
+
+insertBeforeMarker filename marker text = replaceInFile filename marker (text ++ marker)
 
 data InstrS = InstrS {
 	fileNameIdS :: String, numLocsS :: Int, incsPathS :: String, fileNameS :: String, varNameS :: String,

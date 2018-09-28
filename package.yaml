@@ -26,8 +26,8 @@ dependencies:
 - syb
 - filepath
 - transformers
-- strict
 - text
+- strict
 
 library:
   source-dirs: src
