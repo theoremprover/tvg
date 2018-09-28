@@ -70,8 +70,6 @@ make install
 GCC-Executable in
 /tvg/install/gcc-4.7.4/bin/gcc4.7
 
-gcc -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
-
 -}
 
 _OUTPUT_AST = False
