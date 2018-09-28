@@ -3,8 +3,9 @@
 
 module Main where
 
-import Prelude hiding (readFile)
-import System.IO.Strict
+import qualified Data.Text.Lazy.IO as TIO
+import qualified Data.Text as T
+--import System.IO.Strict
 
 import System.Process
 import System.Environment
@@ -24,9 +25,6 @@ import Control.Monad.Trans.State.Strict
 import Control.Monad.IO.Class (liftIO)
 import Data.Char
 import Text.Printf
-
-import Text.Regex
-import Text.Regex.TDFA
 
 import Language.C.System.Preprocess
 import Language.C.Data.InputStream
@@ -135,8 +133,8 @@ handleSrcFile o_arg preprocess_args incs_path name = do
 	let tracefunname = "trace_" ++ filenameid
 
 	-- Prepend "#include <data.h>" to instrumented file
-	cfile <- readFile bak_name
-	writeFile name $ "#include <data.h>\n\n" ++ cfile
+	cfile <- TIO.readFile bak_name
+	TIO.writeFile name $ "#include <data.h>\n\n" `T.append` cfile
 
 	-- The trace_function declaration text
 	let tracefundecl = printf "void %s(int i)" tracefunname
@@ -182,26 +180,9 @@ handleSrcFile o_arg preprocess_args incs_path name = do
 
 to_id str = map (\ c -> if isAlphaNum c then c else '_') str
 
-escapeRegex = concatMap $ \case
-	'*' -> "[*]"
-	'.' ->  "\\."
-	'{' -> "\\{"
-	'}' -> "\\}"
-	c   -> [c]
-
-replaceInFile filename marker text = do
-	f <- readFile filename
-	writeFile filename $ subRegex (mkRegex $ escapeRegex marker) f text
-
-{-
-replaceInBracket filename bracket text = do
-	f <- readFile filename
-	writeFile filename $ subRegex (mkRegex $ escapeRegex bracket ++ ".*" ++ escapeRegex bracket) f (bracket ++ text ++ bracket)
--}
-
-insertBeforeMarker filename marker text = do
-	f <- readFile filename
-	writeFile filename $ subRegex (mkRegex $ escapeRegex marker) f (text++marker)
+replaceInFile :: String -> String -> String -> T.Text
+replaceInFile filename marker text = readFile filename >>= replace (T.pack marker) (T.pack text) >>= writeFile filename
+insertBeforeMarker filename marker text = replaceInFile filename (T.pack marker) ((T.pack text) `T.append` (T.pack marker))
 
 data InstrS = InstrS {
 	fileNameIdS :: String, numLocsS :: Int, incsPathS :: String, fileNameS :: String, varNameS :: String,

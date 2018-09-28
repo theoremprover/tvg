@@ -27,8 +27,7 @@ dependencies:
 - filepath
 - transformers
 - strict
-- regex-tdfa
-- regex-compat
+- text
 
 library:
   source-dirs: src
