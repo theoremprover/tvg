@@ -43,10 +43,10 @@ tvg.exe +RTS -h -RTS [...]
 {-
 stack install --allow-different-user --ghc-options -O2 --force-dirty
 
-/root/.local/bin/tvg-exe /tvg/tvg test2.c -o test2
+/root/.local/bin/tvg-exe /tvg test2.c -o test2
 
 cp incs/data.h.start incs/data.h; cp incs/data.c.start incs/data.c
-export CC="/root/.local/bin/tvg-exe /tvg/tvg"
+export CC="/root/.local/bin/tvg-exe /tvg"
 export CFLAGS="-w -I/usr/include/i386-linux-gnu"
 export LDFLAGS="-L/usr/lib/i386-linux-gnu"
 export LD_LIBRARY_PATH=/tvg/tvg/incs:$LD_LIBRARY_PATH
@@ -83,7 +83,7 @@ gccExe = "gcc-4.7"
 
 main = do
 	tvg_path:args <- getArgs
-	let incs_path = tvg_path </> "incs"
+	let incs_path = tvg_path </> "tvg" </> "incs"
 
 	when _INIT_DATA $ do
 --		copyFile "test2.c.orig" "test2.c"
@@ -95,9 +95,9 @@ main = do
 	let o_arg = case searcharg "-o" args of
 		Nothing -> ""
 		Just (o:_) -> o
-	restore_files <- forM args (handleArg o_arg preprocess_args incs_path)
+	restore_files <- forM args (handleArg o_arg preprocess_args tvg_path incs_path)
 	when _DEBUG_OUTPUT $ putStrLn $ gccExe ++ " " ++ intercalate " " (["-L"++incs_path] ++ args ++ ["-ldata"])
-	exitcode <- rawSystem gccExe $ ["-L"++incs_path] ++ args ++ ["-ldata"]
+	exitcode <- rawSystem gccExe $ ["-L"++incs_path,"-I"++incs_path] ++ args ++ ["-ldata"]
 	sequence_ restore_files
 	exitWith exitcode
 
@@ -106,11 +106,11 @@ main = do
 	searcharg findarg (arg:arglist) | findarg==arg = Just arglist
 	searcharg findarg (arg:arglist) = searcharg findarg arglist
 
-handleArg o_arg preprocess_args incs_path arg | ".c" `isSuffixOf` arg && takeFileName arg /= "conftest.c" = do
-	handleSrcFile o_arg preprocess_args incs_path arg
-handleArg _ _ _ _ = return $ return ()
+handleArg o_arg preprocess_args tvg_path incs_path arg | ".c" `isSuffixOf` arg && takeFileName arg /= "conftest.c" = do
+	handleSrcFile o_arg preprocess_args tvg_path incs_path arg
+handleArg _ _ _ _ _ = return $ return ()
 
-handleSrcFile o_arg preprocess_args incs_path name = do
+handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 	when _OUTPUT_AST $ do
 		mb_ast <- parseCFile (newGCC gccExe) Nothing preprocess_args name
 		case mb_ast of
@@ -121,16 +121,13 @@ handleSrcFile o_arg preprocess_args incs_path name = do
 		Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs preprocess_args name)
 		writeFile (name++".i") $ inputStreamToString inputstream
 
+	-- Make file pre-instrumentation backup 
 	let bak_name = name ++ ".preinstr"
-	renameFile name bak_name
+	copyFile name bak_name
 
 	let filenameid = to_id $ o_arg ++ "__" ++ name
 	let varname = "src_" ++ filenameid
 	let tracefunname = "trace_" ++ filenameid
-
-	-- Prepend "#include <data.h>" to instrumented file
-	cfile <- TIO.readFile bak_name
-	TIO.writeFile name $ "#include <data.h>\n\n" `T.append` cfile
 
 	-- The trace_function declaration text
 	let tracefundecl = printf "void %s(int i)" tracefunname
@@ -148,9 +145,10 @@ handleSrcFile o_arg preprocess_args incs_path name = do
 		Left errmsg -> return $ Just $ show errmsg
 		Right ast -> do
 			let instr_filename = name++".instr"
-			writeFile instr_filename ""
+			writeFile instr_filename "#include <data.h>\n\n"
 
-			InstrS{..} <- execStateT (processASTM ast) $ InstrS filenameid 0 incs_path name varname tracefunname instr_filename []
+			abs_filename <- makeAbsolute name
+			InstrS{..} <- execStateT (processASTM ast) $ InstrS filenameid 0 tvg_path incs_path varname tracefunname abs_filename instr_filename []
 			copyFile instr_filename name
 			when (not _KEEP_INSTRUMENTED) $ removeFile instr_filename
 
@@ -163,7 +161,7 @@ handleSrcFile o_arg preprocess_args incs_path name = do
 			replaceInFile (incsPathS </> "data.c") "/*LOCATIONS*/" ""
 
 			(exitcode,stdout,stderr) <- readProcessWithExitCode gccExe
-				["-shared", "-fPIC", "-DQUIET", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
+				["-shared", "-fPIC", "-DQUIET", "-L/usr/lib/i386-linux-gnu", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
 			case exitcode of
 				ExitSuccess   -> return Nothing
 				ExitFailure _ -> return $ Just $ "Compile data.c failed:\n" ++ stdout ++ stderr
@@ -184,8 +182,8 @@ replaceInFile filename marker text = do
 insertBeforeMarker filename marker text = replaceInFile filename marker (text ++ marker)
 
 data InstrS = InstrS {
-	fileNameIdS :: String, numLocsS :: Int, incsPathS :: String, fileNameS :: String, varNameS :: String,
-	traceFunNameS :: String, instrFileNameS :: String, locationsS :: [(Int,Int)] } deriving Show
+	fileNameIdS :: String, numLocsS :: Int, tvgPathS :: String, incsPathS :: String, varNameS :: String,
+	traceFunNameS :: String, absFileNameS :: String, instrFileNameS :: String, locationsS :: [(Int,Int)] } deriving Show
 type InstrM a = StateT InstrS IO a
 
 processASTM :: CTranslUnit -> InstrM ()
@@ -195,35 +193,49 @@ locString (l,c) = printf "{ %li,%li,0 }" l c
 
 instrumentExtDecl :: CExtDecl -> InstrM CExtDecl
 instrumentExtDecl ast = do
-	incspath <- gets incsPathS
-	modify $ \ s -> s { locationsS = [] }
-	data_c <- liftIO $ readFile (incspath </> "data.c")
-	ast' <- everywhereM (mkM (instrumentStmt data_c)) ast
+{-
+	-- Check if the ExtDecl's source file is somwhere under the tvg root.
+	-- Instrument the file if yes (i.e. do not instrument system library source files)
+	tvg_path <- gets tvgPathS
+	tvg_abspath <- liftIO $ canonicalizePath tvg_path
+--}
+	let Just fn = fileOfNode ast
+	src_abspath <- liftIO $ makeAbsolute fn
+	absfilename <- gets absFileNameS
+	ast' <- case absfilename == src_abspath of
+		True -> do
+			when _PROGRESS_OUTPUT $ liftIO $ putStrLn $ "instrumentExtDecl at " ++ show (posOfNode $ nodeInfo ast)
+			incspath <- gets incsPathS
+			modify $ \ s -> s { locationsS = [] }
 
-	let instr_ast =
-		everywhere (mkT elimInStatExprs) $
-		everywhere (mkT insertbeforeexits) $
-		everywhere (mkT insertopen)
-		ast'
+			ast' <- everywhereM (mkM instrumentStmt) ast
+			let instr_ast =
+				everywhere (mkT elimInStatExprs) $
+				everywhere (mkT insertbeforeexits) $
+				everywhere (mkT insertopen)
+				ast'
+			InstrS{..} <- get
+			liftIO $ insertBeforeMarker (incsPathS </> "data.c") "/*LOCATIONS*/" $
+				concatMap (\ loc -> ",\n" ++ locString loc) locationsS
+
+			modify $ \ s -> s { numLocsS = numLocsS + length locationsS, locationsS = [] }
+			return instr_ast
+		False -> return ast
+
 	instr_filename <- gets instrFileNameS
-	liftIO $ appendFile instr_filename $ (render $ pretty instr_ast) ++ "\n"
+	let filecomment = printf "/* %s */\n" (show (fileOfNode ast))
+	liftIO $ appendFile instr_filename $ filecomment ++ (render $ pretty ast') ++ "\n"
 
-	InstrS{..} <- get
-	liftIO $ insertBeforeMarker (incsPathS </> "data.c") "/*LOCATIONS*/" $
-		concatMap (\ loc -> ",\n" ++ locString loc) locationsS
+	return ast'
 
-	modify $ \ s -> s { numLocsS = numLocsS + length locationsS, locationsS = [] }
-
-	return instr_ast
-
-instrumentStmt :: String -> CStat -> InstrM CStat
-instrumentStmt data_c cstat = do
+instrumentStmt :: CStat -> InstrM CStat
+instrumentStmt cstat = do
 	InstrS{..} <- get
 
 	modify $ \ s -> s { locationsS = loc : locationsS }
 
 	let ret = CCompound [] [ instr traceFunNameS (numLocsS + length locationsS), CBlockStmt cstat ] undefNode
-	when _PROGRESS_OUTPUT $ liftIO $ putStr $ printf "locs= %8i\r" (length locationsS)
+--	when (_PROGRESS_OUTPUT && mod (length locationsS) 100 == 0)  $ liftIO $ putStrLn $ printf "locs= %8i" (length locationsS)
 	return ret
 	where
 	pos = posOfNode $ nodeInfo cstat
