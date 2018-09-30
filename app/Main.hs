@@ -160,8 +160,11 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 			-- Delete LOCATIONS marker (for next source file)
 			replaceInFile (incsPathS </> "data.c") "/*LOCATIONS*/" ""
 
-			(exitcode,stdout,stderr) <- readProcessWithExitCode gccExe
-				["-shared", "-fPIC", "-DQUIET", "-L/usr/lib/i386-linux-gnu", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
+			-- Due to a bug in ld, one has to set LIBRARY_PATH in order to have gcc find "crti.o"
+			cur_env <- getEnvironment
+			let createprocess = (proc gccExe ["-shared", "-fPIC", "-DQUIET", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ])
+				{ env = Just (("LIBRARY_PATH","/usr/lib/i386-linux-gnu"):cur_env) }
+			(exitcode,stdout,stderr) <- readCreateProcessWithExitCode createprocess ""
 			case exitcode of
 				ExitSuccess   -> return Nothing
 				ExitFailure _ -> return $ Just $ "Compile data.c failed:\n" ++ stdout ++ stderr
