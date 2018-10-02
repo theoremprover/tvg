@@ -18,7 +18,7 @@ data Counter = Counter { lineC :: Int64, columnC :: Int64, cntC :: Int64 }
 instance Storable Counter where
 	alignment _ = 8
 	sizeOf _    = 3*8
-	peek ptr    = Counter <$> peekByteOff ptr 0 <*> peekByteOff ptr 8<*> peekByteOff ptr 16
+	peek ptr    = Counter <$> peekByteOff ptr 0 <*> peekByteOff ptr 8 <*> peekByteOff ptr 16
 	poke ptr (Counter line col cnt) = pokeByteOff ptr 0 line >>= pokeByteOff ptr 8 col >>= pokeByteOff ptr 16 cnt
 
 {-
