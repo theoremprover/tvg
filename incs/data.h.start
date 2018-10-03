@@ -10,7 +10,8 @@ typedef struct {
 	COUNTER;
 
 typedef struct {
-	char sourcefilename[250];
+	char sourcefilename[256];
+	char output_filename[256];
 	long num_counters;
 	COUNTER counters[];
 } SRCFILE;

@@ -1,6 +1,5 @@
 /*
-In .../incs:
-gcc -w -DQUIET -shared -fPIC -I. data.c -o libdata.so
+gcc-4.7 -w [-DQUIET] -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
 
 */
 
@@ -26,6 +25,7 @@ void closetrace()
 #ifndef QUIET
 	long overall_num_stmts = 0;
 	long overall_reached_stmts = 0;
+	float coverage = 0.0;
 
 	int i;
 	for(i=1;i<sizeof(all_srcfiles)/sizeof(all_srcfiles[0]);i++)
@@ -43,7 +43,9 @@ void closetrace()
 
 		overall_num_stmts += num_stmts;
 		overall_reached_stmts += reached_stmts;
-		printf("Coverage of %s =\n  %.2f %%\n",srcfile->sourcefilename,100.0*(float)reached_stmts/(float)num_stmts);
+		coverage = 100.0*(float)reached_stmts/(float)num_stmts;
+		if(num_stmts<=0) coverage = 100.0;
+		printf("%6li of %6li Stmts, %5.1f %% coverage in %s\n",reached_stmts,num_stmts,coverage,srcfile->sourcefilename);
 	}
 
 	printf("Overall Coverage =\n  %.2f %%\n",100.0*(float)overall_reached_stmts/(float)overall_num_stmts);	

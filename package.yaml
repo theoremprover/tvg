@@ -28,6 +28,7 @@ dependencies:
 - transformers
 - text
 - strict
+- time
 
 library:
   source-dirs: src

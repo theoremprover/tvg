@@ -26,6 +26,7 @@ import Control.Monad.Trans.State.Strict
 import Control.Monad.IO.Class (liftIO)
 import Data.Char
 import Text.Printf
+import Data.Time.Clock
 
 import Language.C.System.Preprocess
 import Language.C.Data.InputStream
@@ -50,7 +51,7 @@ export CC="/root/.local/bin/tvg-exe /tvg"
 export CFLAGS="-w -I/usr/include/i386-linux-gnu"
 export LDFLAGS="-L/usr/lib/i386-linux-gnu"
 export LD_LIBRARY_PATH=/tvg/tvg/incs:$LD_LIBRARY_PATH
-export LIBRARY_PATH=/usr/lib/i386-linux-gnu
+export LIBRARY_PATH=/usr/lib/i386-linux-gnu:$LIBRARY_PATH
 
 root@robert-VirtualBox:/tvg/build#
 ../gcc-4.7.4/configure --disable-checking --enable-languages=c --disable-multiarch --disable-multilib --enable-shared --enable-threads=posix --program-suffix=-instr --with-gmp=/usr --with-mpc=/usr/lib --with-mpfr=/usr/lib --without-included-gettext --with-system-zlib --with-tune=generic --prefix=/tvg/install/gcc-4.7.4 --disable-bootstrap --disable-build-with-cxx
@@ -58,14 +59,15 @@ root@robert-VirtualBox:/tvg/build#
 cp /tvg/tvg/incs/data.c.start /tvg/tvg/incs/data.c
 cp /tvg/tvg/incs/data.h.start /tvg/tvg/incs/data.h
 
-stack install --allow-different-user
-
 make
 
-Nach "Cannot find crti.o":
-export LIBRARY_PATH=/usr/lib/i386-linux-gnu:$LIBRARY_PATH
+_INSTR = False setzen in Main.hs
+stack install --allow-different-user --ghc-options -O2 --force-dirty
 
 make install
+
+in incs:
+gcc-4.7 -w -shared -fPIC -I. data.c -o libdata.so
 
 GCC-Executable in
 /tvg/install/gcc-4.7.4/bin/gcc4.7
@@ -78,6 +80,7 @@ _WRITE_PREPROCESSED = False
 _KEEP_INSTRUMENTED = True
 _PROGRESS_OUTPUT = False
 _DEBUG_OUTPUT = False
+_INSTR = True
 
 gccExe = "gcc-4.7"
 
@@ -85,18 +88,18 @@ main = do
 	tvg_path:args <- getArgs
 	let incs_path = tvg_path </> "tvg" </> "incs"
 
-	when _INIT_DATA $ do
---		copyFile "test2.c.orig" "test2.c"
-		copyFile (incs_path </> "data.c.start") (incs_path </> "data.c") 
-		copyFile (incs_path </> "data.h.start") (incs_path </> "data.h") 
+	restore_files <- case _INSTR of
+		False -> return [return ()]
+		True -> do
+			when _INIT_DATA $ do
+		--		copyFile "test2.c.orig" "test2.c"
+				copyFile (incs_path </> "data.c.start") (incs_path </> "data.c") 
+				copyFile (incs_path </> "data.h.start") (incs_path </> "data.h") 
 
-	let args' = ["-I" ++ incs_path] ++ args
-	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args'
-	let o_arg = case searcharg "-o" args of
-		Nothing -> ""
-		Just (o:_) -> o
-	restore_files <- forM args (handleArg o_arg preprocess_args tvg_path incs_path)
-	when _DEBUG_OUTPUT $ putStrLn $ gccExe ++ " " ++ intercalate " " (["-L"++incs_path] ++ args ++ ["-ldata"])
+			let args' = ["-I" ++ incs_path] ++ args
+			let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args'
+			let o_arg = fmap head $ searcharg "-o" args
+			forM args (handleArg o_arg preprocess_args tvg_path incs_path)
 	exitcode <- rawSystem gccExe $ ["-L"++incs_path,"-I"++incs_path] ++ args ++ ["-ldata"]
 	sequence_ restore_files
 	exitWith exitcode
@@ -125,19 +128,23 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 	let bak_name = name ++ ".preinstr"
 	copyFile name bak_name
 
-	let filenameid = to_id $ o_arg ++ "__" ++ name
+	abs_filename <- makeAbsolute name
+	output_filename <- case o_arg of
+		Nothing    -> return "<none>"
+		Just ofile -> makeAbsolute ofile
+
+	let filenameid = to_id $ maybe "" id o_arg ++ "__" ++ name
 	let varname = "src_" ++ filenameid
 	let tracefunname = "trace_" ++ filenameid
 
-	-- The trace_function declaration text
+	-- Add the trace function declaration to data.h
 	let tracefundecl = printf "void %s(int i)" tracefunname
-
 	insertBeforeMarker (incs_path </> "data.h") "/*INSERT_HERE*/" $ tracefundecl ++ ";\n"
 
 	-- Add definition of trace_function to data.c
 	let fundecl = printf "%s { %s.counters[i+1].cnt++; }" tracefundecl varname
 	insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
-		printf "SRCFILE %s = { %s, /*NUM_LOCS*/, {\n{0,0,0}/*DUMMY*//*LOCATIONS*/\n} };\n" varname (show name) ++
+		printf "SRCFILE %s = { %s, %s, /*NUM_LOCS*/, {\n{0,0,0}/*DUMMY*//*LOCATIONS*/\n} };\n" varname (show abs_filename) (show output_filename) ++
 		fundecl ++ "\n\n"
 
 	parseresult <- parseCFile (newGCC gccExe) Nothing preprocess_args name
@@ -147,7 +154,6 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 			let instr_filename = name++".instr"
 			writeFile instr_filename "#include <data.h>\n\n"
 
-			abs_filename <- makeAbsolute name
 			InstrS{..} <- execStateT (processASTM ast) $ InstrS filenameid 0 tvg_path incs_path varname tracefunname abs_filename instr_filename []
 			copyFile instr_filename name
 			when (not _KEEP_INSTRUMENTED) $ removeFile instr_filename
@@ -160,13 +166,6 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 			-- Delete LOCATIONS marker (for next source file)
 			replaceInFile (incsPathS </> "data.c") "/*LOCATIONS*/" ""
 
-{-
-			-- Due to a bug in ld, one has to set LIBRARY_PATH in order to have gcc find "crti.o"
-			cur_env <- getEnvironment
-			let createprocess = (proc gccExe ["-shared", "-fPIC", "-DQUIET", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ])
-				{ env = Just (("LIBRARY_PATH","/usr/lib/i386-linux-gnu"):cur_env) }
-			(exitcode,stdout,stderr) <- readCreateProcessWithExitCode createprocess ""
--}
 			(exitcode,stdout,stderr) <- readProcessWithExitCode gccExe
 				["-shared", "-fPIC", "-DQUIET", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
 			case exitcode of
@@ -174,7 +173,13 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 				ExitFailure _ -> return $ Just $ "Compile data.c failed:\n" ++ stdout ++ stderr
 
 	case mb_err of
-		Nothing -> return $ removeFile name >> renameFile bak_name name
+		Nothing -> return $ do
+			removeFile name
+			-- This renameFile will set the source file's date to newer than the output file(s), so...
+			renameFile bak_name name
+			-- ... we set the date to "now" for make to behave correctly when resuming compilation etc.
+			now <- getCurrentTime
+			setModificationTime name (addUTCTime ((-1)*nominalDay) now)
 		Just errmsg -> do
 			removeFile name >> renameFile bak_name name
 			error errmsg
