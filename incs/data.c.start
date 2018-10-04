@@ -5,9 +5,13 @@ gcc-4.7 -w [-DQUIET] -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
 
 #include <data.h>
 #include <stdlib.h>
+
 #ifndef QUIET
 #include <stdio.h>
 #endif
+
+#include "CovStats_stub.h"
+
 
 /*INSERT_SRCFILE_HERE*/
 
@@ -49,5 +53,16 @@ void closetrace()
 	}
 
 	printf("Overall Coverage =\n  %.2f %%\n",100.0*(float)overall_reached_stmts/(float)overall_num_stmts);	
+#endif
+#ifdef HASK
+	int argc = 0;
+	char *argv[] = { NULL };
+	char **pargv = argv;
+	hs_init(&argc,&pargv);
+
+	show_stats(all_srcfiles,sizeof(all_srcfiles)/sizeof(all_srcfiles[0]));
+
+	hs_exit();
+
 #endif
 }
