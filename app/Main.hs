@@ -56,8 +56,7 @@ export LIBRARY_PATH=/usr/lib/i386-linux-gnu:$LIBRARY_PATH
 root@robert-VirtualBox:/tvg/build#
 ../gcc-4.7.4/configure --disable-checking --enable-languages=c --disable-multiarch --disable-multilib --enable-shared --enable-threads=posix --program-suffix=-instr --with-gmp=/usr --with-mpc=/usr/lib --with-mpfr=/usr/lib --without-included-gettext --with-system-zlib --with-tune=generic --prefix=/tvg/install/gcc-4.7.4 --disable-bootstrap --disable-build-with-cxx
 
-cp /tvg/tvg/incs/data.c.start /tvg/tvg/incs/data.c
-cp /tvg/tvg/incs/data.h.start /tvg/tvg/incs/data.h
+cp /tvg/tvg/incs/data.c.start /tvg/tvg/incs/data.c; cp /tvg/tvg/incs/data.h.start /tvg/tvg/incs/data.h
 
 make
 
@@ -66,11 +65,10 @@ stack install --allow-different-user --ghc-options -O2 --force-dirty
 
 make install
 
-in incs:
-gcc-4.7 -w -shared -fPIC -I. data.c -o libdata.so
+gcc-4.7 -w -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
 
 GCC-Executable in
-/tvg/install/gcc-4.7.4/bin/gcc4.7
+/tvg/install/gcc-4.7.4/bin/
 
 -}
 
