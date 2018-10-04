@@ -80,7 +80,7 @@ _WRITE_PREPROCESSED = False
 _KEEP_INSTRUMENTED = True
 _PROGRESS_OUTPUT = False
 _DEBUG_OUTPUT = False
-_INSTR = True
+_INSTR = False
 
 gccExe = "gcc-4.7"
 
