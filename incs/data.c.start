@@ -26,7 +26,7 @@ void opentrace()
 
 void closetrace()
 {
-#ifndef QUIET
+/*
 	long overall_num_stmts = 0;
 	long overall_reached_stmts = 0;
 	float coverage = 0.0;
@@ -53,8 +53,8 @@ void closetrace()
 	}
 
 	printf("Overall Coverage =\n  %.2f %%\n",100.0*(float)overall_reached_stmts/(float)overall_num_stmts);	
-#endif
-#ifdef HASK
+*/
+#ifndef QUIET
 	int argc = 0;
 	char *argv[] = { NULL };
 	char **pargv = argv;
@@ -63,6 +63,5 @@ void closetrace()
 	show_stats(all_srcfiles,sizeof(all_srcfiles)/sizeof(all_srcfiles[0]));
 
 	hs_exit();
-
 #endif
 }

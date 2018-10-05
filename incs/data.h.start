@@ -9,9 +9,10 @@ typedef struct {
 	long cnt; }
 	COUNTER;
 
+#define MAX_FILENAME_LEN 256
 typedef struct {
-	char sourcefilename[256];
-	char output_filename[256];
+	char sourcefilename[MAX_FILENAME_LEN];
+	char output_filename[MAX_FILENAME_LEN];
 	long num_counters;
 	COUNTER counters[];
 } SRCFILE;
