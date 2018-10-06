@@ -1,4 +1,4 @@
-{-# LANGUAGE ForeignFunctionInterface,ScopedTypeVariables #-}
+{-# LANGUAGE ForeignFunctionInterface,ScopedTypeVariables,DeriveGeneric #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 module CovStats where
@@ -8,6 +8,12 @@ import Foreign
 import Foreign.C
 import Text.Printf
 import Control.Monad
+import Data.Binary
+import GHC.Generics (Generic)
+import qualified Data.ByteString.Lazy as BSL
+import Data.List
+import System.Directory
+
 
 #include "data.h"
 
@@ -20,6 +26,9 @@ hsc2hs CovStats.hsc && ghc -fPIC -c CovStats.hs
 ghc -shared -dynamic -fPIC -no-hs-main -I. data.c CovStats.o -o libdata.so -optl-Wl,-rpath,/usr/lib/ghc/ -lHSrts_thr-ghc7.10.3
 For testing:
 ghc -fPIC -no-hs-main -I. CovStats.o foreigntest.c -o foreigntest
+
+
+ghc -shared -dynamic -fPIC -no-hs-main -I. data.c CovStats.o -o libdata.so -optl-Wl,-rpath,/usr/lib/ghc/ -lHSrts_thr-ghc7.10.3 -optl-Wl,-L/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi -lHSbinary-0.7.5.0-3uXFWMoAGBg0xKP9MHKRwi-ghc7.10.3 -optl-Wl,-rpath,/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi/ -optl-Wl,-L/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm -lHSdirectory-1.2.2.0-0hFG6ZxK1nk4zsyOqbNHfm-ghc7.10.3 -optl-Wl,-rpath,/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm
 -}
 
 
@@ -29,7 +38,7 @@ typedef struct {
 	long cnt; }
 	COUNTER;
 -}
-data Counter = Counter { lineC :: Int32, columnC :: Int32, cntC :: Int32 } deriving Show
+data Counter = Counter { lineC :: Int, columnC :: Int, cntC :: Int } deriving (Show,Generic)
 instance Storable Counter where
 	alignment _ = #{alignment COUNTER}
 	sizeOf _    = #{size COUNTER}
@@ -41,6 +50,7 @@ instance Storable Counter where
 		#{poke COUNTER, line} ptr line
 		#{poke COUNTER, column} ptr col
 		#{poke COUNTER, cnt} ptr cnt
+instance Binary Counter
 
 {-
 typedef struct {
@@ -50,7 +60,7 @@ typedef struct {
 	COUNTER counters[];
 } SRCFILE;
 -}
-data SrcFile = SrcFile { sourceFilenameS :: String, outputFilenameS :: String, countersS :: [Counter] } deriving Show
+data SrcFile = SrcFile { sourceFilenameS :: String, outputFilenameS :: String, countersS :: [Counter] } deriving (Show,Generic)
 instance Storable SrcFile where
 	alignment _ = #{alignment SRCFILE}
 	sizeOf _    = #{size SRCFILE}
@@ -65,11 +75,19 @@ instance Storable SrcFile where
 		withCStringLen (take (#{const MAX_FILENAME_LEN}) outputfn) $ uncurry (copyArray (#{ptr SRCFILE, output_filename} ptr))
 		#{poke SRCFILE, num_counters} ptr (length cnts)
 		pokeArray (#{ptr SRCFILE, counters} ptr) cnts
+instance Binary SrcFile
 
-foreign export ccall show_stats :: Ptr (Ptr SrcFile) -> Int -> IO ()
-show_stats ptr_ptr_srcfiles num_srcfiles = do
+type Coverage = [SrcFile]
+
+foreign export ccall show_stats :: CString -> Ptr (Ptr SrcFile) -> Int -> IO ()
+show_stats ccovfilename ptr_ptr_srcfiles num_srcfiles = do
+	cov_filename <- peekCString ccovfilename
 	ptrs_srcfiles <- peekArray num_srcfiles ptr_ptr_srcfiles
 	srcfiles <- mapM peek ptrs_srcfiles
+	new_coverage <- accumulateCoverage cov_filename srcfiles
+	showCoverage new_coverage
+
+showCoverage srcfiles = do
 	covs <- forM srcfiles $ \ (SrcFile sourcefn outputfn counters) -> do
 		let
 			n_cov :: Int = sum $ map (min 1 . fromIntegral . cntC) counters
@@ -77,7 +95,29 @@ show_stats ptr_ptr_srcfiles num_srcfiles = do
 		putStrLn $ printf "%6i of %6i statements, %5.1f %% coverage in %s (compiled into %s)" n_cov n_stmts (cov_pct n_cov n_stmts) sourcefn outputfn
 		return (n_cov,n_stmts)
 	let (n_covs,n_stmtss) = unzip covs
-	putStrLn $ printf "Overall coverage: %5.1f %%" (cov_pct (sum n_covs) (sum n_stmtss))
+	putStrLn $ printf "Overall coverage: %5.1f %%" (cov_pct (sum n_covs) (sum n_stmtss))	
 	where
-	cov_pct :: (Int,Int) -> Float
-	cov_pct (n_cov,n_stmts) = if n_stmts<=0 then 100.0 else 100.0* (fromIntegral n_cov) / (fromIntegral n_stmts)
+	cov_pct :: Int -> Int -> Float
+	cov_pct n_cov n_stmts = if n_stmts<=0 then 100.0 else 100.0* (fromIntegral n_cov) / (fromIntegral n_stmts)
+
+writeCoverage :: String -> Coverage -> IO ()
+writeCoverage cov_filename srcfiles = BSL.writeFile cov_filename $ encode srcfiles
+
+readCoverage :: String -> IO Coverage
+readCoverage cov_filename = do
+	bsl <- BSL.readFile cov_filename
+	print (BSL.length bsl)
+	return $ decode bsl
+
+accumulateCoverage cov_filename srcfiles = do
+	cov_exists <- doesFileExist cov_filename
+	new_coverage <- case cov_exists of
+		False -> return srcfiles 
+		True -> do
+			prev_srcfiles <- readCoverage cov_filename
+			return $ map merge_srcfiles (zip prev_srcfiles srcfiles)
+			where
+			merge_srcfiles (prev_srcfile,srcfile) = prev_srcfile { countersS = map merge_counters (zip (countersS prev_srcfile) (countersS srcfile)) }
+			merge_counters (cnt1,cnt2) = cnt1 { cntC = cntC cnt1 + cntC cnt2 }
+	writeCoverage cov_filename new_coverage
+	return new_coverage

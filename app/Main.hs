@@ -81,6 +81,7 @@ _DEBUG_OUTPUT = False
 _INSTR = True
 
 gccExe = "gcc-4.7"
+covFilename = "cov.csv"
 
 main = do
 	tvg_path:args <- getArgs
@@ -89,6 +90,9 @@ main = do
 	restore_files <- case _INSTR of
 		False -> return [return ()]
 		True -> do
+			-- set coverage filename in data.c (if it is not set yet)
+			replaceInFile (incs_path </> "data.c") "/*COV_FILENAME*/" (tvg_path </> covFilename)
+
 			when _INIT_DATA $ do
 		--		copyFile "test2.c.orig" "test2.c"
 				copyFile (incs_path </> "data.c.start") (incs_path </> "data.c") 

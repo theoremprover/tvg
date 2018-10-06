@@ -29,6 +29,7 @@ dependencies:
 - text
 - strict
 - time
+- binary
 
 library:
   source-dirs: src

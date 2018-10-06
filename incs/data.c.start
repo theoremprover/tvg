@@ -13,6 +13,8 @@ gcc-4.7 -w [-DQUIET] -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
 #include "CovStats_stub.h"
 
 
+char coverageFilename[] = "/*COV_FILENAME*/";
+
 /*INSERT_SRCFILE_HERE*/
 
 SRCFILE* all_srcfiles[] = { NULL/*INSERT_SRCPTR_HERE*/
