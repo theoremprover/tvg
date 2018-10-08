@@ -91,7 +91,7 @@ main = do
 		False -> return [return ()]
 		True -> do
 			-- set coverage filename in data.c (if it is not set yet)
-			replaceInFile (incs_path </> "data.c") "/*COV_FILENAME*/" (tvg_path </> covFilename)
+			replaceInFile (incs_path </> "data.c") "/*COV_FILENAME*/" (show $ tvg_path </> covFilename)
 
 			when _INIT_DATA $ do
 		--		copyFile "test2.c.orig" "test2.c"
