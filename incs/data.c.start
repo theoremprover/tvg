@@ -28,41 +28,13 @@ void opentrace()
 
 void closetrace()
 {
-/*
-	long overall_num_stmts = 0;
-	long overall_reached_stmts = 0;
-	float coverage = 0.0;
-
-	int i;
-	for(i=1;i<sizeof(all_srcfiles)/sizeof(all_srcfiles[0]);i++)
-	{
-		SRCFILE* srcfile = all_srcfiles[i];
-		long num_stmts = srcfile->num_counters;
-		long reached_stmts = 0;
-
-		int j;
-		for(j=1;j<=num_stmts;j++)
-		{
-			COUNTER* counter = &(srcfile->counters[j]);
-			if(counter->cnt > 0) reached_stmts++;
-		}
-
-		overall_num_stmts += num_stmts;
-		overall_reached_stmts += reached_stmts;
-		coverage = 100.0*(float)reached_stmts/(float)num_stmts;
-		if(num_stmts<=0) coverage = 100.0;
-		printf("%6li of %6li Stmts, %5.1f %% coverage in %s\n",reached_stmts,num_stmts,coverage,srcfile->sourcefilename);
-	}
-
-	printf("Overall Coverage =\n  %.2f %%\n",100.0*(float)overall_reached_stmts/(float)overall_num_stmts);	
-*/
 #ifndef QUIET
 	int argc = 0;
 	char *argv[] = { NULL };
 	char **pargv = argv;
 	hs_init(&argc,&pargv);
 
-	show_stats(all_srcfiles,sizeof(all_srcfiles)/sizeof(all_srcfiles[0]));
+	show_stats(coverageFilename,&all_srcfiles[1],sizeof(all_srcfiles)/sizeof(all_srcfiles[0])-1);
 
 	hs_exit();
 #endif
