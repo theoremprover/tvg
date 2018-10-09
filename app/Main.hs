@@ -105,9 +105,11 @@ main = do
 
 --	exitcode <- rawSystem gccExe $ ["-L"++incs_path,"-I"++incs_path] ++ args ++ ["-ldata"]
 --ghc -shared -dynamic -fPIC -no-hs-main -I. data.c CovStats.o -o libdata.so -optl-Wl,-rpath,/usr/lib/ghc/ -lHSrts_thr-ghc7.10.3 -optl-Wl,-L/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi -lHSbinary-0.7.5.0-3uXFWMoAGBg0xKP9MHKRwi-ghc7.10.3 -optl-Wl,-rpath,/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi/ -optl-Wl,-L/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm -lHSdirectory-1.2.2.0-0hFG6ZxK1nk4zsyOqbNHfm-ghc7.10.3 -optl-Wl,-rpath,/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm
-	exitcode <- rawSystem "ghc" $ ["-shared","-dynamic","-fPIC","-no-hs-main",
-		"-I"++incs_path, incs_path</>"data.c",incs_path</>"CovStats.o","-o",incs_path</>"libdata.so",
-		"-optl-Wl,-rpath,/usr/lib/ghc/","-lHSrts_thr-ghc7.10.3","-optl-Wl,-L/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi","-lHSbinary-0.7.5.0-3uXFWMoAGBg0xKP9MHKRwi-ghc7.10.3","-optl-Wl,-rpath,/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi/","-optl-Wl,-L/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm","-lHSdirectory-1.2.2.0-0hFG6ZxK1nk4zsyOqbNHfm-ghc7.10.3","-optl-Wl,-rpath,/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm" ]
+	exitcode <- rawSystem "ghc" $ ["-shared", "-dynamic", "-fPIC", "-no-hs-main",
+		"-I"++incs_path, incs_path</>"data.c", incs_path</>"CovStats.o", "-o", incs_path</>"libdata.so",
+		"-optl-Wl,-rpath,/usr/lib/ghc/","-lHSrts_thr-ghc7.10.3",
+		"-optl-Wl,-L/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi","-lHSbinary-0.7.5.0-3uXFWMoAGBg0xKP9MHKRwi-ghc7.10.3","-optl-Wl,-rpath,/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi/",
+		"-optl-Wl,-L/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm","-lHSdirectory-1.2.2.0-0hFG6ZxK1nk4zsyOqbNHfm-ghc7.10.3","-optl-Wl,-rpath,/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm" ]
 
 	sequence_ restore_files
 	exitWith exitcode
