@@ -91,7 +91,7 @@ main = do
 		False -> return [return ()]
 		True -> do
 			-- set coverage filename in data.c (if it is not set yet)
-			replaceInFile (incs_path </> "data.c") "/*COV_FILENAME*/" (show $ tvg_path </> covFilename)
+			replaceInFile (incs_path </> "data.c") "\"/*COV_FILENAME*/\"" (show $ tvg_path </> covFilename)
 
 			when _INIT_DATA $ do
 		--		copyFile "test2.c.orig" "test2.c"
@@ -102,7 +102,13 @@ main = do
 			let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args'
 			let o_arg = fmap head $ searcharg "-o" args
 			forM args (handleArg o_arg preprocess_args tvg_path incs_path)
-	exitcode <- rawSystem gccExe $ ["-L"++incs_path,"-I"++incs_path] ++ args ++ ["-ldata"]
+
+--	exitcode <- rawSystem gccExe $ ["-L"++incs_path,"-I"++incs_path] ++ args ++ ["-ldata"]
+--ghc -shared -dynamic -fPIC -no-hs-main -I. data.c CovStats.o -o libdata.so -optl-Wl,-rpath,/usr/lib/ghc/ -lHSrts_thr-ghc7.10.3 -optl-Wl,-L/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi -lHSbinary-0.7.5.0-3uXFWMoAGBg0xKP9MHKRwi-ghc7.10.3 -optl-Wl,-rpath,/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi/ -optl-Wl,-L/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm -lHSdirectory-1.2.2.0-0hFG6ZxK1nk4zsyOqbNHfm-ghc7.10.3 -optl-Wl,-rpath,/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm
+	exitcode <- rawSystem "ghc" $ ["-shared","-dynamic","-fPIC","-no-hs-main",
+		"-I"++incs_path, incs_path</>"data.c",incs_path</>"CovStats.o","-o",incs_path</>"libdata.so",
+		"-optl-Wl,-rpath,/usr/lib/ghc/","-lHSrts_thr-ghc7.10.3","-optl-Wl,-L/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi","-lHSbinary-0.7.5.0-3uXFWMoAGBg0xKP9MHKRwi-ghc7.10.3","-optl-Wl,-rpath,/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi/","-optl-Wl,-L/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm","-lHSdirectory-1.2.2.0-0hFG6ZxK1nk4zsyOqbNHfm-ghc7.10.3","-optl-Wl,-rpath,/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm" ]
+
 	sequence_ restore_files
 	exitWith exitcode
 

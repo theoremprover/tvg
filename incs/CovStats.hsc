@@ -22,8 +22,8 @@ import System.Directory
 #endif
 
 {-
-hsc2hs CovStats.hsc && ghc -fPIC -c CovStats.hs
-ghc -shared -dynamic -fPIC -no-hs-main -I. data.c CovStats.o -o libdata.so -optl-Wl,-rpath,/usr/lib/ghc/ -lHSrts_thr-ghc7.10.3
+hsc2hs CovStats.hsc && ghc -fPIC -dynamic -c CovStats.hs
+
 For testing:
 ghc -fPIC -no-hs-main -I. CovStats.o foreigntest.c -o foreigntest
 
