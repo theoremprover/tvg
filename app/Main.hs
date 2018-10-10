@@ -72,7 +72,7 @@ GCC-Executable in
 
 -}
 
-_OUTPUT_AST = False
+_OUTPUT_AST = True
 _INIT_DATA = False
 _WRITE_PREPROCESSED = False
 _KEEP_INSTRUMENTED = True
@@ -177,7 +177,7 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 			replaceInFile (incsPathS </> "data.c") "/*LOCATIONS*/" ""
 
 			(exitcode,stdout,stderr) <- readProcessWithExitCode gccExe
-				["-shared", "-fPIC", "-DQUIET", "-I"++incs_path, incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
+				["-shared", "-fPIC", "-DQUIET", "-I"++incs_path, "-I/usr/lib/ghc/include", incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
 			case exitcode of
 				ExitSuccess   -> return Nothing
 				ExitFailure _ -> return $ Just $ "Compile data.c failed:\n" ++ stdout ++ stderr
