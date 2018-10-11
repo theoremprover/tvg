@@ -3,6 +3,7 @@ set -e
 rm -rf /tvg/build/*
 rm -rf /tvg/install/*
 
+
 export CC="/root/.local/bin/tvg-exe /tvg"
 export CFLAGS="-w -I/usr/include/i386-linux-gnu"
 export LDFLAGS="-L/usr/lib/i386-linux-gnu"
