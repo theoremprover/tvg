@@ -42,7 +42,7 @@ tvg.exe +RTS -h -RTS [...]
 -}
 
 {-
-stack install --allow-different-user --ghc-options -O2 --force-dirty
+stack install --allow-different-user --ghc-options -O3 --force-dirty
 
 /root/.local/bin/tvg-exe /tvg test2.c -o test2
 
@@ -61,14 +61,9 @@ cp /tvg/tvg/incs/data.c.start /tvg/tvg/incs/data.c; cp /tvg/tvg/incs/data.h.star
 make
 
 _INSTR = False setzen in Main.hs
-stack install --allow-different-user --ghc-options -O2 --force-dirty
+stack install --allow-different-user --ghc-options -O3 --force-dirty
 
 make install
-
-gcc-4.7 -w -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
-
-GCC-Executable in
-/tvg/install/gcc-4.7.4/bin/
 
 -}
 
@@ -91,7 +86,7 @@ main = do
 		False -> return [return ()]
 		True -> do
 			-- set coverage filename in data.c (if it is not set yet)
-			replaceInFile (incs_path </> "data.c") "\"/*COV_FILENAME*/\"" (show $ tvg_path </> covFilename)
+			replaceInFile (incs_path </> "data.c") "\"/*COV_FILENAME*/\"" (show $ tvg_path </> "tvg" </> covFilename)
 
 			when _INIT_DATA $ do
 		--		copyFile "test2.c.orig" "test2.c"
