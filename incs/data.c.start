@@ -8,6 +8,9 @@ gcc-4.7 -w [-DQUIET] -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
 
 #ifndef QUIET
 #include <stdio.h>
+int tvg_quiet = 0;
+#else
+int tvg_quiet = 1;
 #endif
 
 #include "CovStats_stub.h"
@@ -34,7 +37,7 @@ void closetrace()
 	char **pargv = argv;
 	hs_init(&argc,&pargv);
 
-	show_stats(coverageFilename,&all_srcfiles[1],sizeof(all_srcfiles)/sizeof(all_srcfiles[0])-1);
+	show_stats(tvg_quiet,coverageFilename,&all_srcfiles[1],sizeof(all_srcfiles)/sizeof(all_srcfiles[0])-1);
 
 	hs_exit();
 #endif

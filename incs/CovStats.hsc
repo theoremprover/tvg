@@ -79,13 +79,13 @@ instance Binary SrcFile
 
 type Coverage = [SrcFile]
 
-foreign export ccall show_stats :: CString -> Ptr (Ptr SrcFile) -> Int -> IO ()
-show_stats ccovfilename ptr_ptr_srcfiles num_srcfiles = do
+foreign export ccall show_stats :: Int -> CString -> Ptr (Ptr SrcFile) -> Int -> IO ()
+show_stats quiet ccovfilename ptr_ptr_srcfiles num_srcfiles = do
 	cov_filename <- peekCString ccovfilename
 	ptrs_srcfiles <- peekArray num_srcfiles ptr_ptr_srcfiles
 	srcfiles <- mapM peek ptrs_srcfiles
 	new_coverage <- accumulateCoverage cov_filename srcfiles
-	showCoverage new_coverage
+	unless (quiet==0) $ showCoverage new_coverage
 
 showCoverage srcfiles = do
 	covs <- forM srcfiles $ \ (SrcFile sourcefn outputfn counters) -> do

@@ -20,8 +20,6 @@ import Language.C.System.GCC
 import Text.PrettyPrint
 import System.FilePath
 import Data.Generics
---import Data.Data.Lens
---import Control.Lens.Traversal
 import Control.Monad.Trans.State.Strict
 import Control.Monad.IO.Class (liftIO)
 import Data.Char
@@ -32,7 +30,6 @@ import Language.C.System.Preprocess
 import Language.C.Data.InputStream
 
 import ShowAST
---import ASTLenses
 
 {-
 Profiling:
@@ -166,20 +163,10 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 			-- Delete LOCATIONS marker (for next source file)
 			replaceInFile (incsPathS </> "data.c") "/*LOCATIONS*/" ""
 
-			{-
-			(exitcode,stdout,stderr) <- readProcessWithExitCode gccExe
-				["-shared", "-fPIC", "-DQUIET", "-I"++incs_path, "-I/usr/lib/ghc/include", incs_path </> "data.c", "-o", incs_path </> "libdata.so" ] ""
-			-}
 			when _DEBUG_OUTPUT $ putStrLn "Compiling data.c with stack..." 
 			(exitcode,stdout,stderr) <- readProcessWithExitCode "stack" [ "--allow-different-user", "ghc", "--", "-shared", "-threaded", "-dynamic", "-DQUIET", "-fPIC", "-no-hs-main",
 				"-I"++incs_path, incs_path</>"data.c", incs_path</>"CovStats.hs", "-o", incs_path</>"libdata.so",
 				"-lHSrts_thr-ghc8.4.3", "-lffi" ] ""
-				{-
-				"-optl-Wl,-rpath,/root/.stack/programs/i386-linux/ghc-8.4.3/lib/ghc-8.4.3/", 
-				"-optl-Wl,-rpath,/usr/lib/ghc/","-lHSrts_thr-ghc7.10.3",
-				"-optl-Wl,-L/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi","-lHSbinary-0.7.5.0-3uXFWMoAGBg0xKP9MHKRwi-ghc7.10.3","-optl-Wl,-rpath,/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi/",
-				"-optl-Wl,-L/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm","-lHSdirectory-1.2.2.0-0hFG6ZxK1nk4zsyOqbNHfm-ghc7.10.3","-optl-Wl,-rpath,/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm" ] 
-				-} 
 				
 			case exitcode of
 				ExitSuccess   -> return Nothing
