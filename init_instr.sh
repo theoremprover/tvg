@@ -16,7 +16,7 @@ stack install --allow-different-user --ghc-options -O3 --force-dirty
 cd /tvg/tvg/incs
 cp data.c.start data.c; cp data.h.start data.h
 
-rm -f CovStats.hs CovStats_stub.h CovStats.o libdata.so data.o
+rm -f CovStats.hs CovStats.hi CovStats_stub.h CovStats.o libdata.so data.o
 echo "Compiling CovStats.hsc"
 /root/.local/bin/hsc2hs CovStats.hsc
 
