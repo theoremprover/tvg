@@ -3,6 +3,7 @@
 
 module CovStats where
 
+import Prelude hiding (readFile)
 import Control.Applicative ((<$>), (<*>))
 import Foreign
 import Foreign.C
@@ -10,27 +11,16 @@ import Text.Printf
 import Control.Monad
 import Data.Binary
 import GHC.Generics (Generic)
-import qualified Data.ByteString.Lazy as BSL
+import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.List
 import System.Directory
-
+import System.IO.Strict (readFile)
 
 #include "data.h"
 
 #if __GLASGOW_HASKELL__ < 800
 #let alignment t = "%lu", (unsigned long)offsetof(struct {char x__; t (y__); }, y__)
 #endif
-
-{-
-hsc2hs CovStats.hsc && ghc -fPIC -dynamic -c CovStats.hs
-
-For testing:
-ghc -fPIC -no-hs-main -I. CovStats.o foreigntest.c -o foreigntest
-
-
-ghc -shared -dynamic -fPIC -no-hs-main -I. data.c CovStats.o -o libdata.so -optl-Wl,-rpath,/usr/lib/ghc/ -lHSrts_thr-ghc7.10.3 -optl-Wl,-L/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi -lHSbinary-0.7.5.0-3uXFWMoAGBg0xKP9MHKRwi-ghc7.10.3 -optl-Wl,-rpath,/usr/lib/ghc/binar_3uXFWMoAGBg0xKP9MHKRwi/ -optl-Wl,-L/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm -lHSdirectory-1.2.2.0-0hFG6ZxK1nk4zsyOqbNHfm-ghc7.10.3 -optl-Wl,-rpath,/usr/lib/ghc/direc_0hFG6ZxK1nk4zsyOqbNHfm
--}
-
 
 {-
 typedef struct {
@@ -105,9 +95,8 @@ writeCoverage cov_filename srcfiles = BSL.writeFile cov_filename $ encode srcfil
 
 readCoverage :: String -> IO Coverage
 readCoverage cov_filename = do
-	bsl <- BSL.readFile cov_filename
-	print (BSL.length bsl)
-	return $ decode bsl
+	s <- readFile cov_filename
+	return $ decode $ BSL.pack s
 
 accumulateCoverage cov_filename srcfiles = do
 	cov_exists <- doesFileExist cov_filename
