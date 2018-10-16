@@ -6,7 +6,7 @@ typedef struct {
 	ULONG combinationsTrue[MAX_COMBINATIONS];
 	UBYTE numCombinationsFalse = 0;
 	ULONG combinationsFalse[MAX_COMBINATIONS];
-	ULONG independentConditions = 0;
+	ULONG independentConditions = 0L;
 	} DECISION;
 
 void decisionOutcome(ULONG cur_combination,DECISION* decision,BOOL decision_outcome)
@@ -31,22 +31,22 @@ DECISION decision1234 = {
 	0L };
 DECISION all_decisions[1] = { &decision1234 };
 
-int combs[] = { 
+int combs[3][] = { {0,0,0}, {1,0,0}, {0,1,0}, {0,0,1} };
 
 int main(int argc,char *argv[])
 {
 	if(argc<4) return(1);
 
-	for(int i=0;i<10;i++)
+	for(int i=0;i<sizeof(combs);i++)
 	{
 		int a,b,c;
-		a = combs[i*3];
+		a = combs[0][i];
 		if(a)   // Lazy "||" operator, evaluate b and c only if a==True
 		{
 			add
-			b = combs[i*3+1];
+			b = combs[1][i];
 			// Strict "&" operator, hence evaluating c unconditionally
-			c = combs[i*3+2];
+			c = combs[2][i];
 		}
 		else
 		{
@@ -61,10 +61,12 @@ int main(int argc,char *argv[])
 		}
 		else
 		{
-			decisionOutcome(cur_comb,&decision1234,True);
+			decisionOutcome(cur_comb,&decision1234,False);
 			printf("False\n");
 		}
 	}
+
+	decision1234
 
 	return(0);
 }
