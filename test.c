@@ -6,11 +6,12 @@ typedef unsigned char UBYTE;
 
 #define MAX_COMBINATIONS 16
 typedef struct {
-	UBYTE numCombinationsTrue = 0;
+	UBYTE numCombinationsTrue;
 	ULONG combinationsTrue[MAX_COMBINATIONS];
-	UBYTE numCombinationsFalse = 0;
+// 010,000
+	UBYTE numCombinationsFalse;
 	ULONG combinationsFalse[MAX_COMBINATIONS];
-	ULONG independentConditions = 0L;
+// 001
 	} DECISION;
 
 void addCombination(ULONG cur_combination,UBYTE* p_num_combinations,ULONG* combinations)
@@ -27,7 +28,7 @@ void addCombination(ULONG cur_combination,UBYTE* p_num_combinations,ULONG* combi
 	combinations[(*p_num_combinations)++] = cur_combination;
 }
 
-void decisionOutcome(ULONG cur_combination,DECISION* decision,BOOL decision_outcome)
+void decisionOutcome(ULONG cur_combination,DECISION* decision,int decision_outcome)
 {
 	if(decision_outcome)
 		addCombination(cur_combination,&(decision->numCombinationsTrue),decision->combinationsTrue);
@@ -40,47 +41,50 @@ DECISION decision1234 = {
 	0, {0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L},
 	0, {0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L},
 	0L };
-DECISION all_decisions[1] = { &decision1234 };
+DECISION* all_decisions[1] = { &decision1234 };
 
-int combs[3][] = { {0,0,0}, {1,0,0}, {0,1,0}, {0,0,1} };
+int combs[][3] = { {0,0,0}, {1,0,0}, {0,1,0}, {0,0,1} };
 
 void showDecision(DECISION* decision)
 {
-/*
-typedef struct {
-	UBYTE numCombinationsTrue = 0;
-	ULONG combinationsTrue[MAX_COMBINATIONS];
-	UBYTE numCombinationsFalse = 0;
-	ULONG combinationsFalse[MAX_COMBINATIONS];
-	ULONG independentConditions = 0L;
-	} DECISION;
-*/
 	printf("combinationsTrue:\n");
-	for(int i=0;i<decision->numCombinationsTrue;i++) printf("%3b, ",decision->combinationsTrue[i]);
+	for(int i=0;i<decision->numCombinationsTrue;i++) printf("%lx, ",decision->combinationsTrue[i]);
 	printf("\ncombinationsFalse:\n");
-	for(int i=0;i<decision->numCombinationsFalse;i++) printf("%3b, ",decision->combinationsFalse[i]);
-	printf("\nindependentConditions = %3b\n",decision->independentConditions);
+	for(int i=0;i<decision->numCombinationsFalse;i++) printf("%lx, ",decision->combinationsFalse[i]);
+	printf("\nindependentConditions = %lx\n",decision->independentConditions);
 }
 
+void showCoverage(int numCond,DECISION* decision)
+{
+	ULONG dependentConditions = 0L;
+	for(int i=0;i<numCond;i++)
+	{
+		ULONG b = 1<<i;
+		for(int j=0;j<decision->numCombinationsTrue;j++)
+		{
+			for(int k=0;k<decision->numCombinationsFalse;k++)
+			{
+				if(decision->combinationsTrue[j]
+			}
+		}
+	}
+}
 
 int main(int argc,char *argv[])
 {
-	if(argc<4) return(1);
-
-	for(int i=0;i<sizeof(combs);i++)
+	for(int i=0;i<sizeof(combs)/sizeof(combs[0]);i++)
 	{
 		int a,b,c;
-		a = combs[0][i];
+		a = combs[i][0];
 		if(a)   // Lazy "||" operator, evaluate b and c only if a==True
 		{
-			add
-			b = combs[1][i];
+			b = combs[i][1];
 			// Strict "&" operator, hence evaluating c unconditionally
-			c = combs[2][i];
+			c = combs[i][2];
 		}
 		else
 		{
-			// b and c not evaluated, could be any 
+			// b and c not evaluated, could be any
 		}
 
 		ULONG cur_comb = ((ULONG)a&1)<<0 | ((ULONG)b&1)<<1 | ((ULONG)c&1)<<2;
@@ -97,6 +101,7 @@ int main(int argc,char *argv[])
 	}
 
 	showDecision(&decision1234);
+	showCoverage(3,&decision1234);
 
 	return(0);
 }
