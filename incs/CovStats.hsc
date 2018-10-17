@@ -4,6 +4,7 @@
 module CovStats where
 
 import Prelude hiding (readFile)
+import System.IO.Strict (readFile)
 import Control.Applicative ((<$>), (<*>))
 import Foreign
 import Foreign.C
@@ -14,7 +15,6 @@ import GHC.Generics (Generic)
 import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.List
 import System.Directory
-import System.IO.Strict (readFile)
 
 #include "data.h"
 
