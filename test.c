@@ -6,6 +6,7 @@ typedef unsigned char UBYTE;
 
 #define MAX_COMBINATIONS 16
 typedef struct {
+	UBYTE numConditions;
 	UBYTE numCombinationsTrue;
 	ULONG combinationsTrue[MAX_COMBINATIONS];
 // 010,000
@@ -37,34 +38,43 @@ void decisionOutcome(ULONG cur_combination,DECISION* decision,int decision_outco
 }
 
 
-DECISION decision1234 = {
+DECISION decision1234 = { 3,
 	0, {0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L},
-	0, {0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L},
-	0L };
+	0, {0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L} };
 DECISION* all_decisions[1] = { &decision1234 };
 
 int combs[][3] = { {0,0,0}, {1,0,0}, {0,1,0}, {0,0,1} };
 
+void showComb(UBYTE numCond,ULONG comb)
+{
+	ULONG mask = comb;
+	for(int i=0;i<numCond;i++)
+	{
+		printf("%c",'0'+(mask&1));
+	}
+}
+
 void showDecision(DECISION* decision)
 {
 	printf("combinationsTrue:\n");
-	for(int i=0;i<decision->numCombinationsTrue;i++) printf("%lx, ",decision->combinationsTrue[i]);
+	for(int i=0;i<decision->numCombinationsTrue;i++) printf("%s, ",showComb(decision->numConditions,decision->combinationsTrue[i]));
 	printf("\ncombinationsFalse:\n");
-	for(int i=0;i<decision->numCombinationsFalse;i++) printf("%lx, ",decision->combinationsFalse[i]);
-	printf("\nindependentConditions = %lx\n",decision->independentConditions);
+	for(int i=0;i<decision->numCombinationsFalse;i++) printf("%s, ",showComb(decision->numConditions,decision->combinationsFalse[i]));
 }
 
-void showCoverage(int numCond,DECISION* decision)
+void evalCoverage(DECISION* decision)
 {
-	ULONG dependentConditions = 0L;
-	for(int i=0;i<numCond;i++)
+	for(int i=0;i<decision->numConditions;i++)
 	{
 		ULONG b = 1<<i;
 		for(int j=0;j<decision->numCombinationsTrue;j++)
 		{
 			for(int k=0;k<decision->numCombinationsFalse;k++)
 			{
-				if(decision->combinationsTrue[j]
+				if((decision->combinationsTrue[j])&(~b)==(decision->combinationsFalse[k])&(~b))
+				{
+					printf("Condition %i independent: %i,%i",i,j,k);
+				}
 			}
 		}
 	}
@@ -101,7 +111,7 @@ int main(int argc,char *argv[])
 	}
 
 	showDecision(&decision1234);
-	showCoverage(3,&decision1234);
+	evalCoverage(&decision1234);
 
 	return(0);
 }
