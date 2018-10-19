@@ -19,7 +19,11 @@ void addCombination(ULONG cur_combination,UBYTE* p_num_combinations,ULONG* combi
 {
 	for(UBYTE i=0;i<*p_num_combinations;i++)
 	{
-		if(cur_combination==combinations[i]) return;
+		if(cur_combination==combinations[i])
+		{
+			printf("Found %lx at %i\n",cur_combination,i);
+			return;
+		}
 	}
 	if(*p_num_combinations>=MAX_COMBINATIONS)
 	{
@@ -41,25 +45,36 @@ void decisionOutcome(ULONG cur_combination,DECISION* decision,int decision_outco
 DECISION decision1234 = { 3,
 	0, {0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L},
 	0, {0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L} };
-DECISION* all_decisions[1] = { &decision1234 };
+DECISION* all_decisions[] = { &decision1234 };
 
-int combs[][3] = { {0,0,0}, {1,0,0}, {0,1,0}, {0,0,1} };
+#define TT 0
+#define FF 1
+
+int combs[][3] = { {TT,TT,TT}, {FF,TT,TT}, {TT,FF,TT}, {TT,TT,FF} };
 
 void showComb(UBYTE numCond,ULONG comb)
 {
-	ULONG mask = comb;
-	for(int i=0;i<numCond;i++)
+	for(int i=(int)(numCond-1);i>=0;i--)
 	{
-		printf("%c",'0'+(mask&1));
+		printf("%c",'0'+(int)((comb>>i)&1));
 	}
 }
 
 void showDecision(DECISION* decision)
 {
-	printf("combinationsTrue:\n");
-	for(int i=0;i<decision->numCombinationsTrue;i++) printf("%s, ",showComb(decision->numConditions,decision->combinationsTrue[i]));
-	printf("\ncombinationsFalse:\n");
-	for(int i=0;i<decision->numCombinationsFalse;i++) printf("%s, ",showComb(decision->numConditions,decision->combinationsFalse[i]));
+	printf("combinationsTrue :  ");
+	for(int i=0;i<decision->numCombinationsTrue;i++)
+	{
+		showComb(decision->numConditions,decision->combinationsTrue[i]);
+		printf(", ");
+	}
+	printf("\ncombinationsFalse:  ");
+	for(int i=0;i<decision->numCombinationsFalse;i++)
+	{
+		showComb(decision->numConditions,decision->combinationsFalse[i]);
+		printf(", ");
+	}
+	printf("\n");
 }
 
 void evalCoverage(DECISION* decision)
@@ -71,9 +86,10 @@ void evalCoverage(DECISION* decision)
 		{
 			for(int k=0;k<decision->numCombinationsFalse;k++)
 			{
+				printf("i=%i,j=%i,k=%i,~b=%lx\n",i,j,k,~b);
 				if((decision->combinationsTrue[j])&(~b)==(decision->combinationsFalse[k])&(~b))
 				{
-					printf("Condition %i independent: %i,%i",i,j,k);
+					printf("Condition %i independent because of combinationTrue %i and combinationFalse %i",i,j,k);
 				}
 			}
 		}
@@ -95,17 +111,19 @@ int main(int argc,char *argv[])
 		else
 		{
 			// b and c not evaluated, could be any
+			b = c = 0;
 		}
 
-		ULONG cur_comb = ((ULONG)a&1)<<0 | ((ULONG)b&1)<<1 | ((ULONG)c&1)<<2;
+		ULONG cur_comb = ((ULONG)a&1)<<2 | ((ULONG)b&1)<<1 | ((ULONG)c&1)<<0;
+		printf("Cur comb: "); showComb(decision1234.numConditions,cur_comb); printf("\n");
 		if(a || (b & c))
 		{
-			decisionOutcome(cur_comb,&decision1234,0);
+			decisionOutcome(cur_comb,&decision1234,TT);
 			printf("True\n");
 		}
 		else
 		{
-			decisionOutcome(cur_comb,&decision1234,1);
+			decisionOutcome(cur_comb,&decision1234,FF);
 			printf("False\n");
 		}
 	}
