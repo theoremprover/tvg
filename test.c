@@ -42,10 +42,11 @@ void decisionOutcome(ULONG cur_combination,DECISION* decision,int decision_outco
 }
 
 
-DECISION decision1234 = { 3,
+DECISION all_decisions[] = {
+	{ 3,
 	0, {0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L},
-	0, {0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L} };
-DECISION* all_decisions[] = { &decision1234 };
+	0, {0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L,0L} }
+	};
 
 #define TT 0
 #define FF 1
@@ -77,31 +78,45 @@ void showDecision(DECISION* decision)
 	printf("\n");
 }
 
-void evalCoverage(DECISION* decision)
+void evalCoverage()
 {
 	int mcdc = TT;
 
-	ULONG b = 1<<(decision->numConditions - 1);
-	for(int i=0;i<decision->numConditions;i++,b=b>>1)
+	for(int d=0;d<sizeof(all_decisions)/sizeof(DECISION);d++)
 	{
-		for(int j=0;j<decision->numCombinationsTrue;j++)
+		DECISION* decision = &(all_decisions[d]);
+
+		if((decision->numCombinationsTrue<1) || (decision->numCombinationsFalse<1))
 		{
-			for(int k=0;k<decision->numCombinationsFalse;k++)
+			printf("MISSING OUTCOME: d=%i\n",d);
+			mcdc = FF;
+		}
+
+		ULONG b = 1<<(decision->numConditions - 1);
+		for(int i=0;i<decision->numConditions;i++,b=b>>1)
+		{
+			int indep = FF;
+			for(int j=0;j<decision->numCombinationsTrue;j++)
 			{
-				printf("i=%i,j=%i,k=%i,b=%lx\n",i,j,k,b);
-				if((decision->combinationsTrue[j] & ~b) /= (decision->combinationsFalse[k] & ~b))
+				for(int k=0;k<decision->numCombinationsFalse;k++)
 				{
-					mcdc = FF;
+					if((decision->combinationsTrue[j] & ~b) == (decision->combinationsFalse[k] & ~b))
+					{
+						indep = TT;
+					}
 				}
 			}
+			mcdc = indep;
 		}
 	}
 
-	CONTINUE HERE
+	printf("mcdc=%i\n",mcdc);
 }
 
 int main(int argc,char *argv[])
 {
+	DECISION* decision1234 = &(all_decisions[0]);
+
 	for(int i=0;i<sizeof(combs)/sizeof(combs[0]);i++)
 	{
 		int a,b,c;
@@ -119,21 +134,21 @@ int main(int argc,char *argv[])
 		}
 
 		ULONG cur_comb = ((ULONG)a&1)<<2 | ((ULONG)b&1)<<1 | ((ULONG)c&1)<<0;
-		printf("Cur comb: "); showComb(decision1234.numConditions,cur_comb); printf("\n");
+		printf("Cur comb: "); showComb(decision1234->numConditions,cur_comb); printf("\n");
 		if(a || (b & c))
 		{
-			decisionOutcome(cur_comb,&decision1234,TT);
+			decisionOutcome(cur_comb,decision1234,TT);
 			printf("True\n");
 		}
 		else
 		{
-			decisionOutcome(cur_comb,&decision1234,FF);
+			decisionOutcome(cur_comb,decision1234,FF);
 			printf("False\n");
 		}
 	}
 
-	showDecision(&decision1234);
-	evalCoverage(&decision1234);
+	showDecision(decision1234);
+	evalCoverage();
 
 	return(0);
 }
