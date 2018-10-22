@@ -79,21 +79,25 @@ void showDecision(DECISION* decision)
 
 void evalCoverage(DECISION* decision)
 {
-	for(int i=0;i<decision->numConditions;i++)
+	int mcdc = TT;
+
+	ULONG b = 1<<(decision->numConditions - 1);
+	for(int i=0;i<decision->numConditions;i++,b=b>>1)
 	{
-		ULONG b = 1<<i;
 		for(int j=0;j<decision->numCombinationsTrue;j++)
 		{
 			for(int k=0;k<decision->numCombinationsFalse;k++)
 			{
-				printf("i=%i,j=%i,k=%i,~b=%lx\n",i,j,k,~b);
-				if((decision->combinationsTrue[j])&(~b)==(decision->combinationsFalse[k])&(~b))
+				printf("i=%i,j=%i,k=%i,b=%lx\n",i,j,k,b);
+				if((decision->combinationsTrue[j] & ~b) /= (decision->combinationsFalse[k] & ~b))
 				{
-					printf("Condition %i independent because of combinationTrue %i and combinationFalse %i",i,j,k);
+					mcdc = FF;
 				}
 			}
 		}
 	}
+
+	CONTINUE HERE
 }
 
 int main(int argc,char *argv[])
