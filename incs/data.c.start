@@ -42,3 +42,6 @@ void closetrace()
 	hs_exit();
 #endif
 }
+
+DECISION all_decisions[] = { NULL/*INSERT_DECISIONPTR_HERE*/
+};
