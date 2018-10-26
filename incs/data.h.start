@@ -17,22 +17,6 @@ typedef struct {
 	COUNTER counters[];
 	} SRCFILE;
 
-typedef unsigned long ULONG;
-typedef unsigned char UBYTE;
-
-#define MAX_COMBINATIONS 16
-typedef struct {
-	UBYTE numConditions;
-	UBYTE numCombinationsTrue;
-	ULONG combinationsTrue[MAX_COMBINATIONS];
-	UBYTE numCombinationsFalse;
-	ULONG combinationsFalse[MAX_COMBINATIONS];
-	} DECISION;
-
-void addCombination(ULONG cur_combination,UBYTE* p_num_combinations,ULONG* combinations);
-void decisionOutcome(ULONG cur_combination,DECISION* decision,int decision_outcome);
-
-
 /*INSERT_HERE*/
 
 #endif

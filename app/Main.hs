@@ -57,7 +57,7 @@ cp /tvg/tvg/incs/data.c.start /tvg/tvg/incs/data.c; cp /tvg/tvg/incs/data.h.star
 
 make
 
-_INSTR = False setzen in Main.hs
+_INSTR = True setzen in Main.hs
 stack install --allow-different-user --ghc-options -O3 --force-dirty
 
 make install
@@ -247,7 +247,6 @@ instrumentStmt cstat = do
 	modify $ \ s -> s { locationsS = loc : locationsS }
 
 	let ret = CCompound [] [ instr traceFunNameS (numLocsS + length locationsS), CBlockStmt cstat ] undefNode
---	when (_PROGRESS_OUTPUT && mod (length locationsS) 100 == 0)  $ liftIO $ putStrLn $ printf "locs= %8i" (length locationsS)
 	return ret
 	where
 	pos = posOfNode $ nodeInfo cstat

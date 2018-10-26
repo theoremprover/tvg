@@ -11,6 +11,7 @@ unzip -qo gcc-4.7.4.zip
 
 cd tvg
 
+sed -i -e 's/_INSTR = False/_INSTR = True/g' /tvg/tvg/app/Main.hs
 stack install --allow-different-user --ghc-options -O3 --force-dirty
 
 cd /tvg/tvg/incs
@@ -21,10 +22,12 @@ echo "Compiling CovStats.hsc"
 /root/.local/bin/hsc2hs CovStats.hsc
 
 echo "Generate CovStats_stub.h"
-stack --allow-different-user ghc -- CovStats.hs
+stack --allow-different-user --stack-yaml /tvg/tvg/stack.yaml ghc -- CovStats.hs
 
 cd /tvg/tvg
 stack --allow-different-user --stack-yaml /tvg/tvg/stack.yaml ghc -- -shared -threaded -dynamic -DQUIET -fPIC -no-hs-main -I/tvg/tvg/incs /tvg/tvg/incs/data.c /tvg/tvg/incs/CovStats.hs -o /tvg/tvg/incs/libdata.so -lHSrts_thr-ghc8.4.3 -lffi
+
+rm cov.dat
 
 cd /tvg/build
 ../gcc-4.7.4/configure --disable-checking --enable-languages=c --disable-multiarch --disable-multilib --enable-shared --enable-threads=posix --program-suffix=-instr --with-gmp=/usr --with-mpc=/usr/lib --with-mpfr=/usr/lib --without-included-gettext --with-system-zlib --with-tune=generic --prefix=/tvg/install/gcc-4.7.4 --disable-bootstrap --disable-build-with-cxx
