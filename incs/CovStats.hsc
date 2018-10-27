@@ -15,26 +15,30 @@ import GHC.Generics (Generic)
 import Data.List
 import System.Directory
 
+import CovData
+
 #include "data.h"
 
 
 {-
 typedef struct {
-	long line, column;
+	long line, column, len;
 	long cnt; }
 	COUNTER;
 -}
-data Counter = Counter { lineC :: Int, columnC :: Int, cntC :: Int } deriving (Show,Generic)
+data Counter = Counter { lineC :: Int, columnC :: Int, lenC :: Int, cntC :: Int } deriving (Show,Generic)
 instance Storable Counter where
 	alignment _ = #{alignment COUNTER}
 	sizeOf _    = #{size COUNTER}
 	peek ptr    = Counter <$>
 		#{peek COUNTER, line} ptr <*>
 		#{peek COUNTER, column} ptr <*>
+		#{peek COUNTER, len} ptr <*>
 		#{peek COUNTER, cnt} ptr
 	poke ptr (Counter line col cnt) = do
 		#{poke COUNTER, line} ptr line
 		#{poke COUNTER, column} ptr col
+		#{poke COUNTER, len} ptr col
 		#{poke COUNTER, cnt} ptr cnt
 instance Binary Counter
 
@@ -76,17 +80,18 @@ show_stats quiet ccovfilename ptr_ptr_srcfiles num_srcfiles = do
 		writeFile (cov_filename ++ ".txt") cov_txt
 		putStrLn cov_txt
 
+srcfile_covs (SrcFile sourcefn outputfn counters) = (n_cov,n_stmts,cov_pct n_cov n_stmts,line) where
+	n_cov :: Int   = sum $ map (min 1 . fromIntegral . cntC) counters
+	n_stmts :: Int = length counters
+	line :: String = printf "%6i of %6i statements, %5.1f %% coverage in %s (compiled into %s)" n_cov n_stmts (cov_pct n_cov n_stmts) sourcefn outputfn
+
+cov_pct :: Int -> Int -> Float
+cov_pct n_cov n_stmts = if n_stmts==0 then 100.0 else 100.0 * (fromIntegral n_cov) / (fromIntegral n_stmts)
+
 showCoverage :: Coverage -> String
 showCoverage srcfiles = unlines $ out_lines ++ [printf "Overall coverage: %5.1f %%" (cov_pct (sum n_covs) (sum n_stmtss))]
 	where
-	(n_covs,n_stmtss,out_lines) = unzip3 $ map srcfile_covs srcfiles
-	srcfile_covs (SrcFile sourcefn outputfn counters) = (n_cov,n_stmts,line) where
-		n_cov :: Int   = sum $ map (min 1 . fromIntegral . cntC) counters
-		n_stmts :: Int = length counters
-		line :: String = printf "%6i of %6i statements, %5.1f %% coverage in %s (compiled into %s)" n_cov n_stmts (cov_pct n_cov n_stmts) sourcefn outputfn
-
-	cov_pct :: Int -> Int -> Float
-	cov_pct n_cov n_stmts = if n_stmts==0 then 100.0 else 100.0 * (fromIntegral n_cov) / (fromIntegral n_stmts)
+	(n_covs,n_stmtss,cov_pct,out_lines) = unzip3 $ map srcfile_covs srcfiles
 
 writeCoverage :: String -> Coverage -> IO ()
 writeCoverage cov_filename srcfiles = encodeFile cov_filename srcfiles

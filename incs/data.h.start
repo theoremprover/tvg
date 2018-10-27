@@ -5,7 +5,7 @@ void opentrace();
 void closetrace();
 
 typedef struct {
-	long line, column;
+	long line, column, length;
 	long cnt;
 	} COUNTER;
 

@@ -125,10 +125,10 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 	let bak_name = name ++ ".preinstr"
 	copyFile name bak_name
 
-	abs_filename <- makeAbsolute name
+	abs_filename <- canonicalizePath name
 	output_filename <- case o_arg of
 		Nothing    -> return "<none>"
-		Just ofile -> makeAbsolute ofile
+		Just ofile -> canonicalizePath ofile
 
 	let filenameid = to_id $ maybe "" id o_arg ++ "__" ++ name
 	let varname = "src_" ++ filenameid
@@ -141,7 +141,7 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 	-- Add definition of trace_function to data.c
 	let fundecl = printf "%s { %s.counters[i+1].cnt++; }" tracefundecl varname
 	insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
-		printf "SRCFILE %s = { %s, %s, /*NUM_LOCS*/, {\n{0,0,0}/*DUMMY*//*LOCATIONS*/\n} };\n" varname (show abs_filename) (show output_filename) ++
+		printf "SRCFILE %s = { %s, %s, /*NUM_LOCS*/, {\n{0,0,0,0}/*DUMMY*//*LOCATIONS*/\n} };\n" varname (show abs_filename) (show output_filename) ++
 		fundecl ++ "\n\n"
 
 	parseresult <- parseCFile (newGCC gccExe) Nothing preprocess_args name
@@ -195,13 +195,13 @@ insertBeforeMarker filename marker text = replaceInFile filename marker (text ++
 
 data InstrS = InstrS {
 	fileNameIdS :: String, numLocsS :: Int, tvgPathS :: String, incsPathS :: String, varNameS :: String,
-	traceFunNameS :: String, absFileNameS :: String, instrFileNameS :: String, locationsS :: [(Int,Int)] } deriving Show
+	traceFunNameS :: String, absFileNameS :: String, instrFileNameS :: String, locationsS :: [(Int,Int,Int)] } deriving Show
 type InstrM a = StateT InstrS IO a
 
 processASTM :: CTranslUnit -> InstrM ()
 processASTM (CTranslUnit extdecls _) = mapM_ instrumentExtDecl extdecls
 
-locString (l,c) = printf "{ %li,%li,0 }" l c
+locString (l,c,len) = printf "{ %li,%li,%li,0 }" l c len
 
 instrumentExtDecl :: CExtDecl -> InstrM CExtDecl
 instrumentExtDecl ast = do
@@ -250,7 +250,7 @@ instrumentStmt cstat = do
 	return ret
 	where
 	pos = posOfNode $ nodeInfo cstat
-	loc = (posRow pos,posColumn pos)
+	loc = (posRow pos,posColumn pos,fromJust $ lengthOfNode (nodeInfo cstat))
 	str = posFile pos ++ show (posRow pos,posColumn pos)
 	instr tracefunname index = CBlockStmt $ CExpr (Just $ CCall (CVar (builtinIdent tracefunname) undefNode)
 		[CConst $ CIntConst (cInteger $ fromIntegral index) undefNode] undefNode) undefNode
