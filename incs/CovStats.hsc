@@ -86,7 +86,7 @@ showCoverage srcfiles = do
 	putStrLn $ printf "Overall coverage: %5.1f %%" (cov_pct (sum n_covs) (sum n_stmtss))	
 	where
 	cov_pct :: Int -> Int -> Float
-	cov_pct n_cov n_stmts = if n_stmts<=0 then 100.0 else 100.0* (fromIntegral n_cov) / (fromIntegral n_stmts)
+	cov_pct n_cov n_stmts = if n_stmts<=0 then 100.0 else 100.0 * (fromIntegral n_cov) / (fromIntegral n_stmts)
 
 writeCoverage :: String -> Coverage -> IO ()
 writeCoverage cov_filename srcfiles = BSL.writeFile cov_filename $ encode srcfiles

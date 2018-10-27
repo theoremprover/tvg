@@ -34,12 +34,16 @@ cd /tvg/build
 
 make
 
+cd /tvg/tvg
 sed -i -e 's/_INSTR = True/_INSTR = False/g' /tvg/tvg/app/Main.hs
 stack install --allow-different-user --ghc-options -O3 --force-dirty
-
+cd /tvg/build
 make install
 
+cd /tvg/tvg
 sed -i -e 's/_INSTR = False/_INSTR = True/g' /tvg/tvg/app/Main.hs
 stack install --allow-different-user --ghc-options -O3 --force-dirty
+
+stack --allow-different-user --stack-yaml /tvg/tvg/stack.yaml ghc -- -shared -threaded -dynamic -fPIC -no-hs-main -I/tvg/tvg/incs /tvg/tvg/incs/data.c /tvg/tvg/incs/CovStats.hs -o /tvg/tvg/incs/libdata.so -lHSrts_thr-ghc8.4.3 -lffi
 
 popd
