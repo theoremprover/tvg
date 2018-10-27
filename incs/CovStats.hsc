@@ -4,7 +4,7 @@
 module CovStats where
 
 import Prelude hiding (readFile)
-import System.IO.Strict (readFile)
+import System.IO.Strict
 import Control.Applicative ((<$>), (<*>))
 import Foreign
 import Foreign.C
@@ -12,7 +12,6 @@ import Text.Printf
 import Control.Monad
 import Data.Binary
 import GHC.Generics (Generic)
-import qualified Data.ByteString.Lazy.Char8 as BSL
 import Data.List
 import System.Directory
 
@@ -72,29 +71,28 @@ show_stats quiet ccovfilename ptr_ptr_srcfiles num_srcfiles = do
 	ptrs_srcfiles <- peekArray num_srcfiles ptr_ptr_srcfiles
 	srcfiles <- mapM peek ptrs_srcfiles
 	unless (quiet==0) $ do
-		new_coverage <- accumulateCoverage cov_filename srcfiles
-		showCoverage new_coverage
+		new_cov <- accumulateCoverage cov_filename srcfiles
+		let cov_txt = showCoverage new_cov
+		writeFile (cov_filename ++ ".txt") cov_txt
+		putStrLn cov_txt
 
-showCoverage srcfiles = do
-	covs <- forM srcfiles $ \ (SrcFile sourcefn outputfn counters) -> do
-		let
-			n_cov :: Int = sum $ map (min 1 . fromIntegral . cntC) counters
-			n_stmts :: Int = length counters
-		putStrLn $ printf "%6i of %6i statements, %5.1f %% coverage in %s (compiled into %s)" n_cov n_stmts (cov_pct n_cov n_stmts) sourcefn outputfn
-		return (n_cov,n_stmts)
-	let (n_covs,n_stmtss) = unzip covs
-	putStrLn $ printf "Overall coverage: %5.1f %%" (cov_pct (sum n_covs) (sum n_stmtss))	
+showCoverage :: Coverage -> String
+showCoverage srcfiles = unlines $ out_lines ++ [printf "Overall coverage: %5.1f %%" (cov_pct (sum n_covs) (sum n_stmtss))]
 	where
+	(n_covs,n_stmtss,out_lines) = unzip3 $ map srcfile_covs srcfiles
+	srcfile_covs (SrcFile sourcefn outputfn counters) = (n_cov,n_stmts,line) where
+		n_cov :: Int   = sum $ map (min 1 . fromIntegral . cntC) counters
+		n_stmts :: Int = length counters
+		line :: String = printf "%6i of %6i statements, %5.1f %% coverage in %s (compiled into %s)" n_cov n_stmts (cov_pct n_cov n_stmts) sourcefn outputfn
+
 	cov_pct :: Int -> Int -> Float
-	cov_pct n_cov n_stmts = if n_stmts<=0 then 100.0 else 100.0 * (fromIntegral n_cov) / (fromIntegral n_stmts)
+	cov_pct n_cov n_stmts = if n_stmts==0 then 100.0 else 100.0 * (fromIntegral n_cov) / (fromIntegral n_stmts)
 
 writeCoverage :: String -> Coverage -> IO ()
-writeCoverage cov_filename srcfiles = BSL.writeFile cov_filename $ encode srcfiles
+writeCoverage cov_filename srcfiles = encodeFile cov_filename srcfiles
 
 readCoverage :: String -> IO Coverage
-readCoverage cov_filename = do
-	s <- readFile cov_filename
-	return $ decode $ BSL.pack s
+readCoverage = decodeFile
 
 accumulateCoverage cov_filename srcfiles = do
 	cov_exists <- doesFileExist cov_filename
