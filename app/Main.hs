@@ -16,6 +16,7 @@ import Control.Monad
 import System.Directory
 import Language.C
 import Language.C.Data.Ident
+import Language.C.Data.Node
 import Language.C.System.GCC
 import Text.PrettyPrint
 import System.FilePath
@@ -25,6 +26,7 @@ import Control.Monad.IO.Class (liftIO)
 import Data.Char
 import Text.Printf
 import Data.Time.Clock
+import Data.Maybe
 
 import Language.C.System.Preprocess
 import Language.C.Data.InputStream
@@ -106,7 +108,7 @@ main = do
 	searcharg findarg (arg:arglist) | findarg==arg = Just arglist
 	searcharg findarg (arg:arglist) = searcharg findarg arglist
 
-handleArg o_arg preprocess_args tvg_path incs_path arg | ".c" `isSuffixOf` arg && takeFileName arg /= "conftest.c" = do
+handleArg o_arg preprocess_args tvg_path incs_path arg | ".c" `isSuffixOf` arg && takeFileName arg `notElem` ["conftest.c","dummy.c"] = do
 	handleSrcFile o_arg preprocess_args tvg_path incs_path arg
 handleArg _ _ _ _ _ = return $ return ()
 
@@ -241,6 +243,7 @@ instrumentExtDecl ast = do
 	return ast'
 
 instrumentStmt :: CStat -> InstrM CStat
+instrumentStmt cstat@(CCompound _ _ _) = return cstat
 instrumentStmt cstat = do
 	InstrS{..} <- get
 
@@ -250,7 +253,7 @@ instrumentStmt cstat = do
 	return ret
 	where
 	pos = posOfNode $ nodeInfo cstat
-	loc = (posRow pos,posColumn pos,fromJust $ lengthOfNode (nodeInfo cstat))
+	loc = (posRow pos,posColumn pos,maybe 1 id (lengthOfNode (nodeInfo cstat)))
 	str = posFile pos ++ show (posRow pos,posColumn pos)
 	instr tracefunname index = CBlockStmt $ CExpr (Just $ CCall (CVar (builtinIdent tracefunname) undefNode)
 		[CConst $ CIntConst (cInteger $ fromIntegral index) undefNode] undefNode) undefNode

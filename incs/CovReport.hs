@@ -9,7 +9,7 @@ import System.Environment
 import System.Directory
 import Text.Html
 
-import CovStats
+import CovDefs
 
 
 --data SrcFile = SrcFile { sourceFilenameS :: String, outputFilenameS :: String, countersS :: [Counter] } deriving (Show,Generic)

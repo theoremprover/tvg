@@ -22,5 +22,12 @@ int main(int argc, char* argv[])
 {
 	if(argc>1) return 99;
 
+	switch(argc)
+	{
+		case 1: f(2,3); argc=3; break;
+		case 2: argc++; break;
+		default: f(5,6);
+	}
+
 	return f(1,2);
 }

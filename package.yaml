@@ -29,6 +29,7 @@ dependencies:
 - text
 - strict
 - time
+- html
 
 library:
   source-dirs: src
@@ -45,7 +46,7 @@ executables:
     - tvg
 
   covreport-exe:
-    main:                incs/CovReport.hs
+    main:                CovReport.hs
     ghc-options:
     - -threaded
     - -rtsopts
