@@ -8,9 +8,9 @@ gcc-4.7 -w [-DQUIET] -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
 
 #ifndef QUIET
 #include <stdio.h>
-int tvg_quiet = 0;
-#else
 int tvg_quiet = 1;
+#else
+int tvg_quiet = 0;
 #endif
 
 #include "CovStats_stub.h"

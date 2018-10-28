@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <stdio.h>
 
 int x = 1;
 
@@ -15,7 +16,7 @@ int f(int a,int b)
 	int erg = a+b;
 
 	if(erg==2) exit(b+1);
-	return( { x++; erg; } );
+	return( { erg++; erg; } );
 }
 
 int main(int argc, char* argv[])
@@ -29,5 +30,6 @@ int main(int argc, char* argv[])
 		default: f(5,6);
 	}
 
+	printf("OK\n");
 	return f(1,2);
 }

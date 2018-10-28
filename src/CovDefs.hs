@@ -18,7 +18,7 @@ typedef struct {
 	long cnt; }
 	COUNTER;
 -}
-data Counter = Counter { lineC :: Int, columnC :: Int, lenC :: Int, cntC :: Int } deriving (Show,Generic)
+data Counter = Counter { lineC :: Int, columnC :: Int, lenC :: Int, cntC :: Int } deriving (Eq,Ord,Show,Generic)
 instance Binary Counter
 
 {-

@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards #-}
+{-# LANGUAGE RecordWildCards,LambdaCase #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 module Main where
@@ -17,9 +17,6 @@ import Data.List
 import CovDefs
 
 
---data SrcFile = SrcFile { sourceFilenameS :: String, outputFilenameS :: String, countersS :: [Counter] } deriving (Show,Generic)
---data Counter = Counter { lineC :: Int, columnC :: Int, cntC :: Int } deriving (Show,Generic)
-
 coverage_dir = "coverage_report"
 main = do
 	cov_file:[] <- getArgs
@@ -31,8 +28,8 @@ main = do
 	indexlines <- forM (zip [1..] cov) $ \ (n,srcfile@SrcFile{..}) -> do
 		putStrLn $ show n ++ " / " ++ show (length cov) ++ " : Creating " ++ sourceFilenameS ++ " .."
 		srctext <- readFile sourceFilenameS
-		let srcfilename = coverage_dir </> show n <.> "html"
-		writeFile srcfilename $ renderHtml $ annotateSrc srcfile (lines srctext)
+		let srcfilename = show n <.> "html"
+		writeFile (coverage_dir </> srcfilename) $ renderHtml $ annotateSrc srcfile (lines srctext)
 
 		let (n_cov,n_stmts,cov_pct,_) = srcfile_covs srcfile
 		return $ [ stringToHtml (show n), (anchor (stringToHtml sourceFilenameS)) ! [href srcfilename], stringToHtml (printf "%5.1f %%" cov_pct) ]
@@ -51,9 +48,11 @@ main = do
 
 annotateSrc SrcFile{..} srclines = (font ! [ face "courier" ]) (simpleTable [] [bgcolor "#f0f0f0"] (map annotate_line (zip [1..] srclines)))
 	where
-	annotate_line (line_no,line) = stringToHtml (show line_no) :
-		set_bgcol line 1 (sort [ (columnC,lenC,cntC) | Counter{..} <- countersS, lineC==line_no ])
+	replace_tabs txt = map (\case '\t' -> ' '; c -> c) txt
+	annotate_line (line_no,line) = [ stringToHtml (show line_no),
+		concatHtml $ set_bgcol (replace_tabs line) 1 (sort [ cnt | cnt@Counter{..} <- countersS, lineC==line_no ]) ]
 	set_bgcol line _ [] = [stringToHtml line]
-	set_bgcol line cursor ((col,len,cnt):rs) | cursor==col = (cnt_font cnt) (stringToHtml (take len line)) : set_bgcol (drop len line) (cursor+len) rs
-	set_bgcol line cursor rs@((col,_,_):_) = stringToHtml (take (col-cursor) line) : set_bgcol (drop (col-cursor) line) col rs
-	cnt_font cnt = font ! [ thestyle $ "bgcolor=\"" ++ (if cnt==0 then "#ff0000" else "#00ff00") ++ "\"" ]
+	set_bgcol line cursor (cnt@Counter{..}:rs) | cursor==columnC = (cnt_font cnt) (stringToHtml (take lenC line)) : set_bgcol (drop lenC line) (cursor+lenC) rs
+	set_bgcol line cursor rs@(Counter{..}:_) = stringToHtml (take (columnC-cursor) line) : set_bgcol (drop (columnC-cursor) line) columnC rs
+	cnt_font cnt@Counter{..} = font ! [ thestyle $ "background-color:" ++ (if cntC==0 then "#ff0000" else "#00ff00"),
+		title $ show cnt]
