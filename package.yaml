@@ -30,6 +30,7 @@ dependencies:
 - strict
 - time
 - html
+- binary
 
 library:
   source-dirs: src
@@ -46,7 +47,8 @@ executables:
     - tvg
 
   covreport-exe:
-    main:                CovReport.hs
+    main:                Main.hs
+    source-dirs:         covreport
     ghc-options:
     - -threaded
     - -rtsopts

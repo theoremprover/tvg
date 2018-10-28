@@ -1,6 +1,8 @@
-set -e
+#!/bin/bash
 
 pushd /tvg/tvg
+
+set -e
 
 source init_env.sh
 

@@ -1,13 +1,18 @@
 {-# LANGUAGE RecordWildCards #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
-module CovReport where
+module Main where
 
 import Prelude hiding (readFile)
 import System.IO.Strict
 import System.Environment
 import System.Directory
-import Text.Html
+import Text.Html hiding ((</>))
+import Control.Monad
+import System.FilePath
+import Text.Printf
+import Data.List
+
 
 import CovDefs
 
@@ -44,7 +49,7 @@ main = do
 </font>
 -}
 
-annotateSrc SrcFile{..} srclines = font ! [ face "courier" ] (simpleTable [] [bgcolor "#f0f0f0"] (map annotate_line (zip [1..] srclines)))
+annotateSrc SrcFile{..} srclines = (font ! [ face "courier" ]) (simpleTable [] [bgcolor "#f0f0f0"] (map annotate_line (zip [1..] srclines)))
 	where
 	annotate_line (line_no,line) = stringToHtml (show line_no) :
 		set_bgcol line 1 (sort [ (columnC,lenC,cntC) | Counter{..} <- countersS, lineC==line_no ])
