@@ -22,6 +22,4 @@ stack --allow-different-user --stack-yaml /tvg/tvg/stack.yaml ghc -- CovStats.hs
 cd /tvg/tvg
 stack --allow-different-user --stack-yaml /tvg/tvg/stack.yaml ghc -- -shared -threaded -dynamic -fPIC -no-hs-main -I/tvg/tvg/incs /tvg/tvg/incs/data.c /tvg/tvg/incs/CovStats.hs -o /tvg/tvg/incs/libdata.so -lHSrts_thr-ghc8.4.3 -lffi
 
-rm -f cov.dat
-
 popd

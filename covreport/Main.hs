@@ -36,21 +36,12 @@ main = do
 
 	writeFile (coverage_dir </> "index.html") $ renderHtml $ simpleTable [] [] indexlines
 
-{-
-<font face="courier">
-<table>
-<tr bgcolor="#f0f0f0"><td>34</td><td>Test<font style="background-color:#ff0000"> Te</font>st</td></tr>
-<tr bgcolor="#f0f0f0"><td>35</td><td>Test<font style="background-color:#ffff00"> Tes</font>st</td></tr>
-<tr bgcolor="#f0f0f0"><td>36</td><td>Test<font style="background-color:#00ff00"> Testfvf</font>st</td></tr>
-</table>
-</font>
--}
-
 annotateSrc SrcFile{..} srclines = (font ! [ face "courier" ]) (simpleTable [] [bgcolor "#f0f0f0"] (map annotate_line (zip [1..] srclines)))
 	where
 	replace_tabs txt = map (\case '\t' -> ' '; c -> c) txt
 	annotate_line (line_no,line) = [ stringToHtml (show line_no),
 		concatHtml $ set_bgcol (replace_tabs line) 1 (sort [ cnt | cnt@Counter{..} <- countersS, lineC==line_no ]) ]
+	set_bgcol (' ':line) cursor rs = spaceHtml : set_bgcol line (cursor+1) rs
 	set_bgcol line _ [] = [stringToHtml line]
 	set_bgcol line cursor (cnt@Counter{..}:rs) | cursor==columnC = (cnt_font cnt) (stringToHtml (take lenC line)) : set_bgcol (drop lenC line) (cursor+lenC) rs
 	set_bgcol line cursor rs@(Counter{..}:_) = stringToHtml (take (columnC-cursor) line) : set_bgcol (drop (columnC-cursor) line) columnC rs
