@@ -244,6 +244,8 @@ instrumentExtDecl ast = do
 
 instrumentStmt :: CStat -> InstrM CStat
 instrumentStmt cstat@(CCompound _ _ _) = return cstat
+instrumentStmt cstat@(CCase _ _ _) = return cstat
+instrumentStmt cstat@(CCases _ _ _ _) = return cstat
 instrumentStmt cstat = do
 	InstrS{..} <- get
 

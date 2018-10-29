@@ -43,7 +43,7 @@ annotateSrc SrcFile{..} srclines = (font ! [ face "courier" ]) (simpleTable [] [
 		concatHtml $ set_bgcol (replace_tabs line) 1 (sort [ cnt | cnt@Counter{..} <- countersS, lineC==line_no ]) ]
 	set_bgcol (' ':line) cursor rs = spaceHtml : set_bgcol line (cursor+1) rs
 	set_bgcol line _ [] = [stringToHtml line]
-	set_bgcol line cursor (cnt@Counter{..}:rs) | cursor==columnC = (cnt_font cnt) (stringToHtml (take lenC line)) : set_bgcol (drop lenC line) (cursor+lenC) rs
+	set_bgcol line cursor (cnt@Counter{..}:rs) | cursor>=columnC = (cnt_font cnt) (stringToHtml (take lenC line)) : set_bgcol (drop lenC line) (cursor+lenC) rs
 	set_bgcol line cursor rs@(Counter{..}:_) = stringToHtml (take (columnC-cursor) line) : set_bgcol (drop (columnC-cursor) line) columnC rs
 	cnt_font cnt@Counter{..} = font ! [ thestyle $ "background-color:" ++ (if cntC==0 then "#ff0000" else "#00ff00"),
 		title $ show cnt]
