@@ -29,13 +29,18 @@ main = do
 		putStrLn $ show n ++ " / " ++ show (length cov) ++ " : Creating " ++ sourceFilenameS ++ " .."
 		srctext <- readFile sourceFilenameS
 		let srcfilename = show n <.> "html"
-		writeFile (coverage_dir </> srcfilename) $ renderHtml $ annotateSrc srcfile (lines srctext)
+		writeFile (coverage_dir </> srcfilename) $ renderHtml $ annotateSrc srcfile srctext
 
 		let (n_cov,n_stmts,cov_pct,_) = srcfile_covs srcfile
 		return $ [ stringToHtml (show n), (anchor (stringToHtml sourceFilenameS)) ! [href srcfilename], stringToHtml (printf "%5.1f %%" cov_pct) ]
 
 	writeFile (coverage_dir </> "index.html") $ renderHtml $ simpleTable [] [] indexlines
 
+annotateSrc SrcFile{..} srctext = (font ! [ face "courier" ]) $ pre $ insert_fontcols countersS srctext
+	where
+	insert_fontcols 
+
+{-
 annotateSrc SrcFile{..} srclines = (font ! [ face "courier" ]) (simpleTable [] [bgcolor "#f0f0f0"] (map annotate_line (zip [1..] srclines)))
 	where
 	replace_tabs txt = map (\case '\t' -> ' '; c -> c) txt
@@ -47,3 +52,4 @@ annotateSrc SrcFile{..} srclines = (font ! [ face "courier" ]) (simpleTable [] [
 	set_bgcol line cursor rs@(Counter{..}:_) = stringToHtml (take (columnC-cursor) line) : set_bgcol (drop (columnC-cursor) line) columnC rs
 	cnt_font cnt@Counter{..} = font ! [ thestyle $ "background-color:" ++ (if cntC==0 then "#ff0000" else "#00ff00"),
 		title $ show cnt]
+-}
