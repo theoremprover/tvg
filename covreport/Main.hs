@@ -36,11 +36,16 @@ main = do
 
 	writeFile (coverage_dir </> "index.html") $ renderHtml $ simpleTable [] [] indexlines
 
-annotateSrc SrcFile{..} srctext = (font ! [ face "courier" ]) $ pre $ insert_fontcols countersS srctext
+annotateSrc SrcFile{..} srctext = (font ! [ face "courier" ]) $ pre $
+	insert_fontcols countersS $ zip3 [1..] (repeat 1) (lines srctext)
 	where
-	insert_fontcols 
+	insert_fontcols [] _ = []
+	insert_fontcols (Counter{..}:cnts) srctext = stringToHtml (take (
 
 {-
+data Counter = Counter { lineC :: Int, columnC :: Int, lenC :: Int, cntC :: Int } deriving (Eq,Ord,Show,Generic)
+data SrcFile = SrcFile { sourceFilenameS :: String, outputFilenameS :: String, countersS :: [Counter] } deriving (Show,Generic)
+
 annotateSrc SrcFile{..} srclines = (font ! [ face "courier" ]) (simpleTable [] [bgcolor "#f0f0f0"] (map annotate_line (zip [1..] srclines)))
 	where
 	replace_tabs txt = map (\case '\t' -> ' '; c -> c) txt

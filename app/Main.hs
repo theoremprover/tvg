@@ -243,22 +243,22 @@ instrumentExtDecl ast = do
 	return ast'
 
 instrumentStmt :: CStat -> InstrM CStat
-instrumentStmt cstat@(CCompound _ _ _) = return cstat
-instrumentStmt cstat@(CCase _ _ _) = return cstat
-instrumentStmt cstat@(CCases _ _ _ _) = return cstat
-instrumentStmt cstat = do
-	InstrS{..} <- get
-
-	modify $ \ s -> s { locationsS = loc : locationsS }
-
-	let ret = CCompound [] [ instr traceFunNameS (numLocsS + length locationsS), CBlockStmt cstat ] undefNode
-	return ret
-	where
-	pos = posOfNode $ nodeInfo cstat
-	loc = (posRow pos,posColumn pos,maybe 1 id (lengthOfNode (nodeInfo cstat)))
-	str = posFile pos ++ show (posRow pos,posColumn pos)
-	instr tracefunname index = CBlockStmt $ CExpr (Just $ CCall (CVar (builtinIdent tracefunname) undefNode)
-		[CConst $ CIntConst (cInteger $ fromIntegral index) undefNode] undefNode) undefNode
+instrumentStmt cstat = case cstat of
+	CCompound _ _ _ -> return cstat
+	CCase _ _ _     -> return cstat
+	CCases _ _ _ _  -> return cstat
+	CDefault _ _    -> return cstat
+	CLabel _ _ _ _  -> return cstat
+	_ -> do
+		InstrS{..} <- get
+		modify $ \ s -> s { locationsS = loc : locationsS }
+		return $ CCompound [] [ instr traceFunNameS (numLocsS + length locationsS), CBlockStmt cstat ] undefNode
+		where
+		pos = posOfNode $ nodeInfo cstat
+		loc = (posRow pos,posColumn pos,maybe 1 id (lengthOfNode (nodeInfo cstat)))
+		str = posFile pos ++ show (posRow pos,posColumn pos)
+		instr tracefunname index = CBlockStmt $ CExpr (Just $ CCall (CVar (builtinIdent tracefunname) undefNode)
+			[CConst $ CIntConst (cInteger $ fromIntegral index) undefNode] undefNode) undefNode
 
 elimInStatExprs :: CExpr -> CExpr
 elimInStatExprs (CStatExpr stat nodeinfo) = CStatExpr (everywhere (mkT elimNestedCompounds) stat) nodeinfo
