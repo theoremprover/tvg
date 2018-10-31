@@ -20,7 +20,7 @@ import CovDefs
 coverage_dir = "coverage_report"
 main = do
 	cov_file:[] <- getArgs
-	cov <- readCoverage cov_file
+	(_:cov) <- readCoverage cov_file
 
 	removePathForcibly coverage_dir
 	createDirectory coverage_dir
@@ -36,26 +36,23 @@ main = do
 
 	writeFile (coverage_dir </> "index.html") $ renderHtml $ simpleTable [] [] indexlines
 
-data SrcPart = PlainText (Int,Int) String | Colouring String SrcPart
-
-colourSrc SrcFile{..} srctext = (font ! [ face "courier" ]) $ pre $ concatHtml $ map to_html $
-	search_srcpart (sort countersS) $ map PlainText $ zip3 [1..] (repeat 1) (map (++"\n") $ lines srctext)
+colourSrc SrcFile{..} srctext = (font ! [ face "courier" ]) $ pre $ concatHtml htmls 
 	where
-	to_html (PlainText _ txt) = toHtml txt
-	to_html (Colouring colour srcparts) = (font ! [ thestyle $ "background-color:" ++ colour ]) $ concatHtml $ map to_html srcparts
-
-	find_last pos middles srcparts@((PlainText pos' txt):_) | pos<=pos' = (middles,srcparts)
-	find_last pos middles (srcpart:srcparts) = find_last pos (middles++[srcpart]) srcparts
-
-	search_srcpart (Counter{..}:cnts) ((PlainText (l,c) txt):srcparts) | l == lineC && c <= columnC = let
-		(middles,(PlainText (l,c) txt):after_parts) = find_last (lineC,columnC) [] srcparts
-		in
-		middles ++ search_srcpart cnts [ PlainText (l,c) (take (columnC-c) txt),
-			Colouring (take lenC $ drop (columnC-c) txt) (if cntC==0 then "#ff0000" else "#00ff00"),
-			PlainText (l,columnC+lenC) (drop (columnC+lenC) txt) ] ++
-			after_parts
-	
+	htmls = colouring 1 "" (1,1) (sort countersS) srctext []
+	colouring :: Int -> String -> (Int,Int) -> [Counter] -> String -> [Int] -> [Html]
+	colouring ix buf pos cnts srctext (till:tills) | ix==till = stringToHtml buf : colouring ix "" pos cnts srctext tills
+	colouring ix buf (l,c) (Counter{..}:cnts) srctext tills | l==lineC && c==columnC =
+		(stringToHtml buf +++
+		(font ! [ thestyle $ "background-color:" ++ if cntC==0 then "#ff0000" else "#00ff00" ]) sub) : rest
+		where
+		sub : rest = colouring ix "" (l,c) cnts srctext ((ix+lenC):tills)
+	colouring ix buf (l,c) cnts ('\n':srctext) tills = colouring ix (buf++"\n") (l+1,1) cnts srctext tills
+	colouring ix buf (l,c) cnts (ch:srctext) tills = colouring (ix+1) (buf++[ch]) (l,c+1) cnts srctext tills
+	colouring _ _ _ [] "" [] = [ noHtml ]
+	colouring ix buf pos cnts srctext tills = error $ "ix=" ++ show ix ++ "\nbuf=" ++ buf ++ "\npos=" ++ show pos ++
+		"\ncnts=" ++ show cnts ++ "\nsrctext=" ++ take 10 srctext ++ "\ntills=" ++ show tills
 {-
+(if cntC==0 then "#ff0000" else "#00ff00")
 data Counter = Counter { lineC :: Int, columnC :: Int, lenC :: Int, cntC :: Int } deriving (Eq,Ord,Show,Generic)
 data SrcFile = SrcFile { sourceFilenameS :: String, outputFilenameS :: String, countersS :: [Counter] } deriving (Show,Generic)
 -}
