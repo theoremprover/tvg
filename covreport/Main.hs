@@ -36,21 +36,24 @@ main = do
 
 	writeFile (coverage_dir </> "index.html") $ renderHtml $ simpleTable [] [] indexlines
 
-data SrcPart = PlainText Int Int String | Colouring String SrcPart
+data SrcPart = PlainText (Int,Int) String | Colouring String SrcPart
 
 colourSrc SrcFile{..} srctext = (font ! [ face "courier" ]) $ pre $ concatHtml $ map to_html $
 	search_srcpart (sort countersS) $ map PlainText $ zip3 [1..] (repeat 1) (map (++"\n") $ lines srctext)
-
-	to_html (_,_,txt) = toHtml txt
-	to_html NewLine = toHtml "\n"
+	where
+	to_html (PlainText _ txt) = toHtml txt
 	to_html (Colouring colour srcparts) = (font ! [ thestyle $ "background-color:" ++ colour ]) $ concatHtml $ map to_html srcparts
 
-	search_srcpart Counter{..} ((PlainText l c txt):srcparts) | l == lineC && c <= columnC = let
-		(middles,last_part) = find_last (lineC,columnC) srcparts
-	
-	&& c + length txt > columnC =
-		PlainText l c (take (columnC-c) txt) : Colouring (take lenC $ drop (columnC-c) txt) (if cntC==0 then "#ff0000" else "#00ff00") : PlainText l (columnC+lenC) (drop (columnC+lenC) txt) : srcparts
-	mb_insert_colouring
+	find_last pos middles srcparts@((PlainText pos' txt):_) | pos<=pos' = (middles,srcparts)
+	find_last pos middles (srcpart:srcparts) = find_last pos (middles++[srcpart]) srcparts
+
+	search_srcpart (Counter{..}:cnts) ((PlainText (l,c) txt):srcparts) | l == lineC && c <= columnC = let
+		(middles,(PlainText (l,c) txt):after_parts) = find_last (lineC,columnC) [] srcparts
+		in
+		middles ++ search_srcpart cnts [ PlainText (l,c) (take (columnC-c) txt),
+			Colouring (take lenC $ drop (columnC-c) txt) (if cntC==0 then "#ff0000" else "#00ff00"),
+			PlainText (l,columnC+lenC) (drop (columnC+lenC) txt) ] ++
+			after_parts
 	
 {-
 data Counter = Counter { lineC :: Int, columnC :: Int, lenC :: Int, cntC :: Int } deriving (Eq,Ord,Show,Generic)
