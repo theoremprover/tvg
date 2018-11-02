@@ -20,7 +20,7 @@ import CovDefs
 coverage_dir = "coverage_report"
 main = do
 	cov_file:[] <- getArgs
-	(_:cov) <- readCoverage cov_file
+	cov <- readCoverage cov_file
 
 	removePathForcibly coverage_dir
 	createDirectory coverage_dir
@@ -36,21 +36,24 @@ main = do
 
 	writeFile (coverage_dir </> "index.html") $ renderHtml $ simpleTable [] [] indexlines
 
-colourSrc SrcFile{..} srctext = (font ! [ face "courier" ]) $ pre $ concatHtml htmls 
+colourSrc :: SrcFile -> String -> Html 
+colourSrc SrcFile{..} srctext = (font ! [ face "courier" ]) $ pre $ colouring (1,1,1) "" (sort countersS) Nothing Nothing srctext
 	where
-	htmls = colouring 1 "" (1,1) (sort countersS) srctext []
-	colouring :: Int -> String -> (Int,Int) -> [Counter] -> String -> [Int] -> [Html]
-	colouring ix buf pos cnts srctext (till:tills) | ix==till = stringToHtml buf : colouring ix "" pos cnts srctext tills
-	colouring ix buf (l,c) (Counter{..}:cnts) srctext tills | l==lineC && c==columnC =
-		(stringToHtml buf +++
-		(font ! [ thestyle $ "background-color:" ++ if cntC==0 then "#ff0000" else "#00ff00" ]) sub) : rest
-		where
-		sub : rest = colouring ix "" (l,c) cnts srctext ((ix+lenC):tills)
-	colouring ix buf (l,c) cnts ('\n':srctext) tills = colouring ix (buf++"\n") (l+1,1) cnts srctext tills
-	colouring ix buf (l,c) cnts (ch:srctext) tills = colouring (ix+1) (buf++[ch]) (l,c+1) cnts srctext tills
-	colouring _ _ _ [] "" [] = [ noHtml ]
-	colouring ix buf pos cnts srctext tills = error $ "ix=" ++ show ix ++ "\nbuf=" ++ buf ++ "\npos=" ++ show pos ++
-		"\ncnts=" ++ show cnts ++ "\nsrctext=" ++ take 10 srctext ++ "\ntills=" ++ show tills
+	colouring :: (Int,Int,Int) -> String -> [Counter] -> (Maybe Int) -> (Maybe Int) -> String -> Html
+
+	colouring _ buf _ Nothing Nothing "" = stringToHtml buf
+	colouring (_,_,i) buf _ (Just stop_at) Nothing _ | i>=stop_at = stringToHtml buf
+	colouring (l,c,i) buf (Counter{..}:cnts) stop_at skip srctext | lineC<l || (lineC==l && columnC<c) =
+		colouring (l,c,i) buf cnts stop_at skip srctext
+	colouring (l,c,i) buf (Counter{..}:cnts) stop_at Nothing srctext | lineC==l, columnC==c =
+		stringToHtml buf +++
+			(font ! [ thestyle $ "background-color:" ++ if cntC==0 then "#ff0000" else "#00ff00" ])
+				(colouring (l,c,i) "" cnts (Just $ i+lenC) Nothing srctext) +++ colouring (l,c,i) "" cnts stop_at (Just lenC) srctext
+	colouring (l,c,i) _ cnts stop_at (Just 0) srctext = colouring (l,c,i) "" cnts stop_at Nothing srctext
+	colouring (l,c,i) _ cnts stop_at (Just j) (_:srctext) = colouring (l,c+1,i+1) "" cnts stop_at (Just $ j-1) srctext
+	colouring (l,c,i) buf cnts stop_at skip ('\n':srctext) = colouring (l+1,1,i) (buf++['\n']) cnts stop_at skip srctext
+	colouring (l,c,i) buf cnts stop_at skip (char:srctext) = colouring (l,c+1,i+1) (buf++[char]) cnts stop_at skip srctext
+	colouring lci buf cnts stop_at skip srctext = error $ printf "lci=%s\n buf=%s\n cnts=%s\n stop_at=%s\n skip=%s\n srctext=%s\n" (show lci) buf (show cnts) (show stop_at) (show skip) (take 10 srctext)
 {-
 (if cntC==0 then "#ff0000" else "#00ff00")
 data Counter = Counter { lineC :: Int, columnC :: Int, lenC :: Int, cntC :: Int } deriving (Eq,Ord,Show,Generic)
