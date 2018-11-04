@@ -6,6 +6,8 @@ set -e
 
 source init_env.sh
 
+rm -f cov.dat
+
 sed -i -e 's/_INSTR = False/_INSTR = True/g' /tvg/tvg/app/Main.hs
 stack install --allow-different-user --ghc-options -O3 --force-dirty
 

@@ -6,11 +6,8 @@ module CovStats where
 import Control.Applicative ((<$>), (<*>))
 import Foreign
 import Foreign.C
---import Text.Printf
 import Control.Monad
 import GHC.Generics (Generic)
---import Data.List
---import System.Directory
 
 import CovDefs
 

@@ -141,7 +141,7 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 	insertBeforeMarker (incs_path </> "data.h") "/*INSERT_HERE*/" $ tracefundecl ++ ";\n"
 
 	-- Add definition of trace_function to data.c
-	let fundecl = printf "%s { %s.counters[i+1].cnt++; }" tracefundecl varname
+	let fundecl = printf "%s { %s.counters[i].cnt++; }" tracefundecl varname
 	insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
 		printf "SRCFILE %s = { %s, %s, /*NUM_LOCS*/, {\n{0,0,0,0}/*DUMMY*//*LOCATIONS*/\n} };\n" varname (show abs_filename) (show output_filename) ++
 		fundecl ++ "\n\n"
@@ -157,7 +157,7 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 			copyFile instr_filename name
 			when (not _KEEP_INSTRUMENTED) $ removeFile instr_filename
 
-			replaceInFile (incs_path </> "data.c") "/*NUM_LOCS*/" (show numLocsS)
+			replaceInFile (incs_path </> "data.c") "/*NUM_LOCS*/" (show $ numLocsS + 1)
 
 			let srcptr = printf ",\n&%s " varname
 			insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCPTR_HERE*/" srcptr
@@ -252,8 +252,8 @@ instrumentStmt cstat = case cstat of
 	CLabel _ _ _ _  -> return cstat
 	_ -> do
 		InstrS{..} <- get
-		modify $ \ s -> s { locationsS = loc : locationsS }
-		return $ CCompound [] [ instr traceFunNameS (numLocsS + length locationsS), CBlockStmt cstat ] undefNode
+		modify $ \ s -> s { locationsS = locationsS ++ [loc] }
+		return $ CCompound [] [ instr traceFunNameS (numLocsS + length locationsS + 1), CBlockStmt cstat ] undefNode
 		where
 		pos = posOfNode $ nodeInfo cstat
 		loc = (posRow pos,posColumn pos,maybe 1 id (lengthOfNode (nodeInfo cstat)))
