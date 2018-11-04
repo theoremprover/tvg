@@ -41,7 +41,7 @@ readCoverage :: String -> IO Coverage
 readCoverage cov_filename = do
 	cov <- decodeFile cov_filename
 	-- strictly read coverage to avoid deadlock when writing to the same file later
-	length cov `seq` return cov
+	length (show $ last cov) `seq` return cov
 
 accumulateCoverage cov_filename srcfiles = do
 	cov_exists <- doesFileExist cov_filename
