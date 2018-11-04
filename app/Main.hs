@@ -245,7 +245,6 @@ instrumentExtDecl ast = do
 instrumentStmt :: CStat -> InstrM CStat
 instrumentStmt cstat = case cstat of
 	CCompound _ _ _ -> return cstat
-	CSwitch _ _ _   -> return cstat
 	CCase _ _ _     -> return cstat
 	CCases _ _ _ _  -> return cstat
 	CDefault _ _    -> return cstat

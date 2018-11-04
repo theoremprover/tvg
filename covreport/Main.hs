@@ -32,13 +32,14 @@ main = do
 			srcfilename = show n <.> "html"
 			(n_cov,n_stmts,cov_pct,_) = srcfile_covs srcfile
 			cov_html = stringToHtml (printf "%5.1f %%" cov_pct)
+			n_of_m = stringToHtml (printf "%6i of %6i statements covered" n_cov n_stmts)
 
 		writeFile (coverage_dir </> srcfilename) $ renderHtml $
 			h3 (stringToHtml sourceFilenameS) +++
-			h4 cov_html +++
+			h4 (n_of_m +++ stringToHtml " -> " +++ cov_html) +++
 			colourSrc srcfile srctext
 
-		return $ [ stringToHtml (show n), (anchor (stringToHtml sourceFilenameS)) ! [href srcfilename], cov_html ]
+		return $ [ stringToHtml (show n), (anchor (stringToHtml sourceFilenameS)) ! [href srcfilename], n_of_m , cov_html ]
 
 	writeFile (coverage_dir </> "index.html") $ renderHtml $ simpleTable [] [] indexlines
 
