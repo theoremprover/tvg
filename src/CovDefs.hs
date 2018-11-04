@@ -38,7 +38,10 @@ writeCoverage :: String -> Coverage -> IO ()
 writeCoverage cov_filename srcfiles = encodeFile cov_filename srcfiles
 
 readCoverage :: String -> IO Coverage
-readCoverage = decodeFile
+readCoverage cov_filename = do
+	cov <- decodeFile cov_filename
+	-- strictly read coverage to avoid deadlock when writing to the same file later
+	length cov `seq` return cov
 
 accumulateCoverage cov_filename srcfiles = do
 	cov_exists <- doesFileExist cov_filename

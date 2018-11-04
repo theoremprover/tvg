@@ -216,7 +216,6 @@ instrumentExtDecl ast = do
 	let Just fn = fileOfNode ast
 	src_abspath <- liftIO $ canonicalizePath fn
 	absfilename <- gets absFileNameS
-	liftIO $ appendFile "debug.txt" $ show (src_abspath,absfilename) ++ "\n"
 	ast' <- case absfilename == src_abspath of
 		True -> do
 			when _PROGRESS_OUTPUT $ liftIO $ putStrLn $ "instrumentExtDecl at " ++ show (posOfNode $ nodeInfo ast)
