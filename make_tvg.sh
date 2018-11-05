@@ -19,9 +19,9 @@ echo "Compiling CovStats.hsc"
 /root/.local/bin/hsc2hs CovStats.hsc
 
 echo "Generate CovStats_stub.h"
-stack --allow-different-user --stack-yaml /tvg/tvg/stack.yaml ghc -- CovStats.hs
+stack --allow-different-user --force-dirty --stack-yaml /tvg/tvg/stack.yaml ghc -- CovStats.hs
 
 cd /tvg/tvg
-stack --allow-different-user --stack-yaml /tvg/tvg/stack.yaml ghc -- -shared -threaded -dynamic -DQUIET -fPIC -no-hs-main -I/tvg/tvg/incs /tvg/tvg/incs/data.c /tvg/tvg/incs/CovStats.hs -o /tvg/tvg/incs/libdata.so -lHSrts_thr-ghc8.4.3 -lffi
+stack --allow-different-user --force-dirty --stack-yaml /tvg/tvg/stack.yaml ghc -- -shared -threaded -dynamic -DQUIET -fPIC -no-hs-main -I/tvg/tvg/incs /tvg/tvg/incs/data.c /tvg/tvg/incs/CovStats.hs -o /tvg/tvg/incs/libdata.so -lHSrts_thr-ghc8.4.3 -lffi
 
 popd
