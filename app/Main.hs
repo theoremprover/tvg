@@ -166,7 +166,7 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 			replaceInFile (incsPathS </> "data.c") "/*LOCATIONS*/" ""
 
 			when _DEBUG_OUTPUT $ putStrLn "Compiling data.c with stack..."
-			(exitcode,stdout,stderr) <- readProcessWithExitCode "stack" [ "--allow-different-user", "--stack-yaml", tvg_path</>"tvg"</>"stack.yaml", "ghc", "--", "-shared", "-threaded", "-dynamic", "-DQUIET", "-fPIC", "-no-hs-main",
+			(exitcode,stdout,stderr) <- readProcessWithExitCode "stack" [ "--allow-different-user", "--stack-yaml", tvg_path</>"tvg"</>"stack.yaml", "ghc", "--", "-shared", "-threaded", "-dynamic", "-optc-DQUIET", "-fPIC", "-no-hs-main",
 				"-I"++incs_path, incs_path</>"data.c", incs_path</>"CovStats.hs", "-o", incs_path</>"libdata.so",
 				"-lHSrts_thr-ghc8.4.3", "-lffi" ] ""
 				

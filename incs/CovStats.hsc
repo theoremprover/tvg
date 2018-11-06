@@ -46,16 +46,11 @@ instance Storable SrcFile where
 
 foreign export ccall show_stats :: Int -> CString -> Ptr (Ptr SrcFile) -> Int -> IO ()
 show_stats quiet ccovfilename ptr_ptr_srcfiles num_srcfiles = do
-	putStrLn "show_stats..."
 	cov_filename <- peekCString ccovfilename
 	ptrs_srcfiles <- peekArray num_srcfiles ptr_ptr_srcfiles
 	srcfiles <- mapM peek ptrs_srcfiles
-	putStrLn "unless..."
 	unless (quiet==0) $ do
-		putStrLn "accumulatecov"
 		new_cov <- accumulateCoverage cov_filename srcfiles
-		putStrLn "cov_txt"
 		let cov_txt = showCoverage new_cov
-		putStrLn "writeFile..."
 		writeFile (cov_filename ++ ".txt") cov_txt
 		putStrLn cov_txt

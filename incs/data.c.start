@@ -1,8 +1,3 @@
-/*
-gcc-4.7 -w [-DQUIET] -shared -fPIC -Iincs incs/data.c -o incs/libdata.so
-
-*/
-
 #include <data.h>
 #include <stdlib.h>
 
