@@ -21,6 +21,7 @@ make
 cd /tvg/tvg
 sed -i -e 's/_INSTR = True/_INSTR = False/g' /tvg/tvg/app/Main.hs
 stack install --allow-different-user --ghc-options -O3 --force-dirty
+
 cd /tvg/build
 make install
 
