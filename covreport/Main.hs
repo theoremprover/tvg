@@ -57,16 +57,17 @@ colourSrc SrcFile{..} srctext = (font ! [ face "courier" ]) $ simpleTable [] [] 
 	srcchars (l,c,i) (char:srctext) = (l,c,i,char) : srcchars (l,c+1,i+1) srctext
 
 	colouring :: [Counter] -> String -> [(Int,Int,Int,Char)] -> Html
-	colouring _ buf [] = stringToHtml $ reverse buf
+	colouring _ buf [] = trace (printf "3: stringToHtml %s..." (take 20 $ reverse buf)) $ stringToHtml $ reverse buf
 	colouring ((cnt@Counter{..}):cnts) buf rest@((l,c,i,_):_) | lineC==l, columnC==c = trace (printf "1: cnt=%s, buf=%s, (l,c,i)=(%i,%i,%i)" (show cnt) (take 20 buf) l c i) $ 
 		stringToHtml (reverse buf) +++
 		(font ! [ thestyle $ "background-color:" ++ col, title (show cnt) ])
-			(trace (printf "sub=%s" (show sub)) $ colouring cnts "" sub) +++
-		trace (printf "after_cnts=%s..., after=%s" (show $ take 2 after_cnts) (show $ take 2 after)) (colouring after_cnts "" after)
+			(trace (printf "5: sub=%s..." (show $ take 3 sub)) $ colouring cnts "" sub) +++
+		trace (printf "4: after_cnts=%s..., after=%s" (show $ take 2 after_cnts) (show $ take 2 after)) (colouring after_cnts "" after)
 		where
 		col = if cntC==0 then "#ff0000" else "#00ff00"
 		(sub,after) = break (\(_,_,j,_) -> j >= i+lenC) rest
 		after_cnts = case after of
 			[] -> []
 			((afterl,afterc,_,_):_) -> dropWhile (\ Counter{..} -> (lineC,columnC) < (afterl,afterc) ) cnts
-	colouring cnt buf ((_,_,_,char):rest) = trace (printf "2: cnt=%s, buf=%s" (show $ head cnt) (show $ take 20 buf)) $ colouring cnt (char:buf) rest
+	colouring cnt buf ((_,_,_,char):rest) = trace (printf "2: cnt=%s, buf=%s" (show $ take 1 cnt) (show $ take 20 buf)) $
+		colouring cnt (char:buf) rest
