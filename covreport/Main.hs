@@ -13,10 +13,12 @@ import System.FilePath
 import Text.Printf
 import Data.List
 
-import Debug.Trace
+--import Debug.Trace
 
 import CovDefs
 
+trace :: String -> a -> a
+trace _ x = x
 
 coverage_dir = "coverage_report"
 main = do
@@ -69,6 +71,6 @@ colourSrc SrcFile{..} srctext = (font ! [ face "courier" ]) $ simpleTable [] [] 
 		after_cnts = case after of
 			[] -> []
 			((afterl,afterc,_,_):_) -> dropWhile (\ Counter{..} -> (lineC,columnC) < (afterl,afterc) ) cnts
-	colouring ((cnt@Counter{..}):_) _ ((l,c,i,_):_) | (lineC,columnC)<(l,c) = error $ printf "Missed Counter %c" (show cnt)
+	colouring ((cnt@Counter{..}):_) _ ((l,c,i,_):_) | (lineC,columnC)<(l,c) = error $ printf "Missed Counter %s" (show cnt)
 	colouring cnt buf (a@(_,_,_,char):rest) = trace (printf "2: a=%s, cnt=%s, buf=%s" (show a) (show $ take 1 cnt) (show $ reverse buf)) $
 		colouring cnt (char:buf) rest
