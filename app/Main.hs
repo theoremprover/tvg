@@ -33,39 +33,6 @@ import Language.C.Data.InputStream
 
 import ShowAST
 
-{-
-Profiling:
-stack install [...] --profile
-stack exec -- [...] +RTS -h
-tvg.exe +RTS -h -RTS [...]
--}
-
-{-
-stack install --allow-different-user --ghc-options -O3 --force-dirty
-
-/root/.local/bin/tvg-exe /tvg test2.c -o test2
-
-cp incs/data.h.start incs/data.h; cp incs/data.c.start incs/data.c
-export CC="/root/.local/bin/tvg-exe /tvg"
-export CFLAGS="-w -I/usr/include/i386-linux-gnu"
-export LDFLAGS="-L/usr/lib/i386-linux-gnu"
-export LD_LIBRARY_PATH=/tvg/tvg/incs:$LD_LIBRARY_PATH
-export LIBRARY_PATH=/usr/lib/i386-linux-gnu:$LIBRARY_PATH
-
-root@robert-VirtualBox:/tvg/build#
-../gcc-4.7.4/configure --disable-checking --enable-languages=c --disable-multiarch --disable-multilib --enable-shared --enable-threads=posix --program-suffix=-instr --with-gmp=/usr --with-mpc=/usr/lib --with-mpfr=/usr/lib --without-included-gettext --with-system-zlib --with-tune=generic --prefix=/tvg/install/gcc-4.7.4 --disable-bootstrap --disable-build-with-cxx
-
-cp /tvg/tvg/incs/data.c.start /tvg/tvg/incs/data.c; cp /tvg/tvg/incs/data.h.start /tvg/tvg/incs/data.h
-
-make
-
-_INSTR = True setzen in Main.hs
-stack install --allow-different-user --ghc-options -O3 --force-dirty
-
-make install
-
--}
-
 _OUTPUT_AST = False
 _INIT_DATA = False
 _WRITE_PREPROCESSED = False

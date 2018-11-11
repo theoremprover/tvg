@@ -54,6 +54,8 @@ colourSrc SrcFile{..} srctext = (font ! [ face "courier" ]) $ simpleTable [] [] 
 	pre $ colouring (sort $ drop 1 countersS) "" (srcchars (1,1,1) srctext) ] ]
 	where
 
+	col_cnt cntc = if cntc==0 then "#ff0000" else "#00ff00"
+
 	srcchars _ "" = []
 	srcchars (l,c,i) ('\n':srctext) = (l,c,i-1,'\n') : srcchars (l+1,1,i) srctext
 	srcchars (l,c,i) (char:srctext) = (l,c,i,char) : srcchars (l,c+1,i+1) srctext
@@ -62,15 +64,19 @@ colourSrc SrcFile{..} srctext = (font ! [ face "courier" ]) $ simpleTable [] [] 
 	colouring _ buf [] = trace (printf "3: stringToHtml %s..." (take 20 $ reverse buf)) $ stringToHtml $ reverse buf
 	colouring ((cnt@Counter{..}):cnts) buf rest@((l,c,i,_):_) | lineC==l, columnC==c = trace (printf "1: cnt=%s, buf=%s, (l,c,i)=(%i,%i,%i)" (show cnt) (show $ reverse buf) l c i) $ 
 		stringToHtml (reverse buf) +++
-		(font ! [ thestyle $ "background-color:" ++ col, title (show cnt) ])
+		(font ! [ thestyle $ "background-color:" ++ col_cnt cntC, title (show cnt) ])
 			(trace (printf "5: sub=%s..." (show $ take 3 sub)) $ colouring cnts "" sub) +++
 		trace (printf "4: after_cnts=%s..., after=%s" (show $ take 1 after_cnts) (show $ take 1 after)) (colouring after_cnts "" after)
 		where
-		col = if cntC==0 then "#ff0000" else "#00ff00"
 		(sub,after) = break (\(_,_,j,_) -> j >= i+lenC) rest
 		after_cnts = case after of
 			[] -> []
 			((afterl,afterc,_,_):_) -> dropWhile (\ Counter{..} -> (lineC,columnC) < (afterl,afterc) ) cnts
-	colouring ((cnt@Counter{..}):_) _ ((l,c,i,_):_) | (lineC,columnC)<(l,c) = error $ printf "Missed Counter %s" (show cnt)
+	colouring ((cnt@Counter{..}):after_cnts) buf ((l,c,i,'\n'):after) | lineC==l =
+		stringToHtml (reverse buf) +++
+		(font ! [ thestyle $ "background-color:" ++ col_cnt cntC, title (show cnt) ]) (stringToHtml "<unknown>") +++
+		stringToHtml "\n" +++
+		(colouring after_cnts "" after) 
+--	colouring ((cnt@Counter{..}):_) _ ((l,c,i,_):_) | (lineC,columnC)<(l,c) = error $ printf "Missed Counter %s" (show cnt)
 	colouring cnt buf (a@(_,_,_,char):rest) = trace (printf "2: a=%s, cnt=%s, buf=%s" (show a) (show $ take 1 cnt) (show $ reverse buf)) $
 		colouring cnt (char:buf) rest
