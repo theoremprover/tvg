@@ -5,8 +5,9 @@ import Text.Parsec.Prim
 
 import Data.Char
 
-import Control.Applicative
+import Control.Applicative ((<*>),(<$>))
 
+type CPPParser a = Parsec [Char] () a
 
 -- typedef-name:
 -- identifier
@@ -46,9 +47,9 @@ hex_quadP = count 4 hexDigit
 -- \u hex-quad
 -- \U hex-quad hex-quad
 universal_character_nameP =
-	string "\\u" >> parse_hex <$> hex_quadP
+	(string "\\u" >> parse_hex <$> hex_quadP)
 	<|>
-	string "\\U" >> parse_hex <$> (++) <$> hex_quadP <*> hex_quadP
+	(string "\\U" >> parse_hex <$> (++) <$> hex_quadP <*> hex_quadP)
 	where
 	parse_hex s = chr $ let [(n,"")] = readHex s in n
 
@@ -130,7 +131,7 @@ q_charP = noneOf "\n\""
 -- pp-number .
 pp_numberP =
 	digitP <|>
-	string "." >> digitP <|>
+	(string "." >> digitP) <|>
 	pp_numberP 
 
 -- identifier:
@@ -154,6 +155,7 @@ nondigitP = oneOf "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
 
 -- digit: one of
 -- 0 1 2 3 4 5 6 7 8 9
+digitP :: CPPParser Char
 digitP = oneOf "0123456789"
 
 
