@@ -3,9 +3,11 @@ import Text.Parsec
 import Text.Parsec.Char
 import Text.Parsec.Prim
 
+import Numeric
 import Data.Char
 
 import Control.Applicative ((<*>),(<$>))
+
 
 type CPPParser a = Parsec [Char] () a
 
