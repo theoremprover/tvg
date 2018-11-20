@@ -55,3 +55,10 @@ executables:
     - -with-rtsopts=-N
     dependencies:
     - tvg
+
+  parsecpp-exe:
+    main:                Main.hs
+    source-dirs:         grammar
+    dependencies:
+    - parsec3-numbers
+    - parsec

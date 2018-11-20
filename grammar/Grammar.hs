@@ -1,9 +1,11 @@
+module Grammar where
+
 import Text.Parsec
 --OR: import Data.Attoparsec
 import Text.Parsec.Char
 import Text.Parsec.Prim
+import Text.Parsec.Number
 
-import Numeric
 import Data.Char
 
 import Control.Applicative ((<*>),(<$>))
@@ -49,11 +51,9 @@ hex_quadP = count 4 hexDigit
 -- \u hex-quad
 -- \U hex-quad hex-quad
 universal_character_nameP =
-	(string "\\u" >> parse_hex <$> hex_quadP)
+	(string "\\u" >> hex_quadP)
 	<|>
-	(string "\\U" >> parse_hex <$> (++) <$> hex_quadP <*> hex_quadP)
-	where
-	parse_hex s = chr $ let [(n,"")] = readHex s in n
+	(string "\\U" >> ((++) <$> hex_quadP <*> hex_quadP))
 
 -- preprocessing-token:
 -- header-name
@@ -131,16 +131,13 @@ q_charP = noneOf "\n\""
 -- pp-number e sign
 -- pp-number E sign
 -- pp-number .
-pp_numberP =
-	digitP <|>
-	(string "." >> digitP) <|>
-	pp_numberP 
+pp_numberP = floating3 True >>= return . show
 
 -- identifier:
 -- identifier-nondigit
 -- identifier identifier-nondigit
 -- identifier digit
-identifierP = (:) <$> identifier_nondigitP <*> many (digitP <|> identifier_nondigitP)
+identifierP = (++) <$> identifier_nondigitP <*> many (digit <|> identifier_nondigitP)
 
 -- identifier-nondigit:
 -- nondigit
@@ -153,26 +150,26 @@ identifier_nondigitP = nondigitP <|> universal_character_nameP
 -- n o p q r s t u v w x y z
 -- A B C D E F G H I J K L M
 -- N O P Q R S T U V W X Y Z _
+nondigitP :: CPPParser Char
 nondigitP = oneOf "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
-
--- digit: one of
--- 0 1 2 3 4 5 6 7 8 9
-digitP :: CPPParser Char
-digitP = oneOf "0123456789"
-
 
 -- preprocessing-op-or-punc: one of
 -- { } [ ] # ## ( )
-
 -- <: :> <% %> %: %:%: ; : ...
-
 -- new delete ? :: . .*
--- + - * / % ˆ & | 
+-- + - * / % ˆ & | ~
 -- ! = < > += -= *= /= %=
 -- ˆ= &= |= << >> >>= <<= == !=
 -- <= >= && || ++ -- , ->* ->
 -- and and_eq bitand bitor compl not not_eq
 -- or or_eq xor xor_eq
+preprocessing_op_or_puncP :: CPPParser String
+preprocessing_op_or_puncP = choice $ map string [
+	"new","delete","and","and_eq","bitand","bitor","compl","not","not_eq","or","or_eq","xor","xor_eq",
+	"%:%:","...",">>=","<<=","->*",
+	"+=","-=","*=","/=","%=","::","<=",">=","&&","||","++","--","->",
+	"##","<:",":>","<%","%>","%:",".*","ˆ=","&=","|=","==","!=","<<",">>",
+	"!","=","<",">","#","(",")","{","}","[","]",";",":","?","+","-","*","/","%","ˆ","&","|","~",".","," ]
 
 -- literal:
 -- integer-literal

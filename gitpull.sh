@@ -1,2 +1,2 @@
 #!/bin/bash
-git pull origin master
+git pull --no-edit origin master
