@@ -60,5 +60,4 @@ executables:
     main:                Main.hs
     source-dirs:         grammar
     dependencies:
-    - parsec3-numbers
     - parsec

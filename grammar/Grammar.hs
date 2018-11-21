@@ -1,17 +1,35 @@
+{-# OPTIONS_GHC -fno-warn-tabs #-}
+
 module Grammar where
 
 import Text.Parsec
 --OR: import Data.Attoparsec
 import Text.Parsec.Char
 import Text.Parsec.Prim
-import Text.Parsec.Number
+--import Text.Parsec.Number
 
 import Data.Char
+import Data.Monoid
 
 import Control.Applicative ((<*>),(<$>))
 
 
 type CPPParser a = Parsec [Char] () a
+
+charToString :: CPPParser Char -> CPPParser String
+charToString parser = (:[]) <$> parser
+
+concatMany :: CPPParser [a] -> CPPParser [a]
+concatMany parser = concat <$> many parser
+
+infixr 2 <++>
+(<++>) :: CPPParser [a] -> CPPParser [a] -> CPPParser [a]
+parser1 <++> parser2 = (++) <$> parser1 <*> parser2
+
+epsilon = parserReturn mempty
+
+-----
+{-
 
 -- typedef-name:
 -- identifier
@@ -43,6 +61,8 @@ enum_nameP = identifierP
 -- identifier
 template_nameP = identifierP
 
+-}
+
 -- hex-quad:
 -- hexadecimal-digit hexadecimal-digit hexadecimal-digit hexadecimal-digit
 hex_quadP = count 4 hexDigit
@@ -51,9 +71,9 @@ hex_quadP = count 4 hexDigit
 -- \u hex-quad
 -- \U hex-quad hex-quad
 universal_character_nameP =
-	(string "\\u" >> hex_quadP)
+	(string "\\u" <++> hex_quadP)
 	<|>
-	(string "\\U" >> ((++) <$> hex_quadP <*> hex_quadP))
+	(string "\\U" <++> hex_quadP <++> hex_quadP)
 
 -- preprocessing-token:
 -- header-name
@@ -131,13 +151,18 @@ q_charP = noneOf "\n\""
 -- pp-number e sign
 -- pp-number E sign
 -- pp-number .
-pp_numberP = floating3 True >>= return . show
+{- eliminating left recursion leads to:
+pp-number  -> { digit | . digit } pp-number'
+pp-number' -> { digit | identifier-nondigit | { e|E } sign | . } pp-number' | epsilon
+-}
+pp_numberP  = ( digitP <|> string "." <++> digitP ) <++> pp_number'P
+pp_number'P = ( digitP <|> ( string "e" <|> string "E" ) <++> signP <|> identifier_nondigitP <|> string ".") <++> pp_number'P <|> epsilon 
 
 -- identifier:
 -- identifier-nondigit
 -- identifier identifier-nondigit
 -- identifier digit
-identifierP = (++) <$> identifier_nondigitP <*> many (digit <|> identifier_nondigitP)
+identifierP = identifier_nondigitP <++> concatMany (digitP <|> identifier_nondigitP)
 
 -- identifier-nondigit:
 -- nondigit
@@ -150,8 +175,9 @@ identifier_nondigitP = nondigitP <|> universal_character_nameP
 -- n o p q r s t u v w x y z
 -- A B C D E F G H I J K L M
 -- N O P Q R S T U V W X Y Z _
-nondigitP :: CPPParser Char
-nondigitP = oneOf "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+nondigitP = charToString $ oneOf "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+
+digitP = charToString digit
 
 -- preprocessing-op-or-punc: one of
 -- { } [ ] # ## ( )
@@ -230,6 +256,8 @@ preprocessing_op_or_puncP = choice $ map string [
 -- u’ c-char-sequence ’
 -- U’ c-char-sequence ’
 -- L’ c-char-sequence ’
+character_literalP =
+	between (string "'") (string "'") 
 
 -- c-char-sequence:
 -- c-char
@@ -273,6 +301,7 @@ preprocessing_op_or_puncP = choice $ map string [
 
 -- sign: one of
 -- + -
+signP = charToString $ oneOf "+-"
 
 -- digit-sequence:
 -- digit
