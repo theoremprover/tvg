@@ -35,7 +35,6 @@ import ShowAST
 
 _OUTPUT_AST = False
 _INIT_DATA = False
-_KEEP_INSTRUMENTED = True
 _PROGRESS_OUTPUT = False
 _DEBUG_OUTPUT = False
 _INSTR = True
@@ -83,7 +82,7 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 	let bak_name = name ++ ".preinstr"
 	copyFile name bak_name
 
-	Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs preprocess_args bak_name)
+	Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs preprocess_args name)
 	writeFile name $ inputStreamToString inputstream
 
 	mb_ast <- parseCFile (newGCC gccExe) Nothing preprocess_args name
@@ -120,7 +119,6 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 
 			InstrS{..} <- execStateT (processASTM ast) $ InstrS filenameid 0 tvg_path incs_path varname tracefunname abs_filename instr_filename []
 			copyFile instr_filename name
-			when (not _KEEP_INSTRUMENTED) $ removeFile instr_filename
 
 			replaceInFile (incs_path </> "data.c") "/*NUM_LOCS*/" (show $ numLocsS + 1)
 

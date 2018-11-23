@@ -8,6 +8,7 @@ rm -rf build/*
 rm -rf install/*
 rm -rf gcc-4.7.4
 unzip -qo gcc-4.7.4.zip
+chmod -R 777 gcc-4.7.4
 
 source /tvg/tvg/make_tvg.sh
 

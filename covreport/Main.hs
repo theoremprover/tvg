@@ -30,7 +30,7 @@ main = do
 
 	indexlines <- forM (zip [1..] cov) $ \ (n,srcfile@SrcFile{..}) -> do
 		putStrLn $ show n ++ " / " ++ show (length cov) ++ " : Creating " ++ sourceFilenameS ++ " .."
-		srctext <- readFile sourceFilenameS
+		srctext <- readFile (sourceFilenameS ++ ".instr")
 		let
 			srcfilename = show n <.> "html"
 			(n_cov,n_stmts,cov_pct,_) = srcfile_covs srcfile
@@ -77,6 +77,5 @@ colourSrc SrcFile{..} srctext = (font ! [ face "courier" ]) $ simpleTable [] [] 
 		(font ! [ thestyle $ "background-color:" ++ col_cnt cntC, title (show cnt) ]) (stringToHtml "<unknown>") +++
 		stringToHtml "\n" +++
 		(colouring after_cnts "" after) 
---	colouring ((cnt@Counter{..}):_) _ ((l,c,i,_):_) | (lineC,columnC)<(l,c) = error $ printf "Missed Counter %s" (show cnt)
 	colouring cnt buf (a@(_,_,_,char):rest) = trace (printf "2: a=%s, cnt=%s, buf=%s" (show a) (show $ take 1 cnt) (show $ reverse buf)) $
 		colouring cnt (char:buf) rest
