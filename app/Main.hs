@@ -35,7 +35,6 @@ import ShowAST
 
 _OUTPUT_AST = False
 _INIT_DATA = False
-_WRITE_PREPROCESSED = False
 _KEEP_INSTRUMENTED = True
 _PROGRESS_OUTPUT = False
 _DEBUG_OUTPUT = False
@@ -80,19 +79,19 @@ handleArg o_arg preprocess_args tvg_path incs_path arg | ".c" `isSuffixOf` arg &
 handleArg _ _ _ _ _ = return $ return ()
 
 handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
-	when _OUTPUT_AST $ do
-		mb_ast <- parseCFile (newGCC gccExe) Nothing preprocess_args name
-		case mb_ast of
-			Left err -> error $ show err
-			Right ast -> writeFile (name++".ast") $ showDataTree ast
-
-	when _WRITE_PREPROCESSED $ do
-		Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs preprocess_args name)
-		writeFile (name++".i") $ inputStreamToString inputstream
-
 	-- Make file pre-instrumentation backup 
 	let bak_name = name ++ ".preinstr"
 	copyFile name bak_name
+
+	Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs preprocess_args bak_name)
+	writeFile name $ inputStreamToString inputstream
+
+	mb_ast <- parseCFile (newGCC gccExe) Nothing preprocess_args name
+	case mb_ast of
+		Left err -> error $ show err
+		Right ast -> do
+			when _OUTPUT_AST $ writeFile (name++".ast") $ showDataTree ast
+			return ast
 
 	abs_filename <- canonicalizePath name
 	output_filename <- case o_arg of
@@ -113,8 +112,7 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 		printf "SRCFILE %s = { %s, %s, /*NUM_LOCS*/, {\n{0,0,0,0}/*DUMMY*//*LOCATIONS*/\n} };\n" varname (show abs_filename) (show output_filename) ++
 		fundecl ++ "\n\n"
 
-	parseresult <- parseCFile (newGCC gccExe) Nothing preprocess_args name
-	mb_err <- case parseresult of
+	mb_err <- case mb_ast of
 		Left errmsg -> return $ Just $ show errmsg
 		Right ast -> do
 			let instr_filename = name++".instr"
