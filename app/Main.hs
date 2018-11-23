@@ -82,15 +82,17 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 	let bak_name = name ++ ".preinstr"
 	copyFile name bak_name
 
-	Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs preprocess_args name)
-	writeFile name $ inputStreamToString inputstream
+	Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs ("-CC":preprocess_args) name)
+	let
+		delete_hashlines = unlines . filter (not . ("#" `isPrefixOf`)) . lines
+		preprocessed_src = delete_hashlines $ inputStreamToString inputstream
+	length preprocessed_src `seq` (writeFile name preprocessed_src)
+	copyFile name (replaceExtension name "i")
 
-	mb_ast <- parseCFile (newGCC gccExe) Nothing preprocess_args name
+	mb_ast <- parseCFile (newGCC gccExe) Nothing [] name
 	case mb_ast of
 		Left err -> error $ show err
-		Right ast -> do
-			when _OUTPUT_AST $ writeFile (name++".ast") $ showDataTree ast
-			return ast
+		Right ast -> when _OUTPUT_AST $ writeFile (name++".ast") $ showDataTree ast
 
 	abs_filename <- canonicalizePath name
 	output_filename <- case o_arg of
