@@ -4,15 +4,14 @@ module Grammar where
 
 import Text.Parsec
 --OR: import Data.Attoparsec
-import Text.Parsec.Char
+import qualified Text.Parsec.Char
 import Text.Parsec.Prim
 --import Text.Parsec.Number
 
 import Data.Char
 import Data.Monoid
 
-import Control.Applicative ((<*>),(<$>))
-
+import Control.Applicative ((<*>),(<$>),(<*),(*>))
 
 type CPPParser a = Parsec [Char] () a
 
@@ -28,40 +27,40 @@ parser1 <++> parser2 = (++) <$> parser1 <*> parser2
 
 epsilon = parserReturn mempty
 
+
+
 -----
 {-
 
 -- typedef-name:
 -- identifier
-typedef_nameP = identifierP
+typedef_name = identifier
 
 -- namespace-name:
 -- original-namespace-name
 -- namespace-alias
-namespace_nameP = original_namespace_nameP <|> namespace_aliasP
+namespace_name = original_namespace_name <|> namespace_alias
 
 -- original-namespace-name:
 -- identifier
-original_namespace_nameP = identifierP
+original_namespace_name = identifier
 
 -- namespace-alias:
 -- identifier
-namespace_aliasP = identifierP
+namespace_alias = identifier
 
 -- class-name:
 -- identifier
 -- template-id
-class_nameP = identifierP <|> template_idP
+class_name = identifier <|> template_id
 
 -- enum-name:
 -- identifier
-enum_nameP = identifierP
+enum_nameP = identifier
 
 -- template-name:
 -- identifier
-template_nameP = identifierP
-
--}
+template_name = identifier
 
 -- hex-quad:
 -- hexadecimal-digit hexadecimal-digit hexadecimal-digit hexadecimal-digit
@@ -71,9 +70,9 @@ hex_quadP = count 4 hexDigit
 -- \u hex-quad
 -- \U hex-quad hex-quad
 universal_character_nameP =
-	(string "\\u" <++> hex_quadP)
+	(string "\\u" <++> hex_quad)
 	<|>
-	(string "\\U" <++> hex_quadP <++> hex_quadP)
+	(string "\\U" <++> hex_quad <++> hex_quad)
 
 -- preprocessing-token:
 -- header-name
@@ -86,62 +85,62 @@ universal_character_nameP =
 -- preprocessing-op-or-punc
 -- each non-white-space character that cannot be one of the above
 data PreprocessingToken =
-	HeaderNamePPTok HeaderName |
-	IdentifierPPTok String |
-	PPNumberPPTok String |
-	CharLitPPTok Char |
-	UserDefCharLitPPTok Char |
-	StringLitPPTok String |
-	UserDefStringLitPPTok String |
-	PPOpOrPuncPPTok String |
-	OtherPPTok Char
+	HeaderName HeaderName |
+	Identifier String |
+	PPNumber String |
+	CharLit Char |
+	UserDefCharLit Char |
+	StringLit String |
+	UserDefStringLit String |
+	PPOpOrPunc String |
+	OtherChar Char
 	deriving Show
-preprocessing_tokenP =
-	HeaderNamePPTok       <$> header_nameP                    <|>
-	IdentifierPPTok       <$> identifierP                     <|>
-	PPNumberPPTok         <$> pp_numberP                      <|>
-	CharLitPPTok          <$> character_literalP              <|>
-	UserDefCharLitPPTok   <$> user_defined_character_literalP <|>
-	StringLitPPTok        <$> string_literalP                 <|>
-	UserDefStringLitPPTok <$> user_defined_string_literalP    <|>
-	PPOpOrPuncPPTok       <$> preprocessing_op_or_puncP       <|>
-	OtherPPTok            <$> satisfy (not . isSpace)
+preprocessing_token =
+	HeaderName       <$> header_name                    <|>
+	Identifier       <$> identifier                     <|>
+	PPNumber         <$> pp_number                      <|>
+	CharLit          <$> character_literal              <|>
+	UserDefCharLit   <$> user_defined_character_literal <|>
+	StringLit        <$> string_literal                 <|>
+	UserDefStringLit <$> user_defined_string_literal    <|>
+	PPOpOrPunc       <$> preprocessing_op_or_punc       <|>
+	OtherChar        <$> satisfy (not . isSpace)
 
-{-
+-}
 -- token:
 -- identifier
 -- keyword
 -- literal
 -- operator
 -- punctuator
-tokenP = identifierP <|> keywordP <|> literalP <|> operatorP <|> punctuatorP
--}
+token = identifier <|> keyword <|> literal <|> operator <|> punctuator
+{-
 
 -- header-name:
 -- < h-char-sequence >
 -- " q-char-sequence "
 data HeaderName = HHeaderName String | QHeaderName String deriving Show
-header_nameP =
-	between (string "<")  (string ">")  (HHeaderName <$> h_char_sequenceP) <|>
-	between (string "\"") (string "\"") (QHeaderName <$> q_char_sequenceP)
+header_name =
+	between (string "<")  (string ">")  (HHeaderName <$> h_char_sequence) <|>
+	between (string "\"") (string "\"") (QHeaderName <$> q_char_sequence)
 
 -- h-char-sequence:
 -- h-char
 -- h-char-sequence h-char
-h_char_sequenceP = many1 h_charP
+h_char_sequence = many1 h_char
 
 -- h-char:
 -- any member of the source character set except new-line and >
-h_charP = noneOf "\n>"
+h_char = noneOf "\n>"
 
 -- q-char-sequence:
 -- q-char
 -- q-char-sequence q-char
-q_char_sequenceP = many1 q_charP
+q_char_sequence = many1 q_char
 
 -- q-char:
 -- any member of the source character set except new-line and "
-q_charP = noneOf "\n\""
+q_char = noneOf "\n\""
 
 -- pp-number:
 -- digit
@@ -157,27 +156,28 @@ pp-number' -> { digit | identifier-nondigit | { e|E } sign | . } pp-number' | ep
 -}
 pp_numberP  = ( digitP <|> string "." <++> digitP ) <++> pp_number'P
 pp_number'P = ( digitP <|> ( string "e" <|> string "E" ) <++> signP <|> identifier_nondigitP <|> string ".") <++> pp_number'P <|> epsilon 
+-}
 
 -- identifier:
 -- identifier-nondigit
 -- identifier identifier-nondigit
 -- identifier digit
-identifierP = identifier_nondigitP <++> concatMany (digitP <|> identifier_nondigitP)
+identifier = identifier_nondigit <++> concatMany (digit <|> identifier_nondigit)
 
 -- identifier-nondigit:
 -- nondigit
 -- universal-character-name
 -- other implementation-defined characters
-identifier_nondigitP = nondigitP <|> universal_character_nameP
+identifier_nondigit = nondigit
 
 -- nondigit: one of
 -- a b c d e f g h i j k l m
 -- n o p q r s t u v w x y z
 -- A B C D E F G H I J K L M
 -- N O P Q R S T U V W X Y Z _
-nondigitP = charToString $ oneOf "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+nondigit = charToString $ oneOf "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
 
-digitP = charToString digit
+digit = charToString Text.Parsec.Char.digit
 
 -- preprocessing-op-or-punc: one of
 -- { } [ ] # ## ( )
@@ -189,8 +189,8 @@ digitP = charToString digit
 -- <= >= && || ++ -- , ->* ->
 -- and and_eq bitand bitor compl not not_eq
 -- or or_eq xor xor_eq
-preprocessing_op_or_puncP :: CPPParser String
-preprocessing_op_or_puncP = choice $ map string [
+preprocessing_op_or_punc :: CPPParser String
+preprocessing_op_or_punc = choice $ map string [
 	"new","delete","and","and_eq","bitand","bitor","compl","not","not_eq","or","or_eq","xor","xor_eq",
 	"%:%:","...",">>=","<<=","->*",
 	"+=","-=","*=","/=","%=","::","<=",">=","&&","||","++","--","->",
@@ -384,12 +384,9 @@ signP = charToString $ oneOf "+-"
 -- ud-suffix:
 -- identifier
 
-
--- A.3 Basic concepts [gram.basic]
-
 -- translation-unit:
 -- declaration-seqopt
--- A.4 Expressions [gram.expr]
+translation_unitP = concatMany declarationP
 
 -- primary-expression:
 -- literal
@@ -704,6 +701,16 @@ signP = charToString $ oneOf "+-"
 -- namespace-definition
 -- empty-declaration
 -- attribute-declaration
+declaration =
+	block_declaration <|>
+	function_defintion <|>
+	template_declaration <|>
+	explicit_instantiation <|>
+	explicit_specialization <|>
+	linkage_specification <|>
+	namespace_definition <|>
+	empty_declaration <|>
+	attribute_declaration
 
 -- block-declaration:
 -- simple-declaration
@@ -714,16 +721,33 @@ signP = charToString $ oneOf "+-"
 -- static_assert-declaration
 -- alias-declaration
 -- opaque-enum-declaration
+data BlockDecl =
+	AliasDecl Identifier TypeId |
+	SimpleDecl (Maybe AttrSpec) [DeclSpec] [InitDecl] |
+	StaticAssertDecl StaticAssert ConstExpr StringLit
+	deriving (Show)
+
+block_declaration =
+	simple_declaration <|>
+	asm_definition <|>
+	namespace_alias_definition <|>
+	using_declaration <|>
+	using_directive <|>
+	static_assert_declaration <|>
+	alias_declaration <|>
+	opaque_enum_declaration
 
 -- alias-declaration:
 -- using identifier = type-id ;
-
+alias_declaration = AliasDecl <$> string "using" *> identifier <*> ( string "=" *> type_id <* string ";" )
 
 -- simple-declaration:
 -- attribute-specifieropt decl-specifier-seqopt init-declarator-listopt ;
+simple_declaration = SimpleDecl <$> optionMaybe attribute_specifier <*> many decl_specifier <*> many init_declarator
 
 -- static_assert-declaration:
 -- static_assert ( constant-expression , string-literal ) ;
+static_assert_declaration = StaticAssertDecl <$> string "static_assert" *> constant_expression <* string "," <*> string_literal <* string ")" <* string ";"
 
 -- empty-declaration:
 -- ;
@@ -1330,3 +1354,4 @@ signP = charToString $ oneOf "+-"
 
 -- new-line:
 -- the new-line character
+-}
