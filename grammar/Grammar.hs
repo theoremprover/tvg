@@ -5,7 +5,7 @@ module Grammar where
 import Text.Parsec
 --OR: import Data.Attoparsec
 import qualified Text.Parsec.Char
-import Text.Parsec.Prim
+--import Text.Parsec.Prim
 --import Text.Parsec.Number
 
 import Data.Char
@@ -13,8 +13,10 @@ import Data.Monoid
 
 import Control.Applicative ((<*>),(<$>),(<*),(*>))
 
+
 type CPPParser a = Parsec [Char] () a
 
+{-
 charToString :: CPPParser Char -> CPPParser String
 charToString parser = (:[]) <$> parser
 
@@ -26,7 +28,7 @@ infixr 2 <++>
 parser1 <++> parser2 = (++) <$> parser1 <*> parser2
 
 epsilon = parserReturn mempty
-
+-}
 
 
 -----
@@ -175,9 +177,9 @@ identifier_nondigit = nondigit
 -- n o p q r s t u v w x y z
 -- A B C D E F G H I J K L M
 -- N O P Q R S T U V W X Y Z _
-nondigit = charToString $ oneOf "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ_"
+nondigit = oneOf $ ['a'..'z']++['A'..'Z']++"_"
 
-digit = charToString Text.Parsec.Char.digit
+digit = Text.Parsec.Char.digit
 
 -- preprocessing-op-or-punc: one of
 -- { } [ ] # ## ( )
