@@ -65,3 +65,5 @@ extra-deps: []
 # compiler-check: newer-minor
 
 allow-different-user: true
+
+allow-newer: true
