@@ -82,40 +82,41 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 	let bak_name = name ++ ".preinstr"
 	copyFile name bak_name
 
+{-
 	Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs preprocess_args name)
 	let
 		delete_hashlines = unlines . filter (not . ("#" `isPrefixOf`)) . lines
 		preprocessed_src = delete_hashlines $ inputStreamToString inputstream
 	length preprocessed_src `seq` (writeFile name preprocessed_src)
 	copyFile name (replaceExtension name "i")
+-}
 
 	mb_ast <- parseCFile (newGCC gccExe) Nothing [] name
 	case mb_ast of
 		Left err -> error $ show err
-		Right ast -> when _OUTPUT_AST $ writeFile (name++".ast") $ showDataTree ast
-
-	abs_filename <- canonicalizePath name
-	output_filename <- case o_arg of
-		Nothing    -> return "<none>"
-		Just ofile -> canonicalizePath ofile
-
-	let filenameid = to_id $ maybe "" id o_arg ++ "__" ++ name
-	let varname = "src_" ++ filenameid
-	let tracefunname = "trace_" ++ filenameid
-
-	-- Add the trace function declaration to data.h
-	let tracefundecl = printf "void %s(int i)" tracefunname
-	insertBeforeMarker (incs_path </> "data.h") "/*INSERT_HERE*/" $ tracefundecl ++ ";\n"
-
-	-- Add definition of trace_function to data.c
-	let fundecl = printf "%s { %s.counters[i].cnt++; }" tracefundecl varname
-	insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
-		printf "SRCFILE %s = { %s, %s, /*NUM_LOCS*/, {\n{0,0,0,0}/*DUMMY*//*LOCATIONS*/\n} };\n" varname (show abs_filename) (show output_filename) ++
-		fundecl ++ "\n\n"
-
-	mb_err <- case mb_ast of
-		Left errmsg -> return $ Just $ show errmsg
 		Right ast -> do
+			when _OUTPUT_AST $ writeFile (name++".ast") $ showDataTree ast
+
+			abs_filename <- canonicalizePath name
+			output_filename <- case o_arg of
+				Nothing    -> return "<none>"
+				Just ofile -> canonicalizePath ofile
+
+			let filenameid = map (\ c -> if isAlphaNum c then c else '_') $
+				maybe "" id o_arg ++ "__" ++ name
+			let varname = "src_" ++ filenameid
+			let tracefunname = "trace_" ++ filenameid
+
+			-- Add the trace function declaration to data.h
+			let tracefundecl = printf "void %s(int i)" tracefunname
+			insertBeforeMarker (incs_path </> "data.h") "/*INSERT_HERE*/" $ tracefundecl ++ ";\n"
+
+			-- Add definition of trace_function to data.c
+			let fundecl = printf "%s { %s.counters[i].cnt++; }" tracefundecl varname
+			insertBeforeMarker (incs_path </> "data.c") "/*INSERT_SRCFILE_HERE*/" $
+				printf "SRCFILE %s = { %s, %s, /*NUM_LOCS*/, {\n{0,0,0,0}/*DUMMY*//*LOCATIONS*/\n} };\n" varname (show abs_filename) (show output_filename) ++
+				fundecl ++ "\n\n"
+
 			let instr_filename = name++".instr"
 			writeFile instr_filename "#include <data.h>\n\n"
 
@@ -134,24 +135,20 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 			(exitcode,stdout,stderr) <- readProcessWithExitCode "stack" [ "--allow-different-user", "--stack-yaml", tvg_path</>"tvg"</>"stack.yaml", "ghc", "--", "-shared", "-threaded", "-dynamic", "-optc-DQUIET", "-fPIC", "-no-hs-main",
 				"-I"++incs_path, incs_path</>"data.c", incs_path</>"CovStats.hs", "-o", incs_path</>"libdata.so",
 				"-lHSrts_thr-ghc8.4.3", "-lffi" ] ""
-				
+
 			case exitcode of
-				ExitSuccess   -> return Nothing
-				ExitFailure _ -> return $ Just $ "Compile data.c failed:\n" ++ stdout ++ stderr
+				ExitSuccess -> return $ do
+					removeFile name
+					-- This renameFile will set the source file's date to newer than the output file(s), so...
+					renameFile bak_name name
+					-- ... we set the date to "now" for make to behave correctly when resuming compilation etc.
+					now <- getCurrentTime
+					setModificationTime name (addUTCTime ((-1)*nominalDay) now)
+				ExitFailure _ -> do
+					removeFile name >> renameFile bak_name name
+					error $ "Compile data.c failed:\n" ++ stdout ++ stderr
 
-	case mb_err of
-		Nothing -> return $ do
-			removeFile name
-			-- This renameFile will set the source file's date to newer than the output file(s), so...
-			renameFile bak_name name
-			-- ... we set the date to "now" for make to behave correctly when resuming compilation etc.
-			now <- getCurrentTime
-			setModificationTime name (addUTCTime ((-1)*nominalDay) now)
-		Just errmsg -> do
-			removeFile name >> renameFile bak_name name
-			error errmsg
-
-to_id str = map (\ c -> if isAlphaNum c then c else '_') str
+--to_id str = map (\ c -> if isAlphaNum c then c else '_') str
 
 replaceInFile :: String -> String -> String -> IO ()
 replaceInFile filename marker text = do
