@@ -53,7 +53,6 @@ main = do
 			replaceInFile (incs_path </> "data.c") "\"/*COV_FILENAME*/\"" (show $ tvg_path </> "tvg" </> covFilename)
 
 			when _INIT_DATA $ do
-		--		copyFile "test2.c.orig" "test2.c"
 				copyFile (incs_path </> "data.c.start") (incs_path </> "data.c") 
 				copyFile (incs_path </> "data.h.start") (incs_path </> "data.h") 
 
@@ -91,7 +90,7 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 	copyFile name (replaceExtension name "i")
 -}
 
-	mb_ast <- parseCFile (newGCC gccExe) Nothing [] name
+	mb_ast <- parseCFile (newGCC gccExe) Nothing preprocess_args name
 	case mb_ast of
 		Left err -> error $ show err
 		Right ast -> do
@@ -147,8 +146,6 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 				ExitFailure _ -> do
 					removeFile name >> renameFile bak_name name
 					error $ "Compile data.c failed:\n" ++ stdout ++ stderr
-
---to_id str = map (\ c -> if isAlphaNum c then c else '_') str
 
 replaceInFile :: String -> String -> String -> IO ()
 replaceInFile filename marker text = do
