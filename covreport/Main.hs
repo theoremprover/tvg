@@ -30,7 +30,7 @@ main = do
 
 	indexlines <- forM (zip [1..] cov) $ \ (n,srcfile@SrcFile{..}) -> do
 		putStrLn $ show n ++ " / " ++ show (length cov) ++ " : Creating " ++ sourceFilenameS ++ " .."
-		srctext <- readFile (sourceFilenameS ++ ".instr")
+		srctext <- readFile sourceFilenameS
 		let
 			srcfilename = show n <.> "html"
 			(n_cov,n_stmts,cov_pct,_) = srcfile_covs srcfile
