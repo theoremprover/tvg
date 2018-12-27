@@ -57,7 +57,7 @@ colourSrc SrcFile{..} srctext = (font ! [ face "courier" ]) $ simpleTable [] [] 
 	col_cnt cntc = if cntc==0 then "#ff0000" else "#00ff00"
 
 	srcchars _ "" = []
-	srcchars (l,c,i) ('\n':srctext) = (l,c,i-1,'\n') : srcchars (l+1,1,i) srctext
+	srcchars (l,c,i) ('\n':srctext) = (l,c,i-1,'\n') : srcchars (l+1,1,i+1) srctext
 	srcchars (l,c,i) (char:srctext) = (l,c,i,char) : srcchars (l,c+1,i+1) srctext
 
 	colouring :: [Counter] -> String -> [(Int,Int,Int,Char)] -> Html

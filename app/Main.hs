@@ -81,15 +81,6 @@ handleSrcFile o_arg preprocess_args tvg_path incs_path name = do
 	let bak_name = name ++ ".preinstr"
 	copyFile name bak_name
 
-{-
-	Right inputstream <- runPreprocessor (newGCC gccExe) (rawCppArgs preprocess_args name)
-	let
-		delete_hashlines = unlines . filter (not . ("#" `isPrefixOf`)) . lines
-		preprocessed_src = delete_hashlines $ inputStreamToString inputstream
-	length preprocessed_src `seq` (writeFile name preprocessed_src)
-	copyFile name (replaceExtension name "i")
--}
-
 	mb_ast <- parseCFile (newGCC gccExe) Nothing preprocess_args name
 	case mb_ast of
 		Left err -> error $ show err
