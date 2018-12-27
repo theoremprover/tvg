@@ -178,7 +178,6 @@ instrumentExtDecl ast = do
 	ast' <- case absfilename == src_abspath of
 		True -> do
 			when _PROGRESS_OUTPUT $ liftIO $ putStrLn $ "instrumentExtDecl at " ++ show (posOfNode $ nodeInfo ast)
-			incspath <- gets incsPathS
 			modify $ \ s -> s { locationsS = [] }
 
 			ast' <- everywhereM (mkM instrumentStmt) ast
@@ -216,8 +215,7 @@ instrumentStmt cstat = case cstat of
 		pos = posOfNode $ nodeInfo cstat
 		loc = (posRow pos,posColumn pos,maybe 1 id (lengthOfNode (nodeInfo cstat)))
 		str = posFile pos ++ show (posRow pos,posColumn pos)
-		instr tracefunname index = CBlockStmt $ CExpr (Just $ CCall (CVar (builtinIdent tracefunname) undefNode)
-			[CConst $ CIntConst (cInteger $ fromIntegral index) undefNode] undefNode) undefNode
+		instr tracefunname index = call_stmt (builtinIdent tracefunname) [CConst $ CIntConst (cInteger $ fromIntegral index) undefNode]
 
 elimInStatExprs :: CExpr -> CExpr
 elimInStatExprs (CStatExpr stat nodeinfo) = CStatExpr (everywhere (mkT elimNestedCompounds) stat) nodeinfo
@@ -229,29 +227,33 @@ elimNestedCompounds (CCompound ids cbis nodeinfo) = CCompound ids (concatMap fla
 	flatten x = [x]
 elimNestedCompounds x = x
 
+-- Insert call to "opentrace" at the beginning of "main" function
 insertopen :: CFunDef -> CFunDef
 insertopen (CFunDef declspecs declr@(CDeclr (Just (Ident "main" _ _)) _ _ _ _) decls cstat ni) =
 	CFunDef declspecs declr decls (CCompound [] [callopentrace,CBlockStmt (insertbeforereturns cstat),callclosetrace] undefNode) ni
 insertopen x = x
 
-callopentrace = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "opentrace") undefNode) opentrace_args undefNode)) undefNode)
-opentrace_args = []
-
-callclosetrace = CBlockStmt (CExpr (Just (CCall (CVar (builtinIdent "closetrace") undefNode) [] undefNode)) undefNode)
+call_stmt ident args = CBlockStmt $ CExpr (Just (CCall (CVar ident undefNode) args undefNode)) undefNode
+callopentrace = call_stmt (builtinIdent "opentrace") []
+callclosetrace = call_stmt (builtinIdent "closetrace") []
 
 my_ret = internalIdent "my_ret"
 
+-- Insert call to "closetrace" before each return statement
+-- (evaluating return's argument beforehand by assigning it to the fresh "my_ret" variable)
 insertbeforereturns = everywhere (mkT insertclose) where
 	insertclose :: CStat -> CStat
 	insertclose (CReturn (Just ret_expr) _) = create_compound ret_expr $
 		CReturn (Just $ CVar my_ret undefNode) undefNode
 	insertclose x = x
 
+-- Do the same like in "insertbeforereturns" before calls to "exit".
 insertbeforeexits :: CStat -> CStat
 insertbeforeexits (CExpr (Just (CCall fun@(CVar (Ident "exit" _ _) _) [ret_expr] _)) _) = create_compound ret_expr $
 	CExpr (Just $ CCall fun [CVar my_ret undefNode] undefNode) undefNode
 insertbeforeexits x = x
 
+-- Create C compound assigning "my_ret" to a given expression, calling closetrace, and finishing with a given statement. 
 create_compound ret_expr ret_stmt = CCompound [] [
 	CBlockDecl $ CDecl [CTypeSpec $ CIntType undefNode]
 		[ ( Just $ CDeclr (Just my_ret) [] Nothing [] undefNode, Just $ CInitExpr ret_expr undefNode, Nothing ) ] undefNode,
