@@ -46,6 +46,16 @@ executables:
     dependencies:
     - tvg
 
+  analyzer-exe:
+    main:                Main.hs
+    source-dirs:         analyzer
+    ghc-options:
+    - -threaded
+    - -rtsopts
+    - -with-rtsopts=-N
+    dependencies:
+    - tvg
+
   covreport-exe:
     main:                Main.hs
     source-dirs:         covreport
