@@ -1,17 +1,15 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
+{-# LANGUAGE LambdaCase #-}
 
 module Main where
 
-import Prelude hiding (readFile)
-import qualified Data.Text.IO as TIO
-import qualified Data.Text as T
-import System.IO.Strict
-
+import Control.Monad
 import System.Environment
 import Language.C
+import Language.C.Data.Ident
 import Language.C.System.GCC
-import Text.PrettyPrint
 import System.FilePath
+
 import ShowAST
 
 {--
@@ -29,6 +27,6 @@ main = do
 		Left err -> error $ show err
 		Right (CTranslUnit extdecls _) -> do
 			forM_ extdecls $ \case
-				CFDefExt fundef -> do
+				CFDefExt (fundef@(CFunDef _ (CDeclr (Just (Ident name _ _)) _ _ _ _) _ _ _)) | name==functionname -> do
 					writeFile (functionname++".ast") $ showDataTree fundef
 				_ -> return ()
