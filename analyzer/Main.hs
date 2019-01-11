@@ -22,10 +22,13 @@ stack exec analyzer-exe -- test.c
 gccExe = "gcc-4.7"
 
 main = do
-	filename:[] <- getArgs
+	filename:functionname:[] <- getArgs
 
 	mb_ast <- parseCFile (newGCC gccExe) Nothing [] filename
 	case mb_ast of
 		Left err -> error $ show err
-		Right ast -> do
-			writeFile (replaceExtension filename "ast") $ showDataTree ast
+		Right (CTranslUnit extdecls _) -> do
+			forM_ extdecls $ \case
+				CFDefExt fundef -> do
+					writeFile (functionname++".ast") $ showDataTree fundef
+				_ -> return ()

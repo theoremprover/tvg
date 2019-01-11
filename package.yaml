@@ -53,8 +53,6 @@ executables:
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
-    dependencies:
-    - tvg
 
   covreport-exe:
     main:                Main.hs
