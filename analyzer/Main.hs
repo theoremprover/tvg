@@ -29,4 +29,7 @@ main = do
 			forM_ extdecls $ \case
 				CFDefExt (fundef@(CFunDef _ (CDeclr (Just (Ident name _ _)) _ _ _ _) _ _ _)) | name==functionname -> do
 					writeFile (functionname++".ast") $ showDataTree fundef
+					analyzeFunction fundef
 				_ -> return ()
+
+analyzeFunction (CFunDef _ _ args body nodeinfo) = 
