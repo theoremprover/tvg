@@ -9,6 +9,7 @@ import Language.C
 import Language.C.Data.Ident
 import Language.C.System.GCC
 import System.FilePath
+import Text.Printf
 
 import ShowAST
 
@@ -32,4 +33,20 @@ main = do
 					analyzeFunction fundef
 				_ -> return ()
 
-analyzeFunction (CFunDef _ _ args body nodeinfo) = 
+analyzeFunction (CFunDef _ _ args body nodeinfo) = analyzeStmt body
+
+analyzeStmt stmt = case stmt of
+	(CCompound _ blockitems _) -> analyzeBlockItems (reverse blockitems)
+	(CReturn mb_expr _) -> putStrLn $ printf "return %s" (show mb_expr)
+
+analyzeBlockItems [] = return ()
+analyzeBlockItems (blockitem:rest) = do
+	case blockitem of
+		CBlockDecl (CDecl [CTypeSpec (CIntType _)] [(
+			Just (CDeclr (Just (Ident name _ _)) [] Nothing [] _),
+			Just (CInitExpr expr _),
+			Nothing )] _) -> do
+				putStrLn $ printf "int %s = %s" name (show expr)
+		CBlockStmt stmt -> do
+			analyzeStmt stmt
+	analyzeBlockItems rest
