@@ -33,20 +33,25 @@ main = do
 					analyzeFunction fundef
 				_ -> return ()
 
-analyzeFunction (CFunDef _ _ args body nodeinfo) = analyzeStmt body
+analyzeFunction (CFunDef _ _ args body nodeinfo) = analyzeStmt (8,[]) body
 
-analyzeStmt stmt = case stmt of
-	(CCompound _ blockitems _) -> analyzeBlockItems (reverse blockitems)
-	(CReturn mb_expr _) -> putStrLn $ printf "return %s" (show mb_expr)
+analyzeStmt intended_val_env stmt = case stmt of
+	(CCompound _ blockitems _) -> analyzeBlockItems intended_val_env (reverse blockitems)
+	(CReturn (Just expr) _) -> do
+		putStrLn $ printf "return %s" (show expr)
+		inverseExpr intended_val_env expr
 
-analyzeBlockItems [] = return ()
-analyzeBlockItems (blockitem:rest) = do
-	case blockitem of
+analyzeBlockItems (_,env) [] = return env
+analyzeBlockItems intended_val_env (blockitem:rest) = do
+	intended_val_env' <- case blockitem of
 		CBlockDecl (CDecl [CTypeSpec (CIntType _)] [(
 			Just (CDeclr (Just (Ident name _ _)) [] Nothing [] _),
 			Just (CInitExpr expr _),
 			Nothing )] _) -> do
 				putStrLn $ printf "int %s = %s" name (show expr)
+				inverseExpr intended_val_env expr
 		CBlockStmt stmt -> do
-			analyzeStmt stmt
-	analyzeBlockItems rest
+			analyzeStmt intended_val_env stmt
+	analyzeBlockItems intended_val_env' rest
+
+inverseExpr (intended_val,env) 

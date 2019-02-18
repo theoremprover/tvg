@@ -252,18 +252,24 @@ preprocessing_op_or_punc = choice $ map string [
 -- ll LL
 
 
-
+data CharLit = CharLit Char | CharLit_UCS2 Char | CharLit_UCS4 Char | CharLit_Wide Char deriving Show
 -- character-literal:
 -- ’ c-char-sequence ’
 -- u’ c-char-sequence ’
 -- U’ c-char-sequence ’
 -- L’ c-char-sequence ’
-character_literalP =
-	between (string "'") (string "'") 
+character_literal =
+	( CharLit <$> c_char_sequence' )                    <|>
+	( CharLit_UCS2 <$> string "u" *> c_char_sequence' ) <|>
+	( CharLit_UCS4 <$> string "U" *> c_char_sequence' ) <|>
+	( CharLit_Wide <$> string "L" *> c_char_sequence' )
+	where
+	c_char_sequence' = between (string "'") (string "'") c_char_sequence
 
 -- c-char-sequence:
 -- c-char
 -- c-char-sequence c-char
+c_char_sequence = 
 
 -- c-char:
 -- any member of the source character set except

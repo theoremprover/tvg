@@ -1,5 +1,5 @@
 int testfun(int x,int y)
 {
 	int z = x + y;
-	return z;
+	return 2*z;
 }
