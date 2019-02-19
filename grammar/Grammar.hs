@@ -8,8 +8,8 @@ import qualified Text.Parsec.Char
 --import Text.Parsec.Prim
 --import Text.Parsec.Number
 
-import Data.Char
-import Data.Monoid
+--import Data.Char
+--import Data.Monoid
 
 import Control.Applicative ((<*>),(<$>),(<*),(*>))
 
@@ -252,44 +252,60 @@ preprocessing_op_or_punc = choice $ map string [
 -- ll LL
 
 
-data CharLit = CharLit Char | CharLit_UCS2 Char | CharLit_UCS4 Char | CharLit_Wide Char deriving Show
+data CharLit = CharLit String | CharLit_UCS2 String | CharLit_UCS4 String | CharLit_Wide String deriving Show
 -- character-literal:
 -- ’ c-char-sequence ’
 -- u’ c-char-sequence ’
 -- U’ c-char-sequence ’
 -- L’ c-char-sequence ’
 character_literal =
-	( CharLit <$> c_char_sequence' )                    <|>
 	( CharLit_UCS2 <$> string "u" *> c_char_sequence' ) <|>
 	( CharLit_UCS4 <$> string "U" *> c_char_sequence' ) <|>
-	( CharLit_Wide <$> string "L" *> c_char_sequence' )
+	( CharLit_Wide <$> string "L" *> c_char_sequence' ) <|>
+	( CharLit <$> c_char_sequence' )
 	where
 	c_char_sequence' = between (string "'") (string "'") c_char_sequence
 
 -- c-char-sequence:
 -- c-char
 -- c-char-sequence c-char
-c_char_sequence = 
+c_char_sequence = many1 c_char
 
 -- c-char:
 -- any member of the source character set except
 -- the single-quote ’, backslash \, or new-line character
 -- escape-sequence
 -- universal-character-name
+c_char = noneOf "\'\\\n" <|> escape_sequence <|> universal_character_name
 
 -- escape-sequence:
 -- simple-escape-sequence
 -- octal-escape-sequence
 -- hexadecimal-escape-sequence
+escape_sequence = simple_escape_sequence -- <|> octal_escape_sequence <|> hexdecimal_escape_sequence
 
 -- simple-escape-sequence: one of
 -- \’ \" \? \\
 -- \a \b \f \n \r \t \v
+simple_escape_sequence =
+	( string "\\\'" *> pure '\'' ) <|>
+	( string "\\\"" *> pure '\"' ) <|>
+	( string "\\\?" *> pure '\?' ) <|>
+	( string "\\\\" *> pure '\\' ) <|>
+	( string "\\a"  *> pure '\a' ) <|>
+	( string "\\b"  *> pure '\b' ) <|>
+	( string "\\f"  *> pure '\f' ) <|>
+	( string "\\n"  *> pure '\n' ) <|>
+	( string "\\r"  *> pure '\r' ) <|>
+	( string "\\v"  *> pure '\v' ) <|>
 
+{-
 -- octal-escape-sequence:
 -- \ octal-digit
 -- \ octal-digit octal-digit
 -- \ octal-digit octal-digit octal-digit
+octal_escape_sequence =
+	( string "\\" 
 
 -- hexadecimal-escape-sequence:
 -- \x hexadecimal-digit
@@ -391,10 +407,15 @@ signP = charToString $ oneOf "+-"
 
 -- ud-suffix:
 -- identifier
+-}
 
 -- translation-unit:
 -- declaration-seqopt
-translation_unitP = concatMany declarationP
+
+-- declaration-seq:
+-- declaration
+-- declaration-seq declaration
+translation_unit = many declaration
 
 -- primary-expression:
 -- literal
@@ -695,10 +716,6 @@ translation_unitP = concatMany declarationP
 -- block-declaration
 -- A.6 Declarations [gram.dcl]
 
--- declaration-seq:
--- declaration
--- declaration-seq declaration
-
 -- declaration:
 -- block-declaration
 -- function-definition
@@ -710,14 +727,14 @@ translation_unitP = concatMany declarationP
 -- empty-declaration
 -- attribute-declaration
 declaration =
-	block_declaration <|>
-	function_defintion <|>
-	template_declaration <|>
-	explicit_instantiation <|>
+	block_declaration       <|>
+	function_defintion      <|>
+	template_declaration    <|>
+	explicit_instantiation  <|>
 	explicit_specialization <|>
-	linkage_specification <|>
-	namespace_definition <|>
-	empty_declaration <|>
+	linkage_specification   <|>
+	namespace_definition    <|>
+	empty_declaration       <|>
 	attribute_declaration
 
 -- block-declaration:
@@ -737,13 +754,13 @@ data BlockDecl =
 
 block_declaration =
 	simple_declaration <|>
-	asm_definition <|>
-	namespace_alias_definition <|>
-	using_declaration <|>
-	using_directive <|>
+--	asm_definition <|>
+--	namespace_alias_definition <|>
+--	using_declaration <|>
+--	using_directive <|>
 	static_assert_declaration <|>
 	alias_declaration <|>
-	opaque_enum_declaration
+--	opaque_enum_declaration
 
 -- alias-declaration:
 -- using identifier = type-id ;
@@ -759,6 +776,7 @@ static_assert_declaration = StaticAssertDecl <$> string "static_assert" *> const
 
 -- empty-declaration:
 -- ;
+empty_declaration = string ";"
 
 -- attribute-declaration:
 -- attribute-specifier ;
