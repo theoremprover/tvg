@@ -64,8 +64,8 @@ executables:
     dependencies:
     - tvg
 
-#  parsecpp-exe:
-#    main:                Main.hs
-#    source-dirs:         grammar
-#    dependencies:
-#    - parsec
+  parsecpp-exe:
+    main:                Main.hs
+    source-dirs:         grammar
+    dependencies:
+    - parsec

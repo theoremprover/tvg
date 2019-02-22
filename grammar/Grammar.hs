@@ -3,10 +3,11 @@
 module Grammar where
 
 import Text.Parsec
---OR: import Data.Attoparsec
-import qualified Text.Parsec.Char
---import Text.Parsec.Prim
---import Text.Parsec.Number
+import Text.Parsec.Token
+import Text.Parsec.Char
+import Text.Parsec.Language
+import Data.List
+import Data.Functor.Identity (Identity)
 
 --import Data.Char
 --import Data.Monoid
@@ -15,6 +16,35 @@ import Control.Applicative ((<*>),(<$>),(<*),(*>))
 
 
 type CPPParser a = Parsec [Char] () a
+
+operators = [
+	"%:%:","...",">>=","<<=","->*",
+	"+=","-=","*=","/=","%=","::","<=",">=","&&","||","++","--","->",
+	"##","<:",":>","<%","%>","%:",".*","ˆ=","&=","|=","==","!=","<<",">>",
+	"!","=","<",">","#","(",")","{","}","[","]",";",":","?","+","-","*","/","%","ˆ","&","|","~",".","," ]
+
+reservedWords = [
+	"new","delete","and","and_eq","bitand","bitor","compl","not","not_eq","or","or_eq","xor","xor_eq",
+	"alignas","alignof","asm","auto","bool","break","case","catch","char","char16_t","char32_t",
+	"class","const","constexpr","const_cast","continue","decltype","default","delete","dynamic_cast",
+	"else","enum","explicit","export","extern","false","float","for","friend","goto","if","inline",
+	"int","long","mutable","namespace","noexcept","operator","private","protected","public","register",
+	"reinterpret_cast","return","short","signed","sizeof","static","static_assert","static_cast",
+	"struct","switch","template","this","thread_local","throw","true","try","typedef","typeid","typename",
+	"union","unsigned","using","virtual","void","volatile","wchar_t","while" ]
+
+lexer :: GenTokenParser [Char] () Identity
+lexer = makeTokenParser $ emptyDef {
+	commentStart    = "/*", commentEnd = "*/",
+	commentLine     = "//",
+	nestedComments  = True,
+	identStart      = letter <|> char '_',
+	identLetter     = alphaNum <|> char '_',
+	opStart         = oneOf $ nub $ map head operators,
+	opLetter        = oneOf $ nub $ concatMap tail operators,
+	reservedNames   = reservedWords,
+	reservedOpNames = operators,
+	caseSensitive   = True }
 
 {-
 charToString :: CPPParser Char -> CPPParser String
@@ -28,11 +58,6 @@ infixr 2 <++>
 parser1 <++> parser2 = (++) <$> parser1 <*> parser2
 
 epsilon = parserReturn mempty
--}
-
-
------
-{-
 
 -- typedef-name:
 -- identifier
@@ -108,7 +133,24 @@ preprocessing_token =
 	PPOpOrPunc       <$> preprocessing_op_or_punc       <|>
 	OtherChar        <$> satisfy (not . isSpace)
 
--}
+-- preprocessing-op-or-punc: one of
+-- { } [ ] # ## ( )
+-- <: :> <% %> %: %:%: ; : ...
+-- new delete ? :: . .*
+-- + - * / % ˆ & | ~
+-- ! = < > += -= *= /= %=
+-- ˆ= &= |= << >> >>= <<= == !=
+-- <= >= && || ++ -- , ->* ->
+-- and and_eq bitand bitor compl not not_eq
+-- or or_eq xor xor_eq
+preprocessing_op_or_punc :: CPPParser String
+preprocessing_op_or_punc = choice $ map string [
+	"new","delete","and","and_eq","bitand","bitor","compl","not","not_eq","or","or_eq","xor","xor_eq",
+	"%:%:","...",">>=","<<=","->*",
+	"+=","-=","*=","/=","%=","::","<=",">=","&&","||","++","--","->",
+	"##","<:",":>","<%","%>","%:",".*","ˆ=","&=","|=","==","!=","<<",">>",
+	"!","=","<",">","#","(",")","{","}","[","]",";",":","?","+","-","*","/","%","ˆ","&","|","~",".","," ]
+
 -- token:
 -- identifier
 -- keyword
@@ -116,7 +158,6 @@ preprocessing_token =
 -- operator
 -- punctuator
 token = identifier <|> keyword <|> literal <|> operator <|> punctuator
-{-
 
 -- header-name:
 -- < h-char-sequence >
@@ -152,13 +193,12 @@ q_char = noneOf "\n\""
 -- pp-number e sign
 -- pp-number E sign
 -- pp-number .
-{- eliminating left recursion leads to:
-pp-number  -> { digit | . digit } pp-number'
-pp-number' -> { digit | identifier-nondigit | { e|E } sign | . } pp-number' | epsilon
--}
+-- eliminating left recursion leads to:
+-- pp-number  -> { digit | . digit } pp-number'
+-- pp-number' -> { digit | identifier-nondigit | { e|E } sign | . } pp-number' | epsilon
+
 pp_numberP  = ( digitP <|> string "." <++> digitP ) <++> pp_number'P
 pp_number'P = ( digitP <|> ( string "e" <|> string "E" ) <++> signP <|> identifier_nondigitP <|> string ".") <++> pp_number'P <|> epsilon 
--}
 
 -- identifier:
 -- identifier-nondigit
@@ -180,24 +220,6 @@ identifier_nondigit = nondigit
 nondigit = oneOf $ ['a'..'z']++['A'..'Z']++"_"
 
 digit = Text.Parsec.Char.digit
-
--- preprocessing-op-or-punc: one of
--- { } [ ] # ## ( )
--- <: :> <% %> %: %:%: ; : ...
--- new delete ? :: . .*
--- + - * / % ˆ & | ~
--- ! = < > += -= *= /= %=
--- ˆ= &= |= << >> >>= <<= == !=
--- <= >= && || ++ -- , ->* ->
--- and and_eq bitand bitor compl not not_eq
--- or or_eq xor xor_eq
-preprocessing_op_or_punc :: CPPParser String
-preprocessing_op_or_punc = choice $ map string [
-	"new","delete","and","and_eq","bitand","bitor","compl","not","not_eq","or","or_eq","xor","xor_eq",
-	"%:%:","...",">>=","<<=","->*",
-	"+=","-=","*=","/=","%=","::","<=",">=","&&","||","++","--","->",
-	"##","<:",":>","<%","%>","%:",".*","ˆ=","&=","|=","==","!=","<<",">>",
-	"!","=","<",">","#","(",")","{","}","[","]",";",":","?","+","-","*","/","%","ˆ","&","|","~",".","," ]
 
 -- literal:
 -- integer-literal
@@ -290,14 +312,14 @@ escape_sequence = simple_escape_sequence -- <|> octal_escape_sequence <|> hexdec
 simple_escape_sequence =
 	( string "\\\'" *> pure '\'' ) <|>
 	( string "\\\"" *> pure '\"' ) <|>
-	( string "\\\?" *> pure '\?' ) <|>
+	( string "\\?"  *> pure '?'  ) <|>
 	( string "\\\\" *> pure '\\' ) <|>
 	( string "\\a"  *> pure '\a' ) <|>
 	( string "\\b"  *> pure '\b' ) <|>
 	( string "\\f"  *> pure '\f' ) <|>
 	( string "\\n"  *> pure '\n' ) <|>
 	( string "\\r"  *> pure '\r' ) <|>
-	( string "\\v"  *> pure '\v' ) <|>
+	( string "\\v"  *> pure '\v' )
 
 {-
 -- octal-escape-sequence:
@@ -433,8 +455,8 @@ translation_unit = many declaration
 -- operator-function-id
 -- conversion-function-id
 -- literal-operator-id
---  class-name
---  decltype-specifier
+-- [CAN] class-name
+-- [CAN] decltype-specifier
 -- template-id
 
 -- qualified-id:
@@ -516,12 +538,12 @@ translation_unit = many declaration
 
 -- pseudo-destructor-name:
 
--- ::opt nested-name-specifieropt type-name :: type-name
+-- ::opt nested-name-specifieropt type-name ::[CAN] type-name
 
--- ::opt nested-name-specifier template simple-template-id :: type-name
+-- ::opt nested-name-specifier template simple-template-id ::[CAN] type-name
 
--- ::opt nested-name-specifieropt  type-name
---  decltype-specifier
+-- ::opt nested-name-specifieropt [CAN] type-name
+-- [CAN] decltype-specifier
 
 -- unary-expression:
 -- postfix-expression
@@ -537,7 +559,7 @@ translation_unit = many declaration
 -- delete-expression
 
 -- unary-operator: one of
--- * & + - ! 
+-- * & + - ! [CAN]
 
 -- new-expression:
 
@@ -759,7 +781,7 @@ block_declaration =
 --	using_declaration <|>
 --	using_directive <|>
 	static_assert_declaration <|>
-	alias_declaration <|>
+	alias_declaration
 --	opaque_enum_declaration
 
 -- alias-declaration:
@@ -1211,7 +1233,7 @@ empty_declaration = string ";"
 
 -- operator: one of
 -- new delete new[] delete[]
--- + - * / % ˆ & | 
+-- + - * / % ˆ & | [CAN]
 -- ! = < > += -= *= /= %=
 -- ˆ= &= |= << >> >>= <<= == !=
 -- <= >= && || ++ -- , ->* ->

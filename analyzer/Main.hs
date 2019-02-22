@@ -33,8 +33,9 @@ main = do
 					analyzeFunction fundef
 				_ -> return ()
 
-analyzeFunction (CFunDef _ _ args body nodeinfo) = analyzeStmt (8,[]) body
+analyzeFunction (CFunDef _ _ args body nodeinfo) = error "NOT IMPLEMENTED" --analyzeStmt (8,[]) body
 
+{-
 analyzeStmt intended_val_env stmt = case stmt of
 	(CCompound _ blockitems _) -> analyzeBlockItems intended_val_env (reverse blockitems)
 	(CReturn (Just expr) _) -> do
@@ -54,4 +55,5 @@ analyzeBlockItems intended_val_env (blockitem:rest) = do
 			analyzeStmt intended_val_env stmt
 	analyzeBlockItems intended_val_env' rest
 
-inverseExpr (intended_val,env) 
+inverseExpr (intended_val,env) = error "x"
+-}
