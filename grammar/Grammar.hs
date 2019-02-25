@@ -321,7 +321,6 @@ simple_escape_sequence =
 	( string "\\r"  *> pure '\r' ) <|>
 	( string "\\v"  *> pure '\v' )
 
-{-
 -- octal-escape-sequence:
 -- \ octal-digit
 -- \ octal-digit octal-digit
@@ -429,8 +428,8 @@ signP = charToString $ oneOf "+-"
 
 -- ud-suffix:
 -- identifier
--}
 
+-}
 -- translation-unit:
 -- declaration-seqopt
 
@@ -439,6 +438,7 @@ signP = charToString $ oneOf "+-"
 -- declaration-seq declaration
 translation_unit = many declaration
 
+{-
 -- primary-expression:
 -- literal
 -- this
@@ -737,6 +737,7 @@ translation_unit = many declaration
 -- declaration-statement:
 -- block-declaration
 -- A.6 Declarations [gram.dcl]
+-}
 
 -- declaration:
 -- block-declaration
@@ -749,16 +750,17 @@ translation_unit = many declaration
 -- empty-declaration
 -- attribute-declaration
 declaration =
-	block_declaration       <|>
-	function_defintion      <|>
-	template_declaration    <|>
-	explicit_instantiation  <|>
-	explicit_specialization <|>
-	linkage_specification   <|>
-	namespace_definition    <|>
-	empty_declaration       <|>
-	attribute_declaration
+--	block_declaration       <|>
+	function_defintion
+--	template_declaration    <|>
+--	explicit_instantiation  <|>
+--	explicit_specialization <|>
+--	linkage_specification   <|>
+--	namespace_definition    <|>
+--	empty_declaration       <|>
+--	attribute_declaration
 
+{-
 -- block-declaration:
 -- simple-declaration
 -- asm-definition
@@ -1097,16 +1099,21 @@ empty_declaration = string ";"
 -- attribute-specifieropt decl-specifier-seq declarator = assignment-expression
 -- attribute-specifieropt decl-specifier-seq abstract-declaratoropt
 -- attribute-specifieropt decl-specifier-seq abstract-declaratoropt = assignment-expression
+-}
 
+data FunctionDef = FunctionDef (Maybe ?) [?] Declarator FunctionBody deriving Show
 -- function-definition:
 -- attribute-specifieropt decl-specifier-seqopt declarator function-body
 -- attribute-specifieropt decl-specifier-seqopt declarator = default ;
 -- attribute-specifieropt decl-specifier-seqopt declarator = delete ;
+function_definition = FunctionDef <$> optionMaybe attribute_specifier <*> many decl_specifier <*> declarator <*> function_body
 
 -- function-body:
 -- ctor-initializeropt compound-statement
 -- function-try-block
-
+function_body =
+	
+{-
 -- initializer:
 -- brace-or-equal-initializer
 -- ( expression-list )
