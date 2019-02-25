@@ -46,6 +46,9 @@ lexer = makeTokenParser $ emptyDef {
 	reservedOpNames = operators,
 	caseSensitive   = True }
 
+string = symbol lexer
+
+
 {-
 charToString :: CPPParser Char -> CPPParser String
 charToString parser = (:[]) <$> parser
