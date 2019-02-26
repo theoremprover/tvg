@@ -3,7 +3,7 @@
 module Grammar where
 
 import Text.Parsec
-import Text.Parsec.Token
+import qualified Text.Parsec.Token as T
 import Text.Parsec.Char
 import Text.Parsec.Language
 import Data.List
@@ -46,8 +46,46 @@ lexer = makeTokenParser $ emptyDef {
 	reservedOpNames = operators,
 	caseSensitive   = True }
 
-string = symbol lexer
+symbol   = P.symbol lexer
+reserved = P.reserved lexer
 
+--------- From C++ Standard ISO 3092
+
+-- declaration:
+-- block-declaration
+-- function-definition
+-- template-declaration
+-- explicit-instantiation
+-- explicit-specialization
+-- linkage-specification
+-- namespace-definition
+-- empty-declaration
+-- attribute-declaration
+declaration =
+--	block_declaration       <|>
+	function_defintion
+--	template_declaration    <|>
+--	explicit_instantiation  <|>
+--	explicit_specialization <|>
+--	linkage_specification   <|>
+--	namespace_definition    <|>
+--	empty_declaration       <|>
+--	attribute_declaration
+
+data FunctionDef = FunctionDef (Maybe ?) [?] Declarator FunctionBody deriving Show
+-- function-definition:
+-- attribute-specifieropt decl-specifier-seqopt declarator function-body
+-- attribute-specifieropt decl-specifier-seqopt declarator = default ;
+-- attribute-specifieropt decl-specifier-seqopt declarator = delete ;
+function_definition = FunctionDef <$> optionMaybe attribute_specifier <*> many decl_specifier <*> declarator <*> function_body
+
+data FunctionBody = FunctionBody ? | Default_FunctionBody | Delete_FunctionBody deriving Show
+-- function-body:
+-- ctor-initializeropt compound-statement
+-- function-try-block
+function_body =
+	Default_FunctionBody <* reserved "default" <|>
+	FunctionBody <$> compound_statement
 
 {-
 charToString :: CPPParser Char -> CPPParser String
@@ -740,30 +778,7 @@ translation_unit = many declaration
 -- declaration-statement:
 -- block-declaration
 -- A.6 Declarations [gram.dcl]
--}
 
--- declaration:
--- block-declaration
--- function-definition
--- template-declaration
--- explicit-instantiation
--- explicit-specialization
--- linkage-specification
--- namespace-definition
--- empty-declaration
--- attribute-declaration
-declaration =
---	block_declaration       <|>
-	function_defintion
---	template_declaration    <|>
---	explicit_instantiation  <|>
---	explicit_specialization <|>
---	linkage_specification   <|>
---	namespace_definition    <|>
---	empty_declaration       <|>
---	attribute_declaration
-
-{-
 -- block-declaration:
 -- simple-declaration
 -- asm-definition
@@ -1102,21 +1117,7 @@ empty_declaration = string ";"
 -- attribute-specifieropt decl-specifier-seq declarator = assignment-expression
 -- attribute-specifieropt decl-specifier-seq abstract-declaratoropt
 -- attribute-specifieropt decl-specifier-seq abstract-declaratoropt = assignment-expression
--}
 
-data FunctionDef = FunctionDef (Maybe ?) [?] Declarator FunctionBody deriving Show
--- function-definition:
--- attribute-specifieropt decl-specifier-seqopt declarator function-body
--- attribute-specifieropt decl-specifier-seqopt declarator = default ;
--- attribute-specifieropt decl-specifier-seqopt declarator = delete ;
-function_definition = FunctionDef <$> optionMaybe attribute_specifier <*> many decl_specifier <*> declarator <*> function_body
-
--- function-body:
--- ctor-initializeropt compound-statement
--- function-try-block
-function_body =
-	
-{-
 -- initializer:
 -- brace-or-equal-initializer
 -- ( expression-list )
