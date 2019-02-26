@@ -48,8 +48,19 @@ lexer = makeTokenParser $ emptyDef {
 
 symbol   = P.symbol lexer
 reserved = P.reserved lexer
+braces   = P.braces lexer
+
+top_level = P.whiteSpace lexer *> translation_unit
 
 --------- From C++ Standard ISO 3092
+
+-- translation-unit:
+-- declaration-seqopt
+
+-- declaration-seq:
+-- declaration
+-- declaration-seq declaration
+translation_unit = many declaration
 
 -- declaration:
 -- block-declaration
@@ -72,20 +83,75 @@ declaration =
 --	empty_declaration       <|>
 --	attribute_declaration
 
-data FunctionDef = FunctionDef (Maybe ?) [?] Declarator FunctionBody deriving Show
+data FunctionDef = FunctionDef {-(Maybe ?)-} [DeclSpec] Declarator FunctionBody deriving Show
 -- function-definition:
 -- attribute-specifieropt decl-specifier-seqopt declarator function-body
 -- attribute-specifieropt decl-specifier-seqopt declarator = default ;
 -- attribute-specifieropt decl-specifier-seqopt declarator = delete ;
-function_definition = FunctionDef <$> optionMaybe attribute_specifier <*> many decl_specifier <*> declarator <*> function_body
+function_definition = FunctionDef <$> {-optionMaybe attribute_specifier <*>-} many decl_specifier <*> declarator <*> function_body
 
-data FunctionBody = FunctionBody ? | Default_FunctionBody | Delete_FunctionBody deriving Show
+data DeclSpec = Friend_DeclSpec | TypeDef_DeclSpec | ConstExpr_DeclSpec deriving Show
+-- decl-specifier:
+-- storage-class-specifier
+-- type-specifier
+-- function-specifier
+-- friend
+-- typedef
+-- constexpr
+decl_specifier = 
+-- storage-class-specifier
+-- type-specifier
+-- function-specifier
+	pure Friend_DeclSpec    <* reserved "friend" <|>
+	pure TypeDef_DeclSpec   <* reserved "typedef" <|>
+	pure ConstExpr_DeclSpec <* reserved "constexpr"
+
+data Declarator = 
+-- declarator:
+-- ptr-declarator
+-- noptr-declarator parameters-and-qualifiers trailing-return-type
+declarator = 
+
+data FunctionBody = FunctionBody [Statement] | Default_FunctionBody | Delete_FunctionBody deriving Show
 -- function-body:
 -- ctor-initializeropt compound-statement
 -- function-try-block
 function_body =
-	Default_FunctionBody <* reserved "default" <|>
+	pure Default_FunctionBody <* reserved "default" <* <|>
+	pure Delete_FunctionBody <* reserved "delete" <|>
 	FunctionBody <$> compound_statement
+
+-- compound-statement:
+-- { statement-seqopt }
+
+-- statement-seq:
+-- statement
+-- statement-seq statement
+compound_statement = braces (many statement)
+
+data Statement = Break_Statement | Continue_Statement deriving Show
+
+-- statement:
+-- labeled-statement
+-- attribute-specifieropt expression-statement
+-- attribute-specifieropt compound-statement
+-- attribute-specifieropt selection-statement
+-- attribute-specifieropt iteration-statement
+-- attribute-specifieropt jump-statement
+-- declaration-statement
+-- attribute-specifieropt try-block
+statement =
+	jump_statement
+
+-- jump-statement:
+-- break ;
+-- continue ;
+-- return expressionopt ;
+-- return braced-init-list ;
+-- goto identifier ;
+jump_statement =
+	pure Break_Statement    <* reserved "break"    <|>
+	pure Continue_Statement <* reserved "continue"
 
 {-
 charToString :: CPPParser Char -> CPPParser String
@@ -470,16 +536,6 @@ signP = charToString $ oneOf "+-"
 -- ud-suffix:
 -- identifier
 
--}
--- translation-unit:
--- declaration-seqopt
-
--- declaration-seq:
--- declaration
--- declaration-seq declaration
-translation_unit = many declaration
-
-{-
 -- primary-expression:
 -- literal
 -- this
@@ -715,16 +771,6 @@ translation_unit = many declaration
 -- conditional-expression
 
 
--- statement:
--- labeled-statement
--- attribute-specifieropt expression-statement
--- attribute-specifieropt compound-statement
--- attribute-specifieropt selection-statement
--- attribute-specifieropt iteration-statement
--- attribute-specifieropt jump-statement
--- declaration-statement
--- attribute-specifieropt try-block
-
 -- labeled-statement:
 
 -- attribute-specifieropt identifier : statement
@@ -735,13 +781,6 @@ translation_unit = many declaration
 
 -- expression-statement:
 -- expressionopt ;
-
--- compound-statement:
--- { statement-seqopt }
-
--- statement-seq:
--- statement
--- statement-seq statement
 
 
 -- selection-statement:
@@ -767,13 +806,6 @@ translation_unit = many declaration
 
 -- for-range-declaration:
 -- attribute-specifieropt type-specifier-seq declarator
-
--- jump-statement:
--- break ;
--- continue ;
--- return expressionopt ;
--- return braced-init-list ;
--- goto identifier ;
 
 -- declaration-statement:
 -- block-declaration
@@ -822,14 +854,6 @@ empty_declaration = string ";"
 
 -- attribute-declaration:
 -- attribute-specifier ;
-
--- decl-specifier:
--- storage-class-specifier
--- type-specifier
--- function-specifier
--- friend
--- typedef
--- constexpr
 
 -- decl-specifier-seq:
 -- decl-specifier attribute-specifieropt
@@ -1041,10 +1065,6 @@ empty_declaration = string ";"
 
 -- init-declarator:
 -- declarator initializeropt
-
--- declarator:
--- ptr-declarator
--- noptr-declarator parameters-and-qualifiers trailing-return-type
 
 -- ptr-declarator:
 -- noptr-declarator
