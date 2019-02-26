@@ -8,6 +8,7 @@ import Text.Parsec.Char
 import Text.Parsec.Language
 import Data.List
 import Data.Functor.Identity (Identity)
+import Data.Maybe (isJust)
 
 --import Data.Char
 --import Data.Monoid
@@ -17,22 +18,6 @@ import Control.Applicative ((<*>),(<$>),(<*),(*>))
 
 type CPPParser a = Parsec [Char] () a
 
-operators = [
-	"%:%:","...",">>=","<<=","->*",
-	"+=","-=","*=","/=","%=","::","<=",">=","&&","||","++","--","->",
-	"##","<:",":>","<%","%>","%:",".*","ˆ=","&=","|=","==","!=","<<",">>",
-	"!","=","<",">","#","(",")","{","}","[","]",";",":","?","+","-","*","/","%","ˆ","&","|","~",".","," ]
-
-reservedWords = [
-	"new","delete","and","and_eq","bitand","bitor","compl","not","not_eq","or","or_eq","xor","xor_eq",
-	"alignas","alignof","asm","auto","bool","break","case","catch","char","char16_t","char32_t",
-	"class","const","constexpr","const_cast","continue","decltype","default","delete","dynamic_cast",
-	"else","enum","explicit","export","extern","false","float","for","friend","goto","if","inline",
-	"int","long","mutable","namespace","noexcept","operator","private","protected","public","register",
-	"reinterpret_cast","return","short","signed","sizeof","static","static_assert","static_cast",
-	"struct","switch","template","this","thread_local","throw","true","try","typedef","typeid","typename",
-	"union","unsigned","using","virtual","void","volatile","wchar_t","while" ]
-
 lexer :: GenTokenParser [Char] () Identity
 lexer = makeTokenParser $ emptyDef {
 	commentStart    = "/*", commentEnd = "*/",
@@ -40,15 +25,32 @@ lexer = makeTokenParser $ emptyDef {
 	nestedComments  = True,
 	identStart      = letter <|> char '_',
 	identLetter     = alphaNum <|> char '_',
-	opStart         = oneOf $ nub $ map head operators,
-	opLetter        = oneOf $ nub $ concatMap tail operators,
-	reservedNames   = reservedWords,
-	reservedOpNames = operators,
+	reservedNames   = [
+		"new","delete",
+		"alignas","alignof","asm","auto","bool","break","case","catch","char","char16_t","char32_t",
+		"class","const","constexpr","const_cast","continue","decltype","default","delete","dynamic_cast",
+		"else","enum","explicit","export","extern","false","float","for","friend","goto","if","inline",
+		"int","long","mutable","namespace","noexcept","operator","private","protected","public","register",
+		"reinterpret_cast","return","short","signed","sizeof","static","static_assert","static_cast",
+		"struct","switch","template","this","thread_local","throw","true","try","typedef","typeid","typename",
+		"union","unsigned","using","virtual","void","volatile","wchar_t","while" ],
+	reservedOpNames = [
+		"and","and_eq","bitand","bitor","xor","xor_eq","compl","not","not_eq","or","or_eq",
+		"%:%:","...",">>=","<<=","->*","+=","-=","*=","/=","%=","::","<=",">=","&&","||","++","--","->",
+		"##","<:",":>","<%","%>","%:",".*","ˆ=","&=","|=","==","!=","<<",">>",
+		"!","=","<",">","#",":","?","+","-","*","/","%","ˆ","&","|","~",".","," ],
 	caseSensitive   = True }
 
-symbol   = P.symbol lexer
-reserved = P.reserved lexer
-braces   = P.braces lexer
+operators = 
+
+symbol     = P.symbol     lexer
+reserved   = P.reserved   lexer
+braces     = P.braces     lexer
+parens     = P.parens     lexer
+semi       = P.semi       lexer
+identifier = P.identifier lexer
+commaSep1  = P.commaSep1  lexer
+
 
 top_level = P.whiteSpace lexer *> translation_unit
 
@@ -90,7 +92,7 @@ data FunctionDef = FunctionDef {-(Maybe ?)-} [DeclSpec] Declarator FunctionBody 
 -- attribute-specifieropt decl-specifier-seqopt declarator = delete ;
 function_definition = FunctionDef <$> {-optionMaybe attribute_specifier <*>-} many decl_specifier <*> declarator <*> function_body
 
-data DeclSpec = Friend_DeclSpec | TypeDef_DeclSpec | ConstExpr_DeclSpec deriving Show
+data DeclSpec = Type_DeclSpec Type | Friend_DeclSpec | TypeDef_DeclSpec | ConstExpr_DeclSpec deriving Show
 -- decl-specifier:
 -- storage-class-specifier
 -- type-specifier
@@ -98,27 +100,158 @@ data DeclSpec = Friend_DeclSpec | TypeDef_DeclSpec | ConstExpr_DeclSpec deriving
 -- friend
 -- typedef
 -- constexpr
-decl_specifier = 
--- storage-class-specifier
--- type-specifier
--- function-specifier
-	pure Friend_DeclSpec    <* reserved "friend" <|>
-	pure TypeDef_DeclSpec   <* reserved "typedef" <|>
-	pure ConstExpr_DeclSpec <* reserved "constexpr"
+decl_specifier =
+-- storage-class-specifier <|>
+	type_specifier <|>
+-- function-specifier <|>
+	Friend_DeclSpec    <$ reserved "friend"    <|>
+	TypeDef_DeclSpec   <$ reserved "typedef"   <|>
+	ConstExpr_DeclSpec <$ reserved "constexpr"
 
-data Declarator = 
+-- type-specifier:
+-- trailing-type-specifier
+-- class-specifier
+-- enum-specifier
+type_specifier =
+	trailing_type_specifier
+-- class-specifier <|>
+-- enum-specifier
+
+-- trailing-type-specifier:
+-- simple-type-specifier
+-- elaborated-type-specifier
+-- typename-specifier
+-- cv-qualifier
+trailing_type_specifier =
+	simple_type_specifier
+-- elaborated-type-specifier <|>
+-- typename-specifier <|>
+-- cv-qualifier
+
+data SimpleType = Char_SimpleType | Int_SimpleType deriving Show
+
+-- simple-type-specifier:
+-- ::opt nested-name-specifieropt type-name
+-- ::opt nested-name-specifier template simple-template-id
+-- char
+-- char16_t
+-- char32_t
+-- wchar_t
+-- bool
+-- short
+-- int
+-- long
+-- signed
+-- unsigned
+-- float
+-- double
+-- void
+-- auto
+-- decltype-specifier
+simple_type_specifier =
+	Char_SimpleType <$ reserved "char" <|>
+	Int_SimpleType  <$ reserved "int"
+
+data Declarator = Declarator String ParamDecls ? deriving Show
 -- declarator:
 -- ptr-declarator
 -- noptr-declarator parameters-and-qualifiers trailing-return-type
 declarator = 
+	ptr_declarator
+--	Declarator <$> noptr_declarator <*> parameters_and_qualfiers <*> trailing_return_type
 
-data FunctionBody = FunctionBody [Statement] | Default_FunctionBody | Delete_FunctionBody deriving Show
+-- ptr-declarator:
+-- noptr-declarator
+-- ptr-operator ptr-declarator
+ptr_declarator =
+	noptr_declarator
+-- ptr-operator ptr-declarator
+
+-- noptr-declarator:
+-- declarator-id attribute-specifieropt
+-- noptr-declarator parameters-and-qualifiers
+-- noptr-declarator [ constant-expressionopt ] attribute-specifieropt
+-- ( ptr-declarator )
+noptr_declarator =
+	declarator_id {-attribute-specifieropt-}
+-- noptr-declarator parameters-and-qualifiers
+-- noptr-declarator [ constant-expressionopt ] attribute-specifieropt <|>
+-- ( ptr-declarator )
+
+-- declarator-id:
+-- ...opt id-expression
+-- ::opt nested-name-specifieropt class-name
+declarator_id =
+	{-...opt-} id_expression
+-- ::opt nested-name-specifieropt class-name
+
+-- id-expression:
+-- unqualified-id
+-- qualified-id
+id_expression =
+	unqualified_id
+--	qualified_id
+
+-- unqualified-id:
+-- identifier
+-- operator-function-id
+-- conversion-function-id
+-- literal-operator-id
+-- [CAN] class-name
+-- [CAN] decltype-specifier
+-- template-id
+unqualified_id =
+	identifier
+-- operator-function-id
+-- conversion-function-id
+-- literal-operator-id
+-- [CAN] class-name
+-- [CAN] decltype-specifier
+-- template-id
+
+-- parameters-and-qualifiers:
+-- ( parameter-declaration-clause ) attribute-specifieropt cv-qualifier-seqopt
+-- ref-qualifieropt exception-specificationopt
+parameters_and_qualifiers =
+	parens parameter_declaration_clause {-attribute-specifieropt cv-qualifier-seqopt-}
+-- ref-qualifieropt exception-specificationopt
+
+-- trailing-return-type:
+-- -> trailing-type-specifier-seq abstract-declaratoropt
+
+data ParamDecls = ParamDecls [ParamDecl] Bool deriving Show
+
+-- parameter-declaration-clause:
+-- parameter-declaration-listopt ...opt
+-- parameter-declaration-list , ...
+parameter_declaration_clause =
+	ParamDecls <$> option [] parameter_declaration_list <*> (isJust <$> optionMaybe (reserved "...")) <|>
+	ParamDecls <$> parameter_declaration_list <*> ( True <$ (comma *> reserved "...") )
+
+-- parameter-declaration-list:
+-- parameter-declaration
+-- parameter-declaration-list , parameter-declaration
+parameter_declaration_list = commaSep1 parameter_declaration
+
+data ParamDecl = ParamDecl [DeclSpec] Declarator deriving Show
+-- parameter-declaration:
+-- attribute-specifieropt decl-specifier-seq declarator
+-- attribute-specifieropt decl-specifier-seq declarator = assignment-expression
+-- attribute-specifieropt decl-specifier-seq abstract-declaratoropt
+-- attribute-specifieropt decl-specifier-seq abstract-declaratoropt = assignment-expression
+parameter_declaration =
+	{-attribute-specifieropt-} ParamDecl <$> many1 decl_specifier <*> declarator
+-- attribute-specifieropt decl-specifier-seq declarator = assignment-expression
+-- attribute-specifieropt decl-specifier-seq abstract-declaratoropt
+-- attribute-specifieropt decl-specifier-seq abstract-declaratoropt = assignment-expression
+
+data FunctionBody = FunctionBody Statement | Default_FunctionBody | Delete_FunctionBody deriving Show
 -- function-body:
 -- ctor-initializeropt compound-statement
 -- function-try-block
 function_body =
-	pure Default_FunctionBody <* reserved "default" <* <|>
-	pure Delete_FunctionBody <* reserved "delete" <|>
+	Default_FunctionBody <$ (reserved "default" <* semi) <|>
+	Delete_FunctionBody  <$ (reserved "delete"  <* semi) <|>
 	FunctionBody <$> compound_statement
 
 -- compound-statement:
@@ -127,9 +260,9 @@ function_body =
 -- statement-seq:
 -- statement
 -- statement-seq statement
-compound_statement = braces (many statement)
+compound_statement = Compound_Statement <$> braces (many statement)
 
-data Statement = Break_Statement | Continue_Statement deriving Show
+data Statement = Break_Statement | Continue_Statement | Compound_Statement [Statement] deriving Show
 
 -- statement:
 -- labeled-statement
@@ -150,8 +283,8 @@ statement =
 -- return braced-init-list ;
 -- goto identifier ;
 jump_statement =
-	pure Break_Statement    <* reserved "break"    <|>
-	pure Continue_Statement <* reserved "continue"
+	Break_Statement    <$ (reserved "break"    <* semi) <|>
+	Continue_Statement <$ (reserved "continue" <* semi)
 
 {-
 charToString :: CPPParser Char -> CPPParser String
@@ -218,27 +351,6 @@ universal_character_nameP =
 -- user-defined-string-literal
 -- preprocessing-op-or-punc
 -- each non-white-space character that cannot be one of the above
-data PreprocessingToken =
-	HeaderName HeaderName |
-	Identifier String |
-	PPNumber String |
-	CharLit Char |
-	UserDefCharLit Char |
-	StringLit String |
-	UserDefStringLit String |
-	PPOpOrPunc String |
-	OtherChar Char
-	deriving Show
-preprocessing_token =
-	HeaderName       <$> header_name                    <|>
-	Identifier       <$> identifier                     <|>
-	PPNumber         <$> pp_number                      <|>
-	CharLit          <$> character_literal              <|>
-	UserDefCharLit   <$> user_defined_character_literal <|>
-	StringLit        <$> string_literal                 <|>
-	UserDefStringLit <$> user_defined_string_literal    <|>
-	PPOpOrPunc       <$> preprocessing_op_or_punc       <|>
-	OtherChar        <$> satisfy (not . isSpace)
 
 -- preprocessing-op-or-punc: one of
 -- { } [ ] # ## ( )
@@ -542,19 +654,6 @@ signP = charToString $ oneOf "+-"
 -- ( expression )
 -- id-expression
 -- lambda-expression
-
--- id-expression:
--- unqualified-id
--- qualified-id
-
--- unqualified-id:
--- identifier
--- operator-function-id
--- conversion-function-id
--- literal-operator-id
--- [CAN] class-name
--- [CAN] decltype-specifier
--- template-id
 
 -- qualified-id:
 
@@ -874,17 +973,6 @@ empty_declaration = string ";"
 -- typedef-name:
 -- identifier
 
--- type-specifier:
--- trailing-type-specifier
--- class-specifier
--- enum-specifier
-
--- trailing-type-specifier:
--- simple-type-specifier
--- elaborated-type-specifier
--- typename-specifier
--- cv-qualifier
-
 -- type-specifier-seq:
 -- type-specifier attribute-specifieropt
 -- type-specifier type-specifier-seq
@@ -893,27 +981,6 @@ empty_declaration = string ";"
 -- trailing-type-specifier attribute-specifieropt
 -- trailing-type-specifier trailing-type-specifier-seq
 
-
--- simple-type-specifier:
-
--- ::opt nested-name-specifieropt type-name
-
--- ::opt nested-name-specifier template simple-template-id
--- char
--- char16_t
--- char32_t
--- wchar_t
--- bool
--- short
--- int
--- long
--- signed
--- unsigned
--- float
--- double
--- void
--- auto
--- decltype-specifier
 
 -- type-name:
 -- class-name
@@ -1066,23 +1133,6 @@ empty_declaration = string ";"
 -- init-declarator:
 -- declarator initializeropt
 
--- ptr-declarator:
--- noptr-declarator
--- ptr-operator ptr-declarator
-
--- noptr-declarator:
--- declarator-id attribute-specifieropt
--- noptr-declarator parameters-and-qualifiers
--- noptr-declarator [ constant-expressionopt ] attribute-specifieropt
--- ( ptr-declarator )
-
--- parameters-and-qualifiers:
--- ( parameter-declaration-clause ) attribute-specifieropt cv-qualifier-seqopt
--- ref-qualifieropt exception-specificationopt
-
--- trailing-return-type:
--- -> trailing-type-specifier-seq abstract-declaratoropt
-
 -- ptr-operator:
 -- * attribute-specifieropt cv-qualifier-seqopt
 -- & attribute-specifieropt
@@ -1102,11 +1152,6 @@ empty_declaration = string ";"
 -- &&
 
 
--- declarator-id:
--- ...opt id-expression
-
--- ::opt nested-name-specifieropt class-name
-
 -- type-id:
 -- type-specifier-seq abstract-declaratoropt
 
@@ -1123,20 +1168,6 @@ empty_declaration = string ";"
 -- noptr-abstract-declaratoropt parameters-and-qualifiers
 -- noptr-abstract-declaratoropt [ constant-expression ] attribute-specifieropt
 -- ( ptr-abstract-declarator )
-
--- parameter-declaration-clause:
--- parameter-declaration-listopt ...opt
--- parameter-declaration-list , ...
-
--- parameter-declaration-list:
--- parameter-declaration
--- parameter-declaration-list , parameter-declaration
-
--- parameter-declaration:
--- attribute-specifieropt decl-specifier-seq declarator
--- attribute-specifieropt decl-specifier-seq declarator = assignment-expression
--- attribute-specifieropt decl-specifier-seq abstract-declaratoropt
--- attribute-specifieropt decl-specifier-seq abstract-declaratoropt = assignment-expression
 
 -- initializer:
 -- brace-or-equal-initializer
@@ -1433,4 +1464,5 @@ empty_declaration = string ";"
 
 -- new-line:
 -- the new-line character
+
 -}
