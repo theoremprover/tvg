@@ -18,14 +18,14 @@ import Control.Applicative ((<*>),(<$>),(<*),(*>))
 
 type CPPParser a = Parsec [Char] () a
 
-lexer :: GenTokenParser [Char] () Identity
-lexer = makeTokenParser $ emptyDef {
-	commentStart    = "/*", commentEnd = "*/",
-	commentLine     = "//",
-	nestedComments  = True,
-	identStart      = letter <|> char '_',
-	identLetter     = alphaNum <|> char '_',
-	reservedNames   = [
+lexer :: T.GenTokenParser [Char] () Identity
+lexer = T.makeTokenParser $ emptyDef {
+	T.commentStart    = "/*", T.commentEnd = "*/",
+	T.commentLine     = "//",
+	T.nestedComments  = True,
+	T.identStart      = letter <|> char '_',
+	T.identLetter     = alphaNum <|> char '_',
+	T.reservedNames   = [
 		"new","delete",
 		"alignas","alignof","asm","auto","bool","break","case","catch","char","char16_t","char32_t",
 		"class","const","constexpr","const_cast","continue","decltype","default","delete","dynamic_cast",
@@ -34,27 +34,29 @@ lexer = makeTokenParser $ emptyDef {
 		"reinterpret_cast","return","short","signed","sizeof","static","static_assert","static_cast",
 		"struct","switch","template","this","thread_local","throw","true","try","typedef","typeid","typename",
 		"union","unsigned","using","virtual","void","volatile","wchar_t","while" ],
-	reservedOpNames = [
+	T.reservedOpNames = [
 		"and","and_eq","bitand","bitor","xor","xor_eq","compl","not","not_eq","or","or_eq",
 		"%:%:","...",">>=","<<=","->*","+=","-=","*=","/=","%=","::","<=",">=","&&","||","++","--","->",
 		"##","<:",":>","<%","%>","%:",".*","ˆ=","&=","|=","==","!=","<<",">>",
 		"!","=","<",">","#",":","?","+","-","*","/","%","ˆ","&","|","~",".","," ],
-	caseSensitive   = True }
+	T.caseSensitive   = True }
 
-operators = 
+symbol     = T.symbol     lexer
+reserved   = T.reserved   lexer
+braces     = T.braces     lexer
+parens     = T.parens     lexer
+semi       = T.semi       lexer
+identifier = T.identifier lexer
+commaSep1  = T.commaSep1  lexer
+comma      = T.comma      lexer
 
-symbol     = P.symbol     lexer
-reserved   = P.reserved   lexer
-braces     = P.braces     lexer
-parens     = P.parens     lexer
-semi       = P.semi       lexer
-identifier = P.identifier lexer
-commaSep1  = P.commaSep1  lexer
 
+parseTranslUnit :: String -> String -> Either ParseError TranslUnit
+parseTranslUnit filename input = runParser (T.whiteSpace lexer *> translation_unit) () filename input
 
-top_level = P.whiteSpace lexer *> translation_unit
+--------- From C++ Standard ISO N 3092
 
---------- From C++ Standard ISO 3092
+data TranslUnit = TranslUnit [Declaration] deriving Show
 
 -- translation-unit:
 -- declaration-seqopt
@@ -62,7 +64,7 @@ top_level = P.whiteSpace lexer *> translation_unit
 -- declaration-seq:
 -- declaration
 -- declaration-seq declaration
-translation_unit = many declaration
+translation_unit = TranslUnit <$> many declaration
 
 -- declaration:
 -- block-declaration
@@ -76,7 +78,7 @@ translation_unit = many declaration
 -- attribute-declaration
 declaration =
 --	block_declaration       <|>
-	function_defintion
+	function_definition
 --	template_declaration    <|>
 --	explicit_instantiation  <|>
 --	explicit_specialization <|>
@@ -92,7 +94,7 @@ data FunctionDef = FunctionDef {-(Maybe ?)-} [DeclSpec] Declarator FunctionBody 
 -- attribute-specifieropt decl-specifier-seqopt declarator = delete ;
 function_definition = FunctionDef <$> {-optionMaybe attribute_specifier <*>-} many decl_specifier <*> declarator <*> function_body
 
-data DeclSpec = Type_DeclSpec Type | Friend_DeclSpec | TypeDef_DeclSpec | ConstExpr_DeclSpec deriving Show
+data DeclSpec = Type_DeclSpec SimpleType | Friend_DeclSpec | TypeDef_DeclSpec | ConstExpr_DeclSpec deriving Show
 -- decl-specifier:
 -- storage-class-specifier
 -- type-specifier
@@ -102,7 +104,7 @@ data DeclSpec = Type_DeclSpec Type | Friend_DeclSpec | TypeDef_DeclSpec | ConstE
 -- constexpr
 decl_specifier =
 -- storage-class-specifier <|>
-	type_specifier <|>
+	Type_DeclSpec      <$> type_specifier      <|>
 -- function-specifier <|>
 	Friend_DeclSpec    <$ reserved "friend"    <|>
 	TypeDef_DeclSpec   <$ reserved "typedef"   <|>
@@ -152,7 +154,7 @@ simple_type_specifier =
 	Char_SimpleType <$ reserved "char" <|>
 	Int_SimpleType  <$ reserved "int"
 
-data Declarator = Declarator String ParamDecls ? deriving Show
+data Declarator = Declarator String deriving Show
 -- declarator:
 -- ptr-declarator
 -- noptr-declarator parameters-and-qualifiers trailing-return-type
@@ -173,7 +175,7 @@ ptr_declarator =
 -- noptr-declarator [ constant-expressionopt ] attribute-specifieropt
 -- ( ptr-declarator )
 noptr_declarator =
-	declarator_id {-attribute-specifieropt-}
+	Declarator <$> declarator_id {-attribute-specifieropt-}
 -- noptr-declarator parameters-and-qualifiers
 -- noptr-declarator [ constant-expressionopt ] attribute-specifieropt <|>
 -- ( ptr-declarator )
