@@ -13,6 +13,6 @@ main = do
 	let filename = "test.cpp"
 	f <- readFile filename
 	case parseTranslUnit filename f of
-		Right err -> print err
-		Left translunit -> do
+		Left err -> print err
+		Right translunit -> do
 			writeFile (filename++".ast") $ showDataTree translunit

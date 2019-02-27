@@ -1,4 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
+{-# LANGUAGE DeriveGeneric #-}
 
 module Grammar where
 
@@ -9,10 +10,7 @@ import Text.Parsec.Language
 import Data.List
 import Data.Functor.Identity (Identity)
 import Data.Maybe (isJust)
-
---import Data.Char
---import Data.Monoid
-
+import GHC.Generics
 import Control.Applicative ((<*>),(<$>),(<*),(*>))
 
 
@@ -56,7 +54,7 @@ parseTranslUnit filename input = runParser (T.whiteSpace lexer *> translation_un
 
 --------- From C++ Standard ISO N 3092
 
-data TranslUnit = TranslUnit [Declaration] deriving Show
+data TranslUnit = TranslUnit [Declaration] deriving (Show,Generic)
 
 -- translation-unit:
 -- declaration-seqopt
@@ -66,6 +64,7 @@ data TranslUnit = TranslUnit [Declaration] deriving Show
 -- declaration-seq declaration
 translation_unit = TranslUnit <$> many declaration
 
+data Declaration = FunctionDef_Decl FunctionDef deriving (Show,Generic)
 -- declaration:
 -- block-declaration
 -- function-definition
@@ -78,7 +77,7 @@ translation_unit = TranslUnit <$> many declaration
 -- attribute-declaration
 declaration =
 --	block_declaration       <|>
-	function_definition
+	FunctionDef_Decl <$> function_definition
 --	template_declaration    <|>
 --	explicit_instantiation  <|>
 --	explicit_specialization <|>
@@ -87,14 +86,14 @@ declaration =
 --	empty_declaration       <|>
 --	attribute_declaration
 
-data FunctionDef = FunctionDef {-(Maybe ?)-} [DeclSpec] Declarator FunctionBody deriving Show
+data FunctionDef = FunctionDef {-(Maybe ?)-} [DeclSpec] Declarator FunctionBody deriving (Show,Generic)
 -- function-definition:
 -- attribute-specifieropt decl-specifier-seqopt declarator function-body
 -- attribute-specifieropt decl-specifier-seqopt declarator = default ;
 -- attribute-specifieropt decl-specifier-seqopt declarator = delete ;
 function_definition = FunctionDef <$> {-optionMaybe attribute_specifier <*>-} many decl_specifier <*> declarator <*> function_body
 
-data DeclSpec = Type_DeclSpec SimpleType | Friend_DeclSpec | TypeDef_DeclSpec | ConstExpr_DeclSpec deriving Show
+data DeclSpec = Type_DeclSpec SimpleType | Friend_DeclSpec | TypeDef_DeclSpec | ConstExpr_DeclSpec deriving (Show,Generic)
 -- decl-specifier:
 -- storage-class-specifier
 -- type-specifier
@@ -130,7 +129,7 @@ trailing_type_specifier =
 -- typename-specifier <|>
 -- cv-qualifier
 
-data SimpleType = Char_SimpleType | Int_SimpleType deriving Show
+data SimpleType = Char_SimpleType | Int_SimpleType deriving (Show,Generic)
 
 -- simple-type-specifier:
 -- ::opt nested-name-specifieropt type-name
@@ -154,7 +153,7 @@ simple_type_specifier =
 	Char_SimpleType <$ reserved "char" <|>
 	Int_SimpleType  <$ reserved "int"
 
-data Declarator = Declarator String deriving Show
+data Declarator = Declarator String deriving (Show,Generic)
 -- declarator:
 -- ptr-declarator
 -- noptr-declarator parameters-and-qualifiers trailing-return-type
@@ -175,8 +174,8 @@ ptr_declarator =
 -- noptr-declarator [ constant-expressionopt ] attribute-specifieropt
 -- ( ptr-declarator )
 noptr_declarator =
-	Declarator <$> declarator_id {-attribute-specifieropt-}
--- noptr-declarator parameters-and-qualifiers
+-- declarator-id attribute-specifieropt
+	Declarator <$> 
 -- noptr-declarator [ constant-expressionopt ] attribute-specifieropt <|>
 -- ( ptr-declarator )
 
@@ -221,7 +220,7 @@ parameters_and_qualifiers =
 -- trailing-return-type:
 -- -> trailing-type-specifier-seq abstract-declaratoropt
 
-data ParamDecls = ParamDecls [ParamDecl] Bool deriving Show
+data ParamDecls = ParamDecls [ParamDecl] Bool deriving (Show,Generic)
 
 -- parameter-declaration-clause:
 -- parameter-declaration-listopt ...opt
@@ -235,7 +234,7 @@ parameter_declaration_clause =
 -- parameter-declaration-list , parameter-declaration
 parameter_declaration_list = commaSep1 parameter_declaration
 
-data ParamDecl = ParamDecl [DeclSpec] Declarator deriving Show
+data ParamDecl = ParamDecl [DeclSpec] Declarator deriving (Show,Generic)
 -- parameter-declaration:
 -- attribute-specifieropt decl-specifier-seq declarator
 -- attribute-specifieropt decl-specifier-seq declarator = assignment-expression
@@ -247,7 +246,7 @@ parameter_declaration =
 -- attribute-specifieropt decl-specifier-seq abstract-declaratoropt
 -- attribute-specifieropt decl-specifier-seq abstract-declaratoropt = assignment-expression
 
-data FunctionBody = FunctionBody Statement | Default_FunctionBody | Delete_FunctionBody deriving Show
+data FunctionBody = FunctionBody Statement | Default_FunctionBody | Delete_FunctionBody deriving (Show,Generic)
 -- function-body:
 -- ctor-initializeropt compound-statement
 -- function-try-block
@@ -264,7 +263,7 @@ function_body =
 -- statement-seq statement
 compound_statement = Compound_Statement <$> braces (many statement)
 
-data Statement = Break_Statement | Continue_Statement | Compound_Statement [Statement] deriving Show
+data Statement = Break_Statement | Continue_Statement | Compound_Statement [Statement] deriving (Show,Generic)
 
 -- statement:
 -- labeled-statement
@@ -383,7 +382,7 @@ token = identifier <|> keyword <|> literal <|> operator <|> punctuator
 -- header-name:
 -- < h-char-sequence >
 -- " q-char-sequence "
-data HeaderName = HHeaderName String | QHeaderName String deriving Show
+data HeaderName = HHeaderName String | QHeaderName String deriving (Show,Generic)
 header_name =
 	between (string "<")  (string ">")  (HHeaderName <$> h_char_sequence) <|>
 	between (string "\"") (string "\"") (QHeaderName <$> q_char_sequence)
@@ -495,7 +494,7 @@ digit = Text.Parsec.Char.digit
 -- ll LL
 
 
-data CharLit = CharLit String | CharLit_UCS2 String | CharLit_UCS4 String | CharLit_Wide String deriving Show
+data CharLit = CharLit String | CharLit_UCS2 String | CharLit_UCS4 String | CharLit_Wide String deriving (Show,Generic)
 -- character-literal:
 -- ’ c-char-sequence ’
 -- u’ c-char-sequence ’
