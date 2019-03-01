@@ -153,13 +153,13 @@ simple_type_specifier =
 	Char_SimpleType <$ reserved "char" <|>
 	Int_SimpleType  <$ reserved "int"
 
-data Declarator = Declarator String deriving (Show,Generic)
+data Declarator = Declarator String ParamDecls deriving (Show,Generic)
 -- declarator:
 -- ptr-declarator
 -- noptr-declarator parameters-and-qualifiers trailing-return-type
 declarator = 
 	ptr_declarator
---	Declarator <$> noptr_declarator <*> parameters_and_qualfiers <*> trailing_return_type
+-- noptr-declarator parameters-and-qualifiers trailing-return-type
 
 -- ptr-declarator:
 -- noptr-declarator
@@ -174,8 +174,8 @@ ptr_declarator =
 -- noptr-declarator [ constant-expressionopt ] attribute-specifieropt
 -- ( ptr-declarator )
 noptr_declarator =
--- declarator-id attribute-specifieropt
-	Declarator <$> 
+	try (Declarator <$> declarator_id <*> parameters_and_qualifiers) <|>
+	Declarator <$> declarator_id <*> pure (ParamDecls [] False)
 -- noptr-declarator [ constant-expressionopt ] attribute-specifieropt <|>
 -- ( ptr-declarator )
 
@@ -251,8 +251,9 @@ data FunctionBody = FunctionBody Statement | Default_FunctionBody | Delete_Funct
 -- ctor-initializeropt compound-statement
 -- function-try-block
 function_body =
-	Default_FunctionBody <$ (reserved "default" <* semi) <|>
-	Delete_FunctionBody  <$ (reserved "delete"  <* semi) <|>
+	symbol "=" *> (
+		Default_FunctionBody <$ (reserved "default" <* semi) <|>
+		Delete_FunctionBody  <$ (reserved "delete"  <* semi) ) <|>
 	FunctionBody <$> compound_statement
 
 -- compound-statement:
