@@ -1,12 +1,12 @@
 int main(int x,int y)
 {
-	break;
+	char c = f('a');
+	return;
 }
 
 char f(char s1)
 {
-	break;
-	continue;
+	return (s1+2);
 }
 
 char f2 = default;

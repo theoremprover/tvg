@@ -53,6 +53,9 @@ parseTranslUnit :: String -> String -> Either ParseError TranslUnit
 parseTranslUnit filename input = runParser (T.whiteSpace lexer *> translation_unit) () filename input
 
 --------- From C++ Standard ISO N 3092
+-- http://www.nongnu.org/hcb/
+
+type Identifier = String
 
 data TranslUnit = TranslUnit [Declaration] deriving (Show,Generic)
 
@@ -109,6 +112,10 @@ decl_specifier =
 	TypeDef_DeclSpec   <$ reserved "typedef"   <|>
 	ConstExpr_DeclSpec <$ reserved "constexpr"
 
+data TypeSpecifier =
+	Simple_TypeSpecifier SimpleType
+	deriving (Show,Generic)
+
 -- type-specifier:
 -- trailing-type-specifier
 -- class-specifier
@@ -124,12 +131,13 @@ type_specifier =
 -- typename-specifier
 -- cv-qualifier
 trailing_type_specifier =
-	simple_type_specifier
+	Simple_TypeSpecifier <$> simple_type_specifier
 -- elaborated-type-specifier <|>
 -- typename-specifier <|>
 -- cv-qualifier
 
-data SimpleType = Char_SimpleType | Int_SimpleType deriving (Show,Generic)
+data SimpleType = Char_SimpleType | Int_SimpleType
+	deriving (Show,Generic)
 
 -- simple-type-specifier:
 -- ::opt nested-name-specifieropt type-name
@@ -153,7 +161,7 @@ simple_type_specifier =
 	Char_SimpleType <$ reserved "char" <|>
 	Int_SimpleType  <$ reserved "int"
 
-data Declarator = Declarator String ParamDecls deriving (Show,Generic)
+data Declarator = Declarator Identifier ParamDecls deriving (Show,Generic)
 -- declarator:
 -- ptr-declarator
 -- noptr-declarator parameters-and-qualifiers trailing-return-type
@@ -198,16 +206,16 @@ id_expression =
 -- operator-function-id
 -- conversion-function-id
 -- literal-operator-id
--- [CAN] class-name
--- [CAN] decltype-specifier
+-- ~ class-name
+-- ~ decltype-specifier
 -- template-id
 unqualified_id =
 	identifier
 -- operator-function-id
 -- conversion-function-id
 -- literal-operator-id
--- [CAN] class-name
--- [CAN] decltype-specifier
+-- ~ class-name
+-- ~ decltype-specifier
 -- template-id
 
 -- parameters-and-qualifiers:
@@ -251,10 +259,13 @@ data FunctionBody = FunctionBody Statement | Default_FunctionBody | Delete_Funct
 -- ctor-initializeropt compound-statement
 -- function-try-block
 function_body =
+-- TODO: ctor-initializeropt
 	symbol "=" *> (
 		Default_FunctionBody <$ (reserved "default" <* semi) <|>
 		Delete_FunctionBody  <$ (reserved "delete"  <* semi) ) <|>
 	FunctionBody <$> compound_statement
+-- TODO: function-try-block
+
 
 -- compound-statement:
 -- { statement-seqopt }
@@ -264,7 +275,13 @@ function_body =
 -- statement-seq statement
 compound_statement = Compound_Statement <$> braces (many statement)
 
-data Statement = Break_Statement | Continue_Statement | Compound_Statement [Statement] deriving (Show,Generic)
+data Statement =
+	Break_Statement |
+	Continue_Statement |
+	Compound_Statement [Statement] |
+	Return_Statement (Maybe Expression) |
+	Goto_Statement Identifier
+	deriving (Show,Generic)
 
 -- statement:
 -- labeled-statement
@@ -285,63 +302,286 @@ statement =
 -- return braced-init-list ;
 -- goto identifier ;
 jump_statement =
-	Break_Statement    <$ (reserved "break"    <* semi) <|>
-	Continue_Statement <$ (reserved "continue" <* semi)
+	Break_Statement    <$  (reserved "break"    *> semi) <|>
+	Continue_Statement <$  (reserved "continue" *> semi) <|>
+	Return_Statement   <$> (reserved "return"   *> optionMaybe expression <* semi) <|>
+-- TODO: return braced-init-list ;
+	Goto_Statement     <$> (identifier <* semi)
+
+-- type-specifier-seq:
+-- type-specifier attribute-specifieropt
+-- type-specifier type-specifier-seq
+type_specifier_seq = many1 type_specifier {- TODO: attribute-specifieropt -}
+
+data TypeId = TypeId [TypeSpecifier]
+	deriving (Show,Generic)
+
+-- type-id:
+-- type-specifier-seq abstract-declaratoropt
+type_id = TypeId <$> type_specifier_seq {- TODO: abstract-declaratoropt -}
+
+-- postfix-expression:
+-- primary-expression
+-- postfix-expression [ expression ]
+-- postfix-expression [ braced-init-list ]
+-- postfix-expression ( expression-listopt )
+-- simple-type-specifier ( expression-listopt )
+-- typename-specifier ( expression-listopt )
+-- simple-type-specifier braced-init-list
+-- typename-specifier braced-init-list
+-- postfix-expression . templateopt id-expression
+-- postfix-expression -> templateopt id-expression
+-- postfix-expression . pseudo-destructor-name
+-- postfix-expression -> pseudo-destructor-name
+-- postfix-expression ++
+-- postfix-expression --
+-- dynamic_cast < type-id > ( expression )
+-- static_cast < type-id > ( expression )
+-- reinterpret_cast < type-id > ( expression )
+-- const_cast < type-id > ( expression )
+-- typeid ( expression )
+-- typeid ( type-id )
+postfix_expression =
+	primary_expression <|>
+	many1
+-- postfix-expression ++	
+-- postfix-expression --
+-- postfix-expression ( expression-listopt )
+-- postfix-expression [ expression ]
+-- postfix-expression [ braced-init-list ]
+-- postfix-expression . templateopt id-expression
+-- postfix-expression -> templateopt id-expression
+-- postfix-expression . pseudo-destructor-name
+-- postfix-expression -> pseudo-destructor-name
+-- simple-type-specifier ( expression-listopt )
+-- typename-specifier ( expression-listopt )
+-- simple-type-specifier braced-init-list
+-- typename-specifier braced-init-list
+-- dynamic_cast < type-id > ( expression )
+-- static_cast < type-id > ( expression )
+-- reinterpret_cast < type-id > ( expression )
+-- const_cast < type-id > ( expression )
+-- typeid ( expression )
+-- typeid ( type-id )
+
+
+-- unary-expression:
+-- postfix-expression
+-- ++ cast-expression
+-- -- cast-expression
+-- unary-operator cast-expression
+-- sizeof unary-expression
+-- sizeof ( type-id )
+-- sizeof ... ( identifier )
+-- alignof ( type-id )
+-- noexcept-expression
+-- new-expression
+-- delete-expression
+unary_expression =
+	postfix_expression <|>
+	UnaryExpression <$> unary_operator <*> cast_expression
+-- TODO: sizeof ( type-id )
+-- TODO: sizeof ... ( identifier )
+-- TODO: alignof ( type-id )
+-- TODO: noexcept-expression
+-- TODO: new-expression
+-- TODO: delete-expression
+
+
+data UnaryOperator =
+	Indirection | AddressOf | Positive | Negative | Negation | OnesComplement |
+	PreIncrement | PreDecrement | PostIncrement | PostDecrement | SizeOfExpr
+	deriving (Show,Generic)
+
+-- unary-operator: one of
+-- * & + - ! ~
+unary_operator =
+	Indirection    <$ symbol "*"  <|>
+	AddressOf      <$ symbol "&"  <|>
+	Positive       <$ symbol "+"  <|>
+	Negative       <$ symbol "-"  <|>
+	Negation       <$ symbol "!"  <|>
+	OnesComplement <$ symbol "~"  <|>
+	PreDecrement   <$ symbol "--" <|>
+	PreIncrement   <$ symbol "++" <|>
+	SizeOfExpr     <$ reserved "sizeof" 
+
+-- cast-expression:
+-- unary-expression
+-- ( type-id ) cast-expression
+cast_expression =
+	unary_expression <|>
+	CastExpression <$> braces type_id <*> cast_expression
+
+-- pm-expression:
+-- cast-expression
+-- pm-expression .* cast-expression
+-- pm-expression ->* cast-expression
+pm_expression = chainl1 cast_expression $
+	BinaryExpression PtrToMemberDot  <$ symbol ".*" <|>
+	BinaryExpression PtrToMemberArr <$ symbol "->*"
+
+-- multiplicative-expression:
+-- pm-expression
+-- multiplicative-expression * pm-expression
+-- multiplicative-expression / pm-expression
+-- multiplicative-expression % pm-expression
+multiplicative_expression = chainl1 pm_expression $
+	BinaryExpression Mult <$ symbol "*" <|>
+	BinaryExpression Div  <$ symbol "/" <|>
+	BinaryExpression Mod  <$ symbol "%"
+
+-- additive-expression:
+-- multiplicative-expression
+-- additive-expression + multiplicative-expression
+-- additive-expression - multiplicative-expression
+additive_expression = chainl1 multiplicative_expression $
+	BinaryExpression Plus  <$ symbol "+" <|>
+	BinaryExpression Minus <$ symbol "-"
+
+-- shift-expression:
+-- additive-expression
+-- shift-expression << additive-expression
+-- shift-expression >> additive-expression
+shift_expression = chainl1 additive_expression $
+	BinaryExpression ShiftLeft  <$ symbol "<<" <|>
+	BinaryExpression ShiftRight <$ symbol ">>"	
+
+-- relational-expression:
+-- shift-expression
+-- relational-expression < shift-expression
+-- relational-expression > shift-expression
+-- relational-expression <= shift-expression
+-- relational-expression >= shift-expression
+relational_expression = chainl1 shift_expression $
+	BinaryExpression Less      <$ symbol "<" <|>
+	BinaryExpression Greater   <$ symbol ">" <|>
+	BinaryExpression LessEq    <$ symbol "<=" <|>
+	BinaryExpression GreaterEq <$ symbol ">=" <|>
+
+-- equality-expression:
+-- relational-expression
+-- equality-expression == relational-expression
+-- equality-expression != relational-expression
+equality_expression = chainl1 relational_expression $
+	BinaryExpression Equality   <$ symbol "==" <|>
+	BinaryExpression InEquality <$ symbol "!=" 
+
+-- and-expression:
+-- equality-expression
+-- and-expression & equality-expression
+and_expression = chainl1 equality_expression (BinaryExpression And <$ symbol "&")
+
+-- exclusive-or-expression:
+-- and-expression
+-- exclusive-or-expression ˆ and-expression
+exclusive_or_expression = chainl1 and_expression (BinaryExpression ExclusiveOr <$ symbol "^")
+
+-- inclusive-or-expression:
+-- exclusive-or-expression
+-- inclusive-or-expression | exclusive-or-expression
+inclusive_or_expression = chainl1 exclusive_or_expression (BinaryExpression InclusiveOr <$ symbol "|")
+
+-- logical-and-expression:
+-- inclusive-or-expression
+-- logical-and-expression && inclusive-or-expression
+logical_and_expression = chainl1 inclusive_or_expression (BinaryExpression LogicalAnd <$ symbol "&&")
+
+-- logical-or-expression:
+-- logical-and-expression
+-- logical-or-expression || logical-and-expression
+logical_or_expression = chainl1 logical_and_expression (BinaryExpression LogicalOr <$ symbol "||")
+
+-- conditional-expression:
+-- logical-or-expression
+-- logical-or-expression ? expression : assignment-expression
+conditional_expression =
+	try ( ConditionalExpression <$> logical_or_expression <*> expression <*> assignment_expression ) <|>
+	logical_or_expression
+
+-- assignment-expression:
+-- conditional-expression
+-- logical-or-expression assignment-operator initializer-clause
+-- throw-expression
+assignment_expression =
+	conditional_expression <|>
+	AssignmentExpression <$> logical_or_expression <*> assignment_operator <*> intializer_clause
+-- TODO: throw-expression
+
+data AssignmentOperator =
+	Assign | MultAssign | DivAssign | ModAssign | PlusAssign | MinusAssign |
+	ShiftRightAssign | ShiftLeftAssign | AndAssign | NotAssign | OrAssign
+	deriving (Show,Generic)
+
+-- assignment-operator: one of
+-- = *= /= %= += -= >>= <<= &= ˆ= |=
+assignment_operator =
+	Assign           <$ symbol "="   <|>
+	MultAssign       <$ symbol "*="  <|>
+	DivAssign        <$ symbol "/="  <|>
+	ModAssign        <$ symbol "%="  <|>
+	PlusAssign       <$ symbol "+="  <|>
+	MinusAssign      <$ symbol "-="  <|>
+	ShiftRightAssign <$ symbol ">>=" <|>
+	ShiftLeftAssign  <$ symbol "<<=" <|>
+	AndAssign        <$ symbol "&="  <|>
+	NotAssign        <$ symbol "^="  <|>
+	OrAssign         <$ symbol "|="  <|>
+
+data BinaryOp =
+	LogicalOr | LogicalAnd | InclusiveOr | ExclusiveOr | And | Equality | Inequality |
+	Less | Greater | LessEq | GreaterEq | Plus | Minus | ShiftLeft | ShiftRight | Mult | Div | Mod |
+	PtrToMemberArr | PtrToMemberDot
+	deriving (Show,Generic)
+
+data Expression =
+	UnaryExpression UnaryOp Expression |
+	BinaryExpression BinaryOp Expression Expression |
+	AssignmentExpression Expression AssignmentOperator Expression |
+	ConditionalExpression Expression Expression Expression |
+	CastExpression TypeId Expression
+	deriving (Show,Generic)
+
+-- expression:
+-- assignment-expression
+-- expression , assignment-expression
+expression =
+	assignment_expression <|>
+	Comma_Expression <$> (expression <* comma) <*> assignment_expression
+
+-- constant-expression:
+-- conditional-expression
 
 {-
-charToString :: CPPParser Char -> CPPParser String
-charToString parser = (:[]) <$> parser
-
-concatMany :: CPPParser [a] -> CPPParser [a]
-concatMany parser = concat <$> many parser
-
-infixr 2 <++>
-(<++>) :: CPPParser [a] -> CPPParser [a] -> CPPParser [a]
-parser1 <++> parser2 = (++) <$> parser1 <*> parser2
-
-epsilon = parserReturn mempty
-
 -- typedef-name:
 -- identifier
-typedef_name = identifier
 
 -- namespace-name:
 -- original-namespace-name
 -- namespace-alias
-namespace_name = original_namespace_name <|> namespace_alias
 
 -- original-namespace-name:
 -- identifier
-original_namespace_name = identifier
 
 -- namespace-alias:
 -- identifier
-namespace_alias = identifier
 
 -- class-name:
 -- identifier
 -- template-id
-class_name = identifier <|> template_id
 
 -- enum-name:
 -- identifier
-enum_nameP = identifier
 
 -- template-name:
 -- identifier
-template_name = identifier
 
 -- hex-quad:
 -- hexadecimal-digit hexadecimal-digit hexadecimal-digit hexadecimal-digit
-hex_quadP = count 4 hexDigit
 
 -- universal-character-name:
 -- \u hex-quad
 -- \U hex-quad hex-quad
-universal_character_nameP =
-	(string "\\u" <++> hex_quad)
-	<|>
-	(string "\\U" <++> hex_quad <++> hex_quad)
 
 -- preprocessing-token:
 -- header-name
@@ -364,13 +604,6 @@ universal_character_nameP =
 -- <= >= && || ++ -- , ->* ->
 -- and and_eq bitand bitor compl not not_eq
 -- or or_eq xor xor_eq
-preprocessing_op_or_punc :: CPPParser String
-preprocessing_op_or_punc = choice $ map string [
-	"new","delete","and","and_eq","bitand","bitor","compl","not","not_eq","or","or_eq","xor","xor_eq",
-	"%:%:","...",">>=","<<=","->*",
-	"+=","-=","*=","/=","%=","::","<=",">=","&&","||","++","--","->",
-	"##","<:",":>","<%","%>","%:",".*","ˆ=","&=","|=","==","!=","<<",">>",
-	"!","=","<",">","#","(",")","{","}","[","]",";",":","?","+","-","*","/","%","ˆ","&","|","~",".","," ]
 
 -- token:
 -- identifier
@@ -378,33 +611,24 @@ preprocessing_op_or_punc = choice $ map string [
 -- literal
 -- operator
 -- punctuator
-token = identifier <|> keyword <|> literal <|> operator <|> punctuator
 
 -- header-name:
 -- < h-char-sequence >
 -- " q-char-sequence "
-data HeaderName = HHeaderName String | QHeaderName String deriving (Show,Generic)
-header_name =
-	between (string "<")  (string ">")  (HHeaderName <$> h_char_sequence) <|>
-	between (string "\"") (string "\"") (QHeaderName <$> q_char_sequence)
 
 -- h-char-sequence:
 -- h-char
 -- h-char-sequence h-char
-h_char_sequence = many1 h_char
 
 -- h-char:
 -- any member of the source character set except new-line and >
-h_char = noneOf "\n>"
 
 -- q-char-sequence:
 -- q-char
 -- q-char-sequence q-char
-q_char_sequence = many1 q_char
 
 -- q-char:
 -- any member of the source character set except new-line and "
-q_char = noneOf "\n\""
 
 -- pp-number:
 -- digit
@@ -418,29 +642,21 @@ q_char = noneOf "\n\""
 -- pp-number  -> { digit | . digit } pp-number'
 -- pp-number' -> { digit | identifier-nondigit | { e|E } sign | . } pp-number' | epsilon
 
-pp_numberP  = ( digitP <|> string "." <++> digitP ) <++> pp_number'P
-pp_number'P = ( digitP <|> ( string "e" <|> string "E" ) <++> signP <|> identifier_nondigitP <|> string ".") <++> pp_number'P <|> epsilon 
-
 -- identifier:
 -- identifier-nondigit
 -- identifier identifier-nondigit
 -- identifier digit
-identifier = identifier_nondigit <++> concatMany (digit <|> identifier_nondigit)
 
 -- identifier-nondigit:
 -- nondigit
 -- universal-character-name
 -- other implementation-defined characters
-identifier_nondigit = nondigit
 
 -- nondigit: one of
 -- a b c d e f g h i j k l m
 -- n o p q r s t u v w x y z
 -- A B C D E F G H I J K L M
 -- N O P Q R S T U V W X Y Z _
-nondigit = oneOf $ ['a'..'z']++['A'..'Z']++"_"
-
-digit = Text.Parsec.Char.digit
 
 -- literal:
 -- integer-literal
@@ -495,59 +711,35 @@ digit = Text.Parsec.Char.digit
 -- ll LL
 
 
-data CharLit = CharLit String | CharLit_UCS2 String | CharLit_UCS4 String | CharLit_Wide String deriving (Show,Generic)
 -- character-literal:
 -- ’ c-char-sequence ’
 -- u’ c-char-sequence ’
 -- U’ c-char-sequence ’
 -- L’ c-char-sequence ’
-character_literal =
-	( CharLit_UCS2 <$> string "u" *> c_char_sequence' ) <|>
-	( CharLit_UCS4 <$> string "U" *> c_char_sequence' ) <|>
-	( CharLit_Wide <$> string "L" *> c_char_sequence' ) <|>
-	( CharLit <$> c_char_sequence' )
-	where
-	c_char_sequence' = between (string "'") (string "'") c_char_sequence
 
 -- c-char-sequence:
 -- c-char
 -- c-char-sequence c-char
-c_char_sequence = many1 c_char
 
 -- c-char:
 -- any member of the source character set except
 -- the single-quote ’, backslash \, or new-line character
 -- escape-sequence
 -- universal-character-name
-c_char = noneOf "\'\\\n" <|> escape_sequence <|> universal_character_name
 
 -- escape-sequence:
 -- simple-escape-sequence
 -- octal-escape-sequence
 -- hexadecimal-escape-sequence
-escape_sequence = simple_escape_sequence -- <|> octal_escape_sequence <|> hexdecimal_escape_sequence
 
 -- simple-escape-sequence: one of
 -- \’ \" \? \\
 -- \a \b \f \n \r \t \v
-simple_escape_sequence =
-	( string "\\\'" *> pure '\'' ) <|>
-	( string "\\\"" *> pure '\"' ) <|>
-	( string "\\?"  *> pure '?'  ) <|>
-	( string "\\\\" *> pure '\\' ) <|>
-	( string "\\a"  *> pure '\a' ) <|>
-	( string "\\b"  *> pure '\b' ) <|>
-	( string "\\f"  *> pure '\f' ) <|>
-	( string "\\n"  *> pure '\n' ) <|>
-	( string "\\r"  *> pure '\r' ) <|>
-	( string "\\v"  *> pure '\v' )
 
 -- octal-escape-sequence:
 -- \ octal-digit
 -- \ octal-digit octal-digit
 -- \ octal-digit octal-digit octal-digit
-octal_escape_sequence =
-	( string "\\" 
 
 -- hexadecimal-escape-sequence:
 -- \x hexadecimal-digit
@@ -567,7 +759,6 @@ octal_escape_sequence =
 
 -- sign: one of
 -- + -
-signP = charToString $ oneOf "+-"
 
 -- digit-sequence:
 -- digit
@@ -709,28 +900,6 @@ signP = charToString $ oneOf "+-"
 -- ( parameter-declaration-clause ) attribute-specifieropt mutableopt
 -- exception-specificationopt trailing-return-typeopt
 
--- postfix-expression:
--- primary-expression
--- postfix-expression [ expression ]
--- postfix-expression [ braced-init-list ]
--- postfix-expression ( expression-listopt )
--- simple-type-specifier ( expression-listopt )
--- typename-specifier ( expression-listopt )
--- simple-type-specifier braced-init-list
--- typename-specifier braced-init-list
--- postfix-expression . templateopt id-expression
--- postfix-expression -> templateopt id-expression
--- postfix-expression . pseudo-destructor-name
--- postfix-expression -> pseudo-destructor-name
--- postfix-expression ++
--- postfix-expression --
--- dynamic_cast < type-id > ( expression )
--- static_cast < type-id > ( expression )
--- reinterpret_cast < type-id > ( expression )
--- const_cast < type-id > ( expression )
--- typeid ( expression )
--- typeid ( type-id )
-
 -- expression-list:
 -- initializer-list
 
@@ -742,22 +911,6 @@ signP = charToString $ oneOf "+-"
 
 -- ::opt nested-name-specifieropt [CAN] type-name
 -- [CAN] decltype-specifier
-
--- unary-expression:
--- postfix-expression
--- ++ cast-expression
--- -- cast-expression
--- unary-operator cast-expression
--- sizeof unary-expression
--- sizeof ( type-id )
--- sizeof ... ( identifier )
--- alignof ( type-id )
--- noexcept-expression
--- new-expression
--- delete-expression
-
--- unary-operator: one of
--- * & + - ! [CAN]
 
 -- new-expression:
 
@@ -792,85 +945,6 @@ signP = charToString $ oneOf "+-"
 
 -- noexcept-expression:
 -- noexcept ( expression )
-
--- cast-expression:
--- unary-expression
--- ( type-id ) cast-expression
-
--- pm-expression:
--- cast-expression
--- pm-expression .* cast-expression
--- pm-expression ->* cast-expression
-
--- multiplicative-expression:
--- pm-expression
--- multiplicative-expression * pm-expression
--- multiplicative-expression / pm-expression
--- multiplicative-expression % pm-expression
-
--- additive-expression:
--- multiplicative-expression
--- additive-expression + multiplicative-expression
--- additive-expression - multiplicative-expression
-
--- shift-expression:
--- additive-expression
--- shift-expression << additive-expression
--- shift-expression >> additive-expression
-
--- relational-expression:
--- shift-expression
--- relational-expression < shift-expression
--- relational-expression > shift-expression
--- relational-expression <= shift-expression
--- relational-expression >= shift-expression
-
--- equality-expression:
--- relational-expression
--- equality-expression == relational-expression
--- equality-expression != relational-expression
-
--- and-expression:
--- equality-expression
--- and-expression & equality-expression
-
-
--- exclusive-or-expression:
--- and-expression
--- exclusive-or-expression ˆ and-expression
-
--- inclusive-or-expression:
--- exclusive-or-expression
--- inclusive-or-expression | exclusive-or-expression
-
--- logical-and-expression:
--- inclusive-or-expression
--- logical-and-expression && inclusive-or-expression
-
--- logical-or-expression:
--- logical-and-expression
--- logical-or-expression || logical-and-expression
-
--- conditional-expression:
--- logical-or-expression
-
--- logical-or-expression ? expression : assignment-expression
-
--- assignment-expression:
--- conditional-expression
--- logical-or-expression assignment-operator initializer-clause
--- throw-expression
-
--- assignment-operator: one of
--- = *= /= %= += -= >>= <<= &= ˆ= |=
-
--- expression:
--- assignment-expression
--- expression , assignment-expression
-
--- constant-expression:
--- conditional-expression
-
 
 -- labeled-statement:
 
@@ -921,37 +995,18 @@ signP = charToString $ oneOf "+-"
 -- static_assert-declaration
 -- alias-declaration
 -- opaque-enum-declaration
-data BlockDecl =
-	AliasDecl Identifier TypeId |
-	SimpleDecl (Maybe AttrSpec) [DeclSpec] [InitDecl] |
-	StaticAssertDecl StaticAssert ConstExpr StringLit
-	deriving (Show)
-
-block_declaration =
-	simple_declaration <|>
---	asm_definition <|>
---	namespace_alias_definition <|>
---	using_declaration <|>
---	using_directive <|>
-	static_assert_declaration <|>
-	alias_declaration
---	opaque_enum_declaration
 
 -- alias-declaration:
--- using identifier = type-id ;
-alias_declaration = AliasDecl <$> string "using" *> identifier <*> ( string "=" *> type_id <* string ";" )
+-- using identifier = type-id ;alias_declaration = AliasDecl <$> string "using" *> identifier <*> ( string "=" *> type_id <* string ";" )
 
 -- simple-declaration:
 -- attribute-specifieropt decl-specifier-seqopt init-declarator-listopt ;
-simple_declaration = SimpleDecl <$> optionMaybe attribute_specifier <*> many decl_specifier <*> many init_declarator
 
 -- static_assert-declaration:
 -- static_assert ( constant-expression , string-literal ) ;
-static_assert_declaration = StaticAssertDecl <$> string "static_assert" *> constant_expression <* string "," <*> string_literal <* string ")" <* string ";"
 
 -- empty-declaration:
 -- ;
-empty_declaration = string ";"
 
 -- attribute-declaration:
 -- attribute-specifier ;
@@ -974,10 +1029,6 @@ empty_declaration = string ";"
 
 -- typedef-name:
 -- identifier
-
--- type-specifier-seq:
--- type-specifier attribute-specifieropt
--- type-specifier type-specifier-seq
 
 -- trailing-type-specifier-seq:
 -- trailing-type-specifier attribute-specifieropt
@@ -1152,10 +1203,6 @@ empty_declaration = string ";"
 -- ref-qualifier:
 -- &
 -- &&
-
-
--- type-id:
--- type-specifier-seq abstract-declaratoropt
 
 -- abstract-declarator:
 -- ptr-abstract-declarator
