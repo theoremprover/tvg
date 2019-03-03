@@ -343,7 +343,7 @@ type_id = TypeId <$> type_specifier_seq {- TODO: abstract-declaratoropt -}
 -- typeid ( type-id )
 postfix_expression =
 	primary_expression <|>
-	many1
+	many1 
 -- postfix-expression ++	
 -- postfix-expression --
 -- postfix-expression ( expression-listopt )
@@ -386,7 +386,6 @@ unary_expression =
 -- TODO: noexcept-expression
 -- TODO: new-expression
 -- TODO: delete-expression
-
 
 data UnaryOperator =
 	Indirection | AddressOf | Positive | Negative | Negation | OnesComplement |
