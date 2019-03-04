@@ -46,6 +46,7 @@ parens     = T.parens     lexer
 semi       = T.semi       lexer
 identifier = T.identifier lexer
 commaSep1  = T.commaSep1  lexer
+commaSep   = T.commaSep   lexer
 comma      = T.comma      lexer
 
 
@@ -182,7 +183,7 @@ ptr_declarator =
 -- noptr-declarator [ constant-expressionopt ] attribute-specifieropt
 -- ( ptr-declarator )
 noptr_declarator =
-	try (Declarator <$> declarator_id <*> parameters_and_qualifiers) <|>
+	try ( Declarator <$> declarator_id <*> parameters_and_qualifiers ) <|>
 	Declarator <$> declarator_id <*> pure (ParamDecls [] False)
 -- noptr-declarator [ constant-expressionopt ] attribute-specifieropt <|>
 -- ( ptr-declarator )
@@ -234,8 +235,8 @@ data ParamDecls = ParamDecls [ParamDecl] Bool deriving (Show,Generic)
 -- parameter-declaration-listopt ...opt
 -- parameter-declaration-list , ...
 parameter_declaration_clause =
-	ParamDecls <$> option [] parameter_declaration_list <*> (isJust <$> optionMaybe (reserved "...")) <|>
-	ParamDecls <$> parameter_declaration_list <*> ( True <$ (comma *> reserved "...") )
+	ParamDecls <$> option [] parameter_declaration_list <*> ( isJust <$> optionMaybe (reserved "...") ) <|>
+	ParamDecls <$>           parameter_declaration_list <*> ( True   <$  (comma *> reserved "...") )
 
 -- parameter-declaration-list:
 -- parameter-declaration
@@ -320,6 +321,25 @@ data TypeId = TypeId [TypeSpecifier]
 -- type-specifier-seq abstract-declaratoropt
 type_id = TypeId <$> type_specifier_seq {- TODO: abstract-declaratoropt -}
 
+-- initializer-clause:
+-- assignment-expression
+-- braced-init-list
+initializer_clause =
+	assignment_expression
+-- TODO: braced-init-list
+
+data FunctionArgs = FunctionArgs [Expression] Bool
+	deriving (Show,Generic)
+
+-- initializer-list:
+-- initializer-clause ...opt
+-- initializer-list , initializer-clause ...opt
+initializer_list = FunctionArgs <$> commaSep initializer_clause <*> option False (True <$ symbol "...")
+
+-- expression-list:
+-- initializer-list
+expression_list = initializer_list
+
 -- postfix-expression:
 -- primary-expression
 -- postfix-expression [ expression ]
@@ -341,9 +361,14 @@ type_id = TypeId <$> type_specifier_seq {- TODO: abstract-declaratoropt -}
 -- const_cast < type-id > ( expression )
 -- typeid ( expression )
 -- typeid ( type-id )
-postfix_expression =
-	primary_expression <|>
-	many1 
+postfix_expression = primary_expression >>= postfix_op
+	where
+	postfix_op primexpr =
+		symbol "++" <|>
+		symbol "--" <|>
+		braces expression_list <|>
+		pure primexpr
+
 -- postfix-expression ++	
 -- postfix-expression --
 -- postfix-expression ( expression-listopt )
@@ -538,7 +563,8 @@ data Expression =
 	BinaryExpression BinaryOp Expression Expression |
 	AssignmentExpression Expression AssignmentOperator Expression |
 	ConditionalExpression Expression Expression Expression |
-	CastExpression TypeId Expression
+	CastExpression TypeId Expression |
+	FunAppExpression Expression [Expression] Bool
 	deriving (Show,Generic)
 
 -- expression:
@@ -899,9 +925,6 @@ expression =
 -- ( parameter-declaration-clause ) attribute-specifieropt mutableopt
 -- exception-specificationopt trailing-return-typeopt
 
--- expression-list:
--- initializer-list
-
 -- pseudo-destructor-name:
 
 -- ::opt nested-name-specifieropt type-name ::[CAN] type-name
@@ -1224,14 +1247,6 @@ expression =
 -- brace-or-equal-initializer:
 -- = initializer-clause
 -- braced-init-list
-
--- initializer-clause:
--- assignment-expression
--- braced-init-list
-
--- initializer-list:
--- initializer-clause ...opt
--- initializer-list , initializer-clause ...opt
 
 -- braced-init-list:
 -- { initializer-list ,opt }
