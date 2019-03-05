@@ -361,13 +361,15 @@ expression_list = initializer_list
 -- const_cast < type-id > ( expression )
 -- typeid ( expression )
 -- typeid ( type-id )
-postfix_expression = primary_expression >>= postfix_op
+postfix_expression = no_leftrec >>= rest
 	where
-	postfix_op primexpr =
-		symbol "++" <|>
-		symbol "--" <|>
-		braces expression_list <|>
-		pure primexpr
+	no_leftrec = primary_expression
+	rest expr = do
+		new_expr <-
+			UnaryExpression PostIncrement expr <$ symbol "++" <|>
+			UnaryExpression PostDecrement expr <$ symbol "--" <|>
+			FunAppExpression expr <$> braces expression_list
+		
 
 -- postfix-expression ++	
 -- postfix-expression --
@@ -564,7 +566,7 @@ data Expression =
 	AssignmentExpression Expression AssignmentOperator Expression |
 	ConditionalExpression Expression Expression Expression |
 	CastExpression TypeId Expression |
-	FunAppExpression Expression [Expression] Bool
+	FunAppExpression Expression FunctionArgs
 	deriving (Show,Generic)
 
 -- expression:
