@@ -7,6 +7,7 @@ import ShowAST
 
 {-
 stack build :parsecpp-exe
+stack repl :parsecpp-exe
 stack exec parsecpp-exe
 -}
 
