@@ -1,12 +1,13 @@
 {-# LANGUAGE TypeOperators,FlexibleInstances,FlexibleContexts,ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
-module DataTreeNode (dataTreeToHTML) where
+module DataTree (dataTreeToHTML) where
 
 import GHC.Generics
 import Language.C
 import Language.C.Data.Ident
 
+{-
 data DataTree =
 	Atomic |
 	Constructor String [DataTree] |
@@ -55,6 +56,7 @@ instance (DataTreeNode f1,DataTreeNode f2) => DataTreeNode (f1 :*: f2) where
 instance (DataTreeNode f1,DataTreeNode f2) => DataTreeNode (f1 :+: f2) where
 	DataTreeNode i (L1 x) = DataTreeNode i x
 	DataTreeNode i (R1 x) = DataTreeNode i x
+-}
 
-dataTreeToHTML :: (Generic a,DataTreeNode (Rep a)) => a -> String
-dataTreeToHTML x = 
+--dataTreeToHTML :: (Generic a,DataTreeNode (Rep a)) => a -> String
+dataTreeToHTML x = error "Not yet implemented"

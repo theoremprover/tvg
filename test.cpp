@@ -1,12 +1,18 @@
-int main(int x,int y)
-{
-	char c = f('a');
-	return;
-}
+
+// test comment
 
 char f(char s1)
 {
-	return (s1+2);
+    return (s1++);
 }
 
-char f2 = default;
+int g(int x,int y)
+{
+    char c = f('a');
+    return c;
+}
+
+int main()
+{
+    return g(1,2);
+}
