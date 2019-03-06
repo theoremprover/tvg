@@ -1,62 +1,58 @@
 {-# LANGUAGE TypeOperators,FlexibleInstances,FlexibleContexts,ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
-module DataTree (dataTreeToHTML) where
+module DataTree (toDataTree) where
 
 import GHC.Generics
 import Language.C
 import Language.C.Data.Ident
-
-{-
-data DataTree =
-	Atomic |
-	Constructor String [DataTree] |
 	
 
+data DataTree = DataTree [DataTree] | Leaf (Show v) deriving (Show)
+
 class DataTreeNode f where
-	DataTreeNode :: f p -> String
+	dataTree :: f p -> DataTree
 
 instance DataTreeNode V1 where
-	DataTreeNode _ _ = error "DataTreeNode of empty type!"
+	dataTree _ _ = error "DataTreeNode of empty type!"
 
 instance DataTreeNode U1 where
-	DataTreeNode _ _ = ""
+	dataTree _ _ = Unit
 
 instance {-# OVERLAPS #-} DataTreeNode (K1 i NodeInfo) where
-	DataTreeNode i (K1 c) = ind i ++ show c ++ "\n"
+	dataTree (K1 c) = ind i ++ show c ++ "\n"
 
 instance {-# OVERLAPS #-} DataTreeNode (K1 i Ident) where
-	DataTreeNode i (K1 (Ident name _ _)) = ind i ++ "Ident " ++ show name ++ "\n"
+	dataTree (K1 (Ident name _ _)) = ind i ++ "Ident " ++ show name ++ "\n"
 
 instance {-# OVERLAPS #-} DataTreeNode (K1 i Int) where
-	DataTreeNode i (K1 c) = ind i ++ show c ++ "\n"
+	dataTree (K1 c) = show c ++ "\n"
 instance {-# OVERLAPS #-} DataTreeNode (K1 i Char) where
-	DataTreeNode i (K1 c) = ind i ++ show c ++ "\n"
+	dataTree (K1 c) = show c ++ "\n"
 instance {-# OVERLAPS #-} DataTreeNode (K1 i String) where
-	DataTreeNode i (K1 c) = ind i ++ show c ++ "\n"
+	dataTree (K1 c) = show c ++ "\n"
 instance {-# OVERLAPS #-} DataTreeNode (K1 i Integer) where
-	DataTreeNode i (K1 c) = ind i ++ show c ++ "\n"
+	dataTree (K1 c) = show c ++ "\n"
 
 instance (Generic c,DataTreeNode (Rep c)) => DataTreeNode (K1 i c) where
-	DataTreeNode i (K1 c) = DataTreeNode i (from c)
+	dataTree (K1 c) = DataTreeNode (from c)
 
 instance (DataTreeNode f,Constructor c) => DataTreeNode (M1 C c f) where
-	DataTreeNode i (M1 x) = case conName (undefined :: M1 C c f p) of
-		conname -> ind i ++ conname ++ "\n" ++ DataTreeNode (i+1) x
+	dataTree (M1 x) = case conName (undefined :: M1 C c f p) of
+		conname -> conname ++ "\n" ++ DataTreeNode (i+1) x
 
 instance (DataTreeNode f,Selector s) => DataTreeNode (M1 S s f) where
-	DataTreeNode i (M1 x) = DataTreeNode i x
+	dataTree (M1 x) = DataTreeNode x
 
 instance (DataTreeNode f,Datatype d) => DataTreeNode (M1 D d f) where
-	DataTreeNode i (M1 x) = DataTreeNode i x
+	dataTree (M1 x) = DataTreeNode x
 
 instance (DataTreeNode f1,DataTreeNode f2) => DataTreeNode (f1 :*: f2) where
-	DataTreeNode i (a :*: b) = DataTreeNode i a ++ DataTreeNode i b
+	dataTree (a :*: b) = DataTreeNode a ++ DataTreeNode b
 
 instance (DataTreeNode f1,DataTreeNode f2) => DataTreeNode (f1 :+: f2) where
-	DataTreeNode i (L1 x) = DataTreeNode i x
-	DataTreeNode i (R1 x) = DataTreeNode i x
--}
+	dataTree (L1 x) = DataTreeNode x
+	dataTree (R1 x) = DataTreeNode x
 
---dataTreeToHTML :: (Generic a,DataTreeNode (Rep a)) => a -> String
-dataTreeToHTML x = error "Not yet implemented"
+toDataTree :: (Generic a,DataTreeNode (Rep a)) => a -> HTML
+toDataTree x = dataTree (from x)
