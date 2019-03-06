@@ -68,4 +68,5 @@ executables:
     main:                Main.hs
     source-dirs:         grammar
     dependencies:
+    - html
     - parsec
