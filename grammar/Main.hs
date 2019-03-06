@@ -4,6 +4,7 @@ module Main where
 
 import Grammar
 import ShowAST
+import DataTree
 
 {-
 stack build :parsecpp-exe
@@ -18,3 +19,4 @@ main = do
 		Left err -> print err
 		Right translunit -> do
 			writeFile (filename++".ast") $ showDataTree translunit
+			writeFile (filename++".ast.html") $ genericToHTMLString translunit
