@@ -17,9 +17,6 @@ class DataTreeNode f where
 instance DataTreeNode V1 where
 	dataTree _ = error "DataTreeNode of empty type!"
 
-instance DataTreeNode U1 where
-	dataTree _ = Leaf "()"
-
 instance {-# OVERLAPS #-} DataTreeNode (K1 i NodeInfo) where
 	dataTree (K1 c) = Leaf $ show c
 
@@ -47,6 +44,9 @@ instance (DataTreeNode f,Selector s) => DataTreeNode (M1 S s f) where
 
 instance (DataTreeNode f,Datatype d) => DataTreeNode (M1 D d f) where
 	dataTree (M1 x) = dataTree x
+
+instance DataTreeNode U1 where
+	dataTree (U1 p) = Leaf "()"
 
 instance (DataTreeNode f1,DataTreeNode f2) => DataTreeNode (f1 :*: f2) where
 	dataTree (a :*: b) = DataTree "*" [dataTree a,dataTree b]
