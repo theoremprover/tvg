@@ -11,52 +11,57 @@ import Text.Html
 
 data DataTree = DataTree String [DataTree] | Leaf String deriving (Show)
 
+data Mode = None | CollectList deriving (Show,Eq)
+
 class DataTreeNode f where
-	dataTree :: f p -> [DataTree]
+	dataTree :: Mode -> f p -> [DataTree]
 
 instance DataTreeNode V1 where
-	dataTree _ = error "DataTreeNode of empty type!"
+	dataTree _ _ = error "DataTreeNode of empty type!"
 
 instance {-# OVERLAPS #-} DataTreeNode (K1 i NodeInfo) where
-	dataTree (K1 c) = [Leaf $ show c]
+	dataTree _ (K1 c) = [Leaf $ show c]
 
 instance {-# OVERLAPS #-} DataTreeNode (K1 i Ident) where
-	dataTree (K1 (Ident name _ _)) = [Leaf $ "Ident " ++ show name]
+	dataTree _ (K1 (Ident name _ _)) = [Leaf $ "Ident " ++ show name]
 
 instance {-# OVERLAPS #-} DataTreeNode (K1 i Int) where
-	dataTree (K1 c) = [Leaf $ show c]
+	dataTree _ (K1 c) = [Leaf $ show c]
 instance {-# OVERLAPS #-} DataTreeNode (K1 i String) where
-	dataTree (K1 c) = [Leaf $ show c]
+	dataTree _ (K1 c) = [Leaf $ show c]
 instance {-# OVERLAPS #-} DataTreeNode (K1 i Char) where
-	dataTree (K1 c) = [Leaf $ show c]
+	dataTree _ (K1 c) = [Leaf $ show c]
 instance {-# OVERLAPS #-} DataTreeNode (K1 i Integer) where
-	dataTree (K1 c) = [Leaf $ show c]
+	dataTree _ (K1 c) = [Leaf $ show c]
 
 instance (Generic c,DataTreeNode (Rep c)) => DataTreeNode (K1 i c) where
-	dataTree (K1 c) = dataTree (from c)
+	dataTree mode (K1 c) = dataTree mode (from c)
 
 instance (DataTreeNode f,Constructor c) => DataTreeNode (M1 C c f) where
-	dataTree (M1 x) = case conName (undefined :: M1 C c f p) of
-		conname -> [DataTree conname (dataTree x)]
+	dataTree mode (M1 x) = case (mode,conName (undefined :: M1 C c f p)) of
+		(None,       ":")  -> [DataTree "[]" (dataTree CollectList x)]
+		(CollectList,":")  -> dataTree CollectList x
+		(CollectList,"[]") -> []
+		(_,conname)        -> [DataTree conname (dataTree None x)]
 
 instance (DataTreeNode f,Selector s) => DataTreeNode (M1 S s f) where
-	dataTree (M1 x) = dataTree x
+	dataTree mode (M1 x) = dataTree mode x
 
 instance (DataTreeNode f,Datatype d) => DataTreeNode (M1 D d f) where
-	dataTree (M1 x) = dataTree x
+	dataTree mode (M1 x) = dataTree mode x
 
 instance DataTreeNode U1 where
-	dataTree U1 = [Leaf $ "()"]
+	dataTree _ U1 = []
 
 instance (DataTreeNode f1,DataTreeNode f2) => DataTreeNode (f1 :*: f2) where
-	dataTree (a :*: b) = dataTree a ++ dataTree b
+	dataTree mode (a :*: b) = dataTree mode a ++ dataTree mode b
 
 instance (DataTreeNode f1,DataTreeNode f2) => DataTreeNode (f1 :+: f2) where
-	dataTree (L1 x) = dataTree x
-	dataTree (R1 x) = dataTree x
+	dataTree mode (L1 x) = dataTree mode x
+	dataTree mode (R1 x) = dataTree mode x
 
 toDataTree :: (Generic a,DataTreeNode (Rep a)) => a -> [DataTree]
-toDataTree x = dataTree (from x)
+toDataTree x = dataTree None (from x)
 
 dataTreeToHtml (Leaf s) = li (stringToHtml s)
 dataTreeToHtml (DataTree s subtrees) = li ((thespan ! [theclass "caret"]) (stringToHtml s) +++
@@ -85,22 +90,25 @@ css = primHtml "\
 \ }\
 \ \
 \ .caret::before {\
-\  content: \"\\25B6\";\
-\  color: black;\
+\  content: \"\\229E\";\
+\  color: blue;\
 \  display: inline-block;\
 \  margin-right: 6px;\
 \ }\
 \ \
 \ .caret-down::before {\
-\  transform: rotate(90deg);\
+\  content: \"\\229F\";\
+\  color: blue;\
 \ }\
 \ \
 \ .nested {\
 \  display: none;\
+\  margin: 0;\
 \ }\
 \ \
 \ .active {\
 \  display: block;\
+\  margin: 0;\
 \ }\
 \ "
 
