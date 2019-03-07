@@ -55,7 +55,7 @@ instance (DataTreeNode f1,DataTreeNode f2) => DataTreeNode (f1 :+: f2) where
 	dataTree (L1 x) = dataTree x
 	dataTree (R1 x) = dataTree x
 
-toDataTree :: (Generic a,DataTreeNode (Rep a)) => a -> DataTree
+toDataTree :: (Generic a,DataTreeNode (Rep a)) => a -> [DataTree]
 toDataTree x = dataTree (from x)
 
 dataTreeToHtml (Leaf s) = li (stringToHtml s)
@@ -63,7 +63,7 @@ dataTreeToHtml (DataTree s subtrees) = li ((thespan ! [theclass "caret"]) (strin
 	(ulist ! [theclass "nested"]) (concatHtml $ map dataTreeToHtml subtrees))
 
 genericToHTMLString :: (Generic a,DataTreeNode (Rep a)) => a -> String
-genericToHTMLString x = renderHtml $ pageframe $ map (! [identifier "myUL"]) $ dataTreeToHtml $ toDataTree x
+genericToHTMLString x = renderHtml $ pageframe $ map (! [identifier "myUL"]) $ map dataTreeToHtml $ toDataTree x
 	where
 	pageframe tree_htmls =
 		header (style css) +++
