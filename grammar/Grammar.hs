@@ -163,7 +163,10 @@ simple_type_specifier =
 	Char_SimpleType <$ reserved "char" <|>
 	Int_SimpleType  <$ reserved "int"
 
-data Declarator = Declarator Expression ParamDecls deriving (Show,Generic)
+data DeclIdentifier = DeclIdentifier Identifier | DeclPtrOperator PtrOperator DeclIdentifier
+	deriving (Show,Generic)
+
+data Declarator = Declarator DeclIdentifier ParamDecls deriving (Show,Generic)
 -- declarator:
 -- ptr-declarator
 -- noptr-declarator parameters-and-qualifiers trailing-return-type
@@ -171,23 +174,22 @@ declarator =
 	ptr_declarator
 -- noptr-declarator parameters-and-qualifiers trailing-return-type
 
-data TypeOperator = PtrTo | AddressOf deriving (Show,Generic)
+data PtrOperator = PtrTo | AddressOf deriving (Show,Generic)
 
 -- ptr-operator:
 -- * attribute-specifieropt cv-qualifier-seqopt
 -- & attribute-specifieropt
 -- && attribute-specifieropt
 ptr_operator =
-	PtrTo <* symbol "*" <|>
+	PtrTo     <$ symbol "*" <|>
 --	symbol "&&" <|>
-	AddressOf <* symbol "&"
+	AddressOf <$ symbol "&"
 
 -- ptr-declarator:
 -- noptr-declarator
 -- ptr-operator ptr-declarator
 ptr_declarator =
-	noptr_declarator <|>
-	ptr-operator ptr-declarator
+	noptr_declarator
 
 -- noptr-declarator:
 -- declarator-id attribute-specifieropt
@@ -204,8 +206,8 @@ noptr_declarator =
 -- ...opt id-expression
 -- ::opt nested-name-specifieropt class-name
 declarator_id =
-	{-...opt-} id_expression
--- ::opt nested-name-specifieropt class-name
+	DeclIdentifier <$> unqualified_id <|>
+	DeclPtrOperator <$> ptr_operator <*> declarator_id
 
 -- id-expression:
 -- unqualified-id
@@ -561,7 +563,7 @@ unary_expression =
 -- TODO: delete-expression
 
 data UnaryOp =
-	Indirection | AddressOf | Positive | Negative | Negation | OnesComplement |
+	Indirection | Address | Positive | Negative | Negation | OnesComplement |
 	PreIncrement | PreDecrement | PostIncrement | PostDecrement | SizeOfExpr
 	deriving (Show,Generic)
 
@@ -569,7 +571,7 @@ data UnaryOp =
 -- * & + - ! ~
 unary_operator =
 	Indirection    <$ symbol "*"  <|>
-	AddressOf      <$ symbol "&"  <|>
+	Address        <$ symbol "&"  <|>
 	Positive       <$ symbol "+"  <|>
 	Negative       <$ symbol "-"  <|>
 	Negation       <$ symbol "!"  <|>
@@ -729,10 +731,10 @@ expression =
 	assignment_expression <|>
 	BinaryExpression Comma <$> (expression <* comma) <*> assignment_expression
 
+{-
 -- constant-expression:
 -- conditional-expression
 
-{-
 -- typedef-name:
 -- identifier
 
