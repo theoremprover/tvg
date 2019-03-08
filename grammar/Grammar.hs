@@ -171,12 +171,23 @@ declarator =
 	ptr_declarator
 -- noptr-declarator parameters-and-qualifiers trailing-return-type
 
+data TypeOperator = PtrTo | AddressOf deriving (Show,Generic)
+
+-- ptr-operator:
+-- * attribute-specifieropt cv-qualifier-seqopt
+-- & attribute-specifieropt
+-- && attribute-specifieropt
+ptr_operator =
+	PtrTo <* symbol "*" <|>
+--	symbol "&&" <|>
+	AddressOf <* symbol "&"
+
 -- ptr-declarator:
 -- noptr-declarator
 -- ptr-operator ptr-declarator
 ptr_declarator =
-	noptr_declarator
--- ptr-operator ptr-declarator
+	noptr_declarator <|>
+	ptr-operator ptr-declarator
 
 -- noptr-declarator:
 -- declarator-id attribute-specifieropt
@@ -963,27 +974,17 @@ expression =
 -- identifier
 
 -- qualified-id:
-
 -- ::opt nested-name-specifier templateopt unqualified-id
-
 -- :: identifier
-
 -- :: operator-function-id
-
 -- :: literal-operator-id
-
 -- :: template-id
 
 -- nested-name-specifier:
-
 -- type-name ::
-
 -- namespace-name ::
-
 -- decltype-specifier ::
-
 -- nested-name-specifier identifier ::
-
 -- nested-name-specifier templateopt simple-template-id ::
 
 -- lambda-expression:
@@ -1136,11 +1137,8 @@ expression =
 -- decltype ( expression )
 
 -- elaborated-type-specifier:
-
 -- class-key attribute-specifieropt ::opt nested-name-specifieropt identifier
-
 -- class-key ::opt nested-name-specifieropt templateopt simple-template-id
-
 -- enum ::opt nested-name-specifieropt identifier
 
 -- enum-name:
@@ -1270,11 +1268,6 @@ expression =
 -- { balanced-token-seq }
 -- any token other than a parenthesis, a bracket, or a brace
 -- A.7 Declarators [gram.decl]
-
--- ptr-operator:
--- * attribute-specifieropt cv-qualifier-seqopt
--- & attribute-specifieropt
--- && attribute-specifieropt
 
 -- ::opt nested-name-specifier * attribute-specifieropt cv-qualifier-seqopt
 
