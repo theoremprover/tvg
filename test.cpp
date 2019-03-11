@@ -3,6 +3,7 @@
 
 char f(char s1)
 {
+	T * b;
     return (s1++);
 }
 

@@ -360,6 +360,7 @@ data Statement =
 	Compound_Statement [Statement] |
 	Return_Statement (Maybe Expression) |
 	Goto_Statement Identifier |
+	Expression_Statemenet Expression |
 	Declaration_Statement BlockDeclaration
 	deriving (Show,Generic)
 
@@ -374,7 +375,12 @@ data Statement =
 -- attribute-specifieropt try-block
 statement =
 	jump_statement <|>
-	Declaration_Statement <$> declaration_statement
+	Declaration_Statement <$> declaration_statement <|>
+	expression_statement
+
+-- expression-statement:
+-- expressionopt ;
+expression_statement = Expression_Statemenet <$> expression
 
 -- jump-statement:
 -- break ;
@@ -1067,10 +1073,6 @@ expression =
 -- attribute-specifieropt case constant-expression : statement
 
 -- attribute-specifieropt default : statement
-
--- expression-statement:
--- expressionopt ;
-
 
 -- selection-statement:
 -- if ( condition ) statement
