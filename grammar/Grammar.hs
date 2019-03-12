@@ -1,6 +1,8 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 {-# LANGUAGE DeriveGeneric #-}
 
+-- stack repl grammar/Grammar.hs
+
 module Grammar where
 
 import Text.Parsec
@@ -91,12 +93,12 @@ declaration =
 --	empty_declaration       <|>
 --	attribute_declaration
 
-data FunctionDef = FunctionDef {-(Maybe ?)-} [DeclSpec] Declarator FunctionBody deriving (Show,Generic)
+data FunctionDef = FunctionDef [DeclSpec] Declarator FunctionBody deriving (Show,Generic)
 -- function-definition:
 -- attribute-specifieropt decl-specifier-seqopt declarator function-body
 -- attribute-specifieropt decl-specifier-seqopt declarator = default ;
 -- attribute-specifieropt decl-specifier-seqopt declarator = delete ;
-function_definition = FunctionDef <$> {-optionMaybe attribute_specifier <*>-} many decl_specifier <*> declarator <*> function_body
+function_definition = FunctionDef <$> {-TODO: optionMaybe attribute_specifier <*>-} many decl_specifier <*> declarator <*> function_body
 
 data DeclSpec = Type_DeclSpec TypeSpecifier | Friend_DeclSpec | TypeDef_DeclSpec | ConstExpr_DeclSpec deriving (Show,Generic)
 -- decl-specifier:
@@ -108,11 +110,11 @@ data DeclSpec = Type_DeclSpec TypeSpecifier | Friend_DeclSpec | TypeDef_DeclSpec
 -- constexpr
 decl_specifier =
 -- storage-class-specifier <|>
-	Type_DeclSpec      <$> type_specifier      <|>
 -- function-specifier <|>
 	Friend_DeclSpec    <$ reserved "friend"    <|>
 	TypeDef_DeclSpec   <$ reserved "typedef"   <|>
-	ConstExpr_DeclSpec <$ reserved "constexpr"
+	ConstExpr_DeclSpec <$ reserved "constexpr" <|>
+	Type_DeclSpec      <$> type_specifier
 
 data TypeSpecifier =
 	Simple_TypeSpecifier SimpleType
@@ -138,7 +140,18 @@ trailing_type_specifier =
 -- typename-specifier <|>
 -- cv-qualifier
 
-data SimpleType = Char_SimpleType | Int_SimpleType
+-- typedef-name:
+-- identifier
+typedef_name = identifier
+
+-- type-name:
+-- class-name
+-- enum-name
+-- typedef-name
+type_name =
+	typedef_name
+
+data SimpleType = Char_SimpleType | Int_SimpleType | TypeName_SimpleType Identifier
 	deriving (Show,Generic)
 
 -- simple-type-specifier:
@@ -161,7 +174,8 @@ data SimpleType = Char_SimpleType | Int_SimpleType
 -- decltype-specifier
 simple_type_specifier =
 	Char_SimpleType <$ reserved "char" <|>
-	Int_SimpleType  <$ reserved "int"
+	Int_SimpleType  <$ reserved "int"  <|>
+	{- TODO: ::opt nested-name-specifieropt -} TypeName_SimpleType <$> type_name
 
 data DeclIdentifier = DeclIdentifier Identifier | DeclPtrOperator PtrOperator DeclIdentifier
 	deriving (Show,Generic)
@@ -197,8 +211,7 @@ ptr_declarator =
 -- noptr-declarator [ constant-expressionopt ] attribute-specifieropt
 -- ( ptr-declarator )
 noptr_declarator =
-	try ( Declarator <$> declarator_id <*> parameters_and_qualifiers ) <|>
-	Declarator <$> declarator_id <*> pure (ParamDecls [] False)
+	Declarator <$> declarator_id <*> (parameters_and_qualifiers <|> pure (ParamDecls [] False))
 -- noptr-declarator [ constant-expressionopt ] attribute-specifieropt <|>
 -- ( ptr-declarator )
 
@@ -360,7 +373,7 @@ data Statement =
 	Compound_Statement [Statement] |
 	Return_Statement (Maybe Expression) |
 	Goto_Statement Identifier |
-	Expression_Statemenet Expression |
+	Expression_Statemenet (Maybe Expression) |
 	Declaration_Statement BlockDeclaration
 	deriving (Show,Generic)
 
@@ -375,12 +388,12 @@ data Statement =
 -- attribute-specifieropt try-block
 statement =
 	jump_statement <|>
-	Declaration_Statement <$> declaration_statement <|>
+	try (Declaration_Statement <$> declaration_statement) <|>
 	expression_statement
 
 -- expression-statement:
 -- expressionopt ;
-expression_statement = Expression_Statemenet <$> expression
+expression_statement = Expression_Statemenet <$> optionMaybe expression
 
 -- jump-statement:
 -- break ;
@@ -740,9 +753,6 @@ expression =
 {-
 -- constant-expression:
 -- conditional-expression
-
--- typedef-name:
--- identifier
 
 -- namespace-name:
 -- original-namespace-name
@@ -1131,12 +1141,6 @@ expression =
 -- trailing-type-specifier attribute-specifieropt
 -- trailing-type-specifier trailing-type-specifier-seq
 
-
--- type-name:
--- class-name
--- enum-name
--- typedef-name
-
 -- decltype-specifier:
 -- decltype ( expression )
 
@@ -1461,9 +1465,7 @@ expression =
 -- id-expression
 
 -- typename-specifier:
-
 -- typename ::opt nested-name-specifier identifier
-
 -- typename ::opt nested-name-specifier templateopt simple-template-id
 
 -- explicit-instantiation:
