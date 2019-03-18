@@ -1,7 +1,13 @@
 #include <stdio.h>
 
+int f(int x)
+{
+	int y = 2*x;
+	return(y+1);
+}
+
 int main()
 {
-	char **a,b;
-	printf("sizeof(a)=%li, sizeof(b)=%li\n",sizeof(a),sizeof(b));
+	int x = 3;
+	printf("f(%li)=%li\n",x,f(x));
 }
