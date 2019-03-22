@@ -31,30 +31,7 @@ main = do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			forM_ extdecls $ \case
 				CFDefExt (fundef@(CFunDef _ (CDeclr (Just (Ident name _ _)) _ _ _ _) _ _ _)) | name==functionname -> do
-					analyzeFunction fundef
+					genCovFunction fundef
 				_ -> return ()
 
-analyzeFunction (CFunDef _ _ args body nodeinfo) = putStrLn "NOT IMPLEMENTED" --analyzeStmt (8,[]) body
-
-{-
-analyzeStmt intended_val_env stmt = case stmt of
-	(CCompound _ blockitems _) -> analyzeBlockItems intended_val_env (reverse blockitems)
-	(CReturn (Just expr) _) -> do
-		putStrLn $ printf "return %s" (show expr)
-		inverseExpr intended_val_env expr
-
-analyzeBlockItems (_,env) [] = return env
-analyzeBlockItems intended_val_env (blockitem:rest) = do
-	intended_val_env' <- case blockitem of
-		CBlockDecl (CDecl [CTypeSpec (CIntType _)] [(
-			Just (CDeclr (Just (Ident name _ _)) [] Nothing [] _),
-			Just (CInitExpr expr _),
-			Nothing )] _) -> do
-				putStrLn $ printf "int %s = %s" name (show expr)
-				inverseExpr intended_val_env expr
-		CBlockStmt stmt -> do
-			analyzeStmt intended_val_env stmt
-	analyzeBlockItems intended_val_env' rest
-
-inverseExpr (intended_val,env) = error "x"
--}
+genCovFunction (CFunDef _ _ args body nodeinfo) = putStrLn "NOT IMPLEMENTED" --analyzeStmt (8,[]) body
