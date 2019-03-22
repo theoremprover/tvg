@@ -16,6 +16,7 @@ import DataTree
 {--
 stack build :analyzer-exe
 stack exec analyzer-exe -- test.c
+stack build :analyzer-exe && stack exec analyzer-exe
 --}
 
 gccExe = "gcc-4.7"
@@ -26,16 +27,16 @@ main = do
 	mb_ast <- parseCFile (newGCC gccExe) Nothing [] filename
 	case mb_ast of
 		Left err -> error $ show err
-		Right (CTranslUnit extdecls _) -> do
+		Right translunit@(CTranslUnit extdecls _) -> do
+			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			forM_ extdecls $ \case
 				CFDefExt (fundef@(CFunDef _ (CDeclr (Just (Ident name _ _)) _ _ _ _) _ _ _)) | name==functionname -> do
-					writeFile (functionname++".html") $ genericToHTMLString fundef
---					analyzeFunction fundef
+					analyzeFunction fundef
 				_ -> return ()
 
-{-
 analyzeFunction (CFunDef _ _ args body nodeinfo) = putStrLn "NOT IMPLEMENTED" --analyzeStmt (8,[]) body
 
+{-
 analyzeStmt intended_val_env stmt = case stmt of
 	(CCompound _ blockitems _) -> analyzeBlockItems intended_val_env (reverse blockitems)
 	(CReturn (Just expr) _) -> do
