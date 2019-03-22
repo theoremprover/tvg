@@ -31,7 +31,10 @@ main = do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			forM_ extdecls $ \case
 				CFDefExt (fundef@(CFunDef _ (CDeclr (Just (Ident name _ _)) _ _ _ _) _ _ _)) | name==functionname -> do
-					genCovFunction fundef
+					genTestVectors fundef
 				_ -> return ()
 
-genCovFunction (CFunDef _ _ args body nodeinfo) = putStrLn "NOT IMPLEMENTED" --analyzeStmt (8,[]) body
+data XXX = GT
+
+genTestVectors (CFunDef _ _ args body nodeinfo) = do
+	putStrLn "NOT IMPLEMENTED"
