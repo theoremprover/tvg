@@ -51,7 +51,7 @@ int main()
 {
 	int x;
 	// [ x>5, x <- [-9,..,4], FALSE, x<=-9 ]
-	// This should give full coverage of g:
+	// This should give full coverage of f:
 	x= 6; printf("f(%li)=%li\n",x,f(x));
 	x=-2; printf("f(%li)=%li\n",x,f(x));
 	x=-9; printf("f(%li)=%li\n",x,f(x));

@@ -34,7 +34,7 @@ main = do
 					genTestVectors fundef
 				_ -> return ()
 
-data XXX = GT
+data XXX = 
 
 genTestVectors (CFunDef _ _ args body nodeinfo) = do
 	putStrLn "NOT IMPLEMENTED"
