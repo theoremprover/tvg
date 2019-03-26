@@ -29,12 +29,13 @@ main = do
 		Left err -> error $ show err
 		Right translunit@(CTranslUnit extdecls _) -> do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
-			forM_ extdecls $ \case
-				CFDefExt (fundef@(CFunDef _ (CDeclr (Just (Ident name _ _)) _ _ _ _) _ _ _)) | name==functionname -> do
-					genTestVectors fundef
-				_ -> return ()
+			let fundefs = concatMap ( \case 
+				CFDefExt fundef@(CFunDef _ (CDeclr (Just (Ident name _ _)) _ _ _ _) _ _ _) -> [(name,fundef)]
+				_ -> [] ) extdecls
+			print $ genCovVectors fundefs functionname
 
-data XXX = 
+--data XXX = 
 
-genTestVectors (CFunDef _ _ args body nodeinfo) = do
-	putStrLn "NOT IMPLEMENTED"
+genCovVectors fundefs funname = case lookup funname fundefs of
+	Nothing     -> error $ "Function " ++ funname ++ " not (uniquely) found"
+	Just fundef -> funname
