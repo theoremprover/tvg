@@ -8,6 +8,7 @@ import System.Environment
 import Language.C
 import Language.C.Data.Ident
 import Language.C.Analysis.AstAnalysis
+import Language.C.Analysis.TravMonad
 import Language.C.Analysis.SemRep
 import Language.C.System.GCC
 import System.FilePath
@@ -38,7 +39,7 @@ main = do
 		Left err -> error $ show err
 		Right translunit@(CTranslUnit extdecls _) -> do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
-			GlobalDecls globobjs _ _ <- analyseAST translunit
+			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
 			res <- evalStateT (genCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
 			print res
 
