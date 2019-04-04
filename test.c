@@ -20,6 +20,7 @@ int g(int x)
 	// [ x>-8, x<=-8 ] <=>
 	// [ x+10>2, x+10<=2 ]
 	return(x+10);
+	// g(X) > 2
 }
 
 int f(int x)
@@ -51,7 +52,7 @@ int main()
 {
 	int x;
 	// [ x>5, x <- [-9,..,4], FALSE, x<=-9 ]
-	// This should give full coverage of f:
+	// This should give full line coverage of f:
 	x= 6; printf("f(%li)=%li\n",x,f(x));
 	x=-2; printf("f(%li)=%li\n",x,f(x));
 	x=-9; printf("f(%li)=%li\n",x,f(x));

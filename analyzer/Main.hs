@@ -43,7 +43,11 @@ main = do
 			res <- evalStateT (genCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
 			print res
 
---data XXX = 
+data Constraint = Or [Constraint] | And [Constraint] | Expr `!<=` Expr
+	deriving Show
+
+data Expr = IntValue Int | Expr `!+` Expr | Expr `!-` Expr | Expr `!*` Expr | Expr `!/` Expr
+	deriving Show
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
