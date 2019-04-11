@@ -46,7 +46,8 @@ main = do
 data Constraint = Or [Constraint] | And [Constraint] | Expr :<= Expr
 	deriving Show
 
-data ConstraintExpr = IntValue Int | Expr :+ Expr | Expr :- Expr | Expr :* Expr | Expr :/ Expr
+data ConstraintExpr = IntValue Int | Expr :+ Expr | Expr :- Expr | Expr :* Expr | Expr :/ Expr |
+	FunCall Ident [Expr] | Var Ident
 	deriving Show
 
 lookupFunM :: Ident -> CovVecM FunDef
@@ -58,6 +59,6 @@ lookupFunM ident = do
 
 genCovVectorsM :: Ident -> CovVecM NodeInfo
 genCovVectorsM funident = do
-	FunDef _ _ ni <- lookupFunM funident
+	FunDef vardecl stmt ni <- lookupFunM funident
 	return ni
 
