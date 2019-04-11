@@ -40,7 +40,7 @@ main = do
 		Right translunit@(CTranslUnit extdecls _) -> do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
-			res <- evalStateT (genCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
+			res <- evalStateT (genCovVectorsM (builtinIdent funname) []) $ CovVecState globobjs
 			print res
 
 data Constraint = Or [Constraint] | And [Constraint] | Expr :<= Expr
@@ -57,8 +57,9 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
 
-genCovVectorsM :: Ident -> CovVecM NodeInfo
-genCovVectorsM funident = do
-	FunDef vardecl stmt ni <- lookupFunM funident
+genCovVectorsM :: Ident -> [Constraint] -> CovVecM NodeInfo
+genCovVectorsM funident constraints = do
+	FunDef (VarDecl (VarName ident _) declattrs (FunctionType (FunType ret_type paramdecls False) _)) stmt ni <- lookupFunM funident
+	
 	return ni
 
