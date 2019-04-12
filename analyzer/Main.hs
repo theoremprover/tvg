@@ -60,6 +60,15 @@ lookupFunM ident = do
 genCovVectorsM :: Ident -> [Constraint] -> CovVecM NodeInfo
 genCovVectorsM funident constraints = do
 	FunDef (VarDecl (VarName ident _) declattrs (FunctionType (FunType ret_type paramdecls False) _)) stmt ni <- lookupFunM funident
-	
-	return ni
+	traces <- traceStmtM stmt
+	return traces
+
+traceStmtM :: Stmt -> CovVecM [[Constraint]]
+traceStmtM (CExpr expr _) = case expr of
+	CAssign CAssignOp (CVar ident _) (CExpression a) _ ->
+	CCall (CVar funname _) args _ ->
+traceStmtM (CCompound _ cbis _) =
+traceStmtM (CIf cond_expr then_stmt mb_else_stmt _) =
+traceStmtM (CReturn (Just ret_expr) _) =
+traceStmtM stmt = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
