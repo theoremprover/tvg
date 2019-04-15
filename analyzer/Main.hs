@@ -43,14 +43,7 @@ main = do
 			res <- evalStateT (genCovVectorsM (builtinIdent funname) []) $ CovVecState globobjs
 			print res
 
-data Constraint = Or [Constraint] | And [Constraint] | ConstraintExpr :<= ConstraintExpr
-	deriving Show
-
-data ConstraintExpr =
-	IntValue Int |
-	BinaryOp CBinaryOp ConstraintExpr ConstraintExpr |
-	FunCall Ident [ConstraintExpr] |
-	Var Ident
+data Constraint = Or [Constraint] | And [Constraint] | Expr :<= Expr
 	deriving Show
 
 lookupFunM :: Ident -> CovVecM FunDef
@@ -63,21 +56,15 @@ lookupFunM ident = do
 genCovVectorsM :: Ident -> [Constraint] -> CovVecM NodeInfo
 genCovVectorsM funident constraints = do
 	FunDef (VarDecl (VarName ident _) declattrs (FunctionType (FunType ret_type paramdecls False) _)) stmt ni <- lookupFunM funident
-	traces <- traceStmtM stmt
+	traces <- tracesStmtM stmt
 	return traces
 
-data TraceStep = Assignment Ident ConstraintExpr
-	deriving Show
-
-traceStmtM :: Stmt -> CovVecM [[Constraint]]
-traceStmtM (CExpr expr _) = case expr of
-	CAssign CAssignOp (CVar ident _) cexpr _ -> Assignment ident (toConstraintExpr cexpr)
-	CCall (CVar funname _) args _ ->
+tracesStmtM :: Stmt -> CovVecM [[Stmt]]
+tracesStmtM cexpr@(CExpr expr _) = case expr of
+	CAssign CAssignOp (CVar ident _) assigned_expr _ -> cexpr
+	CCall (CVar funname _) args _ -> -- Call function discarding result
 	unknown -> error $ "traceStmtM CExpr: " ++ show unknown ++ " not implemented yet"
-traceStmtM (CCompound _ cbis _) = 
-traceStmtM (CIf cond_expr then_stmt mb_else_stmt _) =
-traceStmtM (CReturn (Just ret_expr) _) =
-traceStmtM stmt = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
-
-toConstraintExpr (CBinary binop op1 op2 _) = BinaryOp binop (toConstraintExpr op1) (toConstraintExpr op2)
-toConstraintExpr (CCall fun args _) = FunCall 
+tracesStmtM (CCompound _ cbis _) = 
+tracesStmtM (CIf cond_expr then_stmt mb_else_stmt _) =
+tracesStmtM (CReturn (Just ret_expr) _) =
+tracesStmtM stmt = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
