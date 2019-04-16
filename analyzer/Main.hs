@@ -56,15 +56,15 @@ lookupFunM ident = do
 genCovVectorsM :: Ident -> [Constraint] -> CovVecM NodeInfo
 genCovVectorsM funident constraints = do
 	FunDef (VarDecl (VarName ident _) declattrs (FunctionType (FunType ret_type paramdecls False) _)) stmt ni <- lookupFunM funident
-	traces <- tracesStmtM stmt
+	traces <- tracesStmtM [] stmt
 	return traces
 
-tracesStmtM :: Stmt -> CovVecM [[Stmt]]
-tracesStmtM cexpr@(CExpr expr _) = case expr of
+tracesStmtM :: [Stmt] -> [Stmt] -> CovVecM [[Stmt]]
+tracesStmtM tracepath cexpr@(CExpr expr _) = case expr of
 	CAssign CAssignOp (CVar ident _) assigned_expr _ -> cexpr
-	CCall (CVar funname _) args _ -> -- Call function discarding result
+	CCall (CVar funname _) args _ -> -- Call function statement discarding result
 	unknown -> error $ "traceStmtM CExpr: " ++ show unknown ++ " not implemented yet"
-tracesStmtM (CCompound _ cbis _) = 
-tracesStmtM (CIf cond_expr then_stmt mb_else_stmt _) =
-tracesStmtM (CReturn (Just ret_expr) _) =
-tracesStmtM stmt = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
+tracesStmtM tracepath (CCompound _ cbis _) = 
+tracesStmtM tracepath (CIf cond_expr then_stmt mb_else_stmt _) =
+tracesStmtM tracepath cret@(CReturn (Just ret_expr) _) = return [cret : tracepath]
+tracesStmtM _ stmt = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
