@@ -64,7 +64,17 @@ tracesStmtM tracepath cexpr@(CExpr expr _) = case expr of
 	CAssign CAssignOp (CVar ident _) assigned_expr _ -> cexpr
 	CCall (CVar funname _) args _ -> -- Call function statement discarding result
 	unknown -> error $ "traceStmtM CExpr: " ++ show unknown ++ " not implemented yet"
-tracesStmtM tracepath (CCompound _ cbis _) = 
-tracesStmtM tracepath (CIf cond_expr then_stmt mb_else_stmt _) =
+tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmt tracepath (concatMap to_stmt cbis ++ rest) where
+	to_stmt (CBlockStmt cstmt) = [cstmt]
+	to_stmt (CBlockDecl (CDecl _ triples _)) = map triple_to_stmt triples
+	triple_to_stmt (Just (CDeclr (Just ident) _ _ _ _),Just (CInitExpr init_expr _),Nothing) =
+	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
+tracesStmtM tracepath (CIf cond_exp then_stmt mb_else_stmt _ : rest) = do
+	then_branches <- tracesStmtM (CExpr (Just cond_expr) undefNode : tracepath) (then_stmt:rest)
+	else_branches <- case mb_else_stmt of
+		Just else_stmt -> tracesStmtM (CExpr (Just cond_expr) undefNode : tracepath) (else_stmt:rest)
+		Nothing -> []
+	return $ then_branches ++ else_branches
+
 tracesStmtM tracepath cret@(CReturn (Just ret_expr) _) = return [cret : tracepath]
 tracesStmtM _ stmt = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
