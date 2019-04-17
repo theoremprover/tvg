@@ -4,6 +4,7 @@
 module Main where
 
 import Control.Monad.Trans.State.Strict
+import Control.Monad
 import System.Environment
 import Language.C
 import Language.C.Data.Ident
@@ -14,7 +15,7 @@ import Language.C.System.GCC
 import System.FilePath
 import Text.Printf
 import qualified Data.Map.Strict as Map
-
+import Text.PrettyPrint
 import DataTree
 
 {--
@@ -40,8 +41,9 @@ main = do
 		Right translunit@(CTranslUnit extdecls _) -> do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
-			res <- evalStateT (genCovVectorsM [] (builtinIdent funname)) $ CovVecState globobjs
-			print res
+			res <- evalStateT (genCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
+			forM_ res $ \ trace -> do
+				print (map (render.pretty) trace)
 
 data Constraint = Or [Constraint] | And [Constraint] | Expr :<= Expr
 	deriving Show
@@ -53,17 +55,22 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
 
-genCovVectorsM :: [Stmt] -> Ident -> CovVecM [[Stmt]]
-genCovVectorsM tracepath funident = do
+genCovVectorsM :: Ident -> CovVecM [[Stmt]]
+genCovVectorsM funident = getFunStmtsM funident >>= tracesStmtM []
+
+getFunStmtsM :: Ident -> CovVecM [Stmt]
+getFunStmtsM funident = do
 	FunDef (VarDecl (VarName ident _) declattrs (FunctionType (FunType ret_type paramdecls False) _)) stmt ni <- lookupFunM funident
-	tracesStmtM tracepath [stmt]
+	return [stmt]
 
 tracesStmtM :: [Stmt] -> [Stmt] -> CovVecM [[Stmt]]
-tracesStmtM tracepath ((stmt@(CExpr (Just expr) _)) : rest)= case expr of
+tracesStmtM tracepath ((stmt@(CExpr (Just expr) _)) : rest) = case expr of
 	CAssign assign_op (CVar ident _) assigned_expr _ -> tracesStmtM (stmt:tracepath) rest
-	CCall (CVar funident _) args _ -> genCovVectorsM tracepath funident
+	CCall (CVar funident _) args _ -> do
+		stmts <- getFunStmtsM funident
+		tracesStmtM tracepath (stmts ++ rest)
 	unknown -> error $ "traceStmtM CExpr: " ++ show unknown ++ " not implemented yet"
-tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmt tracepath (concatMap to_stmt cbis ++ rest) where
+tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (concatMap to_stmt cbis ++ rest) where
 	to_stmt (CBlockStmt cstmt) = [cstmt]
 	to_stmt (CBlockDecl (CDecl _ triples _)) = concatMap triple_to_stmt triples
 	triple_to_stmt (_,Nothing,Nothing) = []
