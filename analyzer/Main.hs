@@ -63,9 +63,29 @@ getFunStmtsM funident = do
 	FunDef (VarDecl (VarName ident _) declattrs (FunctionType (FunType ret_type paramdecls False) _)) stmt ni <- lookupFunM funident
 	return [stmt]
 
-tracesStmtM :: [Stmt] -> [Stmt] -> CovVecM [[Stmt]]
+type Trace = [Stmt]
+type Traces = [Trace]
 
-tracesStmtM tracepath ((stmt@(CExpr (Just expr) _)) : rest) = tracesExprM (tracepath) expr rest	
+infixl 6 :>>> 
+(:>>>) :: CovVecM Traces -> CovVecM Traces -> CovVecM Traces
+earlier_m :>>> later_m = do
+	earlier <- earlier_m
+	later <- later_m
+	return $ map (later++) earlier
+
+infixl 5 :|||
+(:|||) :: CovVecM Traces -> CovVecM Traces -> CovVecM Traces
+alternative1_m :||| alternative2_m = do
+	alternative1 <- alternative1_m
+	alternative2 <- alternative2_m
+	return $ alternative1 ++ alternative2
+
+emptyTraces = [[]]
+
+tracesStmtM :: Trace -> Trace -> CovVecM Traces
+
+tracesStmtM tracepath ((stmt@(CExpr (Just expr) _)) : rest) = do
+	tracesExprM tracepath expr :>>> tracesStmtM [] rest
 
 tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (concatMap to_stmt cbis ++ rest) where
 	to_stmt (CBlockStmt cstmt) = [cstmt]
@@ -76,11 +96,14 @@ tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (conca
 	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
 
 tracesStmtM tracepath (CIf cond_expr then_stmt mb_else_stmt _ : rest) = do
-	then_branches <- tracesStmtM (CExpr (Just cond_expr) undefNode : tracepath) (then_stmt:rest)
-	else_branches <- case mb_else_stmt of
-		Just else_stmt -> tracesStmtM (CExpr (Just cond_expr) undefNode : tracepath) (else_stmt:rest)
-		Nothing -> return []
-	return $ then_branches ++ else_branches
+	rest_traces <- tracesStmtM [] rest
+	let rest_m = return rest_traces
+	then_m :>>> rest_m  :|||  else_m :>>> rest_m
+	where
+	then_m = tracesStmtM (CExpr (Just cond_expr) undefNode : tracepath) then_stmt
+	else_m = case mb_else_stmt of
+		Just else_stmt -> tracesStmtM (CExpr (Just cond_expr) undefNode : tracepath) else_stmt
+		Nothing -> return emptyTraces
 
 tracesStmtM tracepath (cret@(CReturn (Just ret_expr) _) : rest) = return [cret : tracepath]
 
@@ -92,7 +115,7 @@ tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemente
 tracesExprM :: [Stmt] -> Expr -> CovVecM [[Stmt]]
 
 tracesExprM tracepath (CAssign assign_op (CVar ident _) assigned_expr _) rest = do
-	tracesExprM (tracepath) assigned_expr rest
+	assigned_traces <- tracesExprM tracepath assigned_expr
 
 tracesExprM tracepath (CCall (CVar funident _) args _ ) rest = do
 		stmts <- getFunStmtsM funident
