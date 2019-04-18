@@ -64,12 +64,9 @@ getFunStmtsM funident = do
 	return [stmt]
 
 tracesStmtM :: [Stmt] -> [Stmt] -> CovVecM [[Stmt]]
-tracesStmtM tracepath ((stmt@(CExpr (Just expr) _)) : rest) = case expr of
-	CAssign assign_op (CVar ident _) assigned_expr _ -> tracesStmtM (stmt:tracepath) rest
-	CCall (CVar funident _) args _ -> do
-		stmts <- getFunStmtsM funident
-		tracesStmtM tracepath (stmts ++ rest)
-	unknown -> error $ "traceStmtM CExpr: " ++ show unknown ++ " not implemented yet"
+
+tracesStmtM tracepath ((stmt@(CExpr (Just expr) _)) : rest) = tracesExprM (tracepath) expr rest	
+
 tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (concatMap to_stmt cbis ++ rest) where
 	to_stmt (CBlockStmt cstmt) = [cstmt]
 	to_stmt (CBlockDecl (CDecl _ triples _)) = concatMap triple_to_stmt triples
@@ -77,12 +74,27 @@ tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (conca
 	triple_to_stmt (Just (CDeclr (Just ident) _ _ _ _),Just (CInitExpr init_expr _),Nothing) =
 		[ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) init_expr undefNode) undefNode ]
 	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
+
 tracesStmtM tracepath (CIf cond_expr then_stmt mb_else_stmt _ : rest) = do
 	then_branches <- tracesStmtM (CExpr (Just cond_expr) undefNode : tracepath) (then_stmt:rest)
 	else_branches <- case mb_else_stmt of
 		Just else_stmt -> tracesStmtM (CExpr (Just cond_expr) undefNode : tracepath) (else_stmt:rest)
 		Nothing -> return []
 	return $ then_branches ++ else_branches
+
 tracesStmtM tracepath (cret@(CReturn (Just ret_expr) _) : rest) = return [cret : tracepath]
+
 tracesStmtM tracepath [] = return [tracepath]
+
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
+
+
+tracesExprM :: [Stmt] -> Expr -> CovVecM [[Stmt]]
+
+tracesExprM tracepath (CAssign assign_op (CVar ident _) assigned_expr _) rest = do
+	tracesExprM (tracepath) assigned_expr rest
+
+tracesExprM tracepath (CCall (CVar funident _) args _ ) rest = do
+		stmts <- getFunStmtsM funident
+		tracesStmtM tracepath (stmts ++ rest)
+	unknown -> error $ "traceStmtM CExpr: " ++ show unknown ++ " not implemented yet"
