@@ -48,6 +48,24 @@ int f(int x)
 	return(y+1);
 }
 
+int test2(int x)
+{
+	int y = x + 99;
+	return y;
+}
+
+int test(int x)
+{
+	if (x>0)
+	{
+		return test2(x);
+	}
+	else
+	{
+		return test2(x+1);
+	}
+}
+
 int main()
 {
 	int x;

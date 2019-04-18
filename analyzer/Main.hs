@@ -71,7 +71,7 @@ infixl 6 >>>
 earlier_m >>> later_m = do
 	earlier <- earlier_m
 	later <- later_m
-	return $ ???map (map (later++)) earlier
+	return $ [ l ++ e | e <- earlier, l <- later ]
 
 infixl 5 |||
 (|||) :: CovVecM Traces -> CovVecM Traces -> CovVecM Traces
@@ -100,12 +100,14 @@ tracesStmtM tracepath (CIf cond_expr then_stmt mb_else_stmt _ : rest) = do
 	let rest_m = return rest_traces
 	then_m >>> rest_m  |||  else_m >>> rest_m
 	where
-	then_m = tracesStmtM (CExpr (Just cond_expr) undefNode : tracepath) [then_stmt]
+	cond_stmt = CExpr (Just cond_expr) undefNode
+	then_m = tracesStmtM (cond_stmt : tracepath) [then_stmt]
 	else_m = case mb_else_stmt of
-		Just else_stmt -> tracesStmtM (CExpr (Just cond_expr) undefNode : tracepath) [else_stmt]
+		Just else_stmt -> tracesStmtM (cond_stmt : tracepath) [else_stmt]
 		Nothing -> return emptyTraces
 
-tracesStmtM tracepath (cret@(CReturn (Just ret_expr) _) : rest) = return [cret : tracepath]
+tracesStmtM tracepath (cret@(CReturn (Just ret_expr) _) : _) =
+	tracesExprM tracepath ret_expr >>> return [[cret]]
 
 tracesStmtM tracepath [] = return [tracepath]
 
@@ -119,5 +121,8 @@ tracesExprM tracepath cassign@(CAssign assign_op (CVar ident _) assigned_expr _)
 
 tracesExprM tracepath (CCall (CVar funident _) args _ ) = do
 	getFunStmtsM funident >>= tracesStmtM tracepath
-
+tracesExprM tracepath (CBinary binop expr1 expr2 _) =
+	tracesExprM tracepath expr1 >>> tracesExprM [] expr2
+tracesExprM tracepath (CVar _ _) = return [tracepath]
+tracesExprM tracepath (CConst _) = return [tracepath]
 tracesExprM _ unknown =error $ "tracesExprM: " ++ show unknown ++ " not implemented yet"
