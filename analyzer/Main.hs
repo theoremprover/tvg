@@ -66,16 +66,16 @@ getFunStmtsM funident = do
 type Trace = [Stmt]
 type Traces = [Trace]
 
-infixl 6 :>>> 
-(:>>>) :: CovVecM Traces -> CovVecM Traces -> CovVecM Traces
-earlier_m :>>> later_m = do
+infixl 6 >>> 
+(>>>) :: CovVecM Traces -> CovVecM Traces -> CovVecM Traces
+earlier_m >>> later_m = do
 	earlier <- earlier_m
 	later <- later_m
-	return $ map (later++) earlier
+	return $ ???map (map (later++)) earlier
 
-infixl 5 :|||
-(:|||) :: CovVecM Traces -> CovVecM Traces -> CovVecM Traces
-alternative1_m :||| alternative2_m = do
+infixl 5 |||
+(|||) :: CovVecM Traces -> CovVecM Traces -> CovVecM Traces
+alternative1_m ||| alternative2_m = do
 	alternative1 <- alternative1_m
 	alternative2 <- alternative2_m
 	return $ alternative1 ++ alternative2
@@ -85,7 +85,7 @@ emptyTraces = [[]]
 tracesStmtM :: Trace -> Trace -> CovVecM Traces
 
 tracesStmtM tracepath ((stmt@(CExpr (Just expr) _)) : rest) = do
-	tracesExprM tracepath expr :>>> tracesStmtM [] rest
+	tracesExprM tracepath expr >>> tracesStmtM [] rest
 
 tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (concatMap to_stmt cbis ++ rest) where
 	to_stmt (CBlockStmt cstmt) = [cstmt]
@@ -98,11 +98,11 @@ tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (conca
 tracesStmtM tracepath (CIf cond_expr then_stmt mb_else_stmt _ : rest) = do
 	rest_traces <- tracesStmtM [] rest
 	let rest_m = return rest_traces
-	then_m :>>> rest_m  :|||  else_m :>>> rest_m
+	then_m >>> rest_m  |||  else_m >>> rest_m
 	where
-	then_m = tracesStmtM (CExpr (Just cond_expr) undefNode : tracepath) then_stmt
+	then_m = tracesStmtM (CExpr (Just cond_expr) undefNode : tracepath) [then_stmt]
 	else_m = case mb_else_stmt of
-		Just else_stmt -> tracesStmtM (CExpr (Just cond_expr) undefNode : tracepath) else_stmt
+		Just else_stmt -> tracesStmtM (CExpr (Just cond_expr) undefNode : tracepath) [else_stmt]
 		Nothing -> return emptyTraces
 
 tracesStmtM tracepath (cret@(CReturn (Just ret_expr) _) : rest) = return [cret : tracepath]
@@ -114,10 +114,10 @@ tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemente
 
 tracesExprM :: [Stmt] -> Expr -> CovVecM [[Stmt]]
 
-tracesExprM tracepath (CAssign assign_op (CVar ident _) assigned_expr _) rest = do
-	assigned_traces <- tracesExprM tracepath assigned_expr
+tracesExprM tracepath cassign@(CAssign assign_op (CVar ident _) assigned_expr _) = do
+	tracesExprM tracepath assigned_expr >>> return [[ CExpr (Just cassign) undefNode ]]
 
-tracesExprM tracepath (CCall (CVar funident _) args _ ) rest = do
-		stmts <- getFunStmtsM funident
-		tracesStmtM tracepath (stmts ++ rest)
-	unknown -> error $ "traceStmtM CExpr: " ++ show unknown ++ " not implemented yet"
+tracesExprM tracepath (CCall (CVar funident _) args _ ) = do
+	getFunStmtsM funident >>= tracesStmtM tracepath
+
+tracesExprM _ unknown =error $ "tracesExprM: " ++ show unknown ++ " not implemented yet"
