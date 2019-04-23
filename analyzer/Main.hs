@@ -87,7 +87,8 @@ tracesStmtM :: Trace -> Trace -> CovVecM Traces
 tracesStmtM tracepath ((stmt@(CExpr (Just expr) _)) : rest) = do
 	tracesExprM tracepath expr >>> tracesStmtM [] rest
 
-tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (concatMap to_stmt cbis ++ rest) where
+tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (concatMap to_stmt cbis ++ rest)
+	where
 	to_stmt (CBlockStmt cstmt) = [cstmt]
 	to_stmt (CBlockDecl (CDecl _ triples _)) = concatMap triple_to_stmt triples
 	triple_to_stmt (_,Nothing,Nothing) = []
@@ -95,15 +96,12 @@ tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (conca
 		[ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) init_expr undefNode) undefNode ]
 	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
 
-tracesStmtM tracepath (CIf cond_expr then_stmt mb_else_stmt _ : rest) = do
-	rest_traces <- tracesStmtM [] rest
-	let rest_m = return rest_traces
-	then_m >>> rest_m  |||  else_m >>> rest_m
+tracesStmtM tracepath (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m  |||  else_m
 	where
 	cond_stmt = CExpr (Just cond_expr) undefNode
-	then_m = tracesStmtM (cond_stmt : tracepath) [then_stmt]
+	then_m = tracesStmtM (cond_stmt : tracepath) (then_stmt:rest)
 	else_m = case mb_else_stmt of
-		Just else_stmt -> tracesStmtM (cond_stmt : tracepath) [else_stmt]
+		Just else_stmt -> tracesStmtM (cond_stmt : tracepath) (else_stmt:rest)
 		Nothing -> return emptyTraces
 
 tracesStmtM tracepath (cret@(CReturn (Just ret_expr) _) : _) =
