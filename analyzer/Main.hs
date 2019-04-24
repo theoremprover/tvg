@@ -45,8 +45,10 @@ main = do
 			forM_ res $ \ trace -> do
 				print (map (render.pretty) trace)
 
+{-
 data Constraint = Or [Constraint] | And [Constraint] | Expr :<= Expr
 	deriving Show
+-}
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
@@ -55,7 +57,7 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
 
-genCovVectorsM :: Ident -> CovVecM [[Stmt]]
+genCovVectorsM :: Ident -> CovVecM StmtsDecisions
 genCovVectorsM funident = getFunStmtsM funident >>= tracesStmtM []
 
 getFunStmtsM :: Ident -> CovVecM [Stmt]
@@ -64,17 +66,17 @@ getFunStmtsM funident = do
 	return [stmt]
 
 type Trace = [Stmt]
-type Traces = [Trace]
+type StmtsDecisions = [Either Stmt CExpr]
 
 infixl 6 >>> 
-(>>>) :: CovVecM Traces -> CovVecM Traces -> CovVecM Traces
+(>>>) :: CovVecM [StmtsDecisions] -> CovVecM [StmtsDecisions] -> CovVecM [StmtsDecisions]
 earlier_m >>> later_m = do
 	earlier <- earlier_m
 	later <- later_m
 	return $ [ l ++ e | e <- earlier, l <- later ]
 
 infixl 5 |||
-(|||) :: CovVecM Traces -> CovVecM Traces -> CovVecM Traces
+(|||) :: CovVecM [StmtsDecisions] -> CovVecM [StmtsDecisions] -> CovVecM [StmtsDecisions]
 alternative1_m ||| alternative2_m = do
 	alternative1 <- alternative1_m
 	alternative2 <- alternative2_m
@@ -82,7 +84,7 @@ alternative1_m ||| alternative2_m = do
 
 emptyTraces = [[]]
 
-tracesStmtM :: Trace -> Trace -> CovVecM Traces
+tracesStmtM :: StmtsDecisions -> Trace -> CovVecM [StmtsDecisions]
 
 tracesStmtM tracepath ((stmt@(CExpr (Just expr) _)) : rest) = do
 	tracesExprM tracepath expr >>> tracesStmtM [] rest
@@ -96,26 +98,25 @@ tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (conca
 		[ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) init_expr undefNode) undefNode ]
 	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
 
-tracesStmtM tracepath (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m  |||  else_m
+tracesStmtM tracepath (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m ||| else_m
 	where
-	cond_stmt = CExpr (Just cond_expr) undefNode
-	then_m = tracesStmtM (cond_stmt : tracepath) (then_stmt:rest)
+	then_m = tracesStmtM (Right (CExpr (Just cond_expr) undefNode) : tracepath) (then_stmt:rest)
 	else_m = case mb_else_stmt of
-		Just else_stmt -> tracesStmtM (cond_stmt : tracepath) (else_stmt:rest)
+		Just else_stmt -> tracesStmtM (Right (CExpr (Just $ CUnary CNegOp cond_expr undefNode) undefNode) : tracepath) (else_stmt:rest)
 		Nothing -> return emptyTraces
 
 tracesStmtM tracepath (cret@(CReturn (Just ret_expr) _) : _) =
-	tracesExprM tracepath ret_expr >>> return [[cret]]
+	tracesExprM tracepath ret_expr >>> return [[ Left cret ]]
 
 tracesStmtM tracepath [] = return [tracepath]
 
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
 
-tracesExprM :: [Stmt] -> Expr -> CovVecM [[Stmt]]
+tracesExprM :: StmtsDecisions -> Expr -> CovVecM [StmtsDecisions]
 
 tracesExprM tracepath cassign@(CAssign assign_op (CVar ident _) assigned_expr _) = do
-	tracesExprM tracepath assigned_expr >>> return [[ CExpr (Just cassign) undefNode ]]
+	tracesExprM tracepath assigned_expr >>> return [[ Left $ CExpr (Just cassign) undefNode ]]
 
 tracesExprM tracepath (CCall (CVar funident _) args _ ) = do
 	getFunStmtsM funident >>= tracesStmtM tracepath
