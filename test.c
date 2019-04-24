@@ -36,7 +36,7 @@ int f(int x)
 	if(y>10)
 	{
 		// [y>10]
-		y = y - 1;
+		y = y-1;
 	}
 	else
 	{
