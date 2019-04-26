@@ -33,6 +33,7 @@ data CovVecState = CovVecState {
 type CovVecM a = StateT CovVecState IO a
 
 main = do
+	return () {-
 	filename:funname:[] <- return ["test.c","f"] --getArgs
 
 	mb_ast <- parseCFile (newGCC gccExe) Nothing [] filename
@@ -125,3 +126,4 @@ tracesExprM tracepath (CBinary binop expr1 expr2 _) =
 tracesExprM tracepath (CVar _ _) = return [tracepath]
 tracesExprM tracepath (CConst _) = return [tracepath]
 tracesExprM _ unknown =error $ "tracesExprM: " ++ show unknown ++ " not implemented yet"
+-}

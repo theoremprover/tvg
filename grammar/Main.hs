@@ -6,7 +6,7 @@ module Main where
 --import ShowAST
 --import DataTree
 
-import Lexer
+--import Lexer
 
 {-
 stack build :parsecpp-exe
@@ -15,12 +15,12 @@ stack exec parsecpp-exe
 -}
 
 main = do
-
+	return ()
+{-
 	let filename = "test.cpp"
 	f <- readFile filename
 	putStrLn (lex f)
 
-{-
 	case parseTranslUnit filename f of
 		Left err -> print err
 		Right translunit -> do
