@@ -18,8 +18,9 @@ int f(int i)
 
 int main(void)
 {
-#ifdef X
-	int y = f(g(h(1)));
-#endif
+	int a[3];
+	{
+		{ a[0] = fpclassify(a[1]); }
+	}
 	return f(h(1));
 }
