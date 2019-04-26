@@ -13,10 +13,13 @@ import Language.C.System.GCC
 import Data.Generics
 import Control.Monad.Trans.State.Strict
 
-gccExe = "gcc-4.7"
+gccExe = "/usr/bin/gcc"
 
 main = do
 	args <- getArgs
+	maini args
+
+maini args = do
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
 	forM (filter (".c" `isSuffixOf`) args) (handleSrcFile preprocess_args)
 
@@ -27,11 +30,13 @@ handleSrcFile preprocess_args name = do
 		Right ctranslunit -> do
 			calls <- execStateT (everywhereM (mkM (searchFunDefs name)) ctranslunit) []
 			forM_ calls print
+			return calls
 
 data CallsInFun = CallsInFun String String [String] deriving Show
 
 searchFunDefs :: String -> CFunDef -> StateT [CallsInFun] IO CFunDef
 searchFunDefs sourcefilename cfundef@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ stmt ni) = do
+	liftIO $ print funname
 	calledfunnames <- execStateT (everywhereM (mkM searchFunCalls) stmt) []
 	modify (CallsInFun sourcefilename funname (nub calledfunnames) : )
 	return cfundef
