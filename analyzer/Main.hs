@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
-{-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE LambdaCase,TypeSynonymInstances,FlexibleInstances #-}
 
 module Main where
 
@@ -33,18 +33,16 @@ data CovVecState = CovVecState {
 type CovVecM a = StateT CovVecState IO a
 
 main = do
-	return () {-
 	filename:funname:[] <- return ["test.c","f"] --getArgs
 
 	mb_ast <- parseCFile (newGCC gccExe) Nothing [] filename
 	case mb_ast of
-		Left err -> error $ show err
-		Right translunit@(CTranslUnit extdecls _) -> do
+		TraceStmt err -> error $ show err
+		TraceDecision translunit@(CTranslUnit extdecls _) -> do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
-			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
+			let TraceDecision (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
 			res <- evalStateT (genCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
-			forM_ res $ \ trace -> do
-				print (map (render.pretty) trace)
+			forM_ res print
 
 {-
 data Constraint = Or [Constraint] | And [Constraint] | Expr :<= Expr
@@ -58,7 +56,7 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
 
-genCovVectorsM :: Ident -> CovVecM StmtsDecisions
+genCovVectorsM :: Ident -> CovVecM [StmtsDecisions]
 genCovVectorsM funident = getFunStmtsM funident >>= tracesStmtM []
 
 getFunStmtsM :: Ident -> CovVecM [Stmt]
@@ -67,7 +65,12 @@ getFunStmtsM funident = do
 	return [stmt]
 
 type Trace = [Stmt]
-type StmtsDecisions = [Either Stmt CExpr]
+data StmtOrDecision = TraceStmt Stmt | TraceDecision CExpr
+instance Show StmtOrDecision where
+	show (TraceStmt stmt) = (render.pretty) stmt
+	show (TraceDecision decision) = (render.pretty) decision
+
+type StmtsDecisions = [StmtOrDecision]
 
 infixl 6 >>> 
 (>>>) :: CovVecM [StmtsDecisions] -> CovVecM [StmtsDecisions] -> CovVecM [StmtsDecisions]
@@ -101,13 +104,13 @@ tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (conca
 
 tracesStmtM tracepath (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m ||| else_m
 	where
-	then_m = tracesStmtM (Right (CExpr (Just cond_expr) undefNode) : tracepath) (then_stmt:rest)
+	then_m = tracesStmtM (TraceDecision (CExpr (Just cond_expr) undefNode) : tracepath) (then_stmt:rest)
 	else_m = case mb_else_stmt of
-		Just else_stmt -> tracesStmtM (Right (CExpr (Just $ CUnary CNegOp cond_expr undefNode) undefNode) : tracepath) (else_stmt:rest)
+		Just else_stmt -> tracesStmtM (TraceDecision (CExpr (Just $ CUnary CNegOp cond_expr undefNode) undefNode) : tracepath) (else_stmt:rest)
 		Nothing -> return emptyTraces
 
 tracesStmtM tracepath (cret@(CReturn (Just ret_expr) _) : _) =
-	tracesExprM tracepath ret_expr >>> return [[ Left cret ]]
+	tracesExprM tracepath ret_expr >>> return [[ TraceStmt cret ]]
 
 tracesStmtM tracepath [] = return [tracepath]
 
@@ -117,7 +120,7 @@ tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemente
 tracesExprM :: StmtsDecisions -> Expr -> CovVecM [StmtsDecisions]
 
 tracesExprM tracepath cassign@(CAssign assign_op (CVar ident _) assigned_expr _) = do
-	tracesExprM tracepath assigned_expr >>> return [[ Left $ CExpr (Just cassign) undefNode ]]
+	tracesExprM tracepath assigned_expr >>> return [[ TraceStmt $ CExpr (Just cassign) undefNode ]]
 
 tracesExprM tracepath (CCall (CVar funident _) args _ ) = do
 	getFunStmtsM funident >>= tracesStmtM tracepath
@@ -126,4 +129,3 @@ tracesExprM tracepath (CBinary binop expr1 expr2 _) =
 tracesExprM tracepath (CVar _ _) = return [tracepath]
 tracesExprM tracepath (CConst _) = return [tracepath]
 tracesExprM _ unknown =error $ "tracesExprM: " ++ show unknown ++ " not implemented yet"
--}
