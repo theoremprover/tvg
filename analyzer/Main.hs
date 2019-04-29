@@ -37,10 +37,10 @@ main = do
 
 	mb_ast <- parseCFile (newGCC gccExe) Nothing [] filename
 	case mb_ast of
-		TraceStmt err -> error $ show err
-		TraceDecision translunit@(CTranslUnit extdecls _) -> do
+		Left err -> error $ show err
+		Right translunit@(CTranslUnit extdecls _) -> do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
-			let TraceDecision (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
+			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
 			res <- evalStateT (genCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
 			forM_ res print
 
@@ -104,9 +104,9 @@ tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (conca
 
 tracesStmtM tracepath (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m ||| else_m
 	where
-	then_m = tracesStmtM (TraceDecision (CExpr (Just cond_expr) undefNode) : tracepath) (then_stmt:rest)
+	then_m = tracesStmtM (TraceDecision cond_expr : tracepath) (then_stmt:rest)
 	else_m = case mb_else_stmt of
-		Just else_stmt -> tracesStmtM (TraceDecision (CExpr (Just $ CUnary CNegOp cond_expr undefNode) undefNode) : tracepath) (else_stmt:rest)
+		Just else_stmt -> tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : tracepath) (else_stmt:rest)
 		Nothing -> return emptyTraces
 
 tracesStmtM tracepath (cret@(CReturn (Just ret_expr) _) : _) =
