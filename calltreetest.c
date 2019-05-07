@@ -20,7 +20,7 @@ int main(void)
 {
 	int a[3];
 	{
-		{ a[0] = fpclassify(a[1]); }
+		{ a[0] = f(1); }
 	}
 	return f(h(1));
 }

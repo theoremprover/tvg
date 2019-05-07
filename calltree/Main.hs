@@ -36,7 +36,6 @@ data CallsInFun = CallsInFun String String [String] deriving Show
 
 searchFunDefs :: String -> CFunDef -> StateT [CallsInFun] IO CFunDef
 searchFunDefs sourcefilename cfundef@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ stmt ni) = do
-	liftIO $ print funname
 	calledfunnames <- execStateT (everywhereM (mkM searchFunCalls) stmt) []
 	modify (CallsInFun sourcefilename funname (nub calledfunnames) : )
 	return cfundef
