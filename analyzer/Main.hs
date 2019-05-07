@@ -44,10 +44,8 @@ main = do
 			res <- evalStateT (genCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
 			forM_ res print
 
-{-
-data Constraint = Or [Constraint] | And [Constraint] | Expr :<= Expr
+data Constraint = Or [Constraint] | And [Constraint] | Expr :<= Expr | Ident := Expr
 	deriving Show
--}
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
@@ -56,13 +54,29 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
 
-genCovVectorsM :: Ident -> CovVecM [StmtsDecisions]
-genCovVectorsM funident = getFunStmtsM funident >>= tracesStmtM []
-
+-- Returns the body of a function definition
 getFunStmtsM :: Ident -> CovVecM [Stmt]
 getFunStmtsM funident = do
 	FunDef (VarDecl (VarName ident _) declattrs (FunctionType (FunType ret_type paramdecls False) _)) stmt ni <- lookupFunM funident
 	return [stmt]
+
+-- Generates a list of constraints for each trace through the AST
+genCovVectorsM :: Ident -> CovVecM [[Constraint]]
+genCovVectorsM funident = getFunStmtsM funident >>= tracesM []
+
+tracesM constraints [] = return [constraints]
+tracesM constraints (CCompound _ cbis _ : rest) = tracesM constraints (concatMap to_stmt cbis ++ rest)
+	where
+	to_stmt (CBlockStmt cstmt) = [cstmt]
+	to_stmt (CBlockDecl (CDecl _ triples _)) = concatMap triple_to_stmt triples
+	triple_to_stmt (_,Nothing,Nothing) = ??
+	triple_to_stmt (Just (CDeclr (Just ident) _ _ _ _),Just (CInitExpr init_expr _),Nothing) = case mb_initexpr of
+
+	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
+
+{-
+genCovVectorsM :: Ident -> CovVecM [StmtsDecisions]
+genCovVectorsM funident = getFunStmtsM funident >>= tracesStmtM []
 
 type Trace = [Stmt]
 data StmtOrDecision = TraceStmt Stmt | TraceDecision CExpr
@@ -129,3 +143,4 @@ tracesExprM tracepath (CBinary binop expr1 expr2 _) =
 tracesExprM tracepath (CVar _ _) = return [tracepath]
 tracesExprM tracepath (CConst _) = return [tracepath]
 tracesExprM _ unknown =error $ "tracesExprM: " ++ show unknown ++ " not implemented yet"
+-}
