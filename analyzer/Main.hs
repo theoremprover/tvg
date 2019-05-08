@@ -44,8 +44,10 @@ main = do
 			res <- evalStateT (genCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
 			forM_ res print
 
+{-
 data Constraint = Or [Constraint] | And [Constraint] | Expr :<= Expr | Ident := Expr
 	deriving Show
+-}
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
@@ -78,26 +80,24 @@ tracesM constraints (CCompound _ cbis _ : rest) = tracesM constraints (concatMap
 	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented"
 -}
 
-genCovVectorsM :: Ident -> CovVecM [StmtsDecisions]
+genCovVectorsM :: Ident -> CovVecM [[TraceElem]]
 genCovVectorsM funident = getFunStmtsM funident >>= tracesStmtM []
 
-type Trace = [Stmt]
-data StmtOrDecision = TraceStmt Stmt | TraceDecision CExpr
-instance Show StmtOrDecision where
+data TraceElem = TraceStmt Stmt | TraceDecision CExpr | TraceReturn (Maybe CExpr)
+instance Show TraceElem where
 	show (TraceStmt stmt) = (render.pretty) stmt
 	show (TraceDecision decision) = (render.pretty) decision
-
-type StmtsDecisions = [StmtOrDecision]
+	show (TraceReturn mb_retexpr) = "TraceReturn " ++ maybe "()" (render.pretty) mb_retexpr
 
 infixl 6 >>> 
-(>>>) :: CovVecM [StmtsDecisions] -> CovVecM [StmtsDecisions] -> CovVecM [StmtsDecisions]
+(>>>) :: CovVecM [[TraceElem]] -> CovVecM [[TraceElem]] -> CovVecM [[TraceElem]]
 earlier_m >>> later_m = do
 	earlier <- earlier_m
 	later <- later_m
 	return $ [ l ++ e | e <- earlier, l <- later ]
 
 infixl 5 |||
-(|||) :: CovVecM [StmtsDecisions] -> CovVecM [StmtsDecisions] -> CovVecM [StmtsDecisions]
+(|||) :: CovVecM [[TraceElem]] -> CovVecM [[TraceElem]] -> CovVecM [[TraceElem]]
 alternative1_m ||| alternative2_m = do
 	alternative1 <- alternative1_m
 	alternative2 <- alternative2_m
@@ -105,12 +105,11 @@ alternative1_m ||| alternative2_m = do
 
 emptyTraces = [[]]
 
-tracesStmtM :: StmtsDecisions -> Trace -> CovVecM [StmtsDecisions]
+tracesStmtM :: [TraceElem] -> [Stmt] -> CovVecM [[TraceElem]]
 
-tracesStmtM tracepath ((stmt@(CExpr (Just expr) _)) : rest) = do
-	tracesExprM tracepath expr >>> tracesStmtM [] rest
+tracesStmtM traceelems ((stmt@(CExpr (Just expr) _)) : rest) = tracesStmtM (TraceStmt stmt : traceelems) rest
 
-tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (concatMap to_stmt cbis ++ rest)
+tracesStmtM traceelems (CCompound _ cbis _ : rest) = tracesStmtM traceelems (concatMap to_stmt cbis ++ rest)
 	where
 	to_stmt (CBlockStmt cstmt) = [cstmt]
 	to_stmt (CBlockDecl (CDecl _ triples _)) = concatMap triple_to_stmt triples
@@ -119,30 +118,30 @@ tracesStmtM tracepath (CCompound _ cbis _ : rest) = tracesStmtM tracepath (conca
 		[ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) init_expr undefNode) undefNode ]
 	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
 
-tracesStmtM tracepath (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m ||| else_m
+tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m ||| else_m
 	where
-	then_m = tracesStmtM (TraceDecision cond_expr : tracepath) (then_stmt:rest)
+	then_m = tracesStmtM (TraceDecision cond_expr : traceelems) (then_stmt:rest)
 	else_m = case mb_else_stmt of
-		Just else_stmt -> tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : tracepath) (else_stmt:rest)
+		Just else_stmt -> tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) (else_stmt:rest)
 		Nothing -> return emptyTraces
 
-tracesStmtM tracepath (cret@(CReturn (Just ret_expr) _) : _) =
-	tracesExprM tracepath ret_expr >>> return [[ TraceStmt cret ]]
+tracesStmtM traceelems (cret@(CReturn mb_ret_expr _) : _) = return [[ TraceReturn mb_ret_expr ]]
 
-tracesStmtM tracepath [] = return [tracepath]
+tracesStmtM traceelems [] = return [traceelems]
 
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
+{-
+tracesExprM :: [TraceElem] -> Expr -> CovVecM [[TraceElem]]
 
-tracesExprM :: StmtsDecisions -> Expr -> CovVecM [StmtsDecisions]
+tracesExprM traceelems cassign@(CAssign assign_op (CVar ident _) assigned_expr _) = do
+	tracesExprM traceelems assigned_expr >>> return [[ TraceStmt $ CExpr (Just cassign) undefNode ]]
 
-tracesExprM tracepath cassign@(CAssign assign_op (CVar ident _) assigned_expr _) = do
-	tracesExprM tracepath assigned_expr >>> return [[ TraceStmt $ CExpr (Just cassign) undefNode ]]
-
-tracesExprM tracepath (CCall (CVar funident _) args _ ) = do
-	getFunStmtsM funident >>= tracesStmtM tracepath
-tracesExprM tracepath (CBinary binop expr1 expr2 _) =
-	tracesExprM tracepath expr1 >>> tracesExprM [] expr2
-tracesExprM tracepath (CVar _ _) = return [tracepath]
-tracesExprM tracepath (CConst _) = return [tracepath]
+tracesExprM traceelems (CCall (CVar funident _) args _ ) = do
+	getFunStmtsM funident >>= tracesStmtM traceelems
+tracesExprM traceelems (CBinary binop expr1 expr2 _) =
+	tracesExprM traceelems expr1 >>> tracesExprM [] expr2
+tracesExprM traceelems (CVar _ _) = return [traceelems]
+tracesExprM traceelems (CConst _) = return [traceelems]
 tracesExprM _ unknown =error $ "tracesExprM: " ++ show unknown ++ " not implemented yet"
+-}

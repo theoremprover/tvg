@@ -21,7 +21,7 @@ int f(int x)
 
 	if(y>10)
 	{
-		y = g(y);
+		return(g(y));
 	}
 	else
 	{
