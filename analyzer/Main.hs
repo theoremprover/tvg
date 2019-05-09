@@ -16,6 +16,9 @@ import System.FilePath
 import Text.Printf
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
+import Data.List
+import Data.Char
+
 import DataTree
 
 {--
@@ -62,40 +65,29 @@ getFunStmtsM funident = do
 	FunDef (VarDecl (VarName ident _) declattrs (FunctionType (FunType ret_type paramdecls False) _)) stmt ni <- lookupFunM funident
 	return [stmt]
 
-{-
--- Generates a list of constraints for each trace through the AST
-genCovVectorsM :: Ident -> CovVecM [[Constraint]]
-genCovVectorsM funident = getFunStmtsM funident >>= tracesM []
-
-tracesM constraints [] = return [constraints]
-tracesM constraints (CCompound _ cbis _ : rest) = tracesM constraints (concatMap to_stmt (reverse cbis) ++ rest)
-	where
-	to_stmt (CBlockStmt cstmt) = [cstmt]
-	to_stmt (CBlockDecl (CDecl _ triples _)) = concatMap triple_to_stmt (reverse triples)
-	triple_to_stmt (_,Nothing,Nothing) = ??
-	triple_to_stmt (Just (CDeclr (Just ident) _ _ _ _),mb_initexpr,Nothing) = do
-		case mb_initexpr of
-			Just (CInitExpr init_expr _) ->
-			Nothing ->
-	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented"
--}
-
 genCovVectorsM :: Ident -> CovVecM [[TraceElem]]
 genCovVectorsM funident = getFunStmtsM funident >>= tracesStmtM []
 
-data TraceElem = TraceStmt Stmt | TraceDecision CExpr | TraceReturn (Maybe CExpr)
-instance Show TraceElem where
-	show (TraceStmt stmt) = (render.pretty) stmt
-	show (TraceDecision decision) = (render.pretty) decision
-	show (TraceReturn mb_retexpr) = "TraceReturn " ++ maybe "()" (render.pretty) mb_retexpr
+trim = dropWhileEnd isSpace . dropWhile isSpace
 
+instance {-# OVERLAPPING #-} Show Stmt where
+	show = trim.render.pretty
+instance {-# OVERLAPPING #-} Show CExpr where
+	show = trim.render.pretty
+instance {-# OVERLAPPING #-} Show Ident where
+	show = trim.render.pretty
+
+data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceDecision CExpr | TraceReturn (Maybe CExpr)
+	deriving Show
+
+{-
 infixl 6 >>> 
 (>>>) :: CovVecM [[TraceElem]] -> CovVecM [[TraceElem]] -> CovVecM [[TraceElem]]
 earlier_m >>> later_m = do
 	earlier <- earlier_m
 	later <- later_m
-	return $ [ l ++ e | e <- earlier, l <- later ]
-
+	return $ [ l++e | e <- earlier, l <- later ]
+-}
 infixl 5 |||
 (|||) :: CovVecM [[TraceElem]] -> CovVecM [[TraceElem]] -> CovVecM [[TraceElem]]
 alternative1_m ||| alternative2_m = do
@@ -107,15 +99,18 @@ emptyTraces = [[]]
 
 tracesStmtM :: [TraceElem] -> [Stmt] -> CovVecM [[TraceElem]]
 
-tracesStmtM traceelems ((stmt@(CExpr (Just expr) _)) : rest) = tracesStmtM (TraceStmt stmt : traceelems) rest
+tracesStmtM traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
+	tracesStmtM (TraceAssign ident assign_op assigned_expr : traceelems) rest
 
 tracesStmtM traceelems (CCompound _ cbis _ : rest) = tracesStmtM traceelems (concatMap to_stmt cbis ++ rest)
 	where
 	to_stmt (CBlockStmt cstmt) = [cstmt]
 	to_stmt (CBlockDecl (CDecl _ triples _)) = concatMap triple_to_stmt triples
 	triple_to_stmt (_,Nothing,Nothing) = []
-	triple_to_stmt (Just (CDeclr (Just ident) _ _ _ _),Just (CInitExpr init_expr _),Nothing) =
-		[ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) init_expr undefNode) undefNode ]
+	triple_to_stmt (Just (CDeclr (Just ident) _ _ _ _),mb_initexpr,Nothing) = do
+		case mb_initexpr of
+			Nothing -> []
+			Just (CInitExpr init_expr _) -> [ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) init_expr undefNode) undefNode ]
 	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
 
 tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m ||| else_m
@@ -125,7 +120,7 @@ tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m 
 		Just else_stmt -> tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) (else_stmt:rest)
 		Nothing -> return emptyTraces
 
-tracesStmtM traceelems (cret@(CReturn mb_ret_expr _) : _) = return [[ TraceReturn mb_ret_expr ]]
+tracesStmtM traceelems (cret@(CReturn mb_ret_expr _) : _) = return [ TraceReturn mb_ret_expr : traceelems ]
 
 tracesStmtM traceelems [] = return [traceelems]
 
