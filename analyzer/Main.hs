@@ -16,8 +16,6 @@ import System.FilePath
 import Text.Printf
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
-import Data.List
-import Data.Char
 
 import DataTree
 
@@ -45,7 +43,7 @@ main = do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
 			res <- evalStateT (genCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
-			forM_ res print
+			forM_ res $ \ l -> print (map (render.pretty) l)
 
 {-
 data Constraint = Or [Constraint] | And [Constraint] | Expr :<= Expr | Ident := Expr
@@ -68,17 +66,12 @@ getFunStmtsM funident = do
 genCovVectorsM :: Ident -> CovVecM [[TraceElem]]
 genCovVectorsM funident = getFunStmtsM funident >>= tracesStmtM []
 
-trim = dropWhileEnd isSpace . dropWhile isSpace
-
-instance {-# OVERLAPPING #-} Show Stmt where
-	show = trim.render.pretty
-instance {-# OVERLAPPING #-} Show CExpr where
-	show = trim.render.pretty
-instance {-# OVERLAPPING #-} Show Ident where
-	show = trim.render.pretty
-
 data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceDecision CExpr | TraceReturn (Maybe CExpr)
 	deriving Show
+instance Pretty TraceElem where
+	pretty (TraceAssign ident op expr) = text "TraceAssign" <+> pretty ident <+> pretty expr
+	pretty (TraceDecision expr) = text "TraceDecision" <+> pretty expr
+	pretty (TraceReturn mb_expr) = text "TraceReturn" <+> maybe empty pretty mb_expr
 
 {-
 infixl 6 >>> 
