@@ -113,7 +113,7 @@ tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m 
 		Just else_stmt -> tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) (else_stmt:rest)
 		Nothing -> return emptyTraces
 
-tracesStmtM traceelems (cret@(CReturn mb_ret_expr _) : _) = return [ TraceReturn mb_ret_expr : traceelems ]
+tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = return [ TraceReturn mb_ret_expr : traceelems ]
 
 tracesStmtM traceelems [] = return [traceelems]
 
