@@ -63,7 +63,7 @@ getFunStmtsM funident = do
 	FunDef (VarDecl (VarName ident _) declattrs (FunctionType (FunType ret_type paramdecls False) _)) stmt ni <- lookupFunM funident
 	return [stmt]
 
-genCovVectorsM :: Ident -> CovVecM [[TraceElem]]
+genCovVectorsM :: Ident -> CovVecM Traces
 genCovVectorsM funident = getFunStmtsM funident >>= tracesStmtM []
 
 data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceDecision CExpr | TraceReturn (Maybe CExpr)
@@ -73,24 +73,23 @@ instance Pretty TraceElem where
 	pretty (TraceDecision expr) = text "TraceDecision" <+> pretty expr
 	pretty (TraceReturn mb_expr) = text "TraceReturn" <+> maybe empty pretty mb_expr
 
+type Traces = [([TraceElem],())]
 {-
 infixl 6 >>> 
-(>>>) :: CovVecM [[TraceElem]] -> CovVecM [[TraceElem]] -> CovVecM [[TraceElem]]
+(>>>) :: CovVecM Traces -> CovVecM Traces -> CovVecM Traces
 earlier_m >>> later_m = do
 	earlier <- earlier_m
 	later <- later_m
 	return $ [ l++e | e <- earlier, l <- later ]
 -}
 infixl 5 |||
-(|||) :: CovVecM [[TraceElem]] -> CovVecM [[TraceElem]] -> CovVecM [[TraceElem]]
+(|||) :: CovVecM Traces -> CovVecM Traces -> CovVecM Traces
 alternative1_m ||| alternative2_m = do
 	alternative1 <- alternative1_m
 	alternative2 <- alternative2_m
 	return $ alternative1 ++ alternative2
 
-emptyTraces = [[]]
-
-tracesStmtM :: [TraceElem] -> [Stmt] -> CovVecM [[TraceElem]]
+tracesStmtM :: [TraceElem] -> [Stmt] -> CovVecM Traces
 
 tracesStmtM traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
 	tracesStmtM (TraceAssign ident assign_op assigned_expr : traceelems) rest
@@ -111,13 +110,15 @@ tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m 
 	then_m = tracesStmtM (TraceDecision cond_expr : traceelems) (then_stmt:rest)
 	else_m = case mb_else_stmt of
 		Just else_stmt -> tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) (else_stmt:rest)
-		Nothing -> return emptyTraces
+		Nothing -> return [([],())]
 
-tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = return [ TraceReturn mb_ret_expr : traceelems ]
+tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = return [ (TraceReturn mb_ret_expr : traceelems,()) ]
 
-tracesStmtM traceelems [] = return [traceelems]
+tracesStmtM traceelems [] = return [(TraceReturn Nothing : traceelems,())]
 
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
+
+--reverseExprM result 
 
 {-
 tracesExprM :: [TraceElem] -> Expr -> CovVecM [[TraceElem]]
