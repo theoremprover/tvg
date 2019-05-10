@@ -43,12 +43,10 @@ main = do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
 			res <- evalStateT (genCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
-			forM_ res $ \ l -> print (map (render.pretty) l)
+			forM_ res $ \ (l,s) -> print (map (render.pretty) l,s)
 
-{-
 data Constraint = Or [Constraint] | And [Constraint] | Expr :<= Expr | Ident := Expr
 	deriving Show
--}
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
@@ -73,7 +71,8 @@ instance Pretty TraceElem where
 	pretty (TraceDecision expr) = text "TraceDecision" <+> pretty expr
 	pretty (TraceReturn mb_expr) = text "TraceReturn" <+> maybe empty pretty mb_expr
 
-type Traces = [([TraceElem],())]
+type Traces = [[TraceElem]]
+
 {-
 infixl 6 >>> 
 (>>>) :: CovVecM Traces -> CovVecM Traces -> CovVecM Traces
@@ -112,11 +111,16 @@ tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m 
 		Just else_stmt -> tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) (else_stmt:rest)
 		Nothing -> return [([],())]
 
-tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = return [ (TraceReturn mb_ret_expr : traceelems,()) ]
-
-tracesStmtM traceelems [] = return [(TraceReturn Nothing : traceelems,())]
+tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = aggregateM [] (TraceReturn mb_ret_expr : traceelems)
+tracesStmtM traceelems []                          = aggregateM [] (TraceReturn Nothing     : traceelems)
 
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
+
+aggregateM :: [Constraint] -> Trace -> CovVecM [Constraint]
+aggregateM constraints [] = constraints
+aggregateM (TraceReturn _ : traceelems) = aggregateM traceelems
+aggregateM (TraceDecision cond_expr : traceelems) = aggregateM (cond_expr
+aggregateM (TraceAssign ident assignop assigned_expr : traceelems) =
 
 --reverseExprM result 
 
