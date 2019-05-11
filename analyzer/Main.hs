@@ -43,7 +43,10 @@ main = do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
 			res <- evalStateT (genCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
-			forM_ res $ \ (l,s) -> print (map (render.pretty) l,s)
+			forM_ res $ \ (cs,l) -> do
+				print $ map (render.pretty) cs
+				print $ map (render.pretty) l
+				print "------"
 
 type Constraint = CExpr
 {-
@@ -58,13 +61,15 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
 
+type AnalysisResult = [(Trace,[Constraint])]
+
 -- Returns the body of a function definition
 getFunStmtsM :: Ident -> CovVecM [Stmt]
 getFunStmtsM funident = do
 	FunDef (VarDecl (VarName ident _) declattrs (FunctionType (FunType ret_type paramdecls False) _)) stmt ni <- lookupFunM funident
 	return [stmt]
 
-genCovVectorsM :: Ident -> CovVecM Traces
+genCovVectorsM :: Ident -> CovVecM AnalysisResult
 genCovVectorsM funident = getFunStmtsM funident >>= tracesStmtM []
 
 data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceDecision CExpr | TraceReturn (Maybe CExpr)
@@ -74,24 +79,24 @@ instance Pretty TraceElem where
 	pretty (TraceDecision expr) = text "TraceDecision" <+> pretty expr
 	pretty (TraceReturn mb_expr) = text "TraceReturn" <+> maybe empty pretty mb_expr
 
-type Traces = [[TraceElem]]
+type Trace = [TraceElem]
 
 {-
 infixl 6 >>> 
-(>>>) :: CovVecM Traces -> CovVecM Traces -> CovVecM Traces
+(>>>) :: CovVecM [Trace] -> CovVecM [Trace] -> CovVecM Traces
 earlier_m >>> later_m = do
 	earlier <- earlier_m
 	later <- later_m
 	return $ [ l++e | e <- earlier, l <- later ]
 -}
 infixl 5 |||
-(|||) :: CovVecM Traces -> CovVecM Traces -> CovVecM Traces
+(|||) :: CovVecM [a] -> CovVecM [a] -> CovVecM [a]
 alternative1_m ||| alternative2_m = do
 	alternative1 <- alternative1_m
 	alternative2 <- alternative2_m
 	return $ alternative1 ++ alternative2
 
-tracesStmtM :: [TraceElem] -> [Stmt] -> CovVecM Traces
+tracesStmtM :: Trace -> [Stmt] -> CovVecM AnalysisResult
 
 tracesStmtM traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
 	tracesStmtM (TraceAssign ident assign_op assigned_expr : traceelems) rest
@@ -110,22 +115,33 @@ tracesStmtM traceelems (CCompound _ cbis _ : rest) = tracesStmtM traceelems (con
 tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m ||| else_m
 	where
 	then_m = tracesStmtM (TraceDecision cond_expr : traceelems) (then_stmt:rest)
-	else_m = case mb_else_stmt of
-		Just else_stmt -> tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) (else_stmt:rest)
-		Nothing -> return [([],())]
+	else_m = tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) $ case mb_else_stmt of
+		Just else_stmt -> else_stmt:rest
+		Nothing -> rest
 
-tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = aggregateCovM [] (TraceReturn mb_ret_expr : traceelems)
-tracesStmtM traceelems []                          = aggregateCovM [] (TraceReturn Nothing     : traceelems)
+tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = do
+	constraints <- aggregateCovM [] (TraceReturn mb_ret_expr : traceelems)
+	return [(traceelems,constraints)]
+tracesStmtM traceelems [] = do
+	constraints <- aggregateCovM [] (TraceReturn Nothing : traceelems)
+	return [(traceelems,constraints)]
 
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
 aggregateCovM :: [Constraint] -> Trace -> CovVecM [Constraint]
 aggregateCovM constraints [] = return constraints
 aggregateCovM constraints (TraceReturn _ : traceelems) = aggregateCovM constraints traceelems
-aggregateCovM constraints (TraceDecision cond_expr : traceelems) = aggregateCovM (cond_expr:constraints)
-aggregateCovM constraints (TraceAssign ident assignop assigned_expr : traceelems) =
-	aggregateCovM (map update_constraint constraints) traceelems where
-	update_constraint (CEXPRS)
+aggregateCovM constraints (TraceDecision cond_expr : traceelems) = aggregateCovM (cond_expr:constraints) traceelems
+aggregateCovM constraints (TraceAssign ident CAssignOp assigned_expr : traceelems) =
+	aggregateCovM (map (substituteInExpr ident assigned_expr) constraints) traceelems
+
+substituteInExpr ident subexpr (CConst c) = CConst c
+substituteInExpr ident subexpr (CUnary unaryop expr ni) = CUnary unaryop (substituteInExpr ident subexpr expr) ni
+substituteInExpr ident subexpr (CBinary binop expr1 expr2 ni) = CBinary binop (substituteInExpr ident subexpr expr1) (substituteInExpr ident subexpr expr2) ni
+substituteInExpr ident subexpr (CCall fun args ni) = CCall (substituteInExpr ident subexpr fun) (map (substituteInExpr ident subexpr) args) ni
+substituteInExpr ident subexpr (CVar vident ni) | ident==vident = subexpr
+substituteInExpr _ _ (CVar vident ni) = CVar vident ni
+
 
 {-
 tracesExprM :: [TraceElem] -> Expr -> CovVecM [[TraceElem]]

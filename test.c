@@ -5,10 +5,10 @@ int g(int x)
 	if(x>5)
 		return(2*x);
 
-		else
-		{
-			x = x + 1;
-		}
+	else
+	{
+		x = x + 1;
+	}
 
 	return(x+10);
 }
@@ -25,7 +25,10 @@ int f(int x)
 	}
 	else
 	{
-		y = y+2;
+		if(z>5)
+		{
+			y = g(x+2);
+		}
 	}
 
 	return(y+1);
@@ -34,8 +37,6 @@ int f(int x)
 int main()
 {
 	int x;
-	// [ x>5, x <- [-9,..,4], FALSE, x<=-9 ]
-	// This should give full line coverage of f:
 	x= 6; printf("f(%li)=%li\n",x,f(x));
 	x=-2; printf("f(%li)=%li\n",x,f(x));
 	x=-9; printf("f(%li)=%li\n",x,f(x));
