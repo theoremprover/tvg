@@ -45,8 +45,11 @@ main = do
 			res <- evalStateT (genCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
 			forM_ res $ \ (l,s) -> print (map (render.pretty) l,s)
 
+type Constraint = CExpr
+{-
 data Constraint = Or [Constraint] | And [Constraint] | Expr :<= Expr | Ident := Expr
 	deriving Show
+-}
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
@@ -111,16 +114,18 @@ tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m 
 		Just else_stmt -> tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) (else_stmt:rest)
 		Nothing -> return [([],())]
 
-tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = aggregateM [] (TraceReturn mb_ret_expr : traceelems)
-tracesStmtM traceelems []                          = aggregateM [] (TraceReturn Nothing     : traceelems)
+tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = aggregateCovM [] (TraceReturn mb_ret_expr : traceelems)
+tracesStmtM traceelems []                          = aggregateCovM [] (TraceReturn Nothing     : traceelems)
 
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
-aggregateM :: [Constraint] -> Trace -> CovVecM [Constraint]
-aggregateM constraints [] = constraints
-aggregateM (TraceReturn _ : traceelems) = aggregateM traceelems
-aggregateM (TraceDecision cond_expr : traceelems) = aggregateM (cond_expr
-aggregateM (TraceAssign ident assignop assigned_expr : traceelems) =
+aggregateCovM :: [Constraint] -> Trace -> CovVecM [Constraint]
+aggregateCovM constraints [] = return constraints
+aggregateCovM constraints (TraceReturn _ : traceelems) = aggregateCovM constraints traceelems
+aggregateCovM constraints (TraceDecision cond_expr : traceelems) = aggregateCovM (cond_expr:constraints)
+aggregateCovM constraints (TraceAssign ident assignop assigned_expr : traceelems) =
+	aggregateCovM (map update_constraint constraints) traceelems where
+	update_constraint (CEXPRS)
 
 --reverseExprM result 
 
