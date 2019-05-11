@@ -127,8 +127,6 @@ aggregateCovM constraints (TraceAssign ident assignop assigned_expr : traceelems
 	aggregateCovM (map update_constraint constraints) traceelems where
 	update_constraint (CEXPRS)
 
---reverseExprM result 
-
 {-
 tracesExprM :: [TraceElem] -> Expr -> CovVecM [[TraceElem]]
 
