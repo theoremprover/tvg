@@ -75,9 +75,9 @@ genCovVectorsM funident = getFunStmtsM funident >>= tracesStmtM []
 data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceDecision CExpr | TraceReturn (Maybe CExpr)
 	deriving Show
 instance Pretty TraceElem where
-	pretty (TraceAssign ident op expr) = text "TraceAssign" <+> pretty ident <+> pretty expr
-	pretty (TraceDecision expr) = text "TraceDecision" <+> pretty expr
-	pretty (TraceReturn mb_expr) = text "TraceReturn" <+> maybe empty pretty mb_expr
+	pretty (TraceAssign ident op expr) = pretty ident <+> text ":=" <+> pretty expr
+	pretty (TraceDecision expr) = pretty expr
+	pretty (TraceReturn mb_expr) = text "return" <+> maybe empty pretty mb_expr
 
 type Trace = [TraceElem]
 
@@ -120,11 +120,13 @@ tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m 
 		Nothing -> rest
 
 tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = do
-	constraints <- aggregateCovM [] (TraceReturn mb_ret_expr : traceelems)
-	return [(traceelems,constraints)]
+	let traceelems' = TraceReturn mb_ret_expr : traceelems
+	constraints <- aggregateCovM [] traceelems'
+	return [(traceelems',constraints)]
 tracesStmtM traceelems [] = do
-	constraints <- aggregateCovM [] (TraceReturn Nothing : traceelems)
-	return [(traceelems,constraints)]
+	let traceelems'= TraceReturn Nothing : traceelems
+	constraints <- aggregateCovM [] traceelems'
+	return [(traceelems',constraints)]
 
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
@@ -142,6 +144,8 @@ substituteInExpr ident subexpr (CCall fun args ni) = CCall (substituteInExpr ide
 substituteInExpr ident subexpr (CVar vident ni) | ident==vident = subexpr
 substituteInExpr _ _ (CVar vident ni) = CVar vident ni
 
+searchFunCall _ (CConst _) = []
+searchFunCall path (CUnary unaryop expr _) = 
 
 {-
 tracesExprM :: [TraceElem] -> Expr -> CovVecM [[TraceElem]]
