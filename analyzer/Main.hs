@@ -131,11 +131,11 @@ tracesStmtM traceelems [] = do
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
 aggregateCovM :: [Constraint] -> Trace -> CovVecM [Constraint]
-aggregateCovM constraints [] = return constraints
 aggregateCovM constraints (TraceReturn _ : traceelems) = aggregateCovM constraints traceelems
 aggregateCovM constraints (TraceDecision cond_expr : traceelems) = aggregateCovM (cond_expr:constraints) traceelems
 aggregateCovM constraints (TraceAssign ident CAssignOp assigned_expr : traceelems) =
 	aggregateCovM (map (substituteInExpr ident assigned_expr) constraints) traceelems
+aggregateCovM constraints [] = return $ map (searchFunCall id) constraints
 
 substituteInExpr ident subexpr (CConst c) = CConst c
 substituteInExpr ident subexpr (CUnary unaryop expr ni) = CUnary unaryop (substituteInExpr ident subexpr expr) ni
@@ -144,8 +144,16 @@ substituteInExpr ident subexpr (CCall fun args ni) = CCall (substituteInExpr ide
 substituteInExpr ident subexpr (CVar vident ni) | ident==vident = subexpr
 substituteInExpr _ _ (CVar vident ni) = CVar vident ni
 
+-- !(2 * g(x) > 5)
+-- 
+-- 2*g(x)
 searchFunCall _ (CConst _) = []
-searchFunCall path (CUnary unaryop expr _) = 
+searchFunCall _ (CVar _ _) = []
+searchFunCall f (CCall fun args ni) = []
+searchFunCall f (CUnary CNegOp expr ni) = searchFunCall ((\ x -> CUnary CNegOp x undefNode) . f) expr
+searchFunCall f (CBinary CMulOp expr1 expr2 ni) =
+	searchFunCall (f . (\ x -> CBinary CDivOp x expr2)) expr1 ++
+	searchFunCall (f . (\ x -> CBinary CDivOp x expr1)) expr2
 
 {-
 tracesExprM :: [TraceElem] -> Expr -> CovVecM [[TraceElem]]
