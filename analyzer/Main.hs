@@ -147,6 +147,8 @@ substituteInExpr _ _ (CVar vident ni) = CVar vident ni
 -- !(2 * g(x) > 5)
 -- 
 -- 2*g(x)
+searchFunCall f i = i
+{-
 searchFunCall _ (CConst _) = []
 searchFunCall _ (CVar _ _) = []
 searchFunCall f (CCall fun args ni) = []
@@ -154,6 +156,7 @@ searchFunCall f (CUnary CNegOp expr ni) = searchFunCall ((\ x -> CUnary CNegOp x
 searchFunCall f (CBinary CMulOp expr1 expr2 ni) =
 	searchFunCall (f . (\ x -> CBinary CDivOp x expr2)) expr1 ++
 	searchFunCall (f . (\ x -> CBinary CDivOp x expr1)) expr2
+-}
 
 {-
 tracesExprM :: [TraceElem] -> Expr -> CovVecM [[TraceElem]]
