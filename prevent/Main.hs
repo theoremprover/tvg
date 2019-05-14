@@ -10,8 +10,16 @@ import Control.Monad.IO.Class
 import Language.C
 import Language.C.Data.Ident
 import Language.C.System.GCC
+import Language.C.Analysis.AstAnalysis
+import Language.C.Analysis.TravMonad
+import Language.C.Analysis.SemRep
 import Data.Generics
 import Control.Monad.Trans.State.Strict
+
+import System.FilePath
+import Text.Printf
+import qualified Data.Map.Strict as Map
+import Text.PrettyPrint
 
 gccExe = "/usr/bin/gcc"
 
@@ -28,22 +36,17 @@ handleSrcFile preprocess_args name = do
 	case mb_ast of
 		Left err -> error $ show err
 		Right ctranslunit -> do
-			calls <- execStateT (everywhereM (mkM (searchFunDefs name)) ctranslunit) []
-			forM_ calls print
-			return calls
+			rets <- execStateT (everywhereM (mkM search) ctranslunit) []
+			forM_ rets print
+			return rets
 
-data CallsInFun = CallsInFun String String [String] deriving Show
+search :: CDeclaration NodeInfo -> StateT [NodeInfo] IO (CDeclaration NodeInfo)
+search cdecl@(CDecl declspecs triples ni) = do
+	forM_ triples $ \ (Just (CDeclr (Just ident) deriveddecls _ attrs ni),_,_) -> do
+		forM_ deriveddecls $ \ (CArrDeclr _ (CArrSize isstatic arrsizeexpr) _) -> do
+			case arrsizeexpr of
+				CConst _ -> return ()
+				_ -> modify (ni:)
+	return cdecl
+		
 
-searchFunDefs :: String -> CFunDef -> StateT [CallsInFun] IO CFunDef
-searchFunDefs sourcefilename cfundef@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ stmt ni) = do
-	calledfunnames <- execStateT (everywhereM (mkM searchFunCalls) stmt) []
-	modify (CallsInFun sourcefilename funname (nub calledfunnames) : )
-	return cfundef
-
-searchFunCalls :: (MonadIO m) => CExpr -> StateT [String] m CExpr
-searchFunCalls ccall@(CCall funname_expr _ ni) = case funname_expr of
-	CVar (Ident name _ _) _ -> do
-		modify (name : )
-		return ccall
-	fne -> error $ "searchFunCallsM: Strange funname_expr " ++ show fne
-searchFunCalls cexpr = return cexpr
