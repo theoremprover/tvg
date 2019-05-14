@@ -146,7 +146,8 @@ substituteInExpr _ _ (CVar vident ni) = CVar vident ni
 
 -- !(2 * g(x) > 5)
 -- 
--- 2*g(x)
+-- 2*g(x) > 5
+-- g(x)
 searchFunCall _ (CConst _) = []
 searchFunCall _ (CVar _ _) = []
 searchFunCall f (CCall fun args ni) = []
