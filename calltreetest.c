@@ -1,13 +1,9 @@
 #include <stdio.h>
+#include "calltreetest2.h"
 
 int g(int x)
 {
 	return x+1;
-}
-
-int h(int x)
-{
-	return x-1;
 }
 
 int f(int i)
@@ -22,5 +18,6 @@ int main(void)
 	{
 		{ a[0] = f(1); }
 	}
+	printf("OK!\n");
 	return f(h(1));
 }
