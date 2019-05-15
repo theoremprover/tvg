@@ -21,8 +21,10 @@ import Text.Printf
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
 
-import DataTree
+import Control.Lens
 import CLenses
+
+import DataTree
 
 {--
 stack build :analyzer-exe
@@ -46,24 +48,9 @@ handleSrcFile preprocess_args srcfilename = do
 		Left err -> error $ show err
 		Right ctranslunit -> do
 			writeFile (srcfilename++".ast.html") $ genericToHTMLString ctranslunit
-			rets <- execStateT (everywhereM (mkM (search srcfilename)) ctranslunit) []
+			let rets search ctranslunit
 			forM_ rets print
 			return rets
 
-search :: String -> CDeclaration NodeInfo -> StateT [(NodeInfo,String)] IO (CDeclaration NodeInfo)
-search srcfilename cdecl@(CDecl declspecs triples ni) = do
-	forM_ triples $ \case
-		(Just (CDeclr (Just ident) deriveddecls _ attrs _),_,_) -> do
-			forM_ deriveddecls $ \case
-				(CArrDeclr _ (CArrSize _ arrsizeexpr) _) -> do
-					case arrsizeexpr of
-						CConst _ -> return ()
-						_ | fileOfNode ni == Just srcfilename -> do
-							modify ((ni,(render.pretty) cdecl):)
-						_ -> return ()
-				_ -> return ()
-		_ -> return ()
-	return cdecl
-	where
-	isconst (CTypeQual (CConstQual _)) = True
-	isconst _ = False
+search :: CTranslationUnit NodeInfo -> [String]
+search ctranslunit = map (render.pretty) $ toListOf $ ctranslunit
