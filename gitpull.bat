@@ -9,7 +9,7 @@ del tmpFile
 
 git pull --no-edit origin master
 if errorlevel 1 goto :err
-echo "OK"
+echo OK
 exit /B 0
 
 :err
