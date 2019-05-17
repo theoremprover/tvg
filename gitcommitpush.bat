@@ -1,3 +1,5 @@
+@echo off
+
 SET WORKDIR=%~dp0
 cd %WORKDIR%
 
