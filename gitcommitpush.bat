@@ -13,8 +13,9 @@ git pull origin master
 if errorlevel 1 goto :err
 git push origin master
 if errorlevel 1 goto :err
+echo "OK"
 exit /B 0
 
 :err
 pause
-exit /B
+exit /B 1
