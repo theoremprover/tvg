@@ -2,7 +2,7 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 {-
-stack build :calltree-exe && stack exec calltree-exe -- calltreetest.c calltreetest2.c calltree.h
+stack build :calltree-exe && stack exec calltree-exe -- "main" calltreetest.c calltreetest2.c calltree.h
 -}
 
 module Main where
@@ -29,6 +29,7 @@ main = do
 maini (rootfunname:args) = do
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
 	callss <- forM (filter (".c" `isSuffixOf`) args) (handleSrcFile preprocess_args)
+	forM_ (concat callss) print
 	let (callgraph,vertex2node,key2vertex) = graphFromEdges $ map (\(funname,mb_defsrcfile,calledfunnames) -> ((funname,mb_defsrcfile),funname,calledfunnames)) (concat callss)
 	forM_ (reachable callgraph $ fromJust (key2vertex rootfunname)) $ \ vertex -> do
 		let
