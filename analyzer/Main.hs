@@ -30,7 +30,7 @@ gccExe = "gcc-4.7"
 data CovVecState = CovVecState {
 	allDefs :: Map.Map Ident IdentDecl
 	}
-	
+
 type CovVecM a = StateT CovVecState IO a
 
 main = do
@@ -146,8 +146,6 @@ substituteInExpr _ _ (CVar vident ni) = CVar vident ni
 
 -- !(2 * g(x) > 5)
 -- 
--- 2*g(x)
-searchFunCall f i = i
 {-
 searchFunCall _ (CConst _) = []
 searchFunCall _ (CVar _ _) = []
