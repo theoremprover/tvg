@@ -36,7 +36,7 @@ maini (gccexe:rootfunname:args) = do
 --	forM_ (concat callss) print
 	let (callgraph,vertex2node,key2vertex) = graphFromEdges $ map (\(funname,mb_defsrcfile,calledfunnames) -> ((funname,mb_defsrcfile),funname,calledfunnames)) (concat callss)
 
-	writeFile "graph.dot" $ unlines $ map (drawedge vertex2node) (edges callgraph)
+	writeFile "graph.dot" $ unlines $ nub $ map (drawedge vertex2node) (edges callgraph)
 
 	forM_ (reachable callgraph $ fromJust (key2vertex rootfunname)) $ \ vertex -> do
 		let
@@ -62,7 +62,7 @@ maini (gccexe:rootfunname:args) = do
 	drawedge vertex2node (callerv,calledv) = let
 		((callername,_),_,_) = vertex2node callerv
 		((calledname,_),_,_) = vertex2node calledv in
-		callername ++ " ->" ++ calledname ++ ";"
+		callername ++ " -> " ++ calledname ++ ";"
 
 printCSV ls = unlines $ map (concat . (intersperse ";")) ls
 
