@@ -135,7 +135,7 @@ aggregateCovM constraints (TraceReturn _ : traceelems) = aggregateCovM constrain
 aggregateCovM constraints (TraceDecision cond_expr : traceelems) = aggregateCovM (cond_expr:constraints) traceelems
 aggregateCovM constraints (TraceAssign ident CAssignOp assigned_expr : traceelems) =
 	aggregateCovM (map (substituteInExpr ident assigned_expr) constraints) traceelems
-aggregateCovM constraints [] = return $ map (searchFunCall id) constraints
+--aggregateCovM constraints [] = return $ map (searchFunCall id) constraints
 
 substituteInExpr ident subexpr (CConst c) = CConst c
 substituteInExpr ident subexpr (CUnary unaryop expr ni) = CUnary unaryop (substituteInExpr ident subexpr expr) ni

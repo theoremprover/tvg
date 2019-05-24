@@ -8,6 +8,7 @@ stack build :calltree-exe && stack exec calltree-exe -- "main" calltreetest.c ca
 module Main where
 
 import System.Environment
+import System.Directory
 import Data.List
 import Control.Monad
 import Control.Monad.IO.Class
@@ -20,15 +21,17 @@ import Data.Graph
 import System.FilePath
 import Data.Maybe
 
-gccExe = "gcc"
+gccExe = "C:\\Program Files\\LLVM\\bin\\clang.exe"
 
 main = do
 	args <- getArgs
 	maini args
 
 maini (rootfunname:args) = do
-	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
-	callss <- forM (filter (".c" `isSuffixOf`) args) (handleSrcFile preprocess_args)
+	let (preprocess_args,other_args) = partition (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
+	pot_filess <- forM other_args getsrcfiles
+	print pot_filess
+	callss <- forM (concat pot_filess) (handleSrcFile preprocess_args)
 	forM_ (concat callss) print
 	let (callgraph,vertex2node,key2vertex) = graphFromEdges $ map (\(funname,mb_defsrcfile,calledfunnames) -> ((funname,mb_defsrcfile),funname,calledfunnames)) (concat callss)
 	forM_ (reachable callgraph $ fromJust (key2vertex rootfunname)) $ \ vertex -> do
@@ -39,14 +42,32 @@ maini (rootfunname:args) = do
 			[ [f, maybe "<NOWHERE>" id mb_srcfile, concat $ intersperse ","
 				[ caller | (callerv,calledv) <- edges callgraph, Just calledv == key2vertex fk, let ((caller,_),_,_) = vertex2node callerv ] ] | ((f,mb_srcfile),fk) <- calledfuns ]
 
+	where
+	getsrcfiles :: String -> IO [String]
+	getsrcfiles name = do
+		isdir <- doesDirectoryExist name
+		case isdir of
+			False -> case any (`isSuffixOf` name) [".c",".h"] of
+				True -> putStrLn ("got srcfile " ++ name) >> return [name]
+				False -> return []
+			True -> do
+				names <- getDirectoryContents name
+				filess <- mapM getsrcfiles names
+				return $ concat filess
+
 printCSV ls = unlines $ map (concat . (intersperse ";")) ls
 
 -- Returns a list of (funname,srcfile,[calledfunname1,...])
 handleSrcFile preprocess_args srcfilename = do
+	putStrLn $ "handling SrcFile " ++ srcfilename
 	mb_ast <- parseCFile (newGCC gccExe) Nothing preprocess_args srcfilename
 	case mb_ast of
 		Left err -> error $ show err
-		Right ctranslunit -> execStateT (everywhereM (mkM searchFunDefs) ctranslunit) []
+		Right ctranslunit -> do
+			putStrLn $ "Parsed " ++ srcfilename
+			s <- execStateT (everywhereM (mkM searchFunDefs) ctranslunit) []
+			print s
+			return s
 			
 -- For all function definitons in the current source file:
 searchFunDefs :: CFunDef -> StateT [(String,Maybe FilePath,[String])] IO CFunDef

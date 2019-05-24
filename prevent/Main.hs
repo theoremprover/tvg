@@ -48,9 +48,9 @@ handleSrcFile preprocess_args srcfilename = do
 		Left err -> error $ show err
 		Right ctranslunit -> do
 			writeFile (srcfilename++".ast.html") $ genericToHTMLString ctranslunit
-			let rets search ctranslunit
-			forM_ rets print
-			return rets
+--			let rets search ctranslunit
+--			forM_ rets print
+--			return rets
 
-search :: CTranslationUnit NodeInfo -> [String]
-search ctranslunit = map (render.pretty) $ toListOf $ ctranslunit
+--search :: CTranslationUnit NodeInfo -> [String]
+--search ctranslunit = map (render.pretty) $ toListOf $ ctranslunit
