@@ -60,21 +60,10 @@ deriving instance Generic BuiltinType
 deriving instance Generic FloatType
 deriving instance Generic CompTypeRef
 deriving instance Generic CompType
-deriving instance Generic CopyTyKind
+deriving instance Generic CompTyKind
 deriving instance Generic EnumTypeRef
 deriving instance Generic EnumType
 deriving instance Generic TypeQuals
-deriving instance Generic Stmt
-deriving instance Generic Expr
-deriving instance Generic Initializer
-deriving instance Generic AsmBlock
-
-{-
-data GlobalDecls deriving Generic
-data Map deriving Generic
-data Ident deriving Generic
-data IdentDecl deriving Generic
--}
 
 handleSrcFile preprocess_args srcfilename = do
 	mb_ast <- parseCFile gcc Nothing preprocess_args srcfilename

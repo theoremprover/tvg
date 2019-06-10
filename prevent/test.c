@@ -1,5 +1,3 @@
-#include <stdio.h>
-
 const int a = 10;
 int b = 9;
 int c;
@@ -15,5 +13,5 @@ int main()
 	const int f = 7;
 	char fs[f];
 
-	printf("OK\n");
+	return e+f;
 }
