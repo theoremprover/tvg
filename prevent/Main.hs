@@ -34,7 +34,6 @@ maini args = do
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
 	forM (filter (".c" `isSuffixOf`) args) (handleSrcFile preprocess_args)
 
---deriving instance Generic GlobalDecls
 deriving instance Generic IdentDecl
 deriving instance Generic Decl
 deriving instance Generic ObjDef
@@ -50,7 +49,25 @@ deriving instance Generic Attr
 deriving instance Generic Type
 deriving instance Generic TypeName
 deriving instance Generic IntType
-
+deriving instance Generic TagDef
+deriving instance Generic ParamDecl
+deriving instance Generic MemberDecl
+deriving instance Generic TypeDef
+deriving instance Generic FunType
+deriving instance Generic ArraySize
+deriving instance Generic TypeDefRef
+deriving instance Generic BuiltinType
+deriving instance Generic FloatType
+deriving instance Generic CompTypeRef
+deriving instance Generic CompType
+deriving instance Generic CopyTyKind
+deriving instance Generic EnumTypeRef
+deriving instance Generic EnumType
+deriving instance Generic TypeQuals
+deriving instance Generic Stmt
+deriving instance Generic Expr
+deriving instance Generic Initializer
+deriving instance Generic AsmBlock
 
 {-
 data GlobalDecls deriving Generic
