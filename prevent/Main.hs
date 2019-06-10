@@ -1,6 +1,12 @@
 {-# LANGUAGE RecordWildCards,LambdaCase,OverloadedStrings,DeriveGeneric,StandaloneDeriving #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
+{--
+stack build :prevent-exe
+stack exec prevent-exe -- test.c
+stack build :prevent-exe && stack exec prevent-exe -- prevent/test.c
+--}
+
 module Main where
 
 import System.Environment
@@ -18,17 +24,9 @@ import qualified Data.Map.Strict as Map
 
 import DataTree
 
-{--
-stack build :prevent-exe
-stack exec prevent-exe -- test.c
-stack build :prevent-exe && stack exec prevent-exe -- prevent/test.c
---}
-
 gcc = newGCC "gcc"
 
-main = do
-	args <- getArgs
-	maini args
+main = getArgs >>= maini
 
 maini args = do
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
@@ -70,6 +68,5 @@ handleSrcFile preprocess_args srcfilename = do
 	case mb_ast of
 		Left err -> error $ show err
 		Right ctranslunit -> do
---			writeFile (srcfilename++".ast.html") $ genericToHTMLString ctranslunit
 			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST ctranslunit
 			writeFile (srcfilename <.> "ast" <.> "html") $ genericToHTMLString (Map.toList globobjs)
