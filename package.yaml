@@ -32,7 +32,6 @@ dependencies:
 - html
 - binary
 - containers
-- lens
 
 library:
   source-dirs: src
