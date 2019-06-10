@@ -1,17 +1,41 @@
-const int a = 10;
-int b = 9;
-int c;
+int g(int x)
+{
+	if(x>5)
+		return(2*x);
+
+	else
+	{
+		x = x + 1;
+	}
+
+	return(x+10);
+}
+
+int f(int x)
+{
+	int z = 2*g(x);
+
+	int y = 3*z;
+
+	if(y>10)
+	{
+		return(g(y));
+	}
+	else
+	{
+		if(z>5)
+		{
+			y = g(x+2);
+		}
+	}
+
+	return(y+1);
+}
 
 int main()
 {
-	char as[a];
-	char bs[b];
-	char cs[c];
-	int ds[10];
-	int e = 8;
-	char es[e];
-	const int f = 7;
-	char fs[f];
-
-	return e+f;
+	int x;
+	x= 6;
+	x=-2;
+	x=-9;
 }
