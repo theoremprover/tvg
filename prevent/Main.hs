@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards,LambdaCase,OverloadedStrings,StandaloneDeriving,ExplicitForAll #-}
+{-# LANGUAGE RecordWildCards,LambdaCase,OverloadedStrings,StandaloneDeriving,ExplicitForAll,DeriveGeneric #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 {--
@@ -21,13 +21,15 @@ import Language.C.Analysis.AstAnalysis
 import Language.C.Analysis.TravMonad
 import Language.C.Analysis.SemRep
 import Language.C.Data.Ident
---import GHC.Generics
+import Language.C.Data.Position
+import qualified GHC.Generics as GHCG
 import System.FilePath
 import qualified Data.Map.Strict as Map
 import Data.Data
 import Data.Generics
 import Language.C.Pretty
 import Text.PrettyPrint
+import Text.Printf
 
 import DataTree
 
@@ -39,73 +41,36 @@ maini args = do
 	let preprocess_args = filter (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
 	forM (filter (".c" `isSuffixOf`) args) (handleSrcFile preprocess_args)
 
-{-
-deriving instance Generic IdentDecl
-deriving instance Generic Decl
-deriving instance Generic ObjDef
-deriving instance Generic FunDef
-deriving instance Generic Enumerator
-deriving instance Generic VarDecl
-deriving instance Generic VarName
-deriving instance Generic DeclAttrs
-deriving instance Generic FunctionAttrs
-deriving instance Generic Storage
-deriving instance Generic Linkage
-deriving instance Generic Attr
-deriving instance Generic Type
-deriving instance Generic TypeName
-deriving instance Generic IntType
-deriving instance Generic TagDef
-deriving instance Generic ParamDecl
-deriving instance Generic MemberDecl
-deriving instance Generic TypeDef
-deriving instance Generic FunType
-deriving instance Generic ArraySize
-deriving instance Generic TypeDefRef
-deriving instance Generic BuiltinType
-deriving instance Generic FloatType
-deriving instance Generic CompTypeRef
-deriving instance Generic CompType
-deriving instance Generic CompTyKind
-deriving instance Generic EnumTypeRef
-deriving instance Generic EnumType
-deriving instance Generic TypeQuals
-
-data CTree =
-	CTranslUnit_CTranslUnit [CTree] NodeInfo |
-	CExternalDeclaration_CDeclExt CTree | 
-	CExternalDeclaration_CFDefExt CTree | 
-	CExternalDeclaration_CAsmExt CTree NodeInfo | 
-	CFunDef_CFunDef [CTree] CTree [CTree] CTree NodeInfo |
-	CDeclaration_CDecl [CTree] [(Maybe CTree,Maybe CTree,Maybe CTree)] NodeInfo |
-	CStructTag_T
-	CStructureUnion_T
-	CEnumeration_T
-	CFunctionSpecifier_T
-	CDeclarationSpecifier_T
-	CStorageSpecifier_T
-	CTypeSpecifier_T
-	CAlignmentSpecifier_T
-	CTypeQualifier_T
-	CAttribute_T
-	CDeclarator_T
-	CDerivedDeclarator_T
-	CArraySize_T
-	CInitializer_T
-	CPartDesignator_T
-	CStatement_T
-	CCompoundBlockItem_T
-	CAssemblyStatement_T
-	CAssemblyOperand_T
-	CExpression_T
-	CAssignOp_T
-	CBinaryOp_T
-	CUnaryOp_T
-	CBuiltinThing_T
-	CConstant_T
-	CStringLiteral
-	deriving (Typeable,Data)
--}
+deriving instance GHCG.Generic IdentDecl
+deriving instance GHCG.Generic Decl
+deriving instance GHCG.Generic ObjDef
+deriving instance GHCG.Generic FunDef
+deriving instance GHCG.Generic Enumerator
+deriving instance GHCG.Generic VarDecl
+deriving instance GHCG.Generic VarName
+deriving instance GHCG.Generic DeclAttrs
+deriving instance GHCG.Generic FunctionAttrs
+deriving instance GHCG.Generic Storage
+deriving instance GHCG.Generic Linkage
+deriving instance GHCG.Generic Attr
+deriving instance GHCG.Generic Type
+deriving instance GHCG.Generic TypeName
+deriving instance GHCG.Generic IntType
+deriving instance GHCG.Generic TagDef
+deriving instance GHCG.Generic ParamDecl
+deriving instance GHCG.Generic MemberDecl
+deriving instance GHCG.Generic TypeDef
+deriving instance GHCG.Generic FunType
+deriving instance GHCG.Generic ArraySize
+deriving instance GHCG.Generic TypeDefRef
+deriving instance GHCG.Generic BuiltinType
+deriving instance GHCG.Generic FloatType
+deriving instance GHCG.Generic CompTypeRef
+deriving instance GHCG.Generic CompType
+deriving instance GHCG.Generic CompTyKind
+deriving instance GHCG.Generic EnumTypeRef
+deriving instance GHCG.Generic EnumType
+deriving instance GHCG.Generic TypeQuals
 
 deriving instance Typeable IdentDecl
 deriving instance Typeable Decl
@@ -146,19 +111,11 @@ handleSrcFile preprocess_args srcfilename = do
 			let
 				Right (GlobalDecls gobjs_map _ _,[]) = runTrav_ $ analyseAST ctranslunit
 				globobjs = Map.elems gobjs_map
---			writeFile (srcfilename <.> "ast" <.> "html") $ genericToHTMLString globobjs
+			writeFile (srcfilename <.> "ast" <.> "html") $ genericToHTMLString globobjs
 
 			mapM_ print $ (isA funCall >>> toPretty) globobjs
 
 type CFilter a b = a -> [b]
-
-{-
-orElse :: (Data a) => CFilter a a -> CFilter a a -> CFilter a a
-orElse f g = \ t -> if null (f t) then g t else f t
-
-deep :: (Data a) => CFilter a a -> CFilter a a
-deep f = f `orElse` (getChildren >>> deep f)
--}
 
 (>>>) :: (Typeable a,Typeable b,Typeable c) => CFilter a b -> CFilter b c -> CFilter a c
 f >>> g = \ t -> concat [ g t' | t' <- f t ]
@@ -166,16 +123,10 @@ f >>> g = \ t -> concat [ g t' | t' <- f t ]
 isA :: (Typeable a,Data a,Typeable b,Data b) => (b -> [b]) -> CFilter a b
 isA filt = \ t -> everything (++) (mkQ [] filt) t
 
-{-
-isA :: (Data a) => (a -> Bool) -> CFilter a a
-isA predicate x = case G.cast predicate of
-	Just x -> [x]
-	_ -> []
--}
 funCall :: CExpr -> [CExpr]
 funCall ccall@(CCall fun args _) = [ccall]
 funCall _ = []
 
-toPretty :: (Pretty a,Pos a) => CFilter a (String,String)
-toPretty a = [ ( printf "%s : line %i, col %i" (posFile pos) (posRow pos) (posCol pos) , render $ pretty a ) ] where
-	pos = posOf a
+toPretty :: (Pretty a,Pos a) => CFilter a String
+toPretty a = let p = posOf a in
+	[ printf "%s, line %i, col %i  :  %s" (posFile p) (posRow p) (posColumn p) (render $ pretty a ) ]
