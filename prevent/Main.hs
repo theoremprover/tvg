@@ -27,8 +27,8 @@ import System.FilePath
 import qualified Data.Map.Strict as Map
 import Data.Data
 import Data.Generics
-import Language.C.Pretty
-import Text.PrettyPrint
+import Language.C.Pretty (pretty)
+import Text.PrettyPrint (render)
 import Text.Printf
 
 import DataTree
@@ -113,20 +113,41 @@ handleSrcFile preprocess_args srcfilename = do
 				globobjs = Map.elems gobjs_map
 			writeFile (srcfilename <.> "ast" <.> "html") $ genericToHTMLString globobjs
 
-			mapM_ print $ (isA funCall >>> toPretty) globobjs
+			mapM_ print $ myFilter globobjs
 
 type CFilter a b = a -> [b]
 
 (>>>) :: (Typeable a,Typeable b,Typeable c) => CFilter a b -> CFilter b c -> CFilter a c
 f >>> g = \ t -> concat [ g t' | t' <- f t ]
 
-isA :: (Typeable a,Data a,Typeable b,Data b) => (b -> [b]) -> CFilter a b
+(<+>) :: (Typeable a,Typeable b) => CFilter a b -> CFilter a b -> CFilter a b
+f <+> g = \ t -> f t ++ g t
+
+isA :: (Typeable a,Data a,Typeable b,Data b) => CFilter b b -> CFilter a b
 isA filt = \ t -> everything (++) (mkQ [] filt) t
 
-funCall :: CExpr -> [CExpr]
+funCall :: CFilter CExpr CExpr
 funCall ccall@(CCall fun args _) = [ccall]
 funCall _ = []
+
+ternaryIf :: CFilter CExpr CExpr
+ternaryIf ccond@(CCond _ _ _ _) = [ccond]
+ternaryIf _ = []
+
+binaryOp :: CFilter CExpr CExpr
+binaryOp cbinary@(CBinary _ _ _ _) = [cbinary]
+binaryOp _ = []
+
+postfixOp :: CFilter CExpr CExpr
+postfixOp cunary@(CUnary unaryop _ _) = if unaryop `elem` [CPostIncOp,CPostDecOp] then [cunary] else []
+postfixOp _ = []
 
 toPretty :: (Pretty a,Pos a) => CFilter a String
 toPretty a = let p = posOf a in
 	[ printf "%s, line %i, col %i  :  %s" (posFile p) (posRow p) (posColumn p) (render $ pretty a ) ]
+
+-------------------
+
+complexExpr = ternaryIf <+> binaryOp
+
+myFilter = isA complexExpr >>> isA postfixOp >>> toPretty
