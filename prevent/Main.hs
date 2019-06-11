@@ -26,6 +26,8 @@ import System.FilePath
 import qualified Data.Map.Strict as Map
 import Data.Data
 import Data.Generics
+import Language.C.Pretty
+import Text.PrettyPrint
 
 import DataTree
 
@@ -146,7 +148,7 @@ handleSrcFile preprocess_args srcfilename = do
 				globobjs = Map.elems gobjs_map
 --			writeFile (srcfilename <.> "ast" <.> "html") $ genericToHTMLString globobjs
 
-			mapM_ print $ (getFunCalls >>> getFunName) globobjs
+			mapM_ print $ (isA funCall >>> toPretty) globobjs
 
 type CFilter a b = a -> [b]
 
@@ -161,8 +163,8 @@ deep f = f `orElse` (getChildren >>> deep f)
 (>>>) :: (Typeable a,Typeable b,Typeable c) => CFilter a b -> CFilter b c -> CFilter a c
 f >>> g = \ t -> concat [ g t' | t' <- f t ]
 
-getFunCalls :: (Typeable a,Data a) => CFilter a CExpr
-getFunCalls = \ t -> everything (++) (mkQ [] funCall) t
+isA :: (Typeable a,Data a,Typeable b,Data b) => (b -> [b]) -> CFilter a b
+isA filt = \ t -> everything (++) (mkQ [] filt) t
 
 {-
 isA :: (Data a) => (a -> Bool) -> CFilter a a
@@ -170,12 +172,10 @@ isA predicate x = case G.cast predicate of
 	Just x -> [x]
 	_ -> []
 -}
-funCall :: CFilter CExpr CExpr
+funCall :: CExpr -> [CExpr]
 funCall ccall@(CCall fun args _) = [ccall]
 funCall _ = []
 
-getFunName :: CFilter CExpr CExpr
-getFunName (CCall fun _ _) = [fun]
-getFunName _ = []
-
-
+toPretty :: (Pretty a,Pos a) => CFilter a (String,String)
+toPretty a = [ ( printf "%s : line %i, col %i" (posFile pos) (posRow pos) (posCol pos) , render $ pretty a ) ] where
+	pos = posOf a
