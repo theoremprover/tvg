@@ -96,6 +96,8 @@ alternative1_m ||| alternative2_m = do
 	alternative2 <- alternative2_m
 	return $ alternative1 ++ alternative2
 
+-- Goes through a list of statements, accumulating the Trace and returning the full trace and a list of gathered constraints.
+-- The Trace is returned in reverse order, with all definitions substituted (and thereby erased).
 tracesStmtM :: Trace -> [Stmt] -> CovVecM AnalysisResult
 
 tracesStmtM traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
@@ -130,7 +132,8 @@ tracesStmtM traceelems [] = do
 
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
--- Takes an (already computed) list of Constraints and 
+-- Takes an (already computed) list of Constraints and contracts it to one without definitions,
+-- so that a solver could solve it
 aggregateCovM :: [Constraint] -> Trace -> CovVecM [Constraint]
 aggregateCovM constraints (TraceReturn _ : traceelems) = aggregateCovM constraints traceelems
 aggregateCovM constraints (TraceDecision cond_expr : traceelems) = aggregateCovM (cond_expr:constraints) traceelems
@@ -144,6 +147,7 @@ substituteInExpr ident subexpr (CBinary binop expr1 expr2 ni) = CBinary binop (s
 substituteInExpr ident subexpr (CCall fun args ni) = CCall (substituteInExpr ident subexpr fun) (map (substituteInExpr ident subexpr) args) ni
 substituteInExpr ident subexpr (CVar vident ni) | ident==vident = subexpr
 substituteInExpr _ _ (CVar vident ni) = CVar vident ni
+substituteInExpr _ _ expr = error $ "substituteInExpr for " ++  show expr ++ " not implemented"
 
 -- !(2 * g(x) > 5)
 -- 
