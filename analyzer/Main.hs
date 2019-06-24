@@ -25,7 +25,7 @@ stack exec analyzer-exe -- test.c
 stack build :analyzer-exe && stack exec analyzer-exe
 --}
 
-gccExe = "gcc-4.7"
+gcc = newGCC "gcc"
 
 data CovVecState = CovVecState {
 	allDefs :: Map.Map Ident IdentDecl
@@ -36,7 +36,7 @@ type CovVecM a = StateT CovVecState IO a
 main = do
 	filename:funname:[] <- return ["test.c","f"] --getArgs
 
-	mb_ast <- parseCFile (newGCC gccExe) Nothing [] filename
+	mb_ast <- parseCFile gcc Nothing [] filename
 	case mb_ast of
 		Left err -> error $ show err
 		Right translunit@(CTranslUnit extdecls _) -> do
@@ -130,12 +130,13 @@ tracesStmtM traceelems [] = do
 
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
+-- Takes an (already computed) list of Constraints and 
 aggregateCovM :: [Constraint] -> Trace -> CovVecM [Constraint]
 aggregateCovM constraints (TraceReturn _ : traceelems) = aggregateCovM constraints traceelems
 aggregateCovM constraints (TraceDecision cond_expr : traceelems) = aggregateCovM (cond_expr:constraints) traceelems
 aggregateCovM constraints (TraceAssign ident CAssignOp assigned_expr : traceelems) =
 	aggregateCovM (map (substituteInExpr ident assigned_expr) constraints) traceelems
---aggregateCovM constraints [] = return $ map (searchFunCall id) constraints
+aggregateCovM constraints [] = return constraints --return $ map (searchFunCall id) constraints
 
 substituteInExpr ident subexpr (CConst c) = CConst c
 substituteInExpr ident subexpr (CUnary unaryop expr ni) = CUnary unaryop (substituteInExpr ident subexpr expr) ni
