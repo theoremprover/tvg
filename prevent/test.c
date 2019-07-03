@@ -34,6 +34,13 @@ int f(int x)
 
 int main()
 {
+    short q[4][3][2] = {  //Initilizers missing
+	{ 1 },
+	{ 2, 3 },
+	{ 4, 5, 6 } };
+
+	int r[3][2] = { { 1,2 }, { 3,4 }, { 5,6 } }; // Correct
+	
     int x;
     x= 6;
     x=-2;

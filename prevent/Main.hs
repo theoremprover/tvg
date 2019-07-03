@@ -146,8 +146,26 @@ toPretty :: (Pretty a,Pos a) => CFilter a String
 toPretty a = let p = posOf a in
 	[ printf "%s, line %i, col %i  :  %s" (posFile p) (posRow p) (posColumn p) (render $ pretty a ) ]
 
+toString :: (Show a) => CFilter a String
+toString a = [ show a ]
+
+cDecl :: CFilter CDecl CDecl
+cDecl cdecl@(CDecl _ _ _) = [cdecl]
+cDecl _ = []
+
+-- deriveddeclrs :: [ CArrDeclr [CTypeQualifier a] (CArraySize a) a ]
+-- initlist a :: [([CPartDesignator a], CInitializer a)] 
+notFullyInitializedArray :: CFilter CDecl String
+notFullyInitializedArray cdecl@(CDecl _ l nodeinfo) = map notfullyinitialized l where
+	notfullyinitialized (Just (CDeclr _ deriveddeclrs _ _ _),Just (CInitList initlist _),_) = match deriveddeclrs initlist
+	match [] [] = False
+	match () ()
+	match _ = True
+notFullyInitializedArray _ = []
+
 -------------------
 
 complexExpr = ternaryIf <+> binaryOp
 
-myFilter = isA complexExpr >>> isA postfixOp >>> toPretty
+--myFilter = isA complexExpr >>> isA postfixOp >>> toPretty
+myFilter = isA notFullyInitializedArray
