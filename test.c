@@ -27,7 +27,8 @@ int f(int x)
 	{
 		if(z>5)
 		{
-			y = g(x+2);
+			x = x + 2;
+			y = g(x);
 		}
 	}
 

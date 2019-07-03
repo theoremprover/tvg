@@ -25,7 +25,7 @@ stack exec analyzer-exe -- test.c
 stack build :analyzer-exe && stack exec analyzer-exe
 --}
 
-gccExe = "gcc-4.7"
+gcc = newGCC "gcc"
 
 data CovVecState = CovVecState {
 	allDefs :: Map.Map Ident IdentDecl
@@ -34,9 +34,12 @@ data CovVecState = CovVecState {
 type CovVecM a = StateT CovVecState IO a
 
 main = do
-	filename:funname:[] <- return ["test.c","f"] --getArgs
+	args <- getArgs
+	let (filename,funname) = case args of
+		[] -> ("test.c","f")
+		filename:funname:[] -> (filename,funname)
 
-	mb_ast <- parseCFile (newGCC gccExe) Nothing [] filename
+	mb_ast <- parseCFile gcc Nothing [] filename
 	case mb_ast of
 		Left err -> error $ show err
 		Right translunit@(CTranslUnit extdecls _) -> do
@@ -96,6 +99,8 @@ alternative1_m ||| alternative2_m = do
 	alternative2 <- alternative2_m
 	return $ alternative1 ++ alternative2
 
+-- Goes through a list of statements, accumulating the Trace and returning the full trace and a list of gathered constraints.
+-- The Trace is returned in reverse order, with all definitions substituted (and thereby erased).
 tracesStmtM :: Trace -> [Stmt] -> CovVecM AnalysisResult
 
 tracesStmtM traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
@@ -130,19 +135,22 @@ tracesStmtM traceelems [] = do
 
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
+-- Takes an (already computed) list of Constraints and contracts it to one without definitions,
+-- so that a solver could solve it
 aggregateCovM :: [Constraint] -> Trace -> CovVecM [Constraint]
 aggregateCovM constraints (TraceReturn _ : traceelems) = aggregateCovM constraints traceelems
 aggregateCovM constraints (TraceDecision cond_expr : traceelems) = aggregateCovM (cond_expr:constraints) traceelems
 aggregateCovM constraints (TraceAssign ident CAssignOp assigned_expr : traceelems) =
-	aggregateCovM (map (substituteInExpr ident assigned_expr) constraints) traceelems
---aggregateCovM constraints [] = return $ map (searchFunCall id) constraints
+	aggregateCovM (map (substituteVarInExpr ident assigned_expr) constraints) traceelems
+aggregateCovM constraints [] = return constraints --return $ map (searchFunCall id) constraints
 
-substituteInExpr ident subexpr (CConst c) = CConst c
-substituteInExpr ident subexpr (CUnary unaryop expr ni) = CUnary unaryop (substituteInExpr ident subexpr expr) ni
-substituteInExpr ident subexpr (CBinary binop expr1 expr2 ni) = CBinary binop (substituteInExpr ident subexpr expr1) (substituteInExpr ident subexpr expr2) ni
-substituteInExpr ident subexpr (CCall fun args ni) = CCall (substituteInExpr ident subexpr fun) (map (substituteInExpr ident subexpr) args) ni
-substituteInExpr ident subexpr (CVar vident ni) | ident==vident = subexpr
-substituteInExpr _ _ (CVar vident ni) = CVar vident ni
+substituteVarInExpr ident subexpr cconst@(CConst _) = cconst
+substituteVarInExpr ident subexpr (CUnary unaryop expr ni) = CUnary unaryop (substituteVarInExpr ident subexpr expr) ni
+substituteVarInExpr ident subexpr (CBinary binop expr1 expr2 ni) = CBinary binop (substituteVarInExpr ident subexpr expr1) (substituteVarInExpr ident subexpr expr2) ni
+substituteVarInExpr ident subexpr (CCall fun args ni) = CCall (substituteVarInExpr ident subexpr fun) (map (substituteVarInExpr ident subexpr) args) ni
+substituteVarInExpr ident subexpr (CVar vident ni) | ident==vident = subexpr
+substituteVarInExpr _ _ cvar@(CVar _ _) = cvar
+substituteVarInExpr _ _ expr = error $ "substituteVarInExpr for " ++  show expr ++ " not implemented"
 
 -- !(2 * g(x) > 5)
 -- 
