@@ -168,4 +168,4 @@ notFullyInitializedArray _ = []
 complexExpr = ternaryIf <+> binaryOp
 
 --myFilter = isA complexExpr >>> isA postfixOp >>> toPretty
-myFilter = isA notFullyInitializedArray
+myFilter = isA cDecl >>> 
