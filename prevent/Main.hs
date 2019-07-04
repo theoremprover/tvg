@@ -158,14 +158,18 @@ cDecl _ = []
 notFullyInitializedArray :: CFilter CDecl String
 notFullyInitializedArray cdecl@(CDecl _ l nodeinfo) = map notfullyinitialized l where
 	notfullyinitialized (Just (CDeclr _ deriveddeclrs _ _ _),Just (CInitList initlist _),_) = match deriveddeclrs initlist
-	match [] [] = False
-	match () ()
+	match [] [] = []
+	match (CArrDeclr _ (CArrSize _ (CConst (CIntConst (CInteger n _ _) _))) _ : declrs) ((_,CInitList initlist _) : nextdecl_initlist) =
+		length initlist /= n || notfullyinitialized 
 	match _ = True
 notFullyInitializedArray _ = []
 
 -------------------
 
+{-
 complexExpr = ternaryIf <+> binaryOp
 
---myFilter = isA complexExpr >>> isA postfixOp >>> toPretty
-myFilter = isA cDecl >>> 
+myFilter = isA complexExpr >>> isA postfixOp >>> toPretty
+-}
+
+myFilter = isA cDecl >>> notFullyInitializedArray >>> toString
