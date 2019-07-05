@@ -142,7 +142,7 @@ postfixOp :: CFilter CExpr CExpr
 postfixOp cunary@(CUnary unaryop _ _) = if unaryop `elem` [CPostIncOp,CPostDecOp] then [cunary] else []
 postfixOp _ = []
 
-toPretty :: (Pretty a,Pos a) => CFilter a String
+toPretty :: (Pretty a,Pos a,PrintfType a) => CFilter a String
 toPretty a = [ printf "%s%s" (showPos $ nodeInfo a) (render $ pretty a ) ]
 
 showPos nodeinfo = printf "%s, line %i, col %i  :  " (posFile p) (posRow p) (posColumn p) where
@@ -158,17 +158,18 @@ cDecl _ = []
 -- deriveddeclrs :: [ CArrDeclr [CTypeQualifier a] (CArraySize a) a ]
 -- initlist a :: [([CPartDesignator a], CInitializer a)] 
 notFullyInitializedArray :: CFilter CDecl String
-notFullyInitializedArray cdecl@(CDecl _ l _) = concatMap notfullyinitialized l where
+notFullyInitializedArray cdecl@(CDecl _ l declni) = concatMap notfullyinitialized l where
 	notfullyinitialized (Just (CDeclr _ deriveddeclrs _ _ _),Just (CInitList initlist _),_) = match initlist deriveddeclrs
 	notfullyinitialized _ = []
-	match initlist [] = ???
-	match initlist (CArrDeclr _ (CArrSize _ (CConst (CIntConst (CInteger n _ _) _))) ni : declrs)) =
+	match initlist (CArrDeclr _ (CArrSize _ (CConst (CIntConst (CInteger n _ _) _))) ni : declrs) =
 		case length initlist == n of
 			False -> [ (showPos ni) ++ "length of initializer list should be " ++ show n ++", but is " ++ show (length initlist) ]
-			True -> case declrs of
-				[] -> 
-				concatMap (match initlist) declrs
-	match _ = True
+			True -> case (declrs,initlist) of
+				([],(_,CInitExpr _ _):_) -> []
+				([],_) -> [ (showPos ni) ++ "initializers nested deeper than array declaration" ]
+				(_,(_,CInitList initlist' _):_) -> concatMap (match initlist') declrs
+				(_,[]) -> [ (showPos ni) ++ "array declaration is nested deeper than initializers" ]
+	match initlist (_,declrs) = [ (showPos declni) ++ "not an array size declaration" ]
 notFullyInitializedArray _ = []
 
 -------------------
