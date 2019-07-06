@@ -109,11 +109,13 @@ handleSrcFile preprocess_args srcfilename = do
 		Left err -> error $ show err
 		Right ctranslunit -> do
 			let
-				Right (GlobalDecls gobjs_map _ _,[]) = runTrav_ $ analyseAST ctranslunit
+				gobjs_map = case runTrav_ $ analyseAST ctranslunit of
+					Left errmsgs -> error $ unlines $ map show errmsgs
+					Right (GlobalDecls gobjs_map _ _,[]) -> gobjs_map
 				globobjs = Map.elems gobjs_map
 			writeFile (srcfilename <.> "ast" <.> "html") $ genericToHTMLString globobjs
 
-			mapM_ print $ myFilter globobjs
+			mapM_ putStrLn $ myFilter globobjs
 
 type CFilter a b = a -> [b]
 
@@ -142,9 +144,10 @@ postfixOp :: CFilter CExpr CExpr
 postfixOp cunary@(CUnary unaryop _ _) = if unaryop `elem` [CPostIncOp,CPostDecOp] then [cunary] else []
 postfixOp _ = []
 
-toPretty :: (Pretty a,Pos a,PrintfType a) => CFilter a String
-toPretty a = [ printf "%s%s" (showPos $ nodeInfo a) (render $ pretty a ) ]
+toPretty :: (Pretty a,CNode a) => CFilter a String
+toPretty a = [ printf "%s%s" (showPos $ nodeInfo a) (render $ pretty a) ]
 
+showPos :: NodeInfo -> String
 showPos nodeinfo = printf "%s, line %i, col %i  :  " (posFile p) (posRow p) (posColumn p) where
 	p = posOfNode nodeinfo
 
@@ -159,17 +162,21 @@ cDecl _ = []
 -- initlist a :: [([CPartDesignator a], CInitializer a)] 
 notFullyInitializedArray :: CFilter CDecl String
 notFullyInitializedArray cdecl@(CDecl _ l declni) = concatMap notfullyinitialized l where
-	notfullyinitialized (Just (CDeclr _ deriveddeclrs _ _ _),Just (CInitList initlist _),_) = match initlist deriveddeclrs
+	notfullyinitialized :: (Maybe (CDeclarator NodeInfo), Maybe CInit, Maybe CExpr) -> [String]
+	notfullyinitialized (Just (CDeclr _ deriveddeclrs _ _ _),Just (CInitList initlist _),_) = match deriveddeclrs initlist
 	notfullyinitialized _ = []
-	match initlist (CArrDeclr _ (CArrSize _ (CConst (CIntConst (CInteger n _ _) _))) ni : declrs) =
-		case length initlist == n of
-			False -> [ (showPos ni) ++ "length of initializer list should be " ++ show n ++", but is " ++ show (length initlist) ]
+	match :: [ CDerivedDeclr ] -> [([CDesignator], CInit)] -> [String]
+	match (CArrDeclr _ (CArrSize _ (CConst (CIntConst (CInteger n _ _) _))) ni : declrs) initlist =
+		case length initlist == fromIntegral n of
+			False -> [ (showPos $ nodeInfo $ snd $ head initlist) ++ "length of initializer list should be " ++ show n ++", but is " ++ show (length initlist) ]
 			True -> case (declrs,initlist) of
 				([],(_,CInitExpr _ _):_) -> []
-				([],_) -> [ (showPos ni) ++ "initializers nested deeper than array declaration" ]
-				(_,(_,CInitList initlist' _):_) -> concatMap (match initlist') declrs
-				(_,[]) -> [ (showPos ni) ++ "array declaration is nested deeper than initializers" ]
-	match initlist (_,declrs) = [ (showPos declni) ++ "not an array size declaration" ]
+				([],_) -> [ showPos ni ++ "expecting simple initial value CInitExpr" ]
+				(_,[]) -> [ showPos ni ++ "more array dimensions than initializer nesting" ]
+				(_:_,_) -> concatMap (matchsublists declrs) initlist
+	match _ initlist = [ showPos declni ++ "not an array size declaration" ]
+	matchsublists declrs (_,CInitList sublist _) = match declrs sublist
+	matchsublists declrs (_,CInitExpr _ ni) = [ showPos ni ++ "more array dimensions than initializer nesting" ]
 notFullyInitializedArray _ = []
 
 -------------------
@@ -180,4 +187,5 @@ complexExpr = ternaryIf <+> binaryOp
 myFilter = isA complexExpr >>> isA postfixOp >>> toPretty
 -}
 
+myFilter :: CFilter [IdentDecl] String
 myFilter = isA cDecl >>> notFullyInitializedArray >>> toString
