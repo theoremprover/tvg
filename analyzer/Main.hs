@@ -21,7 +21,7 @@ import DataTree
 
 {--
 stack build :analyzer-exe
-stack exec analyzer-exe -- test.c
+stack exec analyzer-exe -- test.c f
 stack build :analyzer-exe && stack exec analyzer-exe
 --}
 
