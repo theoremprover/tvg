@@ -179,6 +179,12 @@ notFullyInitializedArray cdecl@(CDecl _ l declni) = concatMap notfullyinitialize
 	matchsublists declrs (_,CInitExpr _ ni) = [ showPos ni ++ "more array dimensions than initializer nesting" ]
 notFullyInitializedArray _ = []
 
+type ASTRoot = [IdentDecl]
+
+arrayDecl :: CFilter ASTRoot ([Int],CInit)
+arrayDecl = isA cDecl >>> arrayDeclInits
+
+arrayDeclInits :: CFilter 
 -------------------
 
 {-
@@ -187,5 +193,5 @@ complexExpr = ternaryIf <+> binaryOp
 myFilter = isA complexExpr >>> isA postfixOp >>> toPretty
 -}
 
-myFilter :: CFilter [IdentDecl] String
+--myFilter :: CFilter ASTRoot String
 myFilter = isA cDecl >>> notFullyInitializedArray >>> toString
