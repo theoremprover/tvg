@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards,LambdaCase,OverloadedStrings,StandaloneDeriving,ExplicitForAll,DeriveGeneric #-}
+{-# LANGUAGE RecordWildCards,LambdaCase,OverloadedStrings,StandaloneDeriving,ExplicitForAll,DeriveGeneric,FlexibleInstances,TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 {--
@@ -12,6 +12,7 @@ http://hackage.haskell.org/package/language-c-0.8.2/docs/Language-C-Syntax-AST.h
 
 module Main where
 
+import Prelude hiding ((<>))
 import System.Environment
 import Data.List
 import Control.Monad
@@ -27,8 +28,8 @@ import System.FilePath
 import qualified Data.Map.Strict as Map
 import Data.Data
 import Data.Generics
-import Language.C.Pretty (pretty)
-import Text.PrettyPrint (render)
+import Language.C.Pretty
+import Text.PrettyPrint hiding ((<+>))
 import Text.Printf
 
 import DataTree
@@ -140,12 +141,12 @@ binaryOp :: CFilter CExpr CExpr
 binaryOp cbinary@(CBinary _ _ _ _) = [cbinary]
 binaryOp _ = []
 
-postfixOp :: CFilter CExpr CExpr
-postfixOp cunary@(CUnary unaryop _ _) = if unaryop `elem` [CPostIncOp,CPostDecOp] then [cunary] else []
-postfixOp _ = []
+incOrDecOp :: CFilter CExpr CExpr
+incOrDecOp cunary@(CUnary unaryop _ _) = if unaryop `elem` [CPostIncOp,CPostDecOp,CPreIncOp,CPreDecOp] then [cunary] else []
+incOrDecOp _ = []
 
-toPretty :: (Pretty a,CNode a) => CFilter a String
-toPretty a = [ printf "%s%s" (showPos $ nodeInfo a) (render $ pretty a) ]
+showPretty :: (Pretty a,CNode a) => CFilter a String
+showPretty a = [ printf "%s%s" (showPos $ nodeInfo a) (render $ pretty a) ]
 
 showPos :: NodeInfo -> String
 showPos nodeinfo = printf "%s, line %i, col %i  :  " (posFile p) (posRow p) (posColumn p) where
@@ -158,40 +159,38 @@ cDecl :: CFilter CDecl CDecl
 cDecl cdecl@(CDecl _ _ _) = [cdecl]
 cDecl _ = []
 
--- deriveddeclrs :: [ CArrDeclr [CTypeQualifier a] (CArraySize a) a ]
--- initlist a :: [([CPartDesignator a], CInitializer a)] 
-notFullyInitializedArray :: CFilter CDecl String
-notFullyInitializedArray cdecl@(CDecl _ l declni) = concatMap notfullyinitialized l where
-	notfullyinitialized :: (Maybe (CDeclarator NodeInfo), Maybe CInit, Maybe CExpr) -> [String]
-	notfullyinitialized (Just (CDeclr _ deriveddeclrs _ _ _),Just (CInitList initlist _),_) = match deriveddeclrs initlist
-	notfullyinitialized _ = []
-	match :: [ CDerivedDeclr ] -> [([CDesignator], CInit)] -> [String]
-	match (CArrDeclr _ (CArrSize _ (CConst (CIntConst (CInteger n _ _) _))) ni : declrs) initlist =
-		case length initlist == fromIntegral n of
-			False -> [ (showPos $ nodeInfo $ snd $ head initlist) ++ "length of initializer list should be " ++ show n ++", but is " ++ show (length initlist) ]
-			True -> case (declrs,initlist) of
-				([],(_,CInitExpr _ _):_) -> []
-				([],_) -> [ showPos ni ++ "expecting simple initial value CInitExpr" ]
-				(_,[]) -> [ showPos ni ++ "more array dimensions than initializer nesting" ]
-				(_:_,_) -> concatMap (matchsublists declrs) initlist
-	match _ initlist = [ showPos declni ++ "not an array size declaration" ]
-	matchsublists declrs (_,CInitList sublist _) = match declrs sublist
-	matchsublists declrs (_,CInitExpr _ ni) = [ showPos ni ++ "more array dimensions than initializer nesting" ]
-notFullyInitializedArray _ = []
-
 type ASTRoot = [IdentDecl]
 
-arrayDecl :: CFilter ASTRoot ([Int],CInit)
-arrayDecl = isA cDecl >>> arrayDeclInits
+arrayDecl :: CFilter CDecl ([CArrSize],CInit)
+arrayDecl = arrayDeclDimsInits
 
-arrayDeclInits :: CFilter 
+arrayDeclDimsInits :: CFilter CDecl ([CArrSize],CInit)
+arrayDeclDimsInits (CDecl _ l ni) = concatMap arraydecl l where
+	arraydecl (Just (CDeclr _ deriveddeclrs _ _ _),Just cinit,_) = case toarrsize deriveddeclrs of
+		[] -> []
+		arrsizes -> [ (arrsizes,cinit) ]
+	arraydecl _ = []
+	toarrsize [] = []
+	toarrsize (CArrDeclr _ arrsize _ : rest) = arrsize : toarrsize rest
+	toarrsize (_:rest) = toarrsize rest
+
+checkArrayDecl :: CFilter ([CArrSize],CInit) String
+checkArrayDecl ( [] , CInitExpr _ _ ) = []
+checkArrayDecl ( [] , CInitList _ ni ) = [ showPos ni ++ "Initializers nested deeper than array" ]
+checkArrayDecl ( CNoArrSize _ : rest , CInitList initlist _ ) = concatMap (checkArrayDecl.(rest,)) (map snd initlist)
+checkArrayDecl ( CArrSize _ (CConst (CIntConst (CInteger n _ _) _)) : rest , CInitList initlist _ ) | fromIntegral n == length initlist = concatMap (checkArrayDecl.(rest,)) (map snd initlist)
+checkArrayDecl ( CArrSize _ (CConst (CIntConst (CInteger n _ _) _)) : rest , CInitList initlist ni ) = [ showPos ni ++ "length of initializer list should be " ++ show n ++", but is " ++ show (length initlist) ]
+checkArrayDecl ( _:_ , CInitExpr _ ni ) = [ showPos ni ++ "Expected one more dimension in initializers" ]
+checkArrayDecl ( CArrSize _ sizeexpr : _ , CInitList _ _ ) = [ head (showPretty sizeexpr) ++ " : Array size is not an integer constant" ]
+
 -------------------
 
 {-
 complexExpr = ternaryIf <+> binaryOp
-
-myFilter = isA complexExpr >>> isA postfixOp >>> toPretty
+myFilter = isA complexExpr >>> isA incOrDecOp >>> showPretty
 -}
 
---myFilter :: CFilter ASTRoot String
-myFilter = isA cDecl >>> notFullyInitializedArray >>> toString
+myFilter :: CFilter ASTRoot String
+myFilter = isA cDecl >>> arrayDecl >>> checkArrayDecl >>> toString
+
+

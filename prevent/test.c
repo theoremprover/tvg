@@ -23,9 +23,10 @@ int f(int x)
     }
     else
     {
+		y++;
         if(z>5)
         {
-            y = z>10000 ? g(x++) : g(x+2);
+            y = z++ > 10000 ? g(z) : g(z+2);
         }
     }
 
@@ -43,11 +44,14 @@ int main()
     short q1[2] = // Too many initializers
 	{ 1,2,3 };
 
-    short q2[4][3] = {  
-	{ 1, 2, 3 },
-	{ 2, 3, 3 },
-	{ 2, 3 },     // Too few initializers here
-	{ 4, 5, 6 } };
+long q2[4][5] = {  
+	{ 21, 2, 45545, 3, 64563 },
+	{ 2, 3, 2313, 33, 8734 },
+	{ 304, 13222, 3, 454333 },   // Too few initializers here
+	{ 4, 5, 16, 63400, 4594 } };
+
+	int q4[][2] = {  // unknown size
+	{ 1,2 }, { 3,4 }, { 5,6 } };
 
 /*  THIS IS DETECTED BY THE PREPROCESSOR
     short q3[2] = {  // Initializers nested deeper than array dimensions
@@ -55,7 +59,7 @@ int main()
 	{ 2, 3, 3 } };
 */
 
-	int q4[3][2] = { { 1,2 }, { 3,4 }, { 5,6 } }; // Correct
+	int q5[3][2] = { { 1,2 }, { 3,4 }, { 5,6 } }; // Correct
 	
     int x;
     x= 6;
