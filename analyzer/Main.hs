@@ -21,7 +21,7 @@ import DataTree
 
 {--
 stack build :analyzer-exe
-stack exec analyzer-exe -- test.c f
+stack exec analyzer-exe -- test.c
 stack build :analyzer-exe && stack exec analyzer-exe
 --}
 
@@ -126,23 +126,23 @@ tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m 
 
 tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = do
 	let traceelems' = TraceReturn mb_ret_expr : traceelems
-	constraints <- aggregateCovM [] traceelems'
+	constraints <- aggregateConstraintsM [] traceelems'
 	return [(traceelems',constraints)]
 tracesStmtM traceelems [] = do
 	let traceelems'= TraceReturn Nothing : traceelems
-	constraints <- aggregateCovM [] traceelems'
+	constraints <- aggregateConstraintsM [] traceelems'
 	return [(traceelems',constraints)]
 
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
 -- Takes an (already computed) list of Constraints and contracts it to one without definitions,
 -- so that a solver could solve it
-aggregateCovM :: [Constraint] -> Trace -> CovVecM [Constraint]
-aggregateCovM constraints (TraceReturn _ : traceelems) = aggregateCovM constraints traceelems
-aggregateCovM constraints (TraceDecision cond_expr : traceelems) = aggregateCovM (cond_expr:constraints) traceelems
-aggregateCovM constraints (TraceAssign ident CAssignOp assigned_expr : traceelems) =
-	aggregateCovM (map (substituteVarInExpr ident assigned_expr) constraints) traceelems
-aggregateCovM constraints [] = return constraints --return $ map (searchFunCall id) constraints
+aggregateConstraintsM :: [Constraint] -> Trace -> CovVecM [Constraint]
+aggregateConstraintsM constraints (TraceReturn _ : traceelems) = aggregateConstraintsM constraints traceelems
+aggregateConstraintsM constraints (TraceDecision cond_expr : traceelems) = aggregateConstraintsM (cond_expr:constraints) traceelems
+aggregateConstraintsM constraints (TraceAssign ident CAssignOp assigned_expr : traceelems) =
+	aggregateConstraintsM (map (substituteVarInExpr ident assigned_expr) constraints) traceelems
+aggregateConstraintsM constraints [] = return constraints --return $ map (searchFunCall id) constraints
 
 substituteVarInExpr ident subexpr cconst@(CConst _) = cconst
 substituteVarInExpr ident subexpr (CUnary unaryop expr ni) = CUnary unaryop (substituteVarInExpr ident subexpr expr) ni
