@@ -6,6 +6,8 @@ module Main where
 import Control.Monad.Trans.State.Strict
 import Control.Monad
 import System.Environment
+import Control.Applicative hiding (empty)
+--import Control.Monad.State
 import Language.C
 import Language.C.Data.Ident
 import Language.C.Analysis.AstAnalysis
@@ -31,7 +33,7 @@ data CovVecState = CovVecState {
 	allDefs :: Map.Map Ident IdentDecl
 	}
 
-type CovVecM a = StateT CovVecState IO a
+type CovVecM = StateT CovVecState IO
 
 main = do
 	args <- getArgs
@@ -52,10 +54,6 @@ main = do
 				print "------"
 
 type Constraint = CExpr
-{-
-data Constraint = Or [Constraint] | And [Constraint] | Expr :<= Expr | Ident := Expr
-	deriving Show
--}
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
@@ -72,8 +70,12 @@ getFunStmtsM funident = do
 	FunDef (VarDecl (VarName ident _) declattrs (FunctionType (FunType ret_type paramdecls False) _)) stmt ni <- lookupFunM funident
 	return [stmt]
 
-genCovVectorsM :: Ident -> CovVecM AnalysisResult
-genCovVectorsM funident = getFunStmtsM funident >>= tracesStmtM []
+genCovVectorsM :: Ident -> [Constraint] -> CovVecM AnalysisResult
+genCovVectorsM funident add_constraints =
+	getFunStmtsM funident >>=
+	tracesStmtM [] >>=
+	mapM aggregateConstraintsM >>=
+	expandFunctionCallsM
 
 data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceDecision CExpr | TraceReturn (Maybe CExpr)
 	deriving Show
@@ -99,9 +101,7 @@ alternative1_m ||| alternative2_m = do
 	alternative2 <- alternative2_m
 	return $ alternative1 ++ alternative2
 
--- Goes through a list of statements, accumulating the Trace and returning the full trace and a list of gathered constraints.
--- The Trace is returned in reverse order, with all definitions substituted (and thereby erased).
-tracesStmtM :: Trace -> [Stmt] -> CovVecM AnalysisResult
+tracesStmtM :: Trace -> [Stmt] -> CovVecM [[TraceElem]]
 
 tracesStmtM traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
 	tracesStmtM (TraceAssign ident assign_op assigned_expr : traceelems) rest
@@ -124,25 +124,21 @@ tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m 
 		Just else_stmt -> else_stmt:rest
 		Nothing -> rest
 
-tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = do
-	let traceelems' = TraceReturn mb_ret_expr : traceelems
-	constraints <- aggregateConstraintsM [] traceelems'
-	return [(traceelems',constraints)]
-tracesStmtM traceelems [] = do
-	let traceelems'= TraceReturn Nothing : traceelems
-	constraints <- aggregateConstraintsM [] traceelems'
-	return [(traceelems',constraints)]
-
+tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = return [ TraceReturn mb_ret_expr : traceelems ]
+tracesStmtM traceelems [] = return [ TraceReturn Nothing : traceelems ]
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
 -- Takes an (already computed) list of Constraints and contracts it to one without definitions,
 -- so that a solver could solve it
-aggregateConstraintsM :: [Constraint] -> Trace -> CovVecM [Constraint]
-aggregateConstraintsM constraints (TraceReturn _ : traceelems) = aggregateConstraintsM constraints traceelems
-aggregateConstraintsM constraints (TraceDecision cond_expr : traceelems) = aggregateConstraintsM (cond_expr:constraints) traceelems
-aggregateConstraintsM constraints (TraceAssign ident CAssignOp assigned_expr : traceelems) =
-	aggregateConstraintsM (map (substituteVarInExpr ident assigned_expr) constraints) traceelems
-aggregateConstraintsM constraints [] = return constraints --return $ map (searchFunCall id) constraints
+aggregateConstraintsM :: Trace -> CovVecM (Trace,[Constraint])
+aggregateConstraintsM trace = return (trace,aggregateconstraints [] trace)
+	where
+	aggregateconstraints :: [Constraint] -> Trace -> [Constraint]
+	aggregateconstraints constraints (TraceReturn _ : traceelems) = aggregateconstraints constraints traceelems
+	aggregateconstraints constraints (TraceDecision cond_expr : traceelems) = aggregateconstraints (cond_expr:constraints) traceelems
+	aggregateconstraints constraints (TraceAssign ident CAssignOp assigned_expr : traceelems) =
+		aggregateconstraints (map (substituteVarInExpr ident assigned_expr) constraints) traceelems
+	aggregateconstraints constraints [] = constraints
 
 substituteVarInExpr ident subexpr cconst@(CConst _) = cconst
 substituteVarInExpr ident subexpr (CUnary unaryop expr ni) = CUnary unaryop (substituteVarInExpr ident subexpr expr) ni
@@ -152,5 +148,19 @@ substituteVarInExpr ident subexpr (CVar vident ni) | ident==vident = subexpr
 substituteVarInExpr _ _ cvar@(CVar _ _) = cvar
 substituteVarInExpr _ _ expr = error $ "substituteVarInExpr for " ++  show expr ++ " not implemented"
 
-expandFunctionCalls :: [Constraint]-> CovVecM [Constraint]
-expandFunctionCalls 
+expandFunctionCallsM :: AnalysisResult -> CovVecM AnalysisResult
+expandFunctionCallsM analysisresult = mapM expand_single_trace analysisresult where
+	expand_single_trace (trace,constraints) = do
+		(constraints',new_constraints) <- runStateT (forM constraints substituteFunCallInExprMS) []
+		return (trace,constraints' ++ new_constraints)
+
+substituteFunCallInExprMS :: Constraint -> StateT [Constraint] CovVecM Constraint
+substituteFunCallInExprMS cconst@(CConst _) = pure cconst
+substituteFunCallInExprMS (CUnary unaryop expr ni) = CUnary <$> pure unaryop <*> substituteFunCallInExprMS expr <*> pure ni
+substituteFunCallInExprMS (CBinary binop expr1 expr2 ni) = CBinary <$> pure binop <*> substituteFunCallInExprMS expr1 <*> substituteFunCallInExprMS expr2 <*> pure ni
+substituteFunCallInExprMS cvar@(CVar vident ni) = pure cvar
+substituteFunCallInExprMS (CCall (CVar fun _) args ni) = do
+	liftM $ genCovVectorsM fun 
+substituteFunCallInExprMS expr = error $ "substituteFunCallInExprMS for " ++  show expr ++ " not implemented"
+
+
