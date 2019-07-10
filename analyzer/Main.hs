@@ -152,29 +152,5 @@ substituteVarInExpr ident subexpr (CVar vident ni) | ident==vident = subexpr
 substituteVarInExpr _ _ cvar@(CVar _ _) = cvar
 substituteVarInExpr _ _ expr = error $ "substituteVarInExpr for " ++  show expr ++ " not implemented"
 
--- !(2 * g(x) > 5)
--- 
-{-
-searchFunCall _ (CConst _) = []
-searchFunCall _ (CVar _ _) = []
-searchFunCall f (CCall fun args ni) = []
-searchFunCall f (CUnary CNegOp expr ni) = searchFunCall ((\ x -> CUnary CNegOp x undefNode) . f) expr
-searchFunCall f (CBinary CMulOp expr1 expr2 ni) =
-	searchFunCall (f . (\ x -> CBinary CDivOp x expr2)) expr1 ++
-	searchFunCall (f . (\ x -> CBinary CDivOp x expr1)) expr2
--}
-
-{-
-tracesExprM :: [TraceElem] -> Expr -> CovVecM [[TraceElem]]
-
-tracesExprM traceelems cassign@(CAssign assign_op (CVar ident _) assigned_expr _) = do
-	tracesExprM traceelems assigned_expr >>> return [[ TraceStmt $ CExpr (Just cassign) undefNode ]]
-
-tracesExprM traceelems (CCall (CVar funident _) args _ ) = do
-	getFunStmtsM funident >>= tracesStmtM traceelems
-tracesExprM traceelems (CBinary binop expr1 expr2 _) =
-	tracesExprM traceelems expr1 >>> tracesExprM [] expr2
-tracesExprM traceelems (CVar _ _) = return [traceelems]
-tracesExprM traceelems (CConst _) = return [traceelems]
-tracesExprM _ unknown =error $ "tracesExprM: " ++ show unknown ++ " not implemented yet"
--}
+expandFunctionCalls :: [Constraint]-> CovVecM [Constraint]
+expandFunctionCalls 
