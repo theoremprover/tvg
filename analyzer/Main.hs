@@ -160,7 +160,8 @@ substituteFunCallInExprMS (CUnary unaryop expr ni) = CUnary <$> pure unaryop <*>
 substituteFunCallInExprMS (CBinary binop expr1 expr2 ni) = CBinary <$> pure binop <*> substituteFunCallInExprMS expr1 <*> substituteFunCallInExprMS expr2 <*> pure ni
 substituteFunCallInExprMS cvar@(CVar vident ni) = pure cvar
 substituteFunCallInExprMS (CCall (CVar fun _) args ni) = do
-	liftM $ genCovVectorsM fun 
+	liftM $ genCovVectorsM fun
+	
 substituteFunCallInExprMS expr = error $ "substituteFunCallInExprMS for " ++  show expr ++ " not implemented"
 
 
