@@ -47,7 +47,7 @@ main = do
 		Right translunit@(CTranslUnit extdecls _) -> do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
-			res <- evalStateT (genCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
+			res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
 			forM_ res $ \ (cs,l) -> do
 				print $ map (render.pretty) cs
 				print $ map (render.pretty) l
@@ -70,11 +70,11 @@ getFunStmtsM funident = do
 	FunDef (VarDecl (VarName ident _) declattrs (FunctionType (FunType ret_type paramdecls False) _)) stmt ni <- lookupFunM funident
 	return [stmt]
 
-genCovVectorsM :: Ident -> [Constraint] -> CovVecM AnalysisResult
-genCovVectorsM funident add_constraints =
+funCovVectorsM :: Ident -> CovVecM AnalysisResult
+funCovVectorsM funident =
 	getFunStmtsM funident >>=
 	tracesStmtM [] >>=
-	mapM aggregateConstraintsM >>=
+	mapM (aggregateConstraintsM []) >>=
 	expandFunctionCallsM
 
 data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceDecision CExpr | TraceReturn (Maybe CExpr)
@@ -130,8 +130,8 @@ tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemente
 
 -- Takes an (already computed) list of Constraints and contracts it to one without definitions,
 -- so that a solver could solve it
-aggregateConstraintsM :: Trace -> CovVecM (Trace,[Constraint])
-aggregateConstraintsM trace = return (trace,aggregateconstraints [] trace)
+aggregateConstraintsM :: [Constraint] -> Trace -> CovVecM (Trace,[Constraint])
+aggregateConstraintsM initial_constraints trace = return (trace,aggregateconstraints initial_constraints trace)
 	where
 	aggregateconstraints :: [Constraint] -> Trace -> [Constraint]
 	aggregateconstraints constraints (TraceReturn _ : traceelems) = aggregateconstraints constraints traceelems
@@ -159,9 +159,14 @@ substituteFunCallInExprMS cconst@(CConst _) = pure cconst
 substituteFunCallInExprMS (CUnary unaryop expr ni) = CUnary <$> pure unaryop <*> substituteFunCallInExprMS expr <*> pure ni
 substituteFunCallInExprMS (CBinary binop expr1 expr2 ni) = CBinary <$> pure binop <*> substituteFunCallInExprMS expr1 <*> substituteFunCallInExprMS expr2 <*> pure ni
 substituteFunCallInExprMS cvar@(CVar vident ni) = pure cvar
-substituteFunCallInExprMS (CCall (CVar fun _) args ni) = do
-	liftM $ genCovVectorsM fun
-	
+substituteFunCallInExprMS (CCall (CVar funident _) args ni) = do
+	stmts <- getFunStmtsM funident
+
+	getFunStmtsM funident >>=
+	tracesStmtM [] >>=
+	mapM (aggregateConstraintsM []) >>=
+	expandFunctionCallsM
+
 substituteFunCallInExprMS expr = error $ "substituteFunCallInExprMS for " ++  show expr ++ " not implemented"
 
 
