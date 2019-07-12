@@ -48,9 +48,9 @@ main = do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
 			res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
-			forM_ res $ \ (cs,l) -> do
-				print $ map (render.pretty) cs
-				print $ map (render.pretty) l
+			forM_ res $ \ (trace,constraints) -> do
+				print $ map (render.pretty) trace
+				print $ map (render.pretty) constraints
 				print "------"
 
 type Constraint = CExpr
@@ -67,7 +67,7 @@ type AnalysisResult = [(Trace,[Constraint])]
 funCovVectorsM :: Ident -> CovVecM AnalysisResult
 funCovVectorsM funident = do
 	FunDef (VarDecl _ _ _) stmt _ <- lookupFunM funident
-	tracesStmtM [] [stmt] >>= mapM (aggregateConstraintsM []) >>= expandFunctionCallsM
+	tracesStmtM [] [stmt] >>= mapM (aggregateConstraintsM [])
 
 data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceDecision CExpr | TraceReturn (Maybe CExpr)
 	deriving Show
@@ -116,8 +116,6 @@ tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m 
 		Just else_stmt -> else_stmt:rest
 		Nothing -> rest
 
-tracesStmtM 
-
 tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = return [ TraceReturn mb_ret_expr : traceelems ]
 tracesStmtM traceelems [] = return [ TraceReturn Nothing : traceelems ]
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
@@ -142,8 +140,18 @@ substituteVarInExpr ident subexpr (CVar vident ni) | ident==vident = subexpr
 substituteVarInExpr _ _ cvar@(CVar _ _) = cvar
 substituteVarInExpr _ _ expr = error $ "substituteVarInExpr for " ++  show expr ++ " not implemented"
 
+{-
 expandFunctionCallsM :: AnalysisResult -> CovVecM AnalysisResult
-expandFunctionCallsM analysisresult = mapM expand_single_trace analysisresult where
+expandFunctionCallsM analysisresult = mapM expand_trace analysisresult where
+	expand_trace (trace,constraints) = 
+
+
+	forM analysisresult $ \ (trace,constraints) -> do
+		(constraintss,new_constraintss) <- runStateT (forM constraints substituteFunCallInExprMS) []
+		return (trace,
+
+ expand_single_trace analysisresult where
+	expand_single_trace :: (Trace,[Constraint]) -> (Trace,[[Constraint]])
 	expand_single_trace (trace,constraints) = do
 		(constraints',new_constraints) <- runStateT (forM constraints substituteFunCallInExprMS) []
 		return (trace,constraints' ++ new_constraints)
@@ -168,3 +176,4 @@ substituteFunCallInExprMS (CCall (CVar funident _) args ni) = do
 	-- substitute call and return in
 	
 substituteFunCallInExprMS expr = error $ "substituteFunCallInExprMS for " ++  show expr ++ " not implemented"
+-}
