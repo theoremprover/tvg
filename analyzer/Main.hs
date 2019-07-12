@@ -64,18 +64,10 @@ lookupFunM ident = do
 
 type AnalysisResult = [(Trace,[Constraint])]
 
--- Returns the body of a function definition
-getFunStmtsM :: Ident -> CovVecM [Stmt]
-getFunStmtsM funident = do
-	FunDef (VarDecl (VarName ident _) declattrs (FunctionType (FunType ret_type paramdecls False) _)) stmt ni <- lookupFunM funident
-	return [stmt]
-
 funCovVectorsM :: Ident -> CovVecM AnalysisResult
-funCovVectorsM funident =
-	getFunStmtsM funident >>=
-	tracesStmtM [] >>=
-	mapM (aggregateConstraintsM []) >>=
-	expandFunctionCallsM
+funCovVectorsM funident = do
+	FunDef (VarDecl _ _ _) stmt _ <- lookupFunM funident
+	tracesStmtM [] [stmt] >>= mapM (aggregateConstraintsM []) >>= expandFunctionCallsM
 
 data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceDecision CExpr | TraceReturn (Maybe CExpr)
 	deriving Show
@@ -124,6 +116,8 @@ tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m 
 		Just else_stmt -> else_stmt:rest
 		Nothing -> rest
 
+tracesStmtM 
+
 tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = return [ TraceReturn mb_ret_expr : traceelems ]
 tracesStmtM traceelems [] = return [ TraceReturn Nothing : traceelems ]
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
@@ -154,19 +148,23 @@ expandFunctionCallsM analysisresult = mapM expand_single_trace analysisresult wh
 		(constraints',new_constraints) <- runStateT (forM constraints substituteFunCallInExprMS) []
 		return (trace,constraints' ++ new_constraints)
 
+-- Recurse into Constraints, substituting function calls with their expansions and
+-- collecting new constraints in the state
 substituteFunCallInExprMS :: Constraint -> StateT [Constraint] CovVecM Constraint
 substituteFunCallInExprMS cconst@(CConst _) = pure cconst
 substituteFunCallInExprMS (CUnary unaryop expr ni) = CUnary <$> pure unaryop <*> substituteFunCallInExprMS expr <*> pure ni
 substituteFunCallInExprMS (CBinary binop expr1 expr2 ni) = CBinary <$> pure binop <*> substituteFunCallInExprMS expr1 <*> substituteFunCallInExprMS expr2 <*> pure ni
 substituteFunCallInExprMS cvar@(CVar vident ni) = pure cvar
 substituteFunCallInExprMS (CCall (CVar funident _) args ni) = do
-	stmts <- getFunStmtsM funident
-
-	getFunStmtsM funident >>=
-	tracesStmtM [] >>=
-	mapM (aggregateConstraintsM []) >>=
-	expandFunctionCallsM
-
+	args' <- forM args substituteFunCallInExprMS
+	constraints <- get
+	liftM $ do
+		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) stmt ni <- lookupFunM funident
+		param_assign_stmts <- forM (zip paramdecls args) $ \ (ParamDecl (VarDecl (VarName ident Nothing) _ _) _,arg) ->
+			return $ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) arg undefNode) undefNode
+		analsisresult <- liftM $ tracesStmtM [] (param_assign_stmts ++ [stmt]) >>=
+			mapM (aggregateConstraintsM []) >>=
+			expandFunctionCallsM
+	-- substitute call and return in
+	
 substituteFunCallInExprMS expr = error $ "substituteFunCallInExprMS for " ++  show expr ++ " not implemented"
-
-
