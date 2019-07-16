@@ -7,7 +7,6 @@ import Control.Monad.Trans.State.Strict
 import Control.Monad
 import System.Environment
 import Control.Applicative hiding (empty)
---import Control.Monad.State
 import Language.C
 import Language.C.Data.Ident
 import Language.C.Analysis.AstAnalysis
@@ -18,6 +17,7 @@ import System.FilePath
 import Text.Printf
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
+import Data.Generics
 
 import DataTree
 
@@ -94,6 +94,15 @@ alternative1_m ||| alternative2_m = do
 	return $ alternative1 ++ alternative2
 
 tracesStmtM :: Trace -> [Stmt] -> CovVecM [[TraceElem]]
+
+tracesStmtM traceelems (stmt:rest) = do
+	let (stmt',new_stmts) = runStateT (everywhereM (mkM searchfuncalls) stmt) []
+	traceStmtM traceelems (new_stmts ++ [stmt'] ++ rest)
+	where
+	searchfuncalls :: CExpr -> StateT [Stmt] CovVecM CExpr
+	searchfuncalls (CCall (CVar (Ident name _ _) _) args _) = do
+		internalIdent 
+	searchfuncalls expr = return expr
 
 tracesStmtM traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
 	tracesStmtM (TraceAssign ident assign_op assigned_expr : traceelems) rest
