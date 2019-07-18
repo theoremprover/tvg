@@ -74,7 +74,7 @@ data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceDecision CExpr | Trace
 instance Pretty TraceElem where
 	pretty (TraceAssign ident op expr) = pretty ident <+> text ":=" <+> pretty expr
 	pretty (TraceDecision expr) = pretty expr
-	pretty (TraceReturn mb_expr) = text "return" <+> maybe empty pretty mb_expr
+	pretty (TraceReturn mb_expr) = text "return" <+> maybe Text.PrettyPrint.empty pretty mb_expr
 
 type Trace = [TraceElem]
 
@@ -96,21 +96,23 @@ alternative1_m ||| alternative2_m = do
 tracesStmtM :: Trace -> [Ident] -> [Stmt] -> CovVecM [[TraceElem]]
 
 tracesStmtM traceelems return_idents (stmt:rest) = do
-	(stmt',new_calls) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
-	traceStmtM traceelems (reverse new_stmts ++ [stmt'] ++ rest)
+	identstmts <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
+	let new_ret_idents = reverse $ map fst identstmts
+	let new_stmts = reverse $ concatMap snd identstmts
+	traceStmtsM traceelems (new_ret_idents : return_idents) (new_stmts ++ rest)
 	where
 	searchfuncalls :: CExpr -> StateT [(Ident,[Stmt])] CovVecM CExpr
 	searchfuncalls (CCall (CVar funident _) args call_ni) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- liftM $ lookupFunM funident
 		stmts <- forM (zip paramdecls args) $ \ (ParamDecl (VarDecl (VarName ident_decl Nothing) _ _) _,arg) -> do
-			return (CExpr (Just $ CAssign CAssignOp (CVar ident_decl undefNode) arg undefNode) undefNode)
-		let new_ident = internalIdent $ identToString funident ++ "_" ++ identToString ident_decl
-		modify ((new_ident,body : stmts) :)
+			return $ CExpr (Just $ CAssign CAssignOp (CVar ident_decl undefNode) arg undefNode) undefNode
+		let new_ident = internalIdent (identToString funident ++ "_ret_" ++ show (posOffset (posOfNode call_ni)))
+		modify ((new_ident,reverse $ body : stmts) :)
 		return $ CVar new_ident call_ni
 	searchfuncalls expr = return expr
 
 tracesStmtM traceelems return_idents ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
-	tracesStmtM return_idents (TraceAssign ident assign_op assigned_expr : traceelems) rest
+	tracesStmtM (TraceAssign ident assign_op assigned_expr : traceelems) return_idents rest
 
 tracesStmtM traceelems return_idents (CCompound _ cbis _ : rest) = tracesStmtM traceelems return_idents (concatMap to_stmt cbis ++ rest)
 	where
@@ -132,7 +134,7 @@ tracesStmtM traceelems return_idents (CIf cond_expr then_stmt mb_else_stmt _ : r
 
 tracesStmtM traceelems [] (CReturn mb_ret_expr _ : _) = return [ TraceReturn mb_ret_expr : traceelems ]
 tracesStmtM traceelems (ident:return_idents) (CReturn (Just ret_expr) ni : _) =
-	traceStmtM traceelems return_idents (CExpr (Just $ CAssign AssignOp (CVar ident undefNode) ret_expr undefNode) ni)
+	tracesStmtM traceelems return_idents [ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) ret_expr undefNode) ni ]
 tracesStmtM traceelems [] [] = return [ TraceReturn Nothing : traceelems ]
 tracesStmtM traceelems (_:return_idents) [] = tracesStmtM traceelems return_idents []
 tracesStmtM _ _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
