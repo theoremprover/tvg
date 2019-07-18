@@ -5,6 +5,7 @@ module Main where
 
 import Control.Monad.Trans.State.Strict
 import Control.Monad
+import Control.Monad.Trans.Class (lift)
 import System.Environment
 import Control.Applicative hiding (empty)
 import Language.C
@@ -96,14 +97,14 @@ alternative1_m ||| alternative2_m = do
 tracesStmtM :: Trace -> [Ident] -> [Stmt] -> CovVecM [[TraceElem]]
 
 tracesStmtM traceelems return_idents (stmt:rest) = do
-	identstmts <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
+	(stmt',identstmts) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
 	let new_ret_idents = reverse $ map fst identstmts
 	let new_stmts = reverse $ concatMap snd identstmts
-	traceStmtsM traceelems (new_ret_idents : return_idents) (new_stmts ++ rest)
+	tracesStmtM traceelems (new_ret_idents ++ return_idents) (new_stmts ++ [stmt'] ++ rest)
 	where
 	searchfuncalls :: CExpr -> StateT [(Ident,[Stmt])] CovVecM CExpr
 	searchfuncalls (CCall (CVar funident _) args call_ni) = do
-		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- liftM $ lookupFunM funident
+		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
 		stmts <- forM (zip paramdecls args) $ \ (ParamDecl (VarDecl (VarName ident_decl Nothing) _ _) _,arg) -> do
 			return $ CExpr (Just $ CAssign CAssignOp (CVar ident_decl undefNode) arg undefNode) undefNode
 		let new_ident = internalIdent (identToString funident ++ "_ret_" ++ show (posOffset (posOfNode call_ni)))
