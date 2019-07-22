@@ -96,12 +96,17 @@ alternative1_m ||| alternative2_m = do
 
 tracesStmtM :: Trace -> [Ident] -> [Stmt] -> CovVecM [[TraceElem]]
 
-tracesStmtM traceelems return_idents (stmt:rest) = do
+{-
+tracesStmtM traceelems return_idents (stmt:rest) | containsfuncalls = do
 	(stmt',identstmts) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
 	let new_ret_idents = reverse $ map fst identstmts
 	let new_stmts = reverse $ concatMap snd identstmts
 	tracesStmtM traceelems (new_ret_idents ++ return_idents) (new_stmts ++ [stmt'] ++ rest)
 	where
+	containsfuncalls = everything (||) (mkQ False isfuncall) stmt
+	isfuncall :: CExpr -> Bool
+	isfuncall (CCall _ _ _) = True
+	isfuncall _ = False
 	searchfuncalls :: CExpr -> StateT [(Ident,[Stmt])] CovVecM CExpr
 	searchfuncalls (CCall (CVar funident _) args call_ni) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
@@ -111,6 +116,7 @@ tracesStmtM traceelems return_idents (stmt:rest) = do
 		modify ((new_ident,reverse $ body : stmts) :)
 		return $ CVar new_ident call_ni
 	searchfuncalls expr = return expr
+-}
 
 tracesStmtM traceelems return_idents ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
 	tracesStmtM (TraceAssign ident assign_op assigned_expr : traceelems) return_idents rest
