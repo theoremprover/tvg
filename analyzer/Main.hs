@@ -49,10 +49,14 @@ main = do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
 			res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
-			forM_ res $ \ (trace,constraints) -> do
-				print $ map (render.pretty) trace
-				print $ map (render.pretty) constraints
-				print "------"
+			lss <- forM res $ \ (trace,constraints) -> do
+				return $ [
+					"TRACE:" ] ++
+					map (render.pretty) trace ++
+					[ "CONSTRAINTS:",
+					show $ map (render.pretty) constraints,
+					"------" ]
+			writeFile (filename <.> "traces") (unlines $ concat lss)
 
 type Constraint = CExpr
 
@@ -97,26 +101,26 @@ alternative1_m ||| alternative2_m = do
 tracesStmtM :: Trace -> [Stmt] -> CovVecM [[TraceElem]]
 
 tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
-	(stmt',identstmts) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
-	let new_ret_idents = reverse $ map fst identstmts
-	let new_stmts = reverse $ concatMap snd identstmts
+	(stmt',traces) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
+	let new_stmts = reverse $ concat identstmts
 	tracesStmtM traceelems (new_stmts ++ [stmt'] ++ rest)
 	where
 	containsfuncalls = everything (||) (mkQ False isfuncall) stmt
 	isfuncall :: CExpr -> Bool
 	isfuncall (CCall _ _ _) = True
 	isfuncall _ = False
-	searchfuncalls :: CExpr -> StateT [(Ident,[Stmt])] CovVecM CExpr
+	searchfuncalls :: CExpr -> StateT [Trace] CovVecM CExpr
 	searchfuncalls (CCall (CVar funident _) args call_ni) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
 		stmts <- forM (zip paramdecls args) $ \ (ParamDecl (VarDecl (VarName ident_decl Nothing) _ _) _,arg) -> do
 			return $ CExpr (Just $ CAssign CAssignOp (CVar ident_decl undefNode) arg undefNode) undefNode
 		let new_ident = internalIdent (identToString funident ++ "_ret_" ++ show (posOffset (posOfNode call_ni)))
+		tracesStmtM
 		let body' = everywhere (mkT replaceret) body where
-			replaceret :: CStmt -> CStmt
-			replaceret (CReturn (Just retexpr) _) = CExpr (Just $ CAssign CAssignOp (CVar new_ident undefNode) ret_expr undefNode) ni
+			replaceret :: CStat -> CStat
+			replaceret (CReturn (Just retexpr) _) = CExpr (Just $ CAssign CAssignOp (CVar new_ident undefNode) retexpr undefNode) undefNode
 			replaceret stmt = stmt
-		modify ((new_ident,stmts ++ [body']) :)
+		modify (stmts ++ [body'] : )
 		return $ CVar new_ident call_ni
 	searchfuncalls expr = return expr
 
@@ -137,7 +141,7 @@ tracesStmtM traceelems (CCompound _ cbis _ : rest) = tracesStmtM traceelems (con
 tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m ||| else_m
 	where
 	then_m = tracesStmtM (TraceDecision cond_expr : traceelems) (then_stmt:rest)
-	else_m = tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) return_idents $ case mb_else_stmt of
+	else_m = tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) $ case mb_else_stmt of
 		Just else_stmt -> else_stmt:rest
 		Nothing -> rest
 
