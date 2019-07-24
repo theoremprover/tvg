@@ -101,27 +101,24 @@ alternative1_m ||| alternative2_m = do
 tracesStmtM :: Trace -> [Stmt] -> CovVecM [[TraceElem]]
 
 tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
-	(stmt',traces) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
-	let new_stmts = reverse $ concat identstmts
-	tracesStmtM traceelems (new_stmts ++ [stmt'] ++ rest)
+	everywhereM (mkM searchfuncalls) stmt
 	where
 	containsfuncalls = everything (||) (mkQ False isfuncall) stmt
 	isfuncall :: CExpr -> Bool
 	isfuncall (CCall _ _ _) = True
 	isfuncall _ = False
-	searchfuncalls :: CExpr -> StateT [Trace] CovVecM CExpr
-	searchfuncalls (CCall (CVar funident _) args call_ni) = do
+	searchfuncalls :: CExpr -> CovVecM [[TraceElem]]
+	searchfuncalls (CCall (CVar funident _) args _) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
 		stmts <- forM (zip paramdecls args) $ \ (ParamDecl (VarDecl (VarName ident_decl Nothing) _ _) _,arg) -> do
 			return $ CExpr (Just $ CAssign CAssignOp (CVar ident_decl undefNode) arg undefNode) undefNode
 		let new_ident = internalIdent (identToString funident ++ "_ret_" ++ show (posOffset (posOfNode call_ni)))
-		tracesStmtM
 		let body' = everywhere (mkT replaceret) body where
 			replaceret :: CStat -> CStat
 			replaceret (CReturn (Just retexpr) _) = CExpr (Just $ CAssign CAssignOp (CVar new_ident undefNode) retexpr undefNode) undefNode
 			replaceret stmt = stmt
-		modify (stmts ++ [body'] : )
-		return $ CVar new_ident call_ni
+		????
+		return $ CVar new_ident undefNode
 	searchfuncalls expr = return expr
 
 tracesStmtM traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
