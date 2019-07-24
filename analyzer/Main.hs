@@ -101,12 +101,13 @@ alternative1_m ||| alternative2_m = do
 tracesStmtM :: Trace -> [Stmt] -> CovVecM [[TraceElem]]
 
 tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
-	everywhereM (mkM searchfuncalls) stmt
+	(stmt', <- everywhereM (mkM searchfuncalls) stmt
 	where
 	containsfuncalls = everything (||) (mkQ False isfuncall) stmt
 	isfuncall :: CExpr -> Bool
 	isfuncall (CCall _ _ _) = True
 	isfuncall _ = False
+	
 	searchfuncalls :: CExpr -> CovVecM [[TraceElem]]
 	searchfuncalls (CCall (CVar funident _) args _) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
