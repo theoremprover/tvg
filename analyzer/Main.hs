@@ -102,7 +102,12 @@ tracesStmtM :: Trace -> [Stmt] -> CovVecM [[TraceElem]]
 
 tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
 	(stmt',calls) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
+	foldl (|||) (return [[]]) (map toaction calls)
 	where
+
+	toaction :: (CALL) -> CovVecM [[TraceElem]]
+	toaction 
+
 	containsfuncalls = everything (||) (mkQ False isfuncall) stmt
 	isfuncall :: CExpr -> Bool
 	isfuncall (CCall _ _ _) = True
