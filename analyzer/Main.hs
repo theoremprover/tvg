@@ -106,7 +106,7 @@ tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
 	where
 
 	toaction :: (CALL) -> CovVecM [[TraceElem]]
-	toaction 
+	toaction ... = tracesStmtM traceelems (:stmt':rest)
 
 	containsfuncalls = everything (||) (mkQ False isfuncall) stmt
 	isfuncall :: CExpr -> Bool
