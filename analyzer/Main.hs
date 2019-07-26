@@ -101,8 +101,7 @@ alternative1_m ||| alternative2_m = do
 tracesStmtM :: Trace -> [CStat] -> CovVecM [[TraceElem]]
 
 tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
-	(stmt',calls) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
-	let calls_stmts = reverse $ concat calls
+	(stmt',calls_stmts) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
 	tracesStmtM traceelems (calls_stmts ++ (stmt':rest))
 
 	where
@@ -113,14 +112,17 @@ tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
 		isfuncall _ = False
 	
 	searchfuncalls :: CExpr -> StateT [CStat] CovVecM CExpr
-	searchfuncalls (CCall (CVar funident _) args _) = do
+	searchfuncalls (CCall (CVar funident _) args call_ni) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
 		stmts <- forM (zip paramdecls args) $ \ (ParamDecl (VarDecl (VarName ident_decl Nothing) _ _) _,arg) -> do
 			return $ CExpr (Just $ CAssign CAssignOp (CVar ident_decl undefNode) arg undefNode) undefNode
 		let
 			new_ident = internalIdent (identToString funident ++ "_ret_" ++ show (posOffset (posOfNode call_ni)))
 			ret_var = CVar new_ident undefNode
-		modify $ (stmts++[body]):
+			body' = (mkT replace_return) body
+			replace_return :: CStat -> CStat
+			replace_return (CReturn Nothing) = 
+		modify (++(stmts++[body']))
 		return ret_var
 	searchfuncalls expr = return expr
 
