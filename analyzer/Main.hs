@@ -98,13 +98,13 @@ alternative1_m ||| alternative2_m = do
 	alternative2 <- alternative2_m
 	return $ alternative1 ++ alternative2
 
-tracesStmtM :: Trace -> [CVar] -> [CStat] -> CovVecM [[TraceElem]]
+tracesStmtM :: Trace -> [CStat] -> CovVecM [[TraceElem]]
 
-tracesStmtM traceelems ret_vars (stmt:rest) | containsfuncalls = do
+tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
 	(stmt',calls) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
-	let call_prologues = reverse $ concatMap fst calls
-	let ret_vars = reverse $ map snd calls
-	tracesStmtM traceelems (call_ret_vars ++ ret_vars) (call_prologues ++ [stmt'] ++ ret_stmts)
+	let calls_stmts = reverse $ concat calls
+	tracesStmtM traceelems (calls_stmts ++ (stmt':rest))
+
 	where
 
 	containsfuncalls = everything (||) (mkQ False isfuncall) stmt where
@@ -120,7 +120,7 @@ tracesStmtM traceelems ret_vars (stmt:rest) | containsfuncalls = do
 		let
 			new_ident = internalIdent (identToString funident ++ "_ret_" ++ show (posOffset (posOfNode call_ni)))
 			ret_var = CVar new_ident undefNode
-		modify $ (stmts++[body],ret_var):
+		modify $ (stmts++[body]):
 		return ret_var
 	searchfuncalls expr = return expr
 
