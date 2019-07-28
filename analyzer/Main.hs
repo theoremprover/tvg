@@ -8,6 +8,7 @@ import Control.Monad
 import Control.Monad.Trans.Class (lift)
 import System.Environment
 import Control.Applicative hiding (empty)
+import Control.Monad.IO.Class (liftIO)
 import Language.C
 import Language.C.Data.Ident
 import Language.C.Analysis.AstAnalysis
@@ -102,6 +103,7 @@ tracesStmtM :: Trace -> [CStat] -> CovVecM [[TraceElem]]
 
 tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
 	(stmt',calls_stmts) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
+	liftIO $ forM_ calls_stmts (putStrLn.render.pretty)
 	tracesStmtM traceelems (calls_stmts ++ (stmt':rest))
 
 	where
@@ -121,7 +123,9 @@ tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
 			ret_var = CVar new_ident undefNode
 			body' = (mkT replace_return) body
 			replace_return :: CStat -> CStat
-			replace_return (CReturn Nothing) = 
+			replace_return (CReturn Nothing _) = CCompound [] [] undefNode
+			replace_return (CReturn (Just ret_expr) _) = CExpr (Just $ CAssign CAssignOp ret_var ret_expr undefNode) undefNode
+			replace_return stmt = stmt
 		modify (++(stmts++[body']))
 		return ret_var
 	searchfuncalls expr = return expr
