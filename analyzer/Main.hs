@@ -101,9 +101,22 @@ alternative1_m ||| alternative2_m = do
 
 tracesStmtM :: Trace -> [CStat] -> CovVecM [[TraceElem]]
 
+tracesStmtM traceelems (CCompound _ cbis _ : rest) = tracesStmtM traceelems (concatMap to_stmt cbis ++ rest)
+	where
+	to_stmt (CBlockStmt cstmt) = [cstmt]
+	to_stmt (CBlockDecl (CDecl _ triples _)) = concatMap triple_to_stmt triples
+	triple_to_stmt (_,Nothing,Nothing) = []
+	triple_to_stmt (Just (CDeclr (Just ident) _ _ _ _),mb_initexpr,Nothing) = do
+		case mb_initexpr of
+			Nothing -> []
+			Just (CInitExpr init_expr _) -> [ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) init_expr undefNode) undefNode ]
+	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
+
 tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
 	(stmt',calls_stmts) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
-	liftIO $ forM_ calls_stmts (putStrLn.render.pretty)
+	liftIO $ do
+		putStrLn $ "######## " ++ (render.pretty) stmt ++ " ##########"
+		forM_ calls_stmts (putStrLn.render.pretty)
 	tracesStmtM traceelems (calls_stmts ++ (stmt':rest))
 
 	where
@@ -121,7 +134,7 @@ tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
 		let
 			new_ident = internalIdent (identToString funident ++ "_ret_" ++ show (posOffset (posOfNode call_ni)))
 			ret_var = CVar new_ident undefNode
-			body' = (mkT replace_return) body
+			body' = everywhere (mkT replace_return) body
 			replace_return :: CStat -> CStat
 			replace_return (CReturn Nothing _) = CCompound [] [] undefNode
 			replace_return (CReturn (Just ret_expr) _) = CExpr (Just $ CAssign CAssignOp ret_var ret_expr undefNode) undefNode
@@ -132,17 +145,6 @@ tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
 
 tracesStmtM traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
 	tracesStmtM (TraceAssign ident assign_op assigned_expr : traceelems) rest
-
-tracesStmtM traceelems (CCompound _ cbis _ : rest) = tracesStmtM traceelems (concatMap to_stmt cbis ++ rest)
-	where
-	to_stmt (CBlockStmt cstmt) = [cstmt]
-	to_stmt (CBlockDecl (CDecl _ triples _)) = concatMap triple_to_stmt triples
-	triple_to_stmt (_,Nothing,Nothing) = []
-	triple_to_stmt (Just (CDeclr (Just ident) _ _ _ _),mb_initexpr,Nothing) = do
-		case mb_initexpr of
-			Nothing -> []
-			Just (CInitExpr init_expr _) -> [ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) init_expr undefNode) undefNode ]
-	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
 
 tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m ||| else_m
 	where
