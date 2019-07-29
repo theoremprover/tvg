@@ -112,6 +112,15 @@ tracesStmtM traceelems (CCompound _ cbis _ : rest) = tracesStmtM traceelems (con
 			Just (CInitExpr init_expr _) -> [ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) init_expr undefNode) undefNode ]
 	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
 
+tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt if_ni : rest) = then_m ||| else_m
+	where
+	cond_var = CVar (internalIdent $ "cond_" ++ show (posOffset (posOfNode if_ni))) undefNode
+	cond_stmt = CExpr (Just (CAssign assign_op cond_var cond_expr undefNode)) undefNode
+	then_m = tracesStmtM (TraceDecision cond_expr : traceelems) (cond_stmt : then_stmt : rest)
+	else_m = tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) $ case mb_else_stmt of
+		Just else_stmt -> cond_stmt : else_stmt : rest
+		Nothing -> cond_stmt : rest
+
 tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
 	(stmt',calls_stmts) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
 	liftIO $ do
@@ -145,13 +154,6 @@ tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
 
 tracesStmtM traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
 	tracesStmtM (TraceAssign ident assign_op assigned_expr : traceelems) rest
-
-tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt _ : rest) = then_m ||| else_m
-	where
-	then_m = tracesStmtM (TraceDecision cond_expr : traceelems) (then_stmt:rest)
-	else_m = tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) $ case mb_else_stmt of
-		Just else_stmt -> else_stmt:rest
-		Nothing -> rest
 
 tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = return [ TraceReturn mb_ret_expr : traceelems ]
 tracesStmtM traceelems [] = return [ TraceReturn Nothing : traceelems ]
