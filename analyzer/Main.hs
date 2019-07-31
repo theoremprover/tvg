@@ -73,7 +73,7 @@ type AnalysisResult = [(Trace,[Constraint])]
 funCovVectorsM :: Ident -> CovVecM AnalysisResult
 funCovVectorsM funident = do
 	FunDef (VarDecl _ _ _) stmt _ <- lookupFunM funident
-	tracesStmtM [] [stmt] >>= mapM (aggregateConstraintsM [])
+	tracesStmtM [] [stmt] >>= mapM (aggregateConstraintsM []) >>= mapM expandFunCallsM
 
 data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceDecision CExpr | TraceReturn (Maybe CExpr)
 	deriving Show
@@ -115,12 +115,13 @@ tracesStmtM traceelems (CCompound _ cbis _ : rest) = tracesStmtM traceelems (con
 tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt if_ni : rest) = then_m ||| else_m
 	where
 	cond_var = CVar (internalIdent $ "cond_" ++ show (posOffset (posOfNode if_ni))) undefNode
-	cond_stmt = CExpr (Just (CAssign assign_op cond_var cond_expr undefNode)) undefNode
+	cond_stmt = CExpr (Just (CAssign CAssignOp cond_var cond_expr undefNode)) undefNode
 	then_m = tracesStmtM (TraceDecision cond_expr : traceelems) (cond_stmt : then_stmt : rest)
 	else_m = tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) $ case mb_else_stmt of
 		Just else_stmt -> cond_stmt : else_stmt : rest
 		Nothing -> cond_stmt : rest
 
+{-
 tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
 	(stmt',calls_stmts) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
 	liftIO $ do
@@ -151,6 +152,7 @@ tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
 		modify (++(stmts++[body']))
 		return ret_var
 	searchfuncalls expr = return expr
+-}
 
 tracesStmtM traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
 	tracesStmtM (TraceAssign ident assign_op assigned_expr : traceelems) rest
@@ -178,3 +180,29 @@ substituteVarInExpr ident subexpr (CCall fun args ni) = CCall (substituteVarInEx
 substituteVarInExpr ident subexpr (CVar vident ni) | ident==vident = subexpr
 substituteVarInExpr _ _ cvar@(CVar _ _) = cvar
 substituteVarInExpr _ _ expr = error $ "substituteVarInExpr for " ++  show expr ++ " not implemented"
+
+expandFunCallsM :: (Trace,[Constraint]) -> CovVecM (Trace,[Constraint])
+expandFunCallsM (trace,constraints) = do
+	constraintss' <- forM constraints $ \ cexpr -> do
+		(cexpr',additional_constraints) <- runStateT (everywhereM (mkM searchfuncalls) cexpr) []
+		return $ cexpr' : additional_constraints
+	return (trace,concat constraintss')
+	where
+	searchfuncalls :: CExpr -> StateT [CExpr] CovVecM CExpr
+	searchfuncalls (CCall (CVar funident _) args call_ni) = do
+		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
+{-
+		stmts <- forM (zip paramdecls args) $ \ (ParamDecl (VarDecl (VarName ident_decl Nothing) _ _) _,arg) -> do
+			return $ CExpr (Just $ CAssign CAssignOp (CVar ident_decl undefNode) arg undefNode) undefNode
+		let
+			new_ident = internalIdent (identToString funident ++ "_ret_" ++ show (posOffset (posOfNode call_ni)))
+			ret_var = CVar new_ident undefNode
+			body' = everywhere (mkT replace_return) body
+			replace_return :: CStat -> CStat
+			replace_return (CReturn Nothing _) = CCompound [] [] undefNode
+			replace_return (CReturn (Just ret_expr) _) = CExpr (Just $ CAssign CAssignOp ret_var ret_expr undefNode) undefNode
+			replace_return stmt = stmt
+		modify (++(stmts++[body']))
+		return ret_var
+-}
+	searchfuncalls expr = return expr
