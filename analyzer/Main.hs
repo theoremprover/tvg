@@ -188,6 +188,8 @@ expandFunCallsM (trace,constraints) = do
 		return $ cexpr' : additional_constraints
 	return (trace,concat constraintss')
 	where
+	-- take an expression, expand function calls,
+	-- return modified expression and a list of new constraints in the monad state
 	searchfuncalls :: CExpr -> StateT [CExpr] CovVecM CExpr
 	searchfuncalls (CCall (CVar funident _) args call_ni) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
