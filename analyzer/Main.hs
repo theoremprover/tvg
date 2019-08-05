@@ -193,6 +193,7 @@ expandFunCallsM (trace,constraints) = do
 	searchfuncalls :: CExpr -> StateT [CExpr] CovVecM CExpr
 	searchfuncalls (CCall (CVar funident _) args call_ni) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
+		bodytraces <- tracesStmtM [] [body]
 {-
 		stmts <- forM (zip paramdecls args) $ \ (ParamDecl (VarDecl (VarName ident_decl Nothing) _ _) _,arg) -> do
 			return $ CExpr (Just $ CAssign CAssignOp (CVar ident_decl undefNode) arg undefNode) undefNode
