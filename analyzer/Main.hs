@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
-{-# LANGUAGE LambdaCase,TypeSynonymInstances,FlexibleInstances #-}
+{-# LANGUAGE LambdaCase,TypeSynonymInstances,FlexibleInstances,OverlappingInstances #-}
 
 module Main where
 
@@ -181,7 +181,7 @@ substituteVarInExpr ident subexpr (CVar vident ni) | ident==vident = subexpr
 substituteVarInExpr _ _ cvar@(CVar _ _) = cvar
 substituteVarInExpr _ _ expr = error $ "substituteVarInExpr for " ++  show expr ++ " not implemented"
 
-instance Eq Ident where
+instance {-# OVERLAPPING #-} Eq Ident where
 	(Ident s1 h1 ni1) == (Ident s2 h2 ni2) = s1==s2 && h1==h2 && ni1==ni2
 
 expandFunCallsM :: (Trace,[Constraint]) -> CovVecM (Trace,[Constraint])
@@ -196,7 +196,14 @@ expandFunCallsM (trace,constraints) = do
 	searchfuncalls :: CExpr -> StateT [CExpr] CovVecM CExpr
 	searchfuncalls (CCall (CVar funident _) args call_ni) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
+		let body' = substituteVarInExpr --- FOLDING
 		bodytraces <- tracesStmtM [] [body]
+		forM bodytraces $ \ (ret_traceelem : bodytrace) -> do
+			let sub_constraints = case ret_traceelem of
+				TraceReturn Nothing -> error $ show funident ++ ": Behaviour of return; not implemented yet."
+				TraceReturn (Just ret_expr) -> 
+				_ -> error "searchfuncalls: first element of bodytraces in function " ++ show funident ++ " is no TraceReturn!"
+			return $ subconstraints ++ bodytrace
 {-
 		stmts <- forM (zip paramdecls args) $ \ (ParamDecl (VarDecl (VarName ident_decl Nothing) _ _) _,arg) -> do
 			return $ CExpr (Just $ CAssign CAssignOp (CVar ident_decl undefNode) arg undefNode) undefNode
