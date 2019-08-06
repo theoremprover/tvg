@@ -181,6 +181,9 @@ substituteVarInExpr ident subexpr (CVar vident ni) | ident==vident = subexpr
 substituteVarInExpr _ _ cvar@(CVar _ _) = cvar
 substituteVarInExpr _ _ expr = error $ "substituteVarInExpr for " ++  show expr ++ " not implemented"
 
+instance Eq Ident where
+	(Ident s1 h1 ni1) == (Ident s2 h2 ni2) = s1==s2 && h1==h2 && ni1==ni2
+
 expandFunCallsM :: (Trace,[Constraint]) -> CovVecM (Trace,[Constraint])
 expandFunCallsM (trace,constraints) = do
 	constraintss' <- forM constraints $ \ cexpr -> do
