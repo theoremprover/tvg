@@ -32,7 +32,8 @@ stack build :analyzer-exe && stack exec analyzer-exe
 gcc = newGCC "gcc"
 
 data CovVecState = CovVecState {
-	allDefs :: Map.Map Ident IdentDecl
+	allDefs :: Map.Map Ident IdentDecl,
+	newNameIndex :: Int
 	}
 
 type CovVecM = StateT CovVecState IO
@@ -49,7 +50,7 @@ main = do
 		Right translunit@(CTranslUnit extdecls _) -> do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
-			res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs
+			res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs 1
 			lss <- forM res $ \ (trace,constraints) -> do
 				return $ [
 					"TRACE:" ] ++
@@ -196,7 +197,7 @@ expandFunCallsM (trace,constraints) = do
 	searchfuncalls :: CExpr -> StateT [CExpr] CovVecM CExpr
 	searchfuncalls (CCall (CVar funident _) args call_ni) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
-		let body' = substituteVarInExpr --- FOLDING
+		let body' = foldl subst_arg 
 		bodytraces <- tracesStmtM [] [body]
 		forM bodytraces $ \ (ret_traceelem : bodytrace) -> do
 			let sub_constraints = case ret_traceelem of
