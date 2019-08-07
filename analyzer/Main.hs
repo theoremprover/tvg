@@ -197,7 +197,13 @@ expandFunCallsM (trace,constraints) = do
 	searchfuncalls :: CExpr -> StateT [CExpr] CovVecM CExpr
 	searchfuncalls (CCall (CVar funident _) args call_ni) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
-		let body' = foldl subst_arg 
+		var_num <- liftM $ gets newNameIndex
+		let
+			formal_args = map (\ (ParamDecl (VarDecl (VarName (Ident n _ ni) _) _ _) _) -> mkIdent () (posOfNode ni) ) paramdecls
+			subst_arg b (,i) =
+				substituteVarInExpr formal_param (mkIdent () )
+			body' = foldl subst_arg body (zip paramdecls [var_num..])
+		liftM $ modify $ \ s -> s { newNameIndex = newNameIndex s ++ length args }
 		bodytraces <- tracesStmtM [] [body]
 		forM bodytraces $ \ (ret_traceelem : bodytrace) -> do
 			let sub_constraints = case ret_traceelem of
