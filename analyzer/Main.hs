@@ -199,16 +199,16 @@ expandFunCallsM (trace,constraints) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
 		var_num <- liftM $ gets newNameIndex
 		let
-			formal_args = map (\ (ParamDecl (VarDecl (VarName (Ident n _ ni) _) _ _) _) -> mkIdent () (posOfNode ni) ) paramdecls
-			subst_arg b (,i) =
-				substituteVarInExpr formal_param (mkIdent () )
-			body' = foldl subst_arg body (zip paramdecls [var_num..])
-		liftM $ modify $ \ s -> s { newNameIndex = newNameIndex s ++ length args }
-		bodytraces <- tracesStmtM [] [body]
+			formal_params = map (\ (i,ParamDecl (VarDecl (VarName (old_ident@(Ident n _ ni)) _) _ _) _) ->
+				(old_ident,CVar (internalIdentAt (posOfNode ni) (n ++ "_$" ++ show i)) ni)) (zip [var_num..] paramdecls)
+			subst_arg b (old_ident,cvar) = substituteVarInExpr old_ident cvar b
+			body' = foldl subst_arg body formal_params
+		liftM $ modify $ \ s -> s { newNameIndex = newNameIndex s ++ length formal_params }
+		bodytraces <- tracesStmtM [] [body']
 		forM bodytraces $ \ (ret_traceelem : bodytrace) -> do
 			let sub_constraints = case ret_traceelem of
 				TraceReturn Nothing -> error $ show funident ++ ": Behaviour of return; not implemented yet."
-				TraceReturn (Just ret_expr) -> 
+				TraceReturn (Just ret_expr) ->  : bodytrace
 				_ -> error "searchfuncalls: first element of bodytraces in function " ++ show funident ++ " is no TraceReturn!"
 			return $ subconstraints ++ bodytrace
 {-
