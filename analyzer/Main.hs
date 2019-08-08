@@ -208,7 +208,7 @@ expandFunCallsM (trace,constraints) = do
 		forM bodytraces $ \ (ret_traceelem : bodytrace) -> do
 			let sub_constraints = case ret_traceelem of
 				TraceReturn Nothing -> error $ show funident ++ ": Behaviour of return; not implemented yet."
-				TraceReturn (Just ret_expr) ->  : bodytrace
+				TraceReturn (Just ret_expr) ->: bodytrace
 				_ -> error "searchfuncalls: first element of bodytraces in function " ++ show funident ++ " is no TraceReturn!"
 			return $ subconstraints ++ bodytrace
 {-
