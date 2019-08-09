@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
-{-# LANGUAGE LambdaCase,TypeSynonymInstances,FlexibleInstances,OverlappingInstances #-}
+{-# LANGUAGE LambdaCase,TypeSynonymInstances,FlexibleInstances #-}
 
 module Main where
 
@@ -182,8 +182,14 @@ substituteVarInExpr ident subexpr (CVar vident ni) | ident==vident = subexpr
 substituteVarInExpr _ _ cvar@(CVar _ _) = cvar
 substituteVarInExpr _ _ expr = error $ "substituteVarInExpr for " ++  show expr ++ " not implemented"
 
-instance {-# OVERLAPPING #-} Eq Ident where
+instance {-# OVERLAPS #-} Eq Ident where
 	(Ident s1 h1 ni1) == (Ident s2 h2 ni2) = s1==s2 && h1==h2 && ni1==ni2
+
+getNewIdent :: String -> CovVecM Int
+getNewIdent name_prefix = do
+    new_var_num <- gets newNameIndex
+    modify $ \ s -> s { newNameIndex = newNameIndex s + 1 }
+    return $ internalIdent (name_prefix ++ "_$" ++ show new_var_num)
 
 expandFunCallsM :: (Trace,[Constraint]) -> CovVecM (Trace,[Constraint])
 expandFunCallsM (trace,constraints) = do
@@ -197,32 +203,18 @@ expandFunCallsM (trace,constraints) = do
 	searchfuncalls :: CExpr -> StateT [CExpr] CovVecM CExpr
 	searchfuncalls (CCall (CVar funident _) args call_ni) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
-		var_num <- liftM $ gets newNameIndex
+		fun_val_ident <- lift getNewIdent
 		let
-			formal_params = map (\ (i,ParamDecl (VarDecl (VarName (old_ident@(Ident n _ ni)) _) _ _) _) ->
-				(old_ident,CVar (internalIdentAt (posOfNode ni) (n ++ "_$" ++ show i)) ni)) (zip [var_num..] paramdecls)
-			subst_arg b (old_ident,cvar) = substituteVarInExpr old_ident cvar b
-			body' = foldl subst_arg body formal_params
-		liftM $ modify $ \ s -> s { newNameIndex = newNameIndex s ++ length formal_params }
+			subs = map (\ (arg,ParamDecl (VarDecl (VarName (old_ident@(Ident n _ ni)) _) _ _) _) -> (old_ident,arg))
+			  (zip args paramdecls)
+			subst_arg b (old_ident,arg) = substituteVarInExpr old_ident arg b
+			body' = foldl subst_arg body subs
 		bodytraces <- tracesStmtM [] [body']
 		forM bodytraces $ \ (ret_traceelem : bodytrace) -> do
 			let sub_constraints = case ret_traceelem of
-				TraceReturn Nothing -> error $ show funident ++ ": Behaviour of return; not implemented yet."
-				TraceReturn (Just ret_expr) ->: bodytrace
+				TraceReturn Nothing -> error $ show funident ++ ": Behaviour of return without expr not implemented yet."
+				TraceReturn (Just ret_expr) -> TraceAssign fun_val_ident CAssignOp ret_expr : bodytrace
 				_ -> error "searchfuncalls: first element of bodytraces in function " ++ show funident ++ " is no TraceReturn!"
 			return $ subconstraints ++ bodytrace
-{-
-		stmts <- forM (zip paramdecls args) $ \ (ParamDecl (VarDecl (VarName ident_decl Nothing) _ _) _,arg) -> do
-			return $ CExpr (Just $ CAssign CAssignOp (CVar ident_decl undefNode) arg undefNode) undefNode
-		let
-			new_ident = internalIdent (identToString funident ++ "_ret_" ++ show (posOffset (posOfNode call_ni)))
-			ret_var = CVar new_ident undefNode
-			body' = everywhere (mkT replace_return) body
-			replace_return :: CStat -> CStat
-			replace_return (CReturn Nothing _) = CCompound [] [] undefNode
-			replace_return (CReturn (Just ret_expr) _) = CExpr (Just $ CAssign CAssignOp ret_var ret_expr undefNode) undefNode
-			replace_return stmt = stmt
-		modify (++(stmts++[body']))
-		return ret_var
--}
+		return $ CVar fun_val_ident call_ni
 	searchfuncalls expr = return expr
