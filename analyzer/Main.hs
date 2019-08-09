@@ -214,6 +214,6 @@ expandFunCallsM (trace,constraints) = do
 				TraceReturn Nothing -> error $ show funident ++ ": Behaviour of return without expr not implemented yet."
 				TraceReturn (Just ret_expr) -> TraceAssign fun_val_ident CAssignOp ret_expr : bodytrace
 				_ -> error "searchfuncalls: first element of bodytraces in function " ++ show funident ++ " is no TraceReturn!"
-			modify (subconstraints++)
+			modify --(subconstraints++)
 		return $ CVar fun_val_ident call_ni
 	searchfuncalls expr = return expr
