@@ -1,5 +1,8 @@
-{-# OPTIONS_GHC -fno-warn-tabs #-}
-{-# LANGUAGE LambdaCase,TypeSynonymInstances,FlexibleInstances #-}
+{-# OPTIONS_GHC -fno-warn-tabs -Wno-unrecognised-pragmas #-}
+{--# LANGUAGE LambdaCase,TypeSynonymInstances,FlexibleInstances #-}
+{-# HLINT ignore "Use list literal pattern" #-}
+{-# HLINT ignore "Redundant do" #-}
+{-# HLINT ignore "Redundant bracket" #-}
 
 module Main where
 
@@ -178,11 +181,11 @@ substituteVarInExpr ident subexpr cconst@(CConst _) = cconst
 substituteVarInExpr ident subexpr (CUnary unaryop expr ni) = CUnary unaryop (substituteVarInExpr ident subexpr expr) ni
 substituteVarInExpr ident subexpr (CBinary binop expr1 expr2 ni) = CBinary binop (substituteVarInExpr ident subexpr expr1) (substituteVarInExpr ident subexpr expr2) ni
 substituteVarInExpr ident subexpr (CCall fun args ni) = CCall (substituteVarInExpr ident subexpr fun) (map (substituteVarInExpr ident subexpr) args) ni
-substituteVarInExpr ident subexpr (CVar vident ni) | ident `isSameVariable` vident = subexpr
+substituteVarInExpr ident subexpr (CVar vident ni) | ident `isSameVariableAs` vident = subexpr
 substituteVarInExpr _ _ cvar@(CVar _ _) = cvar
 substituteVarInExpr _ _ expr = error $ "substituteVarInExpr for " ++  show expr ++ " not implemented"
 
-isSameVariable (Ident s1 i1 _) (Ident s2 i2 _) = s1==s2 && i1==i2
+isSameVariableAs (Ident s1 i1 _) (Ident s2 i2 _) = s1==s2 && i1==i2
 
 getNewIdent :: String -> CovVecM Int
 getNewIdent name_prefix = do
