@@ -178,12 +178,11 @@ substituteVarInExpr ident subexpr cconst@(CConst _) = cconst
 substituteVarInExpr ident subexpr (CUnary unaryop expr ni) = CUnary unaryop (substituteVarInExpr ident subexpr expr) ni
 substituteVarInExpr ident subexpr (CBinary binop expr1 expr2 ni) = CBinary binop (substituteVarInExpr ident subexpr expr1) (substituteVarInExpr ident subexpr expr2) ni
 substituteVarInExpr ident subexpr (CCall fun args ni) = CCall (substituteVarInExpr ident subexpr fun) (map (substituteVarInExpr ident subexpr) args) ni
-substituteVarInExpr ident subexpr (CVar vident ni) | ident==vident = subexpr
+substituteVarInExpr ident subexpr (CVar vident ni) | ident `isSameVariable` vident = subexpr
 substituteVarInExpr _ _ cvar@(CVar _ _) = cvar
 substituteVarInExpr _ _ expr = error $ "substituteVarInExpr for " ++  show expr ++ " not implemented"
 
-instance {-# OVERLAPS #-} Eq Ident where
-	(Ident s1 h1 ni1) == (Ident s2 h2 ni2) = s1==s2 && h1==h2 && ni1==ni2
+isSameVariable (Ident s1 i1 _) (Ident s2 i2 _) = s1==s2 && i1==i2
 
 getNewIdent :: String -> CovVecM Int
 getNewIdent name_prefix = do
@@ -210,11 +209,11 @@ expandFunCallsM (trace,constraints) = do
 			subst_arg b (old_ident,arg) = substituteVarInExpr old_ident arg b
 			body' = foldl subst_arg body subs
 		bodytraces <- tracesStmtM [] [body']
-		forM bodytraces $ \ (ret_traceelem : bodytrace) -> do
-			let sub_constraints = case ret_traceelem of
+		forM_ bodytraces $ \ (ret_traceelem : bodytrace) -> do
+			let subconstraints = case ret_traceelem of
 				TraceReturn Nothing -> error $ show funident ++ ": Behaviour of return without expr not implemented yet."
 				TraceReturn (Just ret_expr) -> TraceAssign fun_val_ident CAssignOp ret_expr : bodytrace
 				_ -> error "searchfuncalls: first element of bodytraces in function " ++ show funident ++ " is no TraceReturn!"
-			return $ subconstraints ++ bodytrace
+			modify --(subconstraints++)
 		return $ CVar fun_val_ident call_ni
 	searchfuncalls expr = return expr
