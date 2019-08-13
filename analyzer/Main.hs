@@ -158,7 +158,7 @@ getNewIdent :: String -> CovVecM Ident
 getNewIdent name_prefix = do
     new_var_num <- gets newNameIndex
     modify $ \ s -> s { newNameIndex = newNameIndex s + 1 }
-    return $ internalIdent (name_prefix ++ "_$" ++ show new_var_num)
+    return $ internalIdent (name_prefix ++ "$" ++ show new_var_num)
 
 expandFunCallsM :: (Trace,[Constraint]) -> CovVecM (Trace,[Constraint])
 expandFunCallsM (trace,constraints) = do
