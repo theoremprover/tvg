@@ -125,39 +125,6 @@ tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt if_ni : rest) = the
 		Just else_stmt -> cond_stmt : else_stmt : rest
 		Nothing -> cond_stmt : rest
 
-{-
-tracesStmtM traceelems (stmt:rest) | containsfuncalls = do
-	(stmt',calls_stmts) <- runStateT (everywhereM (mkM searchfuncalls) stmt) []
-	liftIO $ do
-		putStrLn $ "######## " ++ (render.pretty) stmt ++ " ##########"
-		forM_ calls_stmts (putStrLn.render.pretty)
-	tracesStmtM traceelems (calls_stmts ++ (stmt':rest))
-
-	where
-
-	containsfuncalls = everything (||) (mkQ False isfuncall) stmt where
-		isfuncall :: CExpr -> Bool
-		isfuncall (CCall _ _ _) = True
-		isfuncall _ = False
-	
-	searchfuncalls :: CExpr -> StateT [CStat] CovVecM CExpr
-	searchfuncalls (CCall (CVar funident _) args call_ni) = do
-		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
-		stmts <- forM (zip paramdecls args) $ \ (ParamDecl (VarDecl (VarName ident_decl Nothing) _ _) _,arg) -> do
-			return $ CExpr (Just $ CAssign CAssignOp (CVar ident_decl undefNode) arg undefNode) undefNode
-		let
-			new_ident = internalIdent (identToString funident ++ "_ret_" ++ show (posOffset (posOfNode call_ni)))
-			ret_var = CVar new_ident undefNode
-			body' = everywhere (mkT replace_return) body
-			replace_return :: CStat -> CStat
-			replace_return (CReturn Nothing _) = CCompound [] [] undefNode
-			replace_return (CReturn (Just ret_expr) _) = CExpr (Just $ CAssign CAssignOp ret_var ret_expr undefNode) undefNode
-			replace_return stmt = stmt
-		modify (++(stmts++[body']))
-		return ret_var
-	searchfuncalls expr = return expr
--}
-
 tracesStmtM traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
 	tracesStmtM (TraceAssign ident assign_op assigned_expr : traceelems) rest
 
@@ -187,7 +154,7 @@ substituteVarInExpr _ _ expr = error $ "substituteVarInExpr for " ++  show expr 
 
 isSameVariableAs (Ident s1 i1 _) (Ident s2 i2 _) = s1==s2 && i1==i2
 
-getNewIdent :: String -> CovVecM Int
+getNewIdent :: String -> CovVecM Ident
 getNewIdent name_prefix = do
     new_var_num <- gets newNameIndex
     modify $ \ s -> s { newNameIndex = newNameIndex s + 1 }
@@ -195,17 +162,20 @@ getNewIdent name_prefix = do
 
 expandFunCallsM :: (Trace,[Constraint]) -> CovVecM (Trace,[Constraint])
 expandFunCallsM (trace,constraints) = do
+	-- In each constraint, search for function calls, replace them and add additional constraints
 	constraintss' <- forM constraints $ \ cexpr -> do
 		(cexpr',additional_constraints) <- runStateT (everywhereM (mkM searchfuncalls) cexpr) []
 		return $ cexpr' : additional_constraints
 	return (trace,concat constraintss')
 	where
 	-- take an expression, expand function calls,
-	-- return modified expression and a list of new constraints in the monad state
+	-- return modified expression and a (possibly empty) list of new constraints in the monad state
 	searchfuncalls :: CExpr -> StateT [CExpr] CovVecM CExpr
 	searchfuncalls (CCall (CVar funident _) args call_ni) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
-		fun_val_ident <- lift getNewIdent
+		fun_val_ident <- lift $ getNewIdent (identToString funident)
+		return $ CVar fun_val_ident undefNode
+{-
 		let
 			subs = map (\ (arg,ParamDecl (VarDecl (VarName (old_ident@(Ident n _ ni)) _) _ _) _) -> (old_ident,arg))
 			  (zip args paramdecls)
@@ -219,4 +189,5 @@ expandFunCallsM (trace,constraints) = do
 				_ -> error "searchfuncalls: first element of bodytraces in function " ++ show funident ++ " is no TraceReturn!"
 			modify --(subconstraints++)
 		return $ CVar fun_val_ident call_ni
+-}
 	searchfuncalls expr = return expr
