@@ -55,8 +55,8 @@ main = do
 			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
 			res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs 1
 			lss <- forM res $ \ (trace,constraints) -> do
-				return $ [
-					"TRACE:" ] ++
+				return $
+					[ "TRACE:" ] ++
 					map (render.pretty) trace ++
 					[ "CONSTRAINTS:",
 					show $ map (render.pretty) constraints,
