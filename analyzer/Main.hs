@@ -72,8 +72,6 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
 
-type AnalysisResult = [(Trace,[Constraint])]
-
 funCovVectorsM :: Ident -> CovVecM AnalysisResult
 funCovVectorsM funident = do
 	FunDef (VarDecl _ _ _) stmt _ <- lookupFunM funident
@@ -87,6 +85,8 @@ instance Pretty TraceElem where
 	pretty (TraceReturn mb_expr) = text "return" <+> maybe Text.PrettyPrint.empty pretty mb_expr
 
 type Trace = [TraceElem]
+type AnalysisResult = [(TraceElem,[Constraint])]
+
 
 {-
 infixl 6 >>> 
@@ -103,7 +103,7 @@ alternative1_m ||| alternative2_m = do
 	alternative2 <- alternative2_m
 	return $ alternative1 ++ alternative2
 
-tracesStmtM :: Trace -> [CStat] -> CovVecM [[TraceElem]]
+tracesStmtM :: Trace -> [CStat] -> CovVecM [Trace]
 
 tracesStmtM traceelems (CCompound _ cbis _ : rest) = tracesStmtM traceelems (concatMap to_stmt cbis ++ rest)
 	where
@@ -132,9 +132,8 @@ tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = return [ TraceReturn mb_ret
 tracesStmtM traceelems [] = return [ TraceReturn Nothing : traceelems ]
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
--- Takes an (already computed) list of Constraints and contracts it to one without definitions,
--- so that a solver could solve it
-aggregateConstraintsM :: [Constraint] -> Trace -> CovVecM (Trace,[Constraint])
+-- Takes a Trace, contracts it to one without definitions, and returns a list of (TraceElem,Constraint) = AnalysisResult
+aggregateConstraintsM :: [Constraint] -> Trace -> CovVecM AnalysisResult
 aggregateConstraintsM initial_constraints trace = return (trace,aggregateconstraints initial_constraints trace)
 	where
 	aggregateconstraints :: [Constraint] -> Trace -> [Constraint]
@@ -162,19 +161,19 @@ getNewIdent name_prefix = do
 
 expandFunCallsM :: (Trace,[Constraint]) -> CovVecM (Trace,[Constraint])
 expandFunCallsM (trace,constraints) = do
-	-- In each constraint, search for function calls, replace them and add additional constraints
+	-- In each constraint, search for function calls, substitute them and add additional constraints
 	constraintss' <- forM constraints $ \ cexpr -> do
 		(cexpr',additional_constraints) <- runStateT (everywhereM (mkM searchfuncalls) cexpr) []
 		return $ cexpr' : additional_constraints
 	return (trace,concat constraintss')
 	where
 	-- take an expression, expand function calls,
-	-- return modified expression and a (possibly empty) list of new constraints in the monad state
-	searchfuncalls :: CExpr -> StateT [CExpr] CovVecM CExpr
+	-- return list of traces and constraints substituting the expression
+	searchfuncalls :: CExpr -> StateT [CExpr] CovVecM [(Trace,[CExpr])]
 	searchfuncalls (CCall (CVar funident _) args call_ni) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
 		fun_val_ident <- lift $ getNewIdent (identToString funident)
-		return $ CVar fun_val_ident undefNode
+		return $ [([],[CVar fun_val_ident undefNode])]
 {-
 		let
 			subs = map (\ (arg,ParamDecl (VarDecl (VarName (old_ident@(Ident n _ ni)) _) _ _) _) -> (old_ident,arg))
