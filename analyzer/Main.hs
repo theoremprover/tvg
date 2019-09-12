@@ -85,7 +85,7 @@ instance Pretty TraceElem where
 	pretty (TraceReturn mb_expr) = text "return" <+> maybe Text.PrettyPrint.empty pretty mb_expr
 
 type Trace = [TraceElem]
-type AnalysisResult = [(TraceElem,[Constraint])]
+type AnalysisResult = [(Trace,[Constraint])]
 
 
 {-
@@ -133,7 +133,7 @@ tracesStmtM traceelems [] = return [ TraceReturn Nothing : traceelems ]
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
 -- Takes a Trace, contracts it to one without definitions, and returns a list of (TraceElem,Constraint) = AnalysisResult
-aggregateConstraintsM :: [Constraint] -> Trace -> CovVecM AnalysisResult
+aggregateConstraintsM :: [Constraint] -> Trace -> CovVecM (Trace,[Constraint])
 aggregateConstraintsM initial_constraints trace = return (trace,aggregateconstraints initial_constraints trace)
 	where
 	aggregateconstraints :: [Constraint] -> Trace -> [Constraint]
@@ -169,11 +169,14 @@ expandFunCallsM (trace,constraints) = do
 	where
 	-- take an expression, expand function calls,
 	-- return list of traces and constraints substituting the expression
-	searchfuncalls :: CExpr -> StateT [CExpr] CovVecM [(Trace,[CExpr])]
-	searchfuncalls (CCall (CVar funident _) args call_ni) = do
+	searchfuncalls :: CExpr -> StateT [CExpr] CovVecM CExpr
+	searchfuncalls ccall@(CCall (CVar funident _) args call_ni) = do
+{-
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
 		fun_val_ident <- lift $ getNewIdent (identToString funident)
-		return $ [([],[CVar fun_val_ident undefNode])]
+		return [([],[CVar fun_val_ident undefNode])]
+-}
+		return ccall
 {-
 		let
 			subs = map (\ (arg,ParamDecl (VarDecl (VarName (old_ident@(Ident n _ ni)) _) _ _) _) -> (old_ident,arg))
