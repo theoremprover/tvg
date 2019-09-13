@@ -116,14 +116,16 @@ tracesStmtM traceelems (CCompound _ cbis _ : rest) = tracesStmtM traceelems (con
 			Just (CInitExpr init_expr _) -> [ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) init_expr undefNode) undefNode ]
 	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
 
-tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt if_ni : rest) = then_m ||| else_m
-	where
-	cond_var = CVar (internalIdent $ "cond_" ++ show (posOffset (posOfNode if_ni))) undefNode
-	cond_stmt = CExpr (Just (CAssign CAssignOp cond_var cond_expr undefNode)) undefNode
-	then_m = tracesStmtM (TraceDecision cond_expr : traceelems) (cond_stmt : then_stmt : rest)
-	else_m = tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) $ case mb_else_stmt of
-		Just else_stmt -> cond_stmt : else_stmt : rest
-		Nothing -> cond_stmt : rest
+tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt if_ni : rest) = do
+	cond_ident <- getNewIdent "cond"
+	let
+		cond_var = CVar cond_ident undefNode
+		cond_stmt = CExpr (Just (CAssign CAssignOp cond_var cond_expr undefNode)) undefNode
+		then_m = tracesStmtM (TraceDecision cond_expr : traceelems) (cond_stmt : then_stmt : rest)
+		else_m = tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) $ case mb_else_stmt of
+			Just else_stmt -> cond_stmt : else_stmt : rest
+			Nothing -> cond_stmt : rest	
+	then_m ||| else_m
 
 tracesStmtM traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) =
 	tracesStmtM (TraceAssign ident assign_op assigned_expr : traceelems) rest
