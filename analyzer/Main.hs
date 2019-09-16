@@ -26,6 +26,8 @@ import Data.Generics
 
 import DataTree
 
+-- haskellzinc
+
 {--
 stack build :analyzer-exe
 stack exec analyzer-exe -- test.c
