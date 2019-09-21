@@ -56,13 +56,13 @@ main = do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
 			res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs 1
-			lss <- forM res $ \ (trace,constraints) -> do
+			lss <- forM res $ \ (trace{-,constraints-}) -> do
 				return $
 					[ "TRACE:" ] ++
 					map (render.pretty) trace ++
 					[ "CONSTRAINTS:",
-					show $ map (render.pretty) constraints,
-					"------" ]
+--					show $ map (render.pretty) constraints,
+					"","------","" ]
 			writeFile (filename <.> "traces") (unlines $ concat lss)
 
 type Constraint = CExpr
@@ -74,16 +74,22 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
 
-funCovVectorsM :: Ident -> CovVecM AnalysisResult
+funCovVectorsM :: Ident -> CovVecM [Trace]
 funCovVectorsM funident = do
 	FunDef (VarDecl _ _ _) stmt _ <- lookupFunM funident
-	tracesStmtM [] [stmt] >>= mapM (aggregateConstraintsM []) >>= mapM expandFunCallsM
+	tracesStmtM [] [stmt] -- >>= mapM (aggregateConstraintsM []) >>= mapM expandFunCallsM
 
-data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceDecision CExpr | TraceReturn (Maybe CExpr)
+getNewIdent :: String -> CovVecM Ident
+getNewIdent name_prefix = do
+    new_var_num <- gets newNameIndex
+    modify $ \ s -> s { newNameIndex = newNameIndex s + 1 }
+    return $ internalIdent (name_prefix ++ "$" ++ show new_var_num)
+
+data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceCondition CExpr | TraceReturn (Maybe CExpr)
 	deriving Show
 instance Pretty TraceElem where
 	pretty (TraceAssign ident op expr) = pretty ident <+> text ":=" <+> pretty expr
-	pretty (TraceDecision expr) = pretty expr
+	pretty (TraceCondition expr) = text "Condition:" <+> pretty expr
 	pretty (TraceReturn mb_expr) = text "return" <+> maybe Text.PrettyPrint.empty pretty mb_expr
 
 type Trace = [TraceElem]
@@ -118,13 +124,15 @@ tracesStmtM traceelems (CCompound _ cbis _ : rest) = tracesStmtM traceelems (con
 			Just (CInitExpr init_expr _) -> [ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) init_expr undefNode) undefNode ]
 	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
 
+--tracesStmtM traceelems expr | expr `contains` 
+
 tracesStmtM traceelems (CIf cond_expr then_stmt mb_else_stmt if_ni : rest) = do
 	cond_ident <- getNewIdent "cond"
 	let
 		cond_var = CVar cond_ident undefNode
 		cond_stmt = CExpr (Just (CAssign CAssignOp cond_var cond_expr undefNode)) undefNode
-		then_m = tracesStmtM (TraceDecision cond_expr : traceelems) (cond_stmt : then_stmt : rest)
-		else_m = tracesStmtM (TraceDecision (CUnary CNegOp cond_expr undefNode) : traceelems) $ case mb_else_stmt of
+		then_m = tracesStmtM (TraceCondition cond_var : traceelems) (cond_stmt : then_stmt : rest)
+		else_m = tracesStmtM (TraceCondition (CUnary CNegOp cond_var undefNode) : traceelems) $ case mb_else_stmt of
 			Just else_stmt -> cond_stmt : else_stmt : rest
 			Nothing -> cond_stmt : rest	
 	then_m ||| else_m
@@ -136,6 +144,7 @@ tracesStmtM traceelems (CReturn mb_ret_expr _ : _) = return [ TraceReturn mb_ret
 tracesStmtM traceelems [] = return [ TraceReturn Nothing : traceelems ]
 tracesStmtM _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
+{-
 -- Takes a Trace, contracts it to one without definitions, and returns a list of (TraceElem,Constraint) = AnalysisResult
 aggregateConstraintsM :: [Constraint] -> Trace -> CovVecM (Trace,[Constraint])
 aggregateConstraintsM initial_constraints trace = return (trace,aggregateconstraints initial_constraints trace)
@@ -156,12 +165,6 @@ substituteVarInExpr _ _ cvar@(CVar _ _) = cvar
 substituteVarInExpr _ _ expr = error $ "substituteVarInExpr for " ++  show expr ++ " not implemented"
 
 isSameVariableAs (Ident s1 i1 _) (Ident s2 i2 _) = s1==s2 && i1==i2
-
-getNewIdent :: String -> CovVecM Ident
-getNewIdent name_prefix = do
-    new_var_num <- gets newNameIndex
-    modify $ \ s -> s { newNameIndex = newNameIndex s + 1 }
-    return $ internalIdent (name_prefix ++ "$" ++ show new_var_num)
 
 expandFunCallsM :: (Trace,[Constraint]) -> CovVecM (Trace,[Constraint])
 expandFunCallsM (trace,constraints) = do
@@ -197,3 +200,4 @@ expandFunCallsM (trace,constraints) = do
 		return $ CVar fun_val_ident call_ni
 -}
 	searchfuncalls expr = return expr
+-}
