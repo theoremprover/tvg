@@ -86,12 +86,11 @@ getNewIdent name_prefix = do
 	modify $ \ s -> s { newNameIndex = newNameIndex s + 1 }
 	return $ internalIdent (name_prefix ++ "$" ++ show new_var_num)
 
-data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceCondition CExpr -- | TraceReturn (Maybe CExpr)
+data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceCondition CExpr
 	deriving Show
 instance Pretty TraceElem where
 	pretty (TraceAssign ident op expr) = pretty ident <+> text ":=" <+> pretty expr
 	pretty (TraceCondition expr) = text "Condition:" <+> pretty expr
---	pretty (TraceReturn mb_expr) = text "return" <+> maybe Text.PrettyPrint.empty pretty mb_expr
 
 type Trace = [TraceElem]
 type AnalysisResult = [(Trace,[Constraint])]
