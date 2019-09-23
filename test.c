@@ -1,16 +1,16 @@
 #include <stdio.h>
 
-int g(int x)
+int g(int z)
 {
-	if(x>5)
-		return(2*x);
+	if(z>5)
+		return(2*z);
 
 	else
 	{
-		x = x + 1;
+		z = z + 1;
 	}
 
-	return(x+10);
+	return(z+10);
 }
 
 /*

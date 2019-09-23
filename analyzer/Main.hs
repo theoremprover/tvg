@@ -204,7 +204,7 @@ expandFunCallsM expr = runStateT (everywhereM (mkM searchfuncalls) expr) []
 			subst_var b (old,new) = substituteIdentInStmt old new b
 			body' = foldl subst_var body_with_arg_assignments old_new_idents
 		
-		modify (++[body])
+		modify (++[body'])
 		lift $ modify $ \ s -> s { funStack = funStack s ++ [fun_val_ident] }
 		return $ CVar fun_val_ident call_ni
 	searchfuncalls expr = return expr
