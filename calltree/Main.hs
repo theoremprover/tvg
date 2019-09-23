@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards,LambdaCase,OverloadedStrings #-}
+{-# LANGUAGE RecordWildCards,LambdaCase,OverloadedStrings,ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 {-
@@ -42,13 +42,16 @@ maini (gccexe:args) = do
 
 	writeFile "graph.dot" $ unlines $ nub $ map (drawedge vertex2node) (edges callgraph)
 
-	forM_ functions $ \ rootfunname -> do
+	removePathForcibly "calltree_out"
+	createDirectory "calltree_out"
+	calledfunctions_hull <- forM functions $ \ rootfunname -> do
 		case key2vertex rootfunname of
 			Nothing -> do
 				putStrLn $ "??? Function " ++ rootfunname ++ " not found in source files!"
 				writeFile ("calltree_out" </> (rootfunname ++ "_NOT_FOUND")) ""
+				return []
 			Just rootvertex -> do
-				forM_ (reachable callgraph rootvertex) $ \ vertex -> do
+				forM (reachable callgraph rootvertex) $ \ vertex -> do
 					let
 						calledfuns = map (\ v -> let (node,key,_) = vertex2node v in (node,key)) $ reachable callgraph vertex
 						((sourcefun,mb_sourcefile),_,_) = vertex2node vertex
@@ -56,11 +59,28 @@ maini (gccexe:args) = do
 					writeFile ("calltree_out" </> rootfunname </> sourcefun <.> "csv") $ printCSV $ ["FUNCTIONS CALLED DIRECTLY OR INDIRECTLY","FUNCTION DEFINED IN","DIRECTLY CALLED BY"] :
 						[ [f, maybe "<NOWHERE>" id mb_srcfile, concat $ intersperse ","
 							[ caller | (callerv,calledv) <- edges callgraph, Just calledv == key2vertex fk, let ((caller,_),_,_) = vertex2node callerv ] ] | ((f,mb_srcfile),fk) <- calledfuns ]
+					return (sourcefun,map (fst.fst) calledfuns \\ [sourcefun])
+
+	-- JSON output shall also contain indirectly called functions
+	let functionhull = nub $ concat calledfunctions_hull
+	json_liness :: [[String]] <- forM functionhull $ \ (funname,calledfuns) -> return ( map ("    "++) $ [ show funname ++ ": {", "  \"calltree\": [" ] ++ map ("    "++) (interspersef (++",") id (map show calledfuns)) ++ [ "  ]", "}" ] )
+	writeFile ("calltree_out" </> "calltree.json") $ unlines $ [
+		"{",
+		"  \"info\": {" ] ++
+		concat (interspersef (interspersef id (++",")) id json_liness) ++ [
+		"  }",
+		"}" ]
+
 	where
 	drawedge vertex2node (callerv,calledv) = let
 		((callername,_),_,_) = vertex2node callerv
 		((calledname,_),_,_) = vertex2node calledv in
 		callername ++ " -> " ++ calledname ++ ";"
+
+	-- apply f to each but the last element in a list
+	interspersef :: (a -> a) -> (a -> a) -> [a] -> [a]
+	interspersef _ _ [] = []
+	interspersef f g l = map f (take (length l - 1) l) ++ [ g $ last l ]
 
 getsrcfiles :: String -> IO [String]
 getsrcfiles name = do
@@ -83,33 +103,8 @@ removeellipses path = do
 		writeFile filename $ unlines $ ls
 
 functions = [
-	"__subsf3","__mulsf3","__eqsf2","__gtsf2","__gesf2",	"__ltsf2","__muldi3","__lshrdi3","__udivdi3","__udivmoddi4","__addsf3",	"__fpadd_parts","__fcmp_parts_f","__floatsisf","__floatunsisf",	"__fixunssfsi","__fixsfsi","__pack_f","__unpack_f","__divsf3",	"__lesf2","__ashldi3",	"__ashrdi3","__divdi3",	"__moddi3","__umoddi3","__nesf2" ]
-{-
-	"abs","acos","acosf","acosh","acoshf","asin","asinf","asinh","asinhf","atan","atan2","atan2f",
-	"atanf","atanh","atanhf","cbrt","cbrtf","ceil","ceilf","cos","cosf","cosh","coshf","exp","expm1f","exp2",
-	"exp2f","expm1","expf","fabs","fabsf","fdim","fdimf","floor","floorf","fmaf","fmax","fmaxf","fmin","fminf",
-	"fmod","fmodf","hypot","hypotf","ilogb","ilogbf","imaxabs","imaxdiv","ldexp","ldexpf","ldiv","llabs","lldiv",
-	"log","log10","log10f","log1p","log1pf","log2","log2f","logb","logbf","logf","lrint","lrintf","lround",
-	"lroundf","modf","modff","nextafter","nextafterf","pow","powf","remainder","remainderf","rint","rintf",
-	"round","roundf","scalbln","scalblnf","scalbn","scalbnf","sin","sinf","sinh","sinhf","sqrt","sqrtf",
-	"srand","tan","tanf","tanh","tanhf","trunc","truncf" ]
+	"__subsf3","__mulsf3","__eqsf2","__gtsf2","__gesf2",	"__ltsf2","__muldi3","__lshrdi3","__udivdi3","__udivmoddi4","__addsf3",	"_fpadd_parts","__fpcmp_parts_f","__floatsisf","__floatunsisf",	"__fixunssfsi","__fixsfsi","__pack_f","__unpack_f","__divsf3",	"__lesf2","__ashldi3",	"__ashrdi3","__divdi3",	"__moddi3","__umoddi3","__nesf2" ]
 
-	"__aeabi_cdcmpeq","__aeabi_cdcmple","__aeabi_cdrcmple","__aeabi_cfcmpeq","__aeabi_cfcmple","__aeabi_cfrcmple","__aeabi_d2f","__aeabi_d2h",
-	"__aeabi_d2h_alt","__aeabi_d2iz","__aeabi_d2lz","__aeabi_d2uiz","__aeabi_d2ulz","__aeabi_dadd","__aeabi_dcmpeq","__aeabi_dcmpge","__aeabi_dcmpgt",
-	"__aeabi_dcmple","__aeabi_dcmplt","__aeabi_dcmpun","__aeabi_ddiv","__aeabi_dmul","__aeabi_drsub","__aeabi_dsub","__aeabi_f2d","__aeabi_f2h","__aeabi_f2h_alt",
-	"__aeabi_f2iz","__aeabi_f2lz","__aeabi_f2uiz","__aeabi_f2ulz","__aeabi_fadd","__aeabi_fcmpeq","__aeabi_fcmpge","__aeabi_fcmpgt","__aeabi_fcmple","__aeabi_fcmplt",
-	"__aeabi_fcmpun","__aeabi_fdiv","__aeabi_fmul","__aeabi_frsub","__aeabi_fsub","__aeabi_h2f","__aeabi_h2f_alt","__aeabi_i2d","__aeabi_i2f","__aeabi_idivmod",
-	"__aeabi_idiv","__aeabi_idiv0","__aeabi_l2d","__aeabi_l2f","__aeabi_lasr","__aeabi_lcmp","__aeabi_ldivmod","__aeabi_ldiv0","__aeabi_llsl","__aeabi_llsr",
-	"__aeabi_lmul","__aeabi_memclr","__aeabi_memclr4","__aeabi_memclr8","__aeabi_memcpy","__aeabi_memcpy4","__aeabi_memcpy8","__aeabi_memmove","__aeabi_memmove4",
-	"__aeabi_memmove8","__aeabi_memset","__aeabi_memset4","__aeabi_memset8","__aeabi_ui2d","__aeabi_ui2f","__aeabi_uidiv","__aeabi_uidivmod","__aeabi_ul2d",
-	"__aeabi_ul2f","__aeabi_ulcmp","__aeabi_uldivmod","__aeabi_uread4","__aeabi_uread8","__aeabi_uwrite4","__aeabi_uwrite8","abs","acos","acosf","acosh",
-	"acoshf","add","addf","asin","asinf","asinh","asinhf","atan","atan2","atan2f","atanf","atanh","atanhf","cbrt","cbrtf","ceil","ceilf","cos","cosf",
-	"cosh","coshf","divide","dividef","exp","expm1f","exp2","exp2f","expm1","expf","fabs","fabsf","fdim","fdimf","floor","floorf","fmaf","fmax","fmaxf",
-	"fmin","fminf","fmod","fmodf","HUGE_VAL","hypot","hypotf","ilogb","ilogbf","imaxabs","imaxdiv","ldexp","ldexpf","ldiv","llabs","lldiv","log","log10",
-	"log10f","log1p","log1pf","log2","log2f","logb","logbf","logf","lrint","lrintf","lround","lroundf","modf","modff","multiply","multiplyf","nextafter",
-	"nextafterf","NULL","pow","powf","remainder","remainderf","rint","rintf","round","roundf","scalbln","scalblnf","scalbn","scalbnf","sin","sinf","sinh",
-	"sinhf","size_t","sqrt","sqrtf","srand","subtract","subtractf","tan","tanf","tanh","tanhf","trunc","truncf" ]
--}
 printCSV ls = unlines $ map (concat . (intersperse ";")) ls
 
 -- Returns a list of (funname,srcfile,[calledfunname1,...])
@@ -125,7 +120,7 @@ handleSrcFile gccexe preprocess_args srcfilename = do
 searchFunDefs :: CFunDef -> StateT [(String,Maybe FilePath,[String])] IO CFunDef
 searchFunDefs cfundef@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ stmt ni) = do
 	calledfunnames <- execStateT (everywhereM (mkM searchFunCalls) stmt) []
-	liftIO $ print calledfunnames
+--	liftIO $ print calledfunnames
 	modify ((funname,fileOfNode ni,nub calledfunnames) : )
 	return cfundef
 
