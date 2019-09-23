@@ -28,7 +28,8 @@ main = do
 	args <- getArgs
 	maini args
 
-maini [] = putStrLn "USAGE (in tvg dir): stack exec :calltree-exe -- <GCC-EXE> {<SRCFILE>|<OPT>}*"
+maini [] = do
+	putStrLn "USAGE (in tvg dir): stack exec :calltree-exe -- <GCC-EXE> {<SRCFILEDIR>|<OPT>}*"
 
 maini (gccexe:args) = do
 	let (preprocess_args,other_args) = partition (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
@@ -36,6 +37,7 @@ maini (gccexe:args) = do
 --	mapM_ print (concat pot_filess)
 	callss <- forM (concat pot_filess) (handleSrcFile gccexe preprocess_args)
 --	forM_ (concat callss) print
+
 	let (callgraph,vertex2node,key2vertex) = graphFromEdges $ map (\(funname,mb_defsrcfile,calledfunnames) -> ((funname,mb_defsrcfile),funname,calledfunnames)) (concat callss)
 
 	writeFile "graph.dot" $ unlines $ nub $ map (drawedge vertex2node) (edges callgraph)
@@ -54,7 +56,6 @@ maini (gccexe:args) = do
 					writeFile ("calltree_out" </> rootfunname </> sourcefun <.> "csv") $ printCSV $ ["FUNCTIONS CALLED DIRECTLY OR INDIRECTLY","FUNCTION DEFINED IN","DIRECTLY CALLED BY"] :
 						[ [f, maybe "<NOWHERE>" id mb_srcfile, concat $ intersperse ","
 							[ caller | (callerv,calledv) <- edges callgraph, Just calledv == key2vertex fk, let ((caller,_),_,_) = vertex2node callerv ] ] | ((f,mb_srcfile),fk) <- calledfuns ]
-
 	where
 	drawedge vertex2node (callerv,calledv) = let
 		((callername,_),_,_) = vertex2node callerv
@@ -65,7 +66,7 @@ getsrcfiles :: String -> IO [String]
 getsrcfiles name = do
 	isdir <- doesDirectoryExist name
 	case isdir of
-		False -> case any (`isSuffixOf` name) [".i.c",".c.i",".h"] of
+		False -> case any (`isSuffixOf` name) [".i.c",".c.i",".h",".i"] of
 			True -> return [name]
 			False -> return []
 		True -> do
@@ -79,9 +80,10 @@ removeellipses path = do
 		f <- readFile filename
 		let ls = lines f
 		print $ length ls
-		writeFile filename $ unlines $ filter (\ l -> not ("static void __tg_promote(...)" `isInfixOf` l) && not (" __attribute__((__overloadable__, __unavailable__));" `isInfixOf` l)) ls
+		writeFile filename $ unlines $ ls
 
 functions = [
+	"__subsf3","__mulsf3","__eqsf2","__gtsf2","__gesf2",	"__ltsf2","__muldi3","__lshrdi3","__udivdi3","__udivmoddi4","__addsf3",	"__fpadd_parts","__fcmp_parts_f","__floatsisf","__floatunsisf",	"__fixunssfsi","__fixsfsi","__pack_f","__unpack_f","__divsf3",	"__lesf2","__ashldi3",	"__ashrdi3","__divdi3",	"__moddi3","__umoddi3","__nesf2" ]
 {-
 	"abs","acos","acosf","acosh","acoshf","asin","asinf","asinh","asinhf","atan","atan2","atan2f",
 	"atanf","atanh","atanhf","cbrt","cbrtf","ceil","ceilf","cos","cosf","cosh","coshf","exp","expm1f","exp2",
@@ -91,7 +93,7 @@ functions = [
 	"lroundf","modf","modff","nextafter","nextafterf","pow","powf","remainder","remainderf","rint","rintf",
 	"round","roundf","scalbln","scalblnf","scalbn","scalbnf","sin","sinf","sinh","sinhf","sqrt","sqrtf",
 	"srand","tan","tanf","tanh","tanhf","trunc","truncf" ]
-	-}
+
 	"__aeabi_cdcmpeq","__aeabi_cdcmple","__aeabi_cdrcmple","__aeabi_cfcmpeq","__aeabi_cfcmple","__aeabi_cfrcmple","__aeabi_d2f","__aeabi_d2h",
 	"__aeabi_d2h_alt","__aeabi_d2iz","__aeabi_d2lz","__aeabi_d2uiz","__aeabi_d2ulz","__aeabi_dadd","__aeabi_dcmpeq","__aeabi_dcmpge","__aeabi_dcmpgt",
 	"__aeabi_dcmple","__aeabi_dcmplt","__aeabi_dcmpun","__aeabi_ddiv","__aeabi_dmul","__aeabi_drsub","__aeabi_dsub","__aeabi_f2d","__aeabi_f2h","__aeabi_f2h_alt",
@@ -107,21 +109,23 @@ functions = [
 	"log10f","log1p","log1pf","log2","log2f","logb","logbf","logf","lrint","lrintf","lround","lroundf","modf","modff","multiply","multiplyf","nextafter",
 	"nextafterf","NULL","pow","powf","remainder","remainderf","rint","rintf","round","roundf","scalbln","scalblnf","scalbn","scalbnf","sin","sinf","sinh",
 	"sinhf","size_t","sqrt","sqrtf","srand","subtract","subtractf","tan","tanf","tanh","tanhf","trunc","truncf" ]
-
+-}
 printCSV ls = unlines $ map (concat . (intersperse ";")) ls
 
 -- Returns a list of (funname,srcfile,[calledfunname1,...])
 handleSrcFile gccexe preprocess_args srcfilename = do
 	putStrLn $ "handling SrcFile " ++ srcfilename
 	mb_ast <- parseCFile (newGCC gccexe) Nothing preprocess_args srcfilename
+--	mb_ast <- parseCFilePre srcfilename
 	case mb_ast of
 		Left err -> error $ show err
 		Right ctranslunit -> execStateT (everywhereM (mkM searchFunDefs) ctranslunit) []
-			
+
 -- For all function definitons in the current source file:
 searchFunDefs :: CFunDef -> StateT [(String,Maybe FilePath,[String])] IO CFunDef
 searchFunDefs cfundef@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ stmt ni) = do
 	calledfunnames <- execStateT (everywhereM (mkM searchFunCalls) stmt) []
+	liftIO $ print calledfunnames
 	modify ((funname,fileOfNode ni,nub calledfunnames) : )
 	return cfundef
 
