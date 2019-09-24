@@ -38,8 +38,7 @@ gcc = newGCC "gcc"
 
 data CovVecState = CovVecState {
 	allDefs :: Map.Map Ident IdentDecl,
-	newNameIndex :: Int,
-	funList :: FunList
+	newNameIndex :: Int
 	}
 
 type CovVecM = StateT CovVecState IO
@@ -56,7 +55,7 @@ main = do
 		Right translunit@(CTranslUnit extdecls _) -> do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
-			res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs 1 []
+			res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs 1
 			lss <- forM res $ \ (trace{-,constraints-}) -> do
 				return $
 					[ "TRACE:" ] ++
@@ -78,7 +77,7 @@ lookupFunM ident = do
 funCovVectorsM :: Ident -> CovVecM [Trace]
 funCovVectorsM funident = do
 	FunDef (VarDecl _ _ _) stmt _ <- lookupFunM funident
-	tracesStmtM True [] [stmt] -- >>= mapM (aggregateConstraintsM []) >>= mapM expandFunCallsM
+	tracesStmtM True ExpandCalls [] [] [stmt] -- >>= mapM (aggregateConstraintsM []) >>= mapM expandFunCallsM
 
 getNewIdent :: String -> CovVecM Ident
 getNewIdent name_prefix = do
@@ -95,36 +94,28 @@ instance Pretty TraceElem where
 type Trace = [TraceElem]
 type AnalysisResult = [(Trace,[Constraint])]
 type FunList = [Ident]
+data StmtStage = ExpandCalls | NoCallsLeft deriving Show
 
 {-
-infixl 6 >>> 
-(>>>) :: CovVecM [Trace] -> CovVecM [Trace] -> CovVecM Traces
-earlier_m >>> later_m = do
-	earlier <- earlier_m
-	later <- later_m
-	return $ [ l++e | e <- earlier, l <- later ]
--}
-infixl 5 |||
-(|||) :: CovVecM [a] -> CovVecM [a] -> CovVecM [a]
-alternative1_m ||| alternative2_m = do
-	alternative1 <- alternative1_m
-	alternative2 <- alternative2_m
-	return $ alternative1 ++ alternative2
-
 containsNoFunctionCalls :: CExpr -> Bool
 containsNoFunctionCalls expr = everything (&&) (mkQ True searchfuncall) expr where
 	searchfuncall :: CExpr -> Bool
 	searchfuncall (CCall (CVar (Ident funname _ _) _) _ _) = False
 	searchfuncall expr = True
+-}
 
-tracesStmtM :: Bool -> Trace -> [CStat] -> CovVecM [Trace]
+tracesStmtM :: Bool -> StmtStage -> [Ident] -> Trace -> [CStat] -> CovVecM [Trace]
 
-tracesStmtM True traceelems rest@(r:_) = liftIO $ do
-	putStrLn "--------------"
-	putStrLn $ "tracesStmtM : \n" ++ (render.pretty) r
-	tracesStmtM False traceelems rest
+tracesStmtM True stmtstage funidents traceelems rest@(r:_) = do
+	liftIO $ do
+		putStrLn "--------------"
+		putStrLn $ "tracesStmtM " ++ show stmtstage
+		putStrLn $ "    funidents = " ++ show (map (render.pretty) funidents)
+		putStrLn $ "    traceelems = " ++ show (map (render.pretty) (take 5 traceelems)) ++ "..."
+		putStrLn $ "    next = " ++ (render.pretty) r
+	tracesStmtM False stmtstage funidents traceelems rest
 
-tracesStmtM _ traceelems (CCompound _ cbis _ : rest) = tracesStmtM True traceelems (concatMap to_stmt cbis ++ rest)
+tracesStmtM False _ funidents traceelems (CCompound _ cbis _ : rest) = tracesStmtM True ExpandCalls funidents traceelems (concatMap to_stmt cbis ++ rest)
 	where
 	to_stmt (CBlockStmt cstmt) = [cstmt]
 	to_stmt (CBlockDecl (CDecl _ triples _)) = concatMap triple_to_stmt triples
@@ -135,55 +126,54 @@ tracesStmtM _ traceelems (CCompound _ cbis _ : rest) = tracesStmtM True traceele
 			Just (CInitExpr init_expr _) -> [ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) init_expr undefNode) undefNode ]
 	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
 
-tracesStmtM _ traceelems (CIf cond_expr then_stmt mb_else_stmt if_ni : rest) | containsNoFunctionCalls cond_expr = do
+tracesStmtM False NoCallsLeft funidents traceelems (CIf cond_expr then_stmt mb_else_stmt if_ni : rest)  = do
 	cond_ident <- getNewIdent "cond"
 	let
 		cond_var = CVar cond_ident undefNode
 		cond_stmt = CExpr (Just $ CAssign CAssignOp cond_var cond_expr undefNode) undefNode
-		then_m = tracesStmtM True (TraceCondition cond_var : traceelems) (cond_stmt : then_stmt : rest)
-		else_m = tracesStmtM True (TraceCondition (CUnary CNegOp cond_var undefNode) : traceelems) $ case mb_else_stmt of
-			Just else_stmt -> cond_stmt : else_stmt : rest
-			Nothing -> cond_stmt : rest	
-	then_m ||| else_m
-tracesStmtM _ traceelems (CIf cond_expr then_stmt mb_else_stmt if_ni : rest) = do
-	(cond_expr',funcall_stmts) <- expandFunCallsM cond_expr
-	tracesStmtM True traceelems $ funcall_stmts ++ (CIf cond_expr' then_stmt mb_else_stmt if_ni : rest)
+	then_m <- tracesStmtM True ExpandCalls funidents (TraceCondition cond_var : traceelems) (cond_stmt : then_stmt : rest)
+	else_m <- tracesStmtM True ExpandCalls funidents (TraceCondition (CUnary CNegOp cond_var undefNode) : traceelems) $ case mb_else_stmt of
+		Just else_stmt -> cond_stmt : else_stmt : rest
+		Nothing -> cond_stmt : rest
+	return $ then_m ++ else_m
+tracesStmtM False ExpandCalls funidents traceelems (CIf cond_expr then_stmt mb_else_stmt if_ni : rest) = do
+	(cond_expr',(funcall_stmts,called_funidents)) <- expandFunCallsM cond_expr
+	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $ funcall_stmts ++ (CIf cond_expr' then_stmt mb_else_stmt if_ni : rest)
 
-tracesStmtM _ traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) | containsNoFunctionCalls assigned_expr = do
-	tracesStmtM True (TraceAssign ident assign_op assigned_expr : traceelems) rest
-tracesStmtM _ traceelems ((CExpr (Just (CAssign assign_op cvar assigned_expr _)) _) : rest) = do
-	(assigned_expr',funcall_stmts) <- expandFunCallsM assigned_expr
-	tracesStmtM True traceelems $
+tracesStmtM False NoCallsLeft funidents traceelems ((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) = do
+	tracesStmtM True ExpandCalls funidents (TraceAssign ident assign_op assigned_expr : traceelems) rest
+tracesStmtM False ExpandCalls funidents traceelems ((CExpr (Just (CAssign assign_op cvar assigned_expr _)) _) : rest) = do
+	(assigned_expr',(funcall_stmts,called_funidents)) <- expandFunCallsM assigned_expr
+	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $
 		funcall_stmts ++ (CExpr (Just (CAssign assign_op cvar assigned_expr' undefNode)) undefNode : rest)
 
-tracesStmtM _ traceelems (CReturn mb_ret_val _ : rest_stmts) | maybe True containsNoFunctionCalls mb_ret_val = do
-	funList <- gets funList
-	case funList of
+tracesStmtM False NoCallsLeft funidents traceelems (CReturn mb_ret_val _ : rest_stmts) = do
+	case funidents of
 		[] -> return [traceelems]
 		(funident:rest) -> do
-			modify $ \ s -> s { funList = rest }
-			tracesStmtM True traceelems $ case mb_ret_val of
+			tracesStmtM True ExpandCalls rest traceelems $ case mb_ret_val of
 				Nothing -> rest_stmts
 				Just ret_val -> CExpr (Just (CAssign CAssignOp (CVar funident undefNode) ret_val undefNode)) undefNode : rest_stmts
-tracesStmtM _ traceelems (CReturn mb_ret_val _ : rest_stmts) = do
-	(mb_ret_val',funcall_stmts) <- case mb_ret_val of
-		Nothing -> return (Nothing,[])
+tracesStmtM False ExpandCalls funidents traceelems (CReturn mb_ret_val _ : rest_stmts) = do
+	(mb_ret_val',(funcall_stmts,called_funidents)) <- case mb_ret_val of
+		Nothing -> return (Nothing,([],[]))
 		Just ret_val -> do
 			(v,ss) <- expandFunCallsM ret_val
 			return (Just v,ss)
-	tracesStmtM True traceelems $ funcall_stmts ++ (CReturn mb_ret_val' undefNode : rest_stmts)
+	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $ funcall_stmts ++ (CReturn mb_ret_val' undefNode : rest_stmts)
 
-tracesStmtM _ traceelems [] = return [ traceelems ]
+tracesStmtM False _ [] traceelems [] = return [ traceelems ]
+tracesStmtM False _ funidents _ [] = error $ "funidents not empty when reaching end of stmts!"
 
-tracesStmtM _ _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
+tracesStmtM False _ _ _ (stmt:_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
 
 -- Expands all function calls in expr and returns a statement handling all function calls, and the modified expression
-expandFunCallsM :: CExpr -> CovVecM (CExpr,[CStat])
-expandFunCallsM expr = runStateT (everywhereM (mkM searchfuncalls) expr) []
+expandFunCallsM :: CExpr -> CovVecM (CExpr,([CStat],[Ident]))
+expandFunCallsM expr = runStateT (everywhereM (mkM searchfuncalls) expr) ([],[])
 	where
 	-- take an expression, expand function calls,
 	-- return the substituted expression and a list of statements in the monad's state
-	searchfuncalls :: CExpr -> StateT [CStat] CovVecM CExpr
+	searchfuncalls :: CExpr -> StateT ([CStat],[Ident]) CovVecM CExpr
 	searchfuncalls ccall@(CCall (CVar funident@(Ident funname _ _) _) args call_ni) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
 		fun_val_ident <- lift $ getNewIdent funname
@@ -209,8 +199,7 @@ expandFunCallsM expr = runStateT (everywhereM (mkM searchfuncalls) expr) []
 			subst_var b (old,new) = substituteIdentInStmt old new b
 			body' = foldl subst_var body_with_arg_assignments old_new_idents
 		
-		modify (++[body'])
-		lift $ modify $ \ s -> s { funList = funList s ++ [fun_val_ident] }
+		modify $ \ (stats,funidents) -> (stats++[body'],funidents++[fun_val_ident])
 		return $ CVar fun_val_ident call_ni
 	searchfuncalls expr = return expr
 

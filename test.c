@@ -13,9 +13,6 @@ int g(int z)
 	return(z+10);
 }
 
-/*
-*/
-
 int f(int x)
 {
 	int z = 2*g(x+1);
