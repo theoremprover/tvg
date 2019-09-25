@@ -150,10 +150,9 @@ tracesStmtM False ExpandCalls funidents traceelems (((CExpr (Just (CAssign assig
 tracesStmtM False NoCallsLeft funidents traceelems ((CReturn mb_ret_val _ : _):rx) = do
 	case funidents of
 		[] -> return [traceelems]
-		(funident:rest) -> do
-			tracesStmtM True ExpandCalls rest traceelems $ case mb_ret_val of
-				Nothing -> rx
-				Just ret_val -> CExpr (Just (CAssign CAssignOp (CVar funident undefNode) ret_val undefNode)) undefNode : rx
+		(funident:funidents) -> tracesStmtM True ExpandCalls funidents traceelems $ case mb_ret_val of
+			Nothing -> rx
+			Just ret_val -> ( CExpr (Just (CAssign CAssignOp (CVar funident undefNode) ret_val undefNode)) undefNode : head rx ) : tail rx
 tracesStmtM False ExpandCalls funidents traceelems ((CReturn mb_ret_val _ : _):rx) = do
 	(mb_ret_val',(funcall_stmts,called_funidents)) <- case mb_ret_val of
 		Nothing -> return (Nothing,([],[]))
@@ -163,9 +162,21 @@ tracesStmtM False ExpandCalls funidents traceelems ((CReturn mb_ret_val _ : _):r
 	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems (funcall_stmts : [CReturn mb_ret_val' undefNode] : rx)
 
 tracesStmtM False _ [] traceelems [] = return [ traceelems ]
+tracesStmtM False _ [] traceelems [[]] = return [ traceelems ]
 tracesStmtM False _ funidents _ [] = error $ "funidents not empty when reaching end of stmts!"
+tracesStmtM False _ funidents _ [[]] = error $ "funidents not empty when reaching end of stmts!"
 
 tracesStmtM False _ _ _ ((stmt:_):_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
+
+tracesStmtM tracing stmtstage funidents traceelems rss = do
+	liftIO $ do
+		putStrLn "--- ERROR ---"
+		putStrLn $ "tracesStmtM " ++ show stmtstage
+		putStrLn $ "    funidents = " ++ show (map (render.pretty) funidents)
+		putStrLn $ "    traceelems = " ++ show (map (render.pretty) (take 5 traceelems)) ++ "..."
+		putStrLn $ "    next = " ++ show (map (map (render.pretty)) rss)
+	error "Non-exhaustive patterns in tracesStmtM"
+
 
 -- Expands all function calls in expr and returns a statement handling all function calls, and the modified expression
 expandFunCallsM :: CExpr -> CovVecM (CExpr,([CStat],[Ident]))
