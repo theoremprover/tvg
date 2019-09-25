@@ -35,10 +35,6 @@ int f(int x)
 	return(y+1);
 }
 
-/*
-*/
-
-
 int main()
 {
 	int x;
