@@ -94,7 +94,7 @@ instance Pretty TraceElem where
 type Trace = [TraceElem]
 type AnalysisResult = [(Trace,[Constraint])]
 type FunList = [Ident]
-data StmtStage = ExpandCalls | NoCallsLeft deriving Show
+data StmtStage = ExpandCalls | NoCallsLeft deriving (Eq,Show)
 
 {-
 containsNoFunctionCalls :: CExpr -> Bool
@@ -106,13 +106,15 @@ containsNoFunctionCalls expr = everything (&&) (mkQ True searchfuncall) expr whe
 
 tracesStmtM :: Bool -> StmtStage -> [Ident] -> Trace -> [[CStat]] -> CovVecM [Trace]
 
-tracesStmtM True stmtstage funidents traceelems rest@((r:_):_) = do
+tracesStmtM True stmtstage funidents traceelems rest = do
 	liftIO $ do
 		putStrLn "--------------"
 		putStrLn $ "tracesStmtM " ++ show stmtstage
 		putStrLn $ "    funidents = " ++ show (map (render.pretty) funidents)
 		putStrLn $ "    traceelems = " ++ show (map (render.pretty) (take 5 traceelems)) ++ "..."
-		putStrLn $ "    next = " ++ (render.pretty) r
+		putStrLn $ "    next = " ++ case rest of
+			((r:_):_) -> (render.pretty) r
+			_ -> show rest
 	tracesStmtM False stmtstage funidents traceelems rest
 
 tracesStmtM False _ funidents traceelems ((CCompound _ cbis _ : rest):rx) = tracesStmtM True ExpandCalls funidents traceelems ((concatMap to_stmt cbis ++ rest):rx)
@@ -147,6 +149,10 @@ tracesStmtM False ExpandCalls funidents traceelems (((CExpr (Just (CAssign assig
 	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $
 		(funcall_stmts : (CExpr (Just (CAssign assign_op cvar assigned_expr' undefNode)) undefNode : rest) : rx)
 
+tracesStmtM False st funidents traceelems ([]:rx) | st `elem` [ExpandCalls,NoCallsLeft] = case funidents of
+	[] -> return [traceelems]
+	(_:funidents) -> tracesStmtM False ExpandCalls funidents traceelems rx
+
 tracesStmtM False NoCallsLeft funidents traceelems ((CReturn mb_ret_val _ : _):rx) = do
 	case funidents of
 		[] -> return [traceelems]
@@ -171,12 +177,13 @@ tracesStmtM False _ _ _ ((stmt:_):_) = error $ "traceStmtM: " ++ show stmt ++ " 
 tracesStmtM tracing stmtstage funidents traceelems rss = do
 	liftIO $ do
 		putStrLn "--- ERROR ---"
-		putStrLn $ "tracesStmtM " ++ show stmtstage
+		putStrLn $ "tracesStmtM "
+		putStrLn $ "    tracing = " ++ show tracing
+		putStrLn $ "    stmtstage = " ++ show stmtstage
 		putStrLn $ "    funidents = " ++ show (map (render.pretty) funidents)
 		putStrLn $ "    traceelems = " ++ show (map (render.pretty) (take 5 traceelems)) ++ "..."
 		putStrLn $ "    next = " ++ show (map (map (render.pretty)) rss)
 	error "Non-exhaustive patterns in tracesStmtM"
-
 
 -- Expands all function calls in expr and returns a statement handling all function calls, and the modified expression
 expandFunCallsM :: CExpr -> CovVecM (CExpr,([CStat],[Ident]))
