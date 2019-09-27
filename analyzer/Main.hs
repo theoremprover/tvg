@@ -3,6 +3,8 @@
 {-# HLINT ignore "Use list literal pattern" #-}
 {-# HLINT ignore "Redundant do" #-}
 {-# HLINT ignore "Redundant bracket" #-}
+{-# HLINT ignore "Redundant $" #-}
+{-# HLINT ignore "Eta reduce" #-}
 
 module Main where
 
@@ -113,7 +115,7 @@ tracesStmtM True stmtstage funidents traceelems rest = do
 		putStrLn $ "    funidents = " ++ show (map (render.pretty) funidents)
 		putStrLn $ "    traceelems = " ++ show (map (render.pretty) (take 5 traceelems)) ++ "..."
 		putStrLn $ "    next = " ++ case rest of
-			((r:_):_) -> (render.pretty) r
+			((r:_):_) -> "[ [ " ++ (render.pretty) r ++ ".. ], .. ]"
 			_ -> show rest
 	tracesStmtM False stmtstage funidents traceelems rest
 
@@ -144,10 +146,11 @@ tracesStmtM False ExpandCalls funidents traceelems ((CIf cond_expr then_stmt mb_
 
 tracesStmtM False NoCallsLeft funidents traceelems (((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) : rx) = do
 	tracesStmtM True ExpandCalls funidents (TraceAssign ident assign_op assigned_expr : traceelems) (rest:rx)
+
 tracesStmtM False ExpandCalls funidents traceelems (((CExpr (Just (CAssign assign_op cvar assigned_expr _)) _) : rest ) : rx) = do
 	(assigned_expr',(funcall_stmts,called_funidents)) <- expandFunCallsM assigned_expr
 	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $
-		(funcall_stmts : (CExpr (Just (CAssign assign_op cvar assigned_expr' undefNode)) undefNode : rest) : rx)
+		((funcall_stmts ++ (CExpr (Just (CAssign assign_op cvar assigned_expr' undefNode)) undefNode) : rest) : rx)
 
 tracesStmtM False st funidents traceelems ([]:rx) | st `elem` [ExpandCalls,NoCallsLeft] = case funidents of
 	[] -> return [traceelems]
