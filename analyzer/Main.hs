@@ -152,16 +152,12 @@ tracesStmtM False ExpandCalls funidents traceelems (((CExpr (Just (CAssign assig
 	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $
 		((funcall_stmts ++ (CExpr (Just (CAssign assign_op cvar assigned_expr' undefNode)) undefNode) : rest) : rx)
 
-tracesStmtM False st funidents traceelems ([]:rx) | st `elem` [ExpandCalls,NoCallsLeft] = case funidents of
-	[] -> return [traceelems]
-	(_:funidents) -> tracesStmtM False ExpandCalls funidents traceelems rx
-
 tracesStmtM False NoCallsLeft funidents traceelems ((CReturn mb_ret_val _ : _):rx) = do
-	case funidents of
-		[] -> return [traceelems]
-		(funident:funidents) -> tracesStmtM True ExpandCalls funidents traceelems $ case mb_ret_val of
-			Nothing -> rx
-			Just ret_val -> ( CExpr (Just (CAssign CAssignOp (CVar funident undefNode) ret_val undefNode)) undefNode : head rx ) : tail rx
+	tracesStmtM True ExpandCalls funidents traceelems $ case mb_ret_val of
+		Nothing -> []:rx
+		Just ret_val -> case funidents of
+			[] -> []:rx
+			(funident:_) -> ( CExpr (Just (CAssign CAssignOp (CVar funident undefNode) ret_val undefNode)) undefNode : head rx ) : tail rx
 tracesStmtM False ExpandCalls funidents traceelems ((CReturn mb_ret_val _ : _):rx) = do
 	(mb_ret_val',(funcall_stmts,called_funidents)) <- case mb_ret_val of
 		Nothing -> return (Nothing,([],[]))
@@ -169,6 +165,12 @@ tracesStmtM False ExpandCalls funidents traceelems ((CReturn mb_ret_val _ : _):r
 			(v,ss) <- expandFunCallsM ret_val
 			return (Just v,ss)
 	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems (funcall_stmts : [CReturn mb_ret_val' undefNode] : rx)
+
+tracesStmtM False st funidents traceelems ([]:rx) | st `elem` [ExpandCalls,NoCallsLeft] = case funidents of
+	[] -> case rx of
+		[] -> return [traceelems]
+		_ -> error "something wrong: funidents=[] and rx!=[]"
+	(_:funidents) -> tracesStmtM True ExpandCalls funidents traceelems rx
 
 tracesStmtM False _ [] traceelems [] = return [ traceelems ]
 tracesStmtM False _ [] traceelems [[]] = return [ traceelems ]
