@@ -98,14 +98,6 @@ type AnalysisResult = [(Trace,[Constraint])]
 type FunList = [Ident]
 data StmtStage = ExpandCalls | NoCallsLeft deriving (Eq,Show)
 
-{-
-containsNoFunctionCalls :: CExpr -> Bool
-containsNoFunctionCalls expr = everything (&&) (mkQ True searchfuncall) expr where
-	searchfuncall :: CExpr -> Bool
-	searchfuncall (CCall (CVar (Ident funname _ _) _) _ _) = False
-	searchfuncall expr = True
--}
-
 tracesStmtM :: Bool -> StmtStage -> [Ident] -> Trace -> [[CStat]] -> CovVecM [Trace]
 
 tracesStmtM True stmtstage funidents traceelems rest = do
@@ -114,10 +106,21 @@ tracesStmtM True stmtstage funidents traceelems rest = do
 		putStrLn $ "tracesStmtM " ++ show stmtstage
 		putStrLn $ "    funidents = " ++ show (map (render.pretty) funidents)
 		putStrLn $ "    traceelems = " ++ show (map (render.pretty) (take 5 traceelems)) ++ "..."
+		putStrLn $ "    next = [ "
+		forM_ rest $ \ stmts -> do
+			putStrLn "    ["
+			forM_ stmts (putStrLn . (("        "++).render.pretty))
+			putStrLn "    ],"
+		putStrLn "  ]"
+{-
 		putStrLn $ "    next = " ++ case rest of
 			((r:_):_) -> "[ [ " ++ (render.pretty) r ++ ".. ], .. ]"
 			_ -> show rest
+-}
 	tracesStmtM False stmtstage funidents traceelems rest
+
+
+-- {} Compound ---
 
 tracesStmtM False _ funidents traceelems ((CCompound _ cbis _ : rest):rx) = tracesStmtM True ExpandCalls funidents traceelems ((concatMap to_stmt cbis ++ rest):rx)
 	where
@@ -130,47 +133,67 @@ tracesStmtM False _ funidents traceelems ((CCompound _ cbis _ : rest):rx) = trac
 			Just (CInitExpr init_expr _) -> [ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) init_expr undefNode) undefNode ]
 	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
 
+
+-- IF -----------
+
 tracesStmtM False NoCallsLeft funidents traceelems ((CIf cond_expr then_stmt mb_else_stmt if_ni : rest):rx)  = do
 	cond_ident <- getNewIdent "cond"
 	let
 		cond_var = CVar cond_ident undefNode
 		cond_stmt = CExpr (Just $ CAssign CAssignOp cond_var cond_expr undefNode) undefNode
 	then_m <- tracesStmtM True ExpandCalls funidents (TraceCondition cond_var : traceelems) ((cond_stmt : then_stmt : rest):rx)
-	else_m <- tracesStmtM True ExpandCalls funidents (TraceCondition (CUnary CNegOp cond_var undefNode) : traceelems) ((case mb_else_stmt of
-		Just else_stmt -> cond_stmt : else_stmt : rest
-		Nothing -> cond_stmt : rest ) : rx )
+	else_m <- tracesStmtM True ExpandCalls funidents (TraceCondition (CUnary CNegOp cond_var undefNode) : traceelems) $
+		( cond_stmt : ( maybe [] (:[]) mb_else_stmt ++ rest ) ) : rx
 	return $ then_m ++ else_m
+
 tracesStmtM False ExpandCalls funidents traceelems ((CIf cond_expr then_stmt mb_else_stmt if_ni : rest):rx) = do
 	(cond_expr',(funcall_stmts,called_funidents)) <- expandFunCallsM cond_expr
-	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $ (funcall_stmts : (CIf cond_expr' then_stmt mb_else_stmt if_ni : rest) : rx)
+	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $
+		(if null funcall_stmts then [] else [funcall_stmts]) ++
+		((CIf cond_expr' then_stmt mb_else_stmt if_ni : rest) : rx)
 
-tracesStmtM False NoCallsLeft funidents traceelems (((stmt@(CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _)) : rest) : rx) = do
+
+-- ASSIGNMENT --------
+
+tracesStmtM False NoCallsLeft funidents traceelems (((CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _) : rest) : rx) = do
 	tracesStmtM True ExpandCalls funidents (TraceAssign ident assign_op assigned_expr : traceelems) (rest:rx)
 
 tracesStmtM False ExpandCalls funidents traceelems (((CExpr (Just (CAssign assign_op cvar assigned_expr _)) _) : rest ) : rx) = do
 	(assigned_expr',(funcall_stmts,called_funidents)) <- expandFunCallsM assigned_expr
 	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $
-		((funcall_stmts ++ (CExpr (Just (CAssign assign_op cvar assigned_expr' undefNode)) undefNode) : rest) : rx)
+		(if null funcall_stmts then [] else [funcall_stmts]) ++
+		((CExpr (Just (CAssign assign_op cvar assigned_expr' undefNode)) undefNode : rest) : rx)
+
+
+-- RETURN ------------
 
 tracesStmtM False NoCallsLeft funidents traceelems ((CReturn mb_ret_val _ : _):rx) = do
 	tracesStmtM True ExpandCalls funidents traceelems $ case mb_ret_val of
 		Nothing -> []:rx
 		Just ret_val -> case funidents of
 			[] -> []:rx
-			(funident:_) -> ( CExpr (Just (CAssign CAssignOp (CVar funident undefNode) ret_val undefNode)) undefNode : head rx ) : tail rx
+			(funident:_) -> [ CExpr (Just (CAssign CAssignOp (CVar funident undefNode) ret_val undefNode)) undefNode ] : rx
+
 tracesStmtM False ExpandCalls funidents traceelems ((CReturn mb_ret_val _ : _):rx) = do
 	(mb_ret_val',(funcall_stmts,called_funidents)) <- case mb_ret_val of
 		Nothing -> return (Nothing,([],[]))
 		Just ret_val -> do
 			(v,ss) <- expandFunCallsM ret_val
 			return (Just v,ss)
-	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems (funcall_stmts : [CReturn mb_ret_val' undefNode] : rx)
+	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $
+		(if null funcall_stmts then [] else [funcall_stmts]) ++
+		([CReturn mb_ret_val' undefNode] : rx)
+
+
+-- pop funident when reaching [] in head of statements to be processed --------
 
 tracesStmtM False st funidents traceelems ([]:rx) | st `elem` [ExpandCalls,NoCallsLeft] = case funidents of
 	[] -> case rx of
 		[] -> return [traceelems]
 		_ -> error "something wrong: funidents=[] and rx!=[]"
 	(_:funidents) -> tracesStmtM True ExpandCalls funidents traceelems rx
+
+-- end trace ---------
 
 tracesStmtM False _ [] traceelems [] = return [ traceelems ]
 tracesStmtM False _ [] traceelems [[]] = return [ traceelems ]
@@ -190,7 +213,9 @@ tracesStmtM tracing stmtstage funidents traceelems rss = do
 		putStrLn $ "    next = " ++ show (map (map (render.pretty)) rss)
 	error "Non-exhaustive patterns in tracesStmtM"
 
+
 -- Expands all function calls in expr and returns a statement handling all function calls, and the modified expression
+
 expandFunCallsM :: CExpr -> CovVecM (CExpr,([CStat],[Ident]))
 expandFunCallsM expr = runStateT (everywhereM (mkM searchfuncalls) expr) ([],[])
 	where
