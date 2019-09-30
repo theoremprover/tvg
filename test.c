@@ -15,9 +15,9 @@ int g(int z)
 
 int f(int x)
 {
-	int z = 2*g(x+1);
+	int z1 = 2*g(x+1);
 
-	int y = 3*z;
+	int y = 3*z1;
 
 	if(y>10)
 	{
@@ -25,7 +25,7 @@ int f(int x)
 	}
 	else
 	{
-		if(z>5)
+		if(z1>5)
 		{
 			x = x + 2;
 			y = g(x);

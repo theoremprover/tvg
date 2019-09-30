@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-tabs -Wno-unrecognised-pragmas #-}
-{--# LANGUAGE LambdaCase,TypeSynonymInstances,FlexibleInstances #-}
+{-# LANGUAGE TupleSections #-}
 {-# HLINT ignore "Use list literal pattern" #-}
 {-# HLINT ignore "Redundant do" #-}
 {-# HLINT ignore "Redundant bracket" #-}
@@ -58,13 +58,13 @@ main = do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
 			res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs 1
-			lss <- forM res $ \ (trace{-,constraints-}) -> do
+			lss <- forM res $ \ (trace,constraints) -> do
 				return $
 					[ "TRACE:" ] ++
 					map (render.pretty) trace ++
-					[ "CONSTRAINTS:",
---					show $ map (render.pretty) constraints,
-					"","------","" ]
+					[ "","CONSTRAINTS:" ] ++
+					map (render.pretty) constraints ++
+					[ "","------","" ]
 			writeFile (filename <.> "traces") (unlines $ concat lss)
 
 type Constraint = CExpr
@@ -76,22 +76,25 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
 
-funCovVectorsM :: Ident -> CovVecM [Trace]
+funCovVectorsM :: Ident -> CovVecM [(Trace,Trace)]
 funCovVectorsM funident = do
 	FunDef (VarDecl _ _ _) stmt _ <- lookupFunM funident
-	tracesStmtM True ExpandCalls [] [] [[stmt]] -- >>= mapM (aggregateConstraintsM []) >>= mapM expandFunCallsM
-
+	tracesStmtM True ExpandCalls [] [] [[stmt]] >>= mapM aggregateconstraintsM
+	where
+	aggregateconstraintsM :: Trace -> CovVecM (Trace,Trace)
+	aggregateconstraintsM tr = aggregateConstraintsM [] tr >>= return.(tr,)
+	
 getNewIdent :: String -> CovVecM Ident
 getNewIdent name_prefix = do
 	new_var_num <- gets newNameIndex
 	modify $ \ s -> s { newNameIndex = newNameIndex s + 1 }
 	return $ internalIdent (name_prefix ++ "$" ++ show new_var_num)
 
-data TraceElem = TraceAssign Ident CAssignOp CExpr | TraceCondition CExpr
+data TraceElem = TraceAssign Ident CAssignOp CExpr -- | TraceCondition CExpr
 	deriving Show
 instance Pretty TraceElem where
 	pretty (TraceAssign ident op expr) = pretty ident <+> text ":=" <+> pretty expr
-	pretty (TraceCondition expr) = text "Condition:" <+> pretty expr
+--	pretty (TraceCondition expr) = text "Condition:" <+> pretty expr
 
 type Trace = [TraceElem]
 type AnalysisResult = [(Trace,[Constraint])]
@@ -140,10 +143,11 @@ tracesStmtM False NoCallsLeft funidents traceelems ((CIf cond_expr then_stmt mb_
 	cond_ident <- getNewIdent "cond"
 	let
 		cond_var = CVar cond_ident undefNode
-		cond_stmt = CExpr (Just $ CAssign CAssignOp cond_var cond_expr undefNode) undefNode
-	then_m <- tracesStmtM True ExpandCalls funidents (TraceCondition cond_var : traceelems) ((cond_stmt : then_stmt : rest):rx)
-	else_m <- tracesStmtM True ExpandCalls funidents (TraceCondition (CUnary CNegOp cond_var undefNode) : traceelems) $
-		( cond_stmt : ( maybe [] (:[]) mb_else_stmt ++ rest ) ) : rx
+		cond_stmt_then = CExpr (Just $ CAssign CAssignOp cond_var cond_expr undefNode) undefNode
+		cond_stmt_else = CExpr (Just $ CAssign CAssignOp cond_var (CUnary CNegOp cond_expr undefNode) undefNode) undefNode
+	then_m <- tracesStmtM True ExpandCalls funidents traceelems ((cond_stmt_then : then_stmt : rest):rx)
+	else_m <- tracesStmtM True ExpandCalls funidents traceelems $
+		( cond_stmt_else : ( maybe [] (:[]) mb_else_stmt ++ rest ) ) : rx
 	return $ then_m ++ else_m
 
 tracesStmtM False ExpandCalls funidents traceelems ((CIf cond_expr then_stmt mb_else_stmt if_ni : rest):rx) = do
@@ -193,14 +197,16 @@ tracesStmtM False st funidents traceelems ([]:rx) | st `elem` [ExpandCalls,NoCal
 		_ -> error "something wrong: funidents=[] and rx!=[]"
 	(_:funidents) -> tracesStmtM True ExpandCalls funidents traceelems rx
 
+
 -- end trace ---------
 
 tracesStmtM False _ [] traceelems [] = return [ traceelems ]
-tracesStmtM False _ [] traceelems [[]] = return [ traceelems ]
 tracesStmtM False _ funidents _ [] = error $ "funidents not empty when reaching end of stmts!"
-tracesStmtM False _ funidents _ [[]] = error $ "funidents not empty when reaching end of stmts!"
 
 tracesStmtM False _ _ _ ((stmt:_):_) = error $ "traceStmtM: " ++ show stmt ++ " not implemented yet"
+
+
+-- catch all -----
 
 tracesStmtM tracing stmtstage funidents traceelems rss = do
 	liftIO $ do
@@ -251,8 +257,25 @@ expandFunCallsM expr = runStateT (everywhereM (mkM searchfuncalls) expr) ([],[])
 		return $ CVar fun_val_ident call_ni
 	searchfuncalls expr = return expr
 
+eqIdent :: Ident -> Ident -> Bool
+eqIdent (Ident s1 i1 _) (Ident s2 i2 _) = s1==s2 && i1==i2
+
 substituteIdentInStmt :: Ident -> Ident -> Stmt -> Stmt
-substituteIdentInStmt (Ident s i _) new_ident stmt = everywhere (mkT substident) stmt where
+substituteIdentInStmt ident1 new_ident stmt = everywhere (mkT substident) stmt where
 	substident :: Ident -> Ident
-	substident (Ident s2 i2 _) | s2==s && i2==i = new_ident
-	substident ident = ident
+	substident ident2 | ident1 `eqIdent` ident2 = new_ident
+	substident ident2 = ident2
+
+substituteVarInTraceElem :: Ident -> CExpr -> TraceElem -> TraceElem
+substituteVarInTraceElem ident expr (TraceAssign ident2 assignop expr2) =
+	TraceAssign ident2 assignop (everywhere (mkT substvar) expr2) where
+	substvar :: CExpr -> CExpr
+	substvar (CVar varid ni) | varid `eqIdent` ident = expr
+	substvar e = e
+
+aggregateConstraintsM :: Trace -> Trace -> CovVecM Trace
+aggregateConstraintsM traceelems [] = return traceelems
+aggregateConstraintsM traceelems (traceelem@(TraceAssign ident assignop expr) : rest) = do
+	case assignop of
+		CAssignOp -> aggregateConstraintsM (traceelem : map (substituteVarInTraceElem ident expr) traceelems) rest
+		_ -> error $ "aggregateConstraintsM: " ++ show assignop ++ " not implemented yet"
