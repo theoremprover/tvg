@@ -236,6 +236,7 @@ expandFunCallsM expr = runStateT (everywhereM (mkM searchfuncalls) expr) ([],[])
 			return $ CExpr (Just $ CAssign CAssignOp (CVar formal_param undefNode) arg undefNode) undefNode
 		let body_with_arg_assignments = CCompound [] (map CBlockStmt (param_assignments++[body])) undefNode
 		
+		liftIO $ writeFile ("body_" ++ funname ++ ".html") $ genericToHTMLString body_with_arg_assignments
 		-- search all locally declared variables (including the formal params, see above)
 		let
 			decl_idents = everything (++) (mkQ [] searchdecl) body_with_arg_assignments
@@ -257,7 +258,7 @@ expandFunCallsM expr = runStateT (everywhereM (mkM searchfuncalls) expr) ([],[])
 		let
 			subst_var b (old,new) = substituteIdentInStmt old new b
 			body' = foldl subst_var body_with_arg_assignments old_new_idents
-		
+
 		liftIO $ putStrLn $ "body' =\n" ++ (render.pretty) body'
 		modify $ \ (stats,funidents) -> (stats++[body'],funidents++[fun_val_ident])
 		return $ CVar fun_val_ident call_ni
