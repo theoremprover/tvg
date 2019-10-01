@@ -219,6 +219,9 @@ tracesStmtM tracing stmtstage funidents traceelems rss = do
 		putStrLn $ "    next = " ++ show (map (map (render.pretty)) rss)
 	error "Non-exhaustive patterns in tracesStmtM"
 
+translateSemRepType :: Type -> CTypeSpecifier NodeInfo
+translateSemRepType (DirectType (TyIntegral TyInt) _ _) = CIntType undefNode
+translateSemRepType t = error $ "translateSemRepType " ++ (render.pretty) t ++ " not implemented yet"
 
 -- Expands all function calls in expr and returns a statement handling all function calls, and the modified expression
 
@@ -232,11 +235,13 @@ expandFunCallsM expr = runStateT (everywhereM (mkM searchfuncalls) expr) ([],[])
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM funident
 		fun_val_ident <- lift $ getNewIdent funname
 		
-		param_assignments <- forM (zip args paramdecls) $ \ (arg,ParamDecl (VarDecl (VarName (formal_param@(Ident n _ _)) _) _ _) _) -> do
-			return $ CExpr (Just $ CAssign CAssignOp (CVar formal_param undefNode) arg undefNode) undefNode
-		let body_with_arg_assignments = CCompound [] (map CBlockStmt (param_assignments++[body])) undefNode
+		param_assignments <- forM (zip args paramdecls) $ \ (arg,ParamDecl (VarDecl (VarName formal_param _) _ typ) _) -> do
+			return $ CBlockDecl $ CDecl [ CTypeSpec (translateSemRepType typ) ]
+				[(Just $ CDeclr (Just formal_param) [] Nothing [] undefNode,Just $ CInitExpr arg undefNode,Nothing)]
+				undefNode
+		let body_with_arg_assignments = CCompound [] (param_assignments ++ [CBlockStmt body]) undefNode
 		
-		liftIO $ writeFile ("body_" ++ funname ++ ".html") $ genericToHTMLString body_with_arg_assignments
+--		liftIO $ writeFile ("body_" ++ funname ++ ".html") $ genericToHTMLString body_with_arg_assignments
 		-- search all locally declared variables (including the formal params, see above)
 		let
 			decl_idents = everything (++) (mkQ [] searchdecl) body_with_arg_assignments
