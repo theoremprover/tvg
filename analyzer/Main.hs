@@ -248,11 +248,17 @@ expandFunCallsM expr = runStateT (everywhereM (mkM searchfuncalls) expr) ([],[])
 			ident' <- lift $ getNewIdent (n ++ "_" ++ funname)
 			return (ident,ident')
 		
+		liftIO $ do
+			putStrLn $ "old_new_idents =\n"
+			forM_ old_new_idents $ \ (old,new) ->
+				putStrLn $ "old=" ++ (render.pretty) old ++ ", new=" ++ (render.pretty) new
+
 		-- Substitute identifiers in function body
 		let
 			subst_var b (old,new) = substituteIdentInStmt old new b
 			body' = foldl subst_var body_with_arg_assignments old_new_idents
 		
+		liftIO $ putStrLn $ "body' =\n" ++ (render.pretty) body'
 		modify $ \ (stats,funidents) -> (stats++[body'],funidents++[fun_val_ident])
 		return $ CVar fun_val_ident call_ni
 	searchfuncalls expr = return expr
