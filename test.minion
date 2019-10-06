@@ -1,0 +1,20 @@
+MINION 3
+
+**VARIABLES**
+
+BOUND x {-100..100}
+
+**SEARCH**
+
+VARORDER [x]
+VALORDER [a]
+SYMORDER [a,b,d,e,g,l,n,o,r,t]
+PRINT[[a],[b],[d],[e],[g],[l],[n],[o],[r],[t]]
+
+**TUPLELIST**
+
+**CONSTRAINTS**
+
+ineq(x,,-1)
+
+**EOF**
