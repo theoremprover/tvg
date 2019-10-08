@@ -25,6 +25,7 @@ import Text.Printf
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
 import Data.Generics
+import Data.List
 
 import DataTree
 
@@ -79,14 +80,17 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
 
-funCovVectorsM :: Ident -> CovVecM [(Trace,Trace)]
+funCovVectorsM :: Ident -> CovVecM [(Trace,[Constraint])]
 funCovVectorsM funident = do
 	FunDef (VarDecl _ _ _) stmt _ <- lookupFunM funident
 	tracesStmtM True ExpandCalls [] [] [[stmt]] >>= mapM aggregateconstraintsM
 	where
-	aggregateconstraintsM :: Trace -> CovVecM (Trace,Trace)
-	aggregateconstraintsM tr = aggregateConstraintsM [] tr >>= return.(tr,)
-	
+	filtercond (TraceAssign (Ident n _ _) CAssignOp expr) | "cond$" `isPrefixOf` n = [expr]
+	filtercond _ = []
+	aggregateconstraintsM :: Trace -> CovVecM (Trace,[Constraint])
+	aggregateconstraintsM tr = aggregateConstraintsM [] tr >>=
+		\ contrace -> return (tr,concatMap filtercond contrace)
+
 getNewIdent :: String -> CovVecM Ident
 getNewIdent name_prefix = do
 	new_var_num <- gets newNameIndex
@@ -100,7 +104,7 @@ instance Pretty TraceElem where
 --	pretty (TraceCondition expr) = text "Condition:" <+> pretty expr
 
 type Trace = [TraceElem]
-type AnalysisResult = [(Trace,[Constraint])]
+--type AnalysisResult = [(Trace,[Constraint])]
 type FunList = [Ident]
 data StmtStage = ExpandCalls | NoCallsLeft deriving (Eq,Show)
 
