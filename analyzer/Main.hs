@@ -56,16 +56,19 @@ main = do
 		Left err -> error $ show err
 		Right translunit@(CTranslUnit extdecls _) -> do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
-			let Right (GlobalDecls globobjs _ _,[]) = runTrav_ $ analyseAST translunit
-			res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs 1
-			lss <- forM res $ \ (trace,constraints) -> do
-				return $
-					[ "TRACE:" ] ++
-					map (render.pretty) trace ++
-					[ "","CONSTRAINTS:" ] ++
-					map (render.pretty) constraints ++
-					[ "","------","" ]
-			writeFile (filename <.> "traces") (unlines $ concat lss)
+			case runTrav_ $ analyseAST translunit of
+				Left errs -> forM_ errs print
+				Right (GlobalDecls globobjs _ _,soft_errors) -> do
+					forM_ soft_errors print
+					res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs 1
+					lss <- forM res $ \ (trace,constraints) -> do
+						return $
+							[ "TRACE:" ] ++
+							map (render.pretty) trace ++
+							[ "","CONSTRAINTS:" ] ++
+							map (render.pretty) constraints ++
+							[ "","------","" ]
+					writeFile (filename <.> "traces") (unlines $ concat lss)
 
 type Constraint = CExpr
 
@@ -136,7 +139,6 @@ tracesStmtM False _ funidents traceelems ((CCompound _ cbis _ : rest):rx) = trac
 			Just (CInitExpr init_expr _) -> [ CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) init_expr undefNode) undefNode ]
 	triple_to_stmt err = error $ "triple_to_stmt: " ++ show err ++ " not implemented yet"
 
-
 -- IF -----------
 
 tracesStmtM False NoCallsLeft funidents traceelems ((CIf cond_expr then_stmt mb_else_stmt if_ni : rest):rx)  = do
@@ -156,8 +158,12 @@ tracesStmtM False ExpandCalls funidents traceelems ((CIf cond_expr then_stmt mb_
 		(if null funcall_stmts then [] else [funcall_stmts]) ++
 		((CIf cond_expr' then_stmt mb_else_stmt if_ni : rest) : rx)
 
+-- CExpr Nothing -------
 
--- ASSIGNMENT --------
+tracesStmtM False _ funidents traceelems (((CExpr Nothing _) : rest) : rx) =
+	tracesStmtM True ExpandCalls funidents traceelems (rest:rx)
+
+-- CExpr ASSIGNMENT --------
 
 tracesStmtM False NoCallsLeft funidents traceelems (((CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _) : rest) : rx) = do
 	tracesStmtM True ExpandCalls funidents (TraceAssign ident assign_op assigned_expr : traceelems) (rest:rx)
