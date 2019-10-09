@@ -56,3 +56,11 @@ int main(int argc,char* argv[])
     printf("f(%i)=%i\n",x,ret);
     return 0;
 }
+
+/*
+
+1)
+x>4
+x>10/12-1
+
+*/
