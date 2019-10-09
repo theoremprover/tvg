@@ -32,6 +32,8 @@ dependencies:
 - html
 - binary
 - containers
+#- template-haskell >= 2.15
+#- g2
 
 library:
   source-dirs: src
