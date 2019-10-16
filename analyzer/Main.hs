@@ -62,12 +62,14 @@ main = do
 				Right (GlobalDecls globobjs _ _,soft_errors) -> do
 					forM_ soft_errors print
 					res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs 1
-					lss <- forM res $ \ (trace,constraints) -> do
+					lss <- forM res $ \ (trace,constraints,solution) -> do
 						return $
 							[ "TRACE:" ] ++
 							map (render.pretty) trace ++
 							[ "","CONSTRAINTS:" ] ++
 							map (render.pretty) constraints ++
+							[ "","SOLUTION:" ] ++
+							[ show solution ] ++
 							[ "","------","" ]
 					writeFile (filename <.> "traces") (unlines $ concat lss)
 
@@ -80,16 +82,21 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
 
-funCovVectorsM :: Ident -> CovVecM [(Trace,[Constraint])]
+type Env = [(String,Int)]
+
+funCovVectorsM :: Ident -> CovVecM [(Trace,[Constraint],Env)]
 funCovVectorsM funident = do
 	FunDef (VarDecl _ _ _) stmt _ <- lookupFunM funident
 	tracesStmtM True ExpandCalls [] [] [[stmt]] >>= mapM aggregateconstraintsM
 	where
 	filtercond (TraceAssign (Ident n _ _) CAssignOp expr) | "cond$" `isPrefixOf` n = [expr]
 	filtercond _ = []
-	aggregateconstraintsM :: Trace -> CovVecM (Trace,[Constraint])
-	aggregateconstraintsM tr = aggregateConstraintsM [] tr >>=
-		\ contrace -> return (tr,concatMap filtercond contrace)
+	aggregateconstraintsM :: Trace -> CovVecM (Trace,[Constraint],Env)
+	aggregateconstraintsM tr = do
+		contrace <- aggregateConstraintsM [] tr
+		let filtered_constraints = concatMap filtercond contrace
+		solution <- solveConstraintsM filtered_constraints
+		return (tr,filtered_constraints,solution)
 
 getNewIdent :: String -> CovVecM Ident
 getNewIdent name_prefix = do
@@ -301,3 +308,10 @@ aggregateConstraintsM traceelems (traceelem@(TraceAssign ident assignop expr) : 
 	case assignop of
 		CAssignOp -> aggregateConstraintsM (traceelem : map (substituteVarInTraceElem ident expr) traceelems) rest
 		_ -> error $ "aggregateConstraintsM: " ++ show assignop ++ " not implemented yet"
+		
+solveConstraintsM :: [Constraint] -> CovVecM Env
+solveConstraintsM constraints = do
+	let funs = map to_fun_top constraints
+	let weightfun x = sum $ map ((^2).($x)) weightfuns
+	where
+	to_fun_top (CBinary binop expr1 expr2 _) = \ x -> (to_fun expr1) x - (to_fun expr2) x
