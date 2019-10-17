@@ -26,7 +26,6 @@ import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
 import Data.Generics
 import Data.List
-import qualified Data.Map as Map
 
 import DataTree
 
@@ -83,7 +82,7 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
 
-type Env = [(String,Int)]
+type Env = Map.Map String Int
 
 funCovVectorsM :: Ident -> CovVecM [(Trace,[Constraint],Maybe Env)]
 funCovVectorsM funident = do
@@ -92,7 +91,7 @@ funCovVectorsM funident = do
 	where
 	filtercond (TraceAssign (Ident n _ _) CAssignOp expr) | "cond$" `isPrefixOf` n = [expr]
 	filtercond _ = []
-	aggregateconstraintsM :: Trace -> CovVecM (Trace,[Constraint],Env)
+	aggregateconstraintsM :: Trace -> CovVecM (Trace,[Constraint],Maybe Env)
 	aggregateconstraintsM tr = do
 		contrace <- aggregateConstraintsM [] tr
 		let filtered_constraints = concatMap filtercond contrace
@@ -237,11 +236,9 @@ tracesStmtM tracing stmtstage funidents traceelems rss = do
 		putStrLn $ "    next = " ++ show (map (map (render.pretty)) rss)
 	error "Non-exhaustive patterns in tracesStmtM"
 
-{-
 translateSemRepType :: Type -> CTypeSpecifier NodeInfo
 translateSemRepType (DirectType (TyIntegral TyInt) _ _) = CIntType undefNode
 translateSemRepType t = error $ "translateSemRepType " ++ (render.pretty) t ++ " not implemented yet"
--}
 
 -- Expands all function calls in expr and returns a statement handling all function calls, and the modified expression
 
@@ -323,16 +320,16 @@ solveConstraintsM constraints = do
 	let
 		all_vars = nub $ concatMap (everything (++) (mkQ [] searchvar)) constraints
 		searchvar :: CExpr -> [String]
-		searchvar (CVar (Ident name _) _) = [name]
+		searchvar (CVar (Ident name _ _) _) = [name]
 		searchvar _ = []
-	return $ minimize funs (Map.fromList $ map (,0) allvars)
+	return $ minimize funs (Map.fromList $ map (,0) all_vars) Nothing
 	where
 	to_fun_top :: CExpr -> ConstraintWeightFun
 	to_fun_top (CUnary unaryop expr1 _) = \ xs -> let
 		v1 = (to_fun expr1) xs
 		in case unaryop of
-			CNegOp expr1 _ -> 1/v1
-			_              -> error $ "to_fun_top: unaryop " ++ show unaryop ++ " not implemented yet."
+			CNegOp -> 1/v1
+			_      -> error $ "to_fun_top: unaryop " ++ show unaryop ++ " not implemented yet."
 	to_fun_top (CBinary binop expr1 expr2 _) = \ xs -> let
 		v1 = (to_fun expr1) xs
 		v2 = (to_fun expr2) xs
@@ -353,12 +350,12 @@ to_fun (CBinary binop expr1 expr2 _) = \ xs -> let
 		CAddOp -> (+)
 		_      -> error $ "to_fun: binop " ++ show binop ++ " not implemented yet."
 		) v1 v2
-to_fun (CVar (Ident name _) _) = \ xs -> case lookup name xs of
+to_fun (CVar (Ident name _ _) _) = \ xs -> case Map.lookup name xs of
 	Nothing -> error $ "to_fun: Variable " ++ show name ++ " not found!"
 	Just x  -> fromIntegral x
 
-minimize :: [ConstraintWeightFun] -> Int -> Maybe Env
-minimize funs env | cost < epsilon && all_derivs_less_epsilon && converged = Just [ (
+minimize :: [ConstraintWeightFun] -> Env -> Maybe Double -> Maybe Env
+minimize funs env mb_prev_cost = case cost<epsilon && all (<epsilon) derivs && maybe False () mb_prev_cost
 	where
-	cost = sum $ map ((^2).($start)) funs
+	cost = sum $ map ((^2).($env)) funs
 	
