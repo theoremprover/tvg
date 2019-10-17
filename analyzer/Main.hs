@@ -111,7 +111,6 @@ instance Pretty TraceElem where
 --	pretty (TraceCondition expr) = text "Condition:" <+> pretty expr
 
 type Trace = [TraceElem]
---type AnalysisResult = [(Trace,[Constraint])]
 type FunList = [Ident]
 data StmtStage = ExpandCalls | NoCallsLeft deriving (Eq,Show)
 
@@ -129,11 +128,6 @@ tracesStmtM True stmtstage funidents traceelems rest = do
 			forM_ stmts (putStrLn . (("        "++).render.pretty))
 			putStrLn "    ],"
 		putStrLn "  ]"
-{-
-		putStrLn $ "    next = " ++ case rest of
-			((r:_):_) -> "[ [ " ++ (render.pretty) r ++ ".. ], .. ]"
-			_ -> show rest
--}
 	tracesStmtM False stmtstage funidents traceelems rest
 
 
@@ -309,28 +303,45 @@ aggregateConstraintsM traceelems (traceelem@(TraceAssign ident assignop expr) : 
 		CAssignOp -> aggregateConstraintsM (traceelem : map (substituteVarInTraceElem ident expr) traceelems) rest
 		_ -> error $ "aggregateConstraintsM: " ++ show assignop ++ " not implemented yet"
 
-epsilon :: Double
-epsilon = 1e-12
+epsilon = 1e-12 :: Double
 
 type ConstraintWeightFun = Map.Map String Int -> Double
 	
 solveConstraintsM :: [Constraint] -> CovVecM (Maybe Env)
 solveConstraintsM constraints = do
-	let funs = map to_fun_top constraints
 	let
-		all_vars = nub $ concatMap (everything (++) (mkQ [] searchvar)) constraints
-		searchvar :: CExpr -> [String]
-		searchvar (CVar (Ident name _ _) _) = [name]
-		searchvar _ = []
-	return $ minimize funs (Map.fromList $ map (,0) all_vars) Nothing
+		terms = map to_term constraints
+		all_vars = nub $ concatMap (everything (++) (mkQ [] searchvar)) constraints where
+			searchvar :: CExpr -> [String]
+			searchvar (CVar (Ident name _ _) _) = [name]
+			searchvar _ = []
+		cost env = sum $ map ((^2).($env)) funs
+		derivs = map to_deriv ()
+		
+	minimize cost derivs (Map.fromList $ map (,0) all_vars) Nothing
 	where
-	to_fun_top :: CExpr -> ConstraintWeightFun
-	to_fun_top (CUnary unaryop expr1 _) = \ xs -> let
+	to_term :: CExpr -> CExpr
+	to_term (CUnary unaryop expr1 _) = case unaryop of
+			CNegOp -> 1/v1
+			_      -> error $ "to_fun_top: unaryop " ++ show unaryop ++ " not implemented yet."
+	to_term (CBinary binop expr1 expr2 _) = \ xs -> let
+		v1 = (to_fun expr1) xs
+		v2 = (to_fun expr2) xs
+		in case binop of
+			CEqOp  -> v1-v2
+			CLeqOp -> if v1>v2 then v1-v2 else 0
+			CGeqOp -> if v1<v2 then v2-v1 else 0
+			CLeOp  -> if v1>=v2 then abs (v1-v2) + epsilon else 0
+			CGrOp  -> if v1<=v2 then abs (v2-v1) + epsilon else 0
+			_      -> error $ "to_fun_top: binop " ++ show binop ++ " not implemented yet."
+{-
+	to_term :: CExpr -> ConstraintWeightFun
+	to_term (CUnary unaryop expr1 _) = \ xs -> let
 		v1 = (to_fun expr1) xs
 		in case unaryop of
 			CNegOp -> 1/v1
 			_      -> error $ "to_fun_top: unaryop " ++ show unaryop ++ " not implemented yet."
-	to_fun_top (CBinary binop expr1 expr2 _) = \ xs -> let
+	to_term (CBinary binop expr1 expr2 _) = \ xs -> let
 		v1 = (to_fun expr1) xs
 		v2 = (to_fun expr2) xs
 		in case binop of
@@ -353,9 +364,14 @@ to_fun (CBinary binop expr1 expr2 _) = \ xs -> let
 to_fun (CVar (Ident name _ _) _) = \ xs -> case Map.lookup name xs of
 	Nothing -> error $ "to_fun: Variable " ++ show name ++ " not found!"
 	Just x  -> fromIntegral x
+-}
 
-minimize :: [ConstraintWeightFun] -> Env -> Maybe Double -> Maybe Env
-minimize funs env mb_prev_cost = case cost<epsilon && all (<epsilon) derivs && maybe False () mb_prev_cost
+minimize :: [ConstraintWeightFun] -> Env -> Maybe Double -> CovVecM (Maybe Env)
+minimize funs derivs env mb_prev_cost = case
+	cost env < epsilon &&
+	all (<epsilon) (map derivs env) &&
+	maybe False (\ prevcost -> abs (cost-prevcost) < epsilon) mb_prev_cost
+	of
+		True -> Just env
+		False -> 
 	where
-	cost = sum $ map ((^2).($env)) funs
-	
