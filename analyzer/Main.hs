@@ -310,11 +310,32 @@ type ConstraintWeightFun = Map.Map String Int -> Double
 solveConstraintsM :: [Constraint] -> CovVecM (Maybe Env)
 solveConstraintsM constraints = do
 	let
-		terms = map to_term constraints
+		weightfun_expr = foldl plus zero (map (square.to_term) constraints) where
+			zero = CConst $ CIntConst (cInteger 0) undefNode
+			plus x y = CBinary CAddOp x y undefNode
+			square x = CBinary CMulOp x x undefNode
+			to_term :: CExpr -> CExpr
+			to_term (CUnary unaryop expr1 _) = case unaryop of
+					CNegOp -> 1/v1
+					_      -> error $ "to_fun_top: unaryop " ++ show unaryop ++ " not implemented yet."
+			to_term (CBinary binop expr1 expr2 _) = \ xs -> let
+				v1 = (to_fun expr1) xs
+				v2 = (to_fun expr2) xs
+				in case binop of
+					CEqOp  -> v1-v2
+					CLeqOp -> if v1>v2 then v1-v2 else 0
+					CGeqOp -> if v1<v2 then v2-v1 else 0
+					CLeOp  -> if v1>=v2 then abs (v1-v2) + epsilon else 0
+					CGrOp  -> if v1<=v2 then abs (v2-v1) + epsilon else 0
+					_      -> error $ "to_fun_top: binop " ++ show binop ++ " not implemented yet."
+
 		all_vars = nub $ concatMap (everything (++) (mkQ [] searchvar)) constraints where
 			searchvar :: CExpr -> [String]
 			searchvar (CVar (Ident name _ _) _) = [name]
 			searchvar _ = []
+		
+		return $ Just $ Map.singleton (render.pretty $ weightfun_expr) 0 
+{-
 		cost env = sum $ map ((^2).($env)) funs
 		derivs = map to_deriv ()
 		
@@ -334,7 +355,7 @@ solveConstraintsM constraints = do
 			CLeOp  -> if v1>=v2 then abs (v1-v2) + epsilon else 0
 			CGrOp  -> if v1<=v2 then abs (v2-v1) + epsilon else 0
 			_      -> error $ "to_fun_top: binop " ++ show binop ++ " not implemented yet."
-{-
+
 	to_term :: CExpr -> ConstraintWeightFun
 	to_term (CUnary unaryop expr1 _) = \ xs -> let
 		v1 = (to_fun expr1) xs
@@ -364,7 +385,6 @@ to_fun (CBinary binop expr1 expr2 _) = \ xs -> let
 to_fun (CVar (Ident name _ _) _) = \ xs -> case Map.lookup name xs of
 	Nothing -> error $ "to_fun: Variable " ++ show name ++ " not found!"
 	Just x  -> fromIntegral x
--}
 
 minimize :: [ConstraintWeightFun] -> Env -> Maybe Double -> CovVecM (Maybe Env)
 minimize funs derivs env mb_prev_cost = case
@@ -375,3 +395,4 @@ minimize funs derivs env mb_prev_cost = case
 		True -> Just env
 		False -> 
 	where
+-}
