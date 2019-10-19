@@ -314,27 +314,46 @@ solveConstraintsM constraints = do
 			zero = CConst $ CIntConst (cInteger 0) undefNode
 			plus x y = CBinary CAddOp x y undefNode
 			square x = CBinary CMulOp x x undefNode
+
 			to_term :: CExpr -> CExpr
 			to_term (CUnary unaryop expr1 _) = case unaryop of
-					CNegOp -> 1/v1
-					_      -> error $ "to_fun_top: unaryop " ++ show unaryop ++ " not implemented yet."
-			to_term (CBinary binop expr1 expr2 _) = \ xs -> let
-				v1 = (to_fun expr1) xs
-				v2 = (to_fun expr2) xs
-				in case binop of
-					CEqOp  -> v1-v2
-					CLeqOp -> if v1>v2 then v1-v2 else 0
-					CGeqOp -> if v1<v2 then v2-v1 else 0
-					CLeOp  -> if v1>=v2 then abs (v1-v2) + epsilon else 0
-					CGrOp  -> if v1<=v2 then abs (v2-v1) + epsilon else 0
-					_      -> error $ "to_fun_top: binop " ++ show binop ++ " not implemented yet."
+				-- Eliminate or push down negation
+				CNegOp -> case expr1 of
+					CBinary binop exprb1 exprb2 _ -> case binop of
+						CLeOp -> to_term $ CBinary CGeqOp exprb1 exprb2 undefNode
+						CLeqOp -> to_term $ CBinary CGrOp exprb1 exprb2 undefNode
+						CGeqOp -> to_term $ CBinary CLeOp exprb1 exprb2 undefNode
+						CGrOp -> to_term $ CBinary CLeqOp exprb1 exprb2 undefNode
+						CEqOp -> to_term $ CBinary CNeqOp exprb1 exprb2 undefNode
+						CNeqOp -> to_term $ CBinary CEqOp exprb1 exprb2 undefNode
+						CLorOp -> to_term $ CBinary CLndOp (CUnary CNegOp exprb1 undefNode) (CUnary CNegOp exprb2 undefNode) undefNode
+						CLndOp -> to_term $ CBinary CLorOp (CUnary CNegOp exprb1 undefNode) (CUnary CNegOp exprb2 undefNode) undefNode
+						_ -> error $ "to_term: binop " ++ show binop ++ " under CNegOp not implemented yet."
+					_ -> to_term $ CBinary CNeqOp expr1 zero undefNode
+				_ -> error $ "to_term: unaryop " ++ show unaryop ++ " not implemented yet."
 
+			to_term (CBinary binop expr1 expr2 _) -> let
+				t1 = to_term expr1
+				t2 = to_term expr2
+				in case binop of
+					CLeOp -> to_term $ CBinary CGeqOp exprb1 exprb2 undefNode
+					CLeqOp -> to_term $ CBinary CGrOp exprb1 exprb2 undefNode
+					CGeqOp -> to_term $ CBinary CLeOp exprb1 exprb2 undefNode
+					CGrOp -> to_term $ CBinary CLeqOp exprb1 exprb2 undefNode
+					CEqOp -> to_term $ CBinary CNeqOp exprb1 exprb2 undefNode
+					CNeqOp -> to_term $ CBinary CEqOp exprb1 exprb2 undefNode
+					CLorOp -> to_term $ CBinary CLndOp (CUnary CNegOp exprb1 undefNode) (CUnary CNegOp exprb2 undefNode) undefNode
+					CLndOp -> to_term $ CBinary CLorOp (CUnary CNegOp exprb1 undefNode) (CUnary CNegOp exprb2 undefNode) undefNode
+					_ -> error $ "to_term: binop " ++ show binop ++ " not implemented yet."
+
+			to_term expr = error $ "to_term: " ++ (render.pretty $ expr) ++ " not implemented yet."
+			
 		all_vars = nub $ concatMap (everything (++) (mkQ [] searchvar)) constraints where
 			searchvar :: CExpr -> [String]
 			searchvar (CVar (Ident name _ _) _) = [name]
 			searchvar _ = []
 		
-		return $ Just $ Map.singleton (render.pretty $ weightfun_expr) 0 
+	return $ Just $ Map.singleton (render.pretty $ weightfun_expr) 0 
 {-
 		cost env = sum $ map ((^2).($env)) funs
 		derivs = map to_deriv ()
