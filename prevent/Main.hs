@@ -73,37 +73,6 @@ deriving instance GHCG.Generic EnumTypeRef
 deriving instance GHCG.Generic EnumType
 deriving instance GHCG.Generic TypeQuals
 
-deriving instance Typeable IdentDecl
-deriving instance Typeable Decl
-deriving instance Typeable ObjDef
-deriving instance Typeable FunDef
-deriving instance Typeable Enumerator
-deriving instance Typeable VarDecl
-deriving instance Typeable VarName
-deriving instance Typeable DeclAttrs
-deriving instance Typeable FunctionAttrs
-deriving instance Typeable Storage
-deriving instance Typeable Linkage
-deriving instance Typeable Attr
-deriving instance Typeable Type
-deriving instance Typeable TypeName
-deriving instance Typeable IntType
-deriving instance Typeable TagDef
-deriving instance Typeable ParamDecl
-deriving instance Typeable MemberDecl
-deriving instance Typeable TypeDef
-deriving instance Typeable FunType
-deriving instance Typeable ArraySize
-deriving instance Typeable TypeDefRef
-deriving instance Typeable BuiltinType
-deriving instance Typeable FloatType
-deriving instance Typeable CompTypeRef
-deriving instance Typeable CompType
-deriving instance Typeable CompTyKind
-deriving instance Typeable EnumTypeRef
-deriving instance Typeable EnumType
-deriving instance Typeable TypeQuals
-
 handleSrcFile preprocess_args srcfilename = do
 	mb_ast <- parseCFile gcc Nothing preprocess_args srcfilename
 	case mb_ast of
@@ -126,8 +95,13 @@ f >>> g = \ t -> concat [ g t' | t' <- f t ]
 (<+>) :: (Typeable a,Typeable b) => CFilter a b -> CFilter a b -> CFilter a b
 f <+> g = \ t -> f t ++ g t
 
-isA :: (Typeable a,Data a,Typeable b,Data b) => CFilter b b -> CFilter a b
-isA filt = \ t -> everything (++) (mkQ [] filt) t
+findAll :: (Typeable a,Data a,Typeable b,Data b) => CFilter b b -> CFilter a b
+findAll filt = everything (++) (mkQ [] filt)
+
+isA :: (Typeable a,Data a) => CFilter a a -> CFilter a a
+isA filt = \ t -> case filt t of
+	[] -> []
+	_  -> [t]
 
 funCall :: CFilter CExpr CExpr
 funCall ccall@(CCall fun args _) = [ccall]
@@ -185,12 +159,12 @@ checkArrayDecl ( CArrSize _ sizeexpr : _ , CInitList _ _ ) = [ head (showPretty 
 
 -------------------
 
-{-
 complexExpr = ternaryIf <+> binaryOp
-myFilter = isA complexExpr >>> isA incOrDecOp >>> showPretty
--}
 
 myFilter :: CFilter ASTRoot String
-myFilter = isA cDecl >>> arrayDecl >>> checkArrayDecl >>> toString
+myFilter = findAll complexExpr >>> isA incOrDecOp >>> showPretty
 
-
+{-
+myFilter :: CFilter ASTRoot String
+myFilter = findAll cDecl >>> arrayDecl >>> checkArrayDecl >>> toString
+-}
