@@ -303,6 +303,10 @@ aggregateConstraintsM traceelems (traceelem@(TraceAssign ident assignop expr) : 
 		CAssignOp -> aggregateConstraintsM (traceelem : map (substituteVarInTraceElem ident expr) traceelems) rest
 		_ -> error $ "aggregateConstraintsM: " ++ show assignop ++ " not implemented yet"
 
+solveConstraintsM :: [Constraint] -> CovVecM (Maybe Env)
+solveConstraintsM constraints = do
+	return Nothing
+{-
 epsilon = 1e-12 :: Double
 
 type ConstraintWeightFun = Map.Map String Int -> Double
@@ -354,6 +358,7 @@ solveConstraintsM constraints = do
 			searchvar _ = []
 		
 	return $ Just $ Map.singleton (render.pretty $ weightfun_expr) 0 
+-}
 {-
 		cost env = sum $ map ((^2).($env)) funs
 		derivs = map to_deriv ()
