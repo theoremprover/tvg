@@ -27,6 +27,11 @@ import Text.PrettyPrint
 import Data.Generics
 import Data.List
 
+import Interfaces.MZinHaskell
+import Interfaces.MZPrinter
+import qualified Interfaces.MZAST as MZAST
+import Interfaces.FZSolutionParser
+
 import DataTree
 
 -- haskellzinc
@@ -62,12 +67,14 @@ main = do
 				Right (GlobalDecls globobjs _ _,soft_errors) -> do
 					forM_ soft_errors print
 					res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs 1
-					lss <- forM res $ \ (trace,constraints,solution) -> do
+					lss <- forM res $ \ (trace,constraints,model,solution) -> do
 						return $
 							[ "TRACE:" ] ++
 							map (render.pretty) trace ++
 							[ "","CONSTRAINTS:" ] ++
 							map (render.pretty) constraints ++
+							[ "","MODEL:" ] ++
+							[ layout model ] ++
 							[ "","SOLUTION:" ] ++
 							[ show solution ] ++
 							[ "","------","" ]
@@ -82,21 +89,19 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
 
-type Env = Map.Map String Int
-
-funCovVectorsM :: Ident -> CovVecM [(Trace,[Constraint],Maybe Env)]
+funCovVectorsM :: Ident -> CovVecM [(Trace,[Constraint],[MZAST.ModelData],Solution)]
 funCovVectorsM funident = do
 	FunDef (VarDecl _ _ _) stmt _ <- lookupFunM funident
-	tracesStmtM True ExpandCalls [] [] [[stmt]] >>= mapM aggregateconstraintsM
+	tracesStmtM True ExpandCalls [] [] [[stmt]] >>= return.(zip [1..]) >>= mapM aggregateconstraintsM
 	where
 	filtercond (TraceAssign (Ident n _ _) CAssignOp expr) | "cond$" `isPrefixOf` n = [expr]
 	filtercond _ = []
-	aggregateconstraintsM :: Trace -> CovVecM (Trace,[Constraint],Maybe Env)
-	aggregateconstraintsM tr = do
+	aggregateconstraintsM :: (Int,Trace) -> CovVecM (Trace,[Constraint],[MZAST.ModelData],Solution)
+	aggregateconstraintsM (i,tr) = do
 		contrace <- aggregateConstraintsM [] tr
 		let filtered_constraints = concatMap filtercond contrace
-		solution <- solveConstraintsM filtered_constraints
-		return (tr,filtered_constraints,solution)
+		(model,solution) <- solveConstraintsM i filtered_constraints
+		return (tr,filtered_constraints,model,solution)
 
 getNewIdent :: String -> CovVecM Ident
 getNewIdent name_prefix = do
@@ -303,120 +308,28 @@ aggregateConstraintsM traceelems (traceelem@(TraceAssign ident assignop expr) : 
 		CAssignOp -> aggregateConstraintsM (traceelem : map (substituteVarInTraceElem ident expr) traceelems) rest
 		_ -> error $ "aggregateConstraintsM: " ++ show assignop ++ " not implemented yet"
 
-solveConstraintsM :: [Constraint] -> CovVecM (Maybe Env)
-solveConstraintsM constraints = do
-	return Nothing
-{-
-epsilon = 1e-12 :: Double
-
-type ConstraintWeightFun = Map.Map String Int -> Double
-	
-solveConstraintsM :: [Constraint] -> CovVecM (Maybe Env)
-solveConstraintsM constraints = do
-	let
-		weightfun_expr = foldl plus zero (map (square.to_term) constraints) where
-			zero = CConst $ CIntConst (cInteger 0) undefNode
-			plus x y = CBinary CAddOp x y undefNode
-			square x = CBinary CMulOp x x undefNode
-
-			to_term :: CExpr -> CExpr
-			to_term (CUnary unaryop expr1 _) = case unaryop of
-				-- Eliminate or push down negation
-				CNegOp -> case expr1 of
-					CBinary binop exprb1 exprb2 _ -> case binop of
-						CLeOp -> to_term $ CBinary CGeqOp exprb1 exprb2 undefNode
-						CLeqOp -> to_term $ CBinary CGrOp exprb1 exprb2 undefNode
-						CGeqOp -> to_term $ CBinary CLeOp exprb1 exprb2 undefNode
-						CGrOp -> to_term $ CBinary CLeqOp exprb1 exprb2 undefNode
-						CEqOp -> to_term $ CBinary CNeqOp exprb1 exprb2 undefNode
-						CNeqOp -> to_term $ CBinary CEqOp exprb1 exprb2 undefNode
-						CLorOp -> to_term $ CBinary CLndOp (CUnary CNegOp exprb1 undefNode) (CUnary CNegOp exprb2 undefNode) undefNode
-						CLndOp -> to_term $ CBinary CLorOp (CUnary CNegOp exprb1 undefNode) (CUnary CNegOp exprb2 undefNode) undefNode
-						_ -> error $ "to_term: binop " ++ show binop ++ " under CNegOp not implemented yet."
-					_ -> to_term $ CBinary CNeqOp expr1 zero undefNode
-				_ -> error $ "to_term: unaryop " ++ show unaryop ++ " not implemented yet."
-
-			to_term (CBinary binop expr1 expr2 _) -> let
-				t1 = to_term expr1
-				t2 = to_term expr2
-				in case binop of
-					CLeOp -> to_term $ CBinary CGeqOp exprb1 exprb2 undefNode
-					CLeqOp -> to_term $ CBinary CGrOp exprb1 exprb2 undefNode
-					CGeqOp -> to_term $ CBinary CLeOp exprb1 exprb2 undefNode
-					CGrOp -> to_term $ CBinary CLeqOp exprb1 exprb2 undefNode
-					CEqOp -> to_term $ CBinary CNeqOp exprb1 exprb2 undefNode
-					CNeqOp -> to_term $ CBinary CEqOp exprb1 exprb2 undefNode
-					CLorOp -> to_term $ CBinary CLndOp (CUnary CNegOp exprb1 undefNode) (CUnary CNegOp exprb2 undefNode) undefNode
-					CLndOp -> to_term $ CBinary CLorOp (CUnary CNegOp exprb1 undefNode) (CUnary CNegOp exprb2 undefNode) undefNode
-					_ -> error $ "to_term: binop " ++ show binop ++ " not implemented yet."
-
-			to_term expr = error $ "to_term: " ++ (render.pretty $ expr) ++ " not implemented yet."
-			
-		all_vars = nub $ concatMap (everything (++) (mkQ [] searchvar)) constraints where
-			searchvar :: CExpr -> [String]
-			searchvar (CVar (Ident name _ _) _) = [name]
-			searchvar _ = []
-		
-	return $ Just $ Map.singleton (render.pretty $ weightfun_expr) 0 
--}
-{-
-		cost env = sum $ map ((^2).($env)) funs
-		derivs = map to_deriv ()
-		
-	minimize cost derivs (Map.fromList $ map (,0) all_vars) Nothing
+solveConstraintsM :: Int -> [Constraint] -> CovVecM ([MZAST.ModelData],Solution)
+solveConstraintsM i constraints = do
+	res <- liftIO $ runModel model (show i) 1 1
+	case res of
+		Left err -> error $ show err
+		Right (solution:_) -> return (model,solution)
 	where
-	to_term :: CExpr -> CExpr
-	to_term (CUnary unaryop expr1 _) = case unaryop of
-			CNegOp -> 1/v1
-			_      -> error $ "to_fun_top: unaryop " ++ show unaryop ++ " not implemented yet."
-	to_term (CBinary binop expr1 expr2 _) = \ xs -> let
-		v1 = (to_fun expr1) xs
-		v2 = (to_fun expr2) xs
-		in case binop of
-			CEqOp  -> v1-v2
-			CLeqOp -> if v1>v2 then v1-v2 else 0
-			CGeqOp -> if v1<v2 then v2-v1 else 0
-			CLeOp  -> if v1>=v2 then abs (v1-v2) + epsilon else 0
-			CGrOp  -> if v1<=v2 then abs (v2-v1) + epsilon else 0
-			_      -> error $ "to_fun_top: binop " ++ show binop ++ " not implemented yet."
-
-	to_term :: CExpr -> ConstraintWeightFun
-	to_term (CUnary unaryop expr1 _) = \ xs -> let
-		v1 = (to_fun expr1) xs
-		in case unaryop of
-			CNegOp -> 1/v1
-			_      -> error $ "to_fun_top: unaryop " ++ show unaryop ++ " not implemented yet."
-	to_term (CBinary binop expr1 expr2 _) = \ xs -> let
-		v1 = (to_fun expr1) xs
-		v2 = (to_fun expr2) xs
-		in case binop of
-			CEqOp  -> v1-v2
-			CLeqOp -> if v1>v2 then v1-v2 else 0
-			CGeqOp -> if v1<v2 then v2-v1 else 0
-			CLeOp  -> if v1>=v2 then abs (v1-v2) + epsilon else 0
-			CGrOp  -> if v1<=v2 then abs (v2-v1) + epsilon else 0
-			_      -> error $ "to_fun_top: binop " ++ show binop ++ " not implemented yet."
-
-to_fun :: CExpr -> ConstraintWeightFun
-to_fun (CBinary binop expr1 expr2 _) = \ xs -> let
-	v1 = (to_fun expr1) xs
-	v2 = (to_fun expr2) xs
-	in (case binop of
-		CMulOp -> (*)
-		CAddOp -> (+)
-		_      -> error $ "to_fun: binop " ++ show binop ++ " not implemented yet."
-		) v1 v2
-to_fun (CVar (Ident name _ _) _) = \ xs -> case Map.lookup name xs of
-	Nothing -> error $ "to_fun: Variable " ++ show name ++ " not found!"
-	Just x  -> fromIntegral x
-
-minimize :: [ConstraintWeightFun] -> Env -> Maybe Double -> CovVecM (Maybe Env)
-minimize funs derivs env mb_prev_cost = case
-	cost env < epsilon &&
-	all (<epsilon) (map derivs env) &&
-	maybe False (\ prevcost -> abs (cost-prevcost) < epsilon) mb_prev_cost
-	of
-		True -> Just env
-		False -> 
-	where
--}
+	model = varsG ++ constraintsG ++ [ MZAST.solve MZAST.satisfy ]
+	varsG = map (MZAST.var MZAST.Int) $ nub $ everything (++) (mkQ [] searchvar) constraints
+	searchvar :: CExpr -> [String]
+	searchvar (CVar (Ident name _ _) _) = [ name ]
+	searchvar _ = []
+	constraintsG = map (MZAST.constraint . expr2constr) constraints
+	expr2constr (CUnary CNegOp (CBinary binop expr1 expr2 ni) _) = expr2constr $ case binop of
+			CLeOp -> CBinary CGeqOp expr1 expr2 ni 
+			CGrOp -> CBinary CLeqOp expr1 expr2 ni 
+			CLeqOp -> CBinary CGrOp expr1 expr2 ni 
+			CGeqOp -> CBinary CLeOp expr1 expr2 ni 
+			CEqOp -> CBinary CNeqOp expr1 expr2 ni 
+			CLorOp -> CBinary CLndOp (CUnary CNegOp expr1 undefNode) (CUnary CNegOp expr2 undefNode) ni
+			CLndOp -> CBinary CLorOp (CUnary CNegOp expr1 undefNode) (CUnary CNegOp expr2 undefNode) ni
+	expr2constr (CBinary binop expr1 expr2 _) = MZAST.Bi (MZAST.Op $ MZAST.stringToIdent $ (render $ pretty binop)) (expr2constr expr1) (expr2constr expr2)
+	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
+	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
+	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"

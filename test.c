@@ -59,8 +59,4 @@ int main(int argc,char* argv[])
 
 /*
 
-1)
-x>4
-x>10/12-1
-
 */

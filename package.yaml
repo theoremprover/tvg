@@ -32,6 +32,7 @@ dependencies:
 - html
 - binary
 - containers
+- haskelzinc
 #- template-haskell >= 2.15
 #- g2
 
