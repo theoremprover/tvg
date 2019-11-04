@@ -2,11 +2,8 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 {--
-stack build :prevent-exe
-stack exec prevent-exe -- test.c
 stack build :prevent-exe && stack exec prevent-exe -- prevent/test.c
 
-https://wiki.haskell.org/HXT#The_concept_of_filters
 http://hackage.haskell.org/package/language-c-0.8.2/docs/Language-C-Syntax-AST.html
 --}
 
@@ -98,10 +95,11 @@ f <+> g = \ t -> f t ++ g t
 findAll :: (Typeable a,Data a,Typeable b,Data b) => CFilter b b -> CFilter a b
 findAll filt = everything (++) (mkQ [] filt)
 
+findOne :: (Typeable a,Data a,Typeable b,Data b) => CFilter b b -> CFilter a b
+findOne filt =  take 1 . findAll filt
+
 isA :: (Typeable a,Data a) => CFilter a a -> CFilter a a
-isA filt = \ t -> case filt t of
-	[] -> []
-	_  -> [t]
+isA = id
 
 funCall :: CFilter CExpr CExpr
 funCall ccall@(CCall fun args _) = [ccall]
@@ -162,7 +160,8 @@ checkArrayDecl ( CArrSize _ sizeexpr : _ , CInitList _ _ ) = [ head (showPretty 
 complexExpr = ternaryIf <+> binaryOp
 
 myFilter :: CFilter ASTRoot String
-myFilter = findAll complexExpr >>> isA incOrDecOp >>> showPretty
+myFilter = findHighest complexExpr >>> findOne incOrDecOp >>> showPretty
+--myFilter = findAll complexExpr >>> showPretty
 
 {-
 myFilter :: CFilter ASTRoot String

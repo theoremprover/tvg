@@ -73,10 +73,12 @@ main = do
 							map (render.pretty) trace ++
 							[ "","CONSTRAINTS:" ] ++
 							map (render.pretty) constraints ++
+{-
 							[ "","MODEL:" ] ++
 							[ layout model ] ++
 							[ "","SOLUTION:" ] ++
 							[ show solution ] ++
+-}
 							[ "","------","" ]
 					writeFile (filename <.> "traces") (unlines $ concat lss)
 
@@ -310,6 +312,8 @@ aggregateConstraintsM traceelems (traceelem@(TraceAssign ident assignop expr) : 
 
 solveConstraintsM :: Int -> [Constraint] -> CovVecM ([MZAST.ModelData],Solution)
 solveConstraintsM i constraints = do
+	return ([],[])
+{-
 	res <- liftIO $ runModel model (show i) 1 1
 	case res of
 		Left err -> error $ show err
@@ -333,3 +337,4 @@ solveConstraintsM i constraints = do
 	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
 	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
+-}
