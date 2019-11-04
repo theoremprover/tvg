@@ -98,7 +98,7 @@ findAll filt = everything (++) (mkQ [] filt)
 findOne :: (Typeable a,Data a,Typeable b,Data b) => CFilter b b -> CFilter a b
 findOne filt =  take 1 . findAll filt
 
-isA :: (Typeable a,Data a) => CFilter a a -> CFilter a a
+isA :: (Typeable a,Data a,Typeable b,Data b) => CFilter a b -> CFilter a b
 isA = id
 
 funCall :: CFilter CExpr CExpr
@@ -155,15 +155,15 @@ checkArrayDecl ( CArrSize _ (CConst (CIntConst (CInteger n _ _) _)) : rest , CIn
 checkArrayDecl ( _:_ , CInitExpr _ ni ) = [ showPos ni ++ "Expected one more dimension in initializers" ]
 checkArrayDecl ( CArrSize _ sizeexpr : _ , CInitList _ _ ) = [ head (showPretty sizeexpr) ++ " : Array size is not an integer constant" ]
 
--------------------
-
-complexExpr = ternaryIf <+> binaryOp
-
-myFilter :: CFilter ASTRoot String
-myFilter = findHighest complexExpr >>> findOne incOrDecOp >>> showPretty
---myFilter = findAll complexExpr >>> showPretty
+-- Prevent DSL -----------------
 
 {-
-myFilter :: CFilter ASTRoot String
-myFilter = findAll cDecl >>> arrayDecl >>> checkArrayDecl >>> toString
+complexExpr = ternaryIf <+> binaryOp
+
+myFilter =
+	findAll complexExpr >>> findOne incOrDecOp >>> showPretty
 -}
+
+myFilter =
+	findAll cDecl >>> isA arrayDecl >>> checkArrayDecl >>> toString
+
