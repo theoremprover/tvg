@@ -157,13 +157,12 @@ checkArrayDecl ( CArrSize _ sizeexpr : _ , CInitList _ _ ) = [ head (showPretty 
 
 -- Prevent DSL -----------------
 
-{-
 complexExpr = ternaryIf <+> binaryOp
 
 myFilter =
-	findAll complexExpr >>> findOne incOrDecOp >>> showPretty
--}
+	findAll complexExpr >>> findAll incOrDecOp >>> showPretty
 
+{-
 myFilter =
 	findAll cDecl >>> isA arrayDecl >>> checkArrayDecl >>> toString
-
+-}
