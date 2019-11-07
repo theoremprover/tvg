@@ -34,6 +34,8 @@ import Interfaces.FZSolutionParser
 
 import DataTree
 
+_PRINT_TRACESTMTS_TRACE = False
+
 -- haskellzinc
 
 {--
@@ -57,6 +59,9 @@ main = do
 		[] -> ("test.c","f")
 		filename:funname:[] -> (filename,funname)
 
+	let traces_filename = filename <.> "traces"
+	writeFile traces_filename ""
+
 	mb_ast <- parseCFile gcc Nothing [] filename
 	case mb_ast of
 		Left err -> error $ show err
@@ -73,14 +78,12 @@ main = do
 							map (render.pretty) trace ++
 							[ "","CONSTRAINTS:" ] ++
 							map (render.pretty) constraints ++
-{-
 							[ "","MODEL:" ] ++
 							[ layout model ] ++
 							[ "","SOLUTION:" ] ++
 							[ show solution ] ++
--}
 							[ "","------","" ]
-					writeFile (filename <.> "traces") (unlines $ concat lss)
+					writeFile traces_filename (unlines $ concat lss)
 
 type Constraint = CExpr
 
@@ -91,19 +94,19 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
 
-funCovVectorsM :: Ident -> CovVecM [(Trace,[Constraint],[MZAST.ModelData],Solution)]
+funCovVectorsM :: Ident -> CovVecM [(Trace,[Constraint],[MZAST.ModelData],Maybe Solution)]
 funCovVectorsM funident = do
 	FunDef (VarDecl _ _ _) stmt _ <- lookupFunM funident
 	tracesStmtM True ExpandCalls [] [] [[stmt]] >>= return.(zip [1..]) >>= mapM aggregateconstraintsM
 	where
 	filtercond (TraceAssign (Ident n _ _) CAssignOp expr) | "cond$" `isPrefixOf` n = [expr]
 	filtercond _ = []
-	aggregateconstraintsM :: (Int,Trace) -> CovVecM (Trace,[Constraint],[MZAST.ModelData],Solution)
+	aggregateconstraintsM :: (Int,Trace) -> CovVecM (Trace,[Constraint],[MZAST.ModelData],Maybe Solution)
 	aggregateconstraintsM (i,tr) = do
 		contrace <- aggregateConstraintsM [] tr
 		let filtered_constraints = concatMap filtercond contrace
-		(model,solution) <- solveConstraintsM i filtered_constraints
-		return (tr,filtered_constraints,model,solution)
+		(model,solutions) <- solveConstraintsM i filtered_constraints
+		return (tr,filtered_constraints,model,solutions)
 
 getNewIdent :: String -> CovVecM Ident
 getNewIdent name_prefix = do
@@ -115,7 +118,6 @@ data TraceElem = TraceAssign Ident CAssignOp CExpr -- | TraceCondition CExpr
 	deriving Show
 instance Pretty TraceElem where
 	pretty (TraceAssign ident op expr) = pretty ident <+> text ":=" <+> pretty expr
---	pretty (TraceCondition expr) = text "Condition:" <+> pretty expr
 
 type Trace = [TraceElem]
 type FunList = [Ident]
@@ -124,7 +126,7 @@ data StmtStage = ExpandCalls | NoCallsLeft deriving (Eq,Show)
 tracesStmtM :: Bool -> StmtStage -> [Ident] -> Trace -> [[CStat]] -> CovVecM [Trace]
 
 tracesStmtM True stmtstage funidents traceelems rest = do
-	liftIO $ do
+	when _PRINT_TRACESTMTS_TRACE $ liftIO $ do
 		putStrLn "--------------"
 		putStrLn $ "tracesStmtM " ++ show stmtstage
 		putStrLn $ "    funidents = " ++ show (map (render.pretty) funidents)
@@ -272,7 +274,7 @@ expandFunCallsM expr = runStateT (everywhereM (mkM searchfuncalls) expr) ([],[])
 			ident' <- lift $ getNewIdent (n ++ "_" ++ funname)
 			return (ident,ident')
 		
-		liftIO $ do
+		when _PRINT_TRACESTMTS_TRACE $ liftIO $ do
 			putStrLn $ "old_new_idents =\n"
 			forM_ old_new_idents $ \ (old,new) ->
 				putStrLn $ "old=" ++ (render.pretty) old ++ ", new=" ++ (render.pretty) new
@@ -282,7 +284,7 @@ expandFunCallsM expr = runStateT (everywhereM (mkM searchfuncalls) expr) ([],[])
 			subst_var b (old,new) = substituteIdentInStmt old new b
 			body' = foldl subst_var body_with_arg_assignments old_new_idents
 
-		liftIO $ putStrLn $ "body' =\n" ++ (render.pretty) body'
+		when _PRINT_TRACESTMTS_TRACE $ liftIO $ putStrLn $ "body' =\n" ++ (render.pretty) body'
 		modify $ \ (stats,funidents) -> (stats++[body'],funidents++[fun_val_ident])
 		return $ CVar fun_val_ident call_ni
 	searchfuncalls expr = return expr
@@ -310,14 +312,28 @@ aggregateConstraintsM traceelems (traceelem@(TraceAssign ident assignop expr) : 
 		CAssignOp -> aggregateConstraintsM (traceelem : map (substituteVarInTraceElem ident expr) traceelems) rest
 		_ -> error $ "aggregateConstraintsM: " ++ show assignop ++ " not implemented yet"
 
-solveConstraintsM :: Int -> [Constraint] -> CovVecM ([MZAST.ModelData],Solution)
+solveConstraintsM :: Int -> [Constraint] -> CovVecM ([MZAST.ModelData],Maybe Solution)
 solveConstraintsM i constraints = do
-	return ([],[])
-{-
+	liftIO $ putStrLn $ unlines $
+		[ "","CONSTRAINTS:" ] ++
+		map (render.pretty) constraints ++
+		[ "","MODEL:" ] ++
+		[ layout model ]
+	liftIO $ writeFile ("model" ++ show i ++ ".mzn") $ layout model
+	liftIO $ putStrLn "Running model..."
 	res <- liftIO $ runModel model (show i) 1 1
+	liftIO $ putStrLn $ "res = " ++ show res
 	case res of
 		Left err -> error $ show err
-		Right (solution:_) -> return (model,solution)
+		Right solutions -> do
+			let solution = case solutions of
+				[] -> Nothing
+				(sol:_) -> Just sol
+			liftIO $ putStrLn $ unlines $
+				[ "","SOLUTION:" ] ++
+				[ show solution ] ++
+				[ "","------","" ]
+			return (model,solution)
 	where
 	model = varsG ++ constraintsG ++ [ MZAST.solve MZAST.satisfy ]
 	varsG = map (MZAST.var MZAST.Int) $ nub $ everything (++) (mkQ [] searchvar) constraints
@@ -325,16 +341,9 @@ solveConstraintsM i constraints = do
 	searchvar (CVar (Ident name _ _) _) = [ name ]
 	searchvar _ = []
 	constraintsG = map (MZAST.constraint . expr2constr) constraints
-	expr2constr (CUnary CNegOp (CBinary binop expr1 expr2 ni) _) = expr2constr $ case binop of
-			CLeOp -> CBinary CGeqOp expr1 expr2 ni 
-			CGrOp -> CBinary CLeqOp expr1 expr2 ni 
-			CLeqOp -> CBinary CGrOp expr1 expr2 ni 
-			CGeqOp -> CBinary CLeOp expr1 expr2 ni 
-			CEqOp -> CBinary CNeqOp expr1 expr2 ni 
-			CLorOp -> CBinary CLndOp (CUnary CNegOp expr1 undefNode) (CUnary CNegOp expr2 undefNode) ni
-			CLndOp -> CBinary CLorOp (CUnary CNegOp expr1 undefNode) (CUnary CNegOp expr2 undefNode) ni
-	expr2constr (CBinary binop expr1 expr2 _) = MZAST.Bi (MZAST.Op $ MZAST.stringToIdent $ (render $ pretty binop)) (expr2constr expr1) (expr2constr expr2)
+	expr2constr (CUnary CNegOp expr _) = MZAST.U (MZAST.Op $ MZAST.stringToIdent "not") (expr2constr expr)
+	expr2constr (CBinary binop expr1 expr2 _) = MZAST.Bi (MZAST.Op $ MZAST.stringToIdent $ render $ pretty binop)
+		(expr2constr expr1) (expr2constr expr2)
 	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
 	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
--}

@@ -108,9 +108,11 @@ testModelWithParser p m mpath s n = do
   let res_fp = spaceFix $ mpath ++ ".res"
   -- Write mzn file
   writeFile mzn_fp (layout m)
-  let mzn2fzn  = proc (mz_dir ++ "mzn2fzn.exe") ["-O-"
-                                            ,"-o", fzn_fp
-                                            , mzn_fp]
+  let mzn2fzn  = proc (mz_dir ++ "mzn2fzn.exe") [ mzn_fp ]
+  (ec1, res, err1) <- readCreateProcessWithExitCode mzn2fzn ""
+  putStrLn $ "testModelWithParser res=" ++ show res
+  putStrLn $ "testModelWithParser err=" ++ err1
+{-
   (ec1, out1, err1) <- readCreateProcessWithExitCode mzn2fzn ""
   res <- case err1 of
          "" -> case s of
@@ -121,7 +123,7 @@ testModelWithParser p m mpath s n = do
                                         True -> ["-n", show n]
                                         _    -> []
                                      ++ [fzn_fp]
-                    let flatzinc = proc (mz_dir ++ "flatzinc.exe") fz_options
+                    let flatzinc = proc (mz_dir ++ "minizinc.exe") fz_options
                     (ec2, out2, err2) <- readCreateProcessWithExitCode flatzinc ""
                     return $ case err2 of
                              "" -> out2
@@ -138,6 +140,7 @@ testModelWithParser p m mpath s n = do
   removeFile res_fp
   removeFile mzn_fp
   removeFile fzn_fp
+-}
   return $ getAllSolutions p res
 
 -- | Writes the model's data file. The 'MZModel' of the argument must contain

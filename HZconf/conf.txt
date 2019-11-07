@@ -1,1 +1,1 @@
-MINIZINC_DIR = C:\minizinc\
+MINIZINC_DIR = C:\minizinc223\
