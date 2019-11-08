@@ -44,6 +44,8 @@ import Data.Set (Set, fromDistinctAscList)
 import qualified Text.Parsec as P
 import qualified Text.Parsec.Char as C
 import Text.Parsec.String (Parser)
+import Debug.Trace
+
 -- Next two modules for testing only
 --import GHC.Generics
 --import Control.DeepSeq
@@ -161,7 +163,7 @@ trySolutionsDefault = trySolutions allSolutionsDefault defaultUnsat
 trySolutions :: Parser [Solution] -- Custom solutions parser
              -> Parser String     -- Custom /Unsatisfiable/ message parser
              -> Parser [Solution]
-trySolutions p u = try $ p <|> (u >> return [[]])
+trySolutions p u = ((try p) P.<?> "tried p, but failed") <|> ((u P.<?> "tried u, but failed") >> return [[]])
 
 -- | Parses the default message for a model with no solutions: @=====UNSATISFIABLE=====@, 
 -- surrounded by commented lines before and after.
