@@ -163,7 +163,7 @@ trySolutionsDefault = trySolutions allSolutionsDefault defaultUnsat
 trySolutions :: Parser [Solution] -- Custom solutions parser
              -> Parser String     -- Custom /Unsatisfiable/ message parser
              -> Parser [Solution]
-trySolutions p u = ((try p) P.<?> "tried p, but failed") <|> ((u P.<?> "tried u, but failed") >> return [[]])
+trySolutions p u = (try p)  <|> (u  >> return [[]])
 
 -- | Parses the default message for a model with no solutions: @=====UNSATISFIABLE=====@, 
 -- surrounded by commented lines before and after.
