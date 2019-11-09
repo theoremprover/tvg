@@ -188,6 +188,13 @@ tracesStmtM False ExpandCalls funidents traceelems (((CExpr (Just (CAssign assig
 		(if null funcall_stmts then [] else [funcall_stmts]) ++
 		((CExpr (Just (CAssign assign_op cvar assigned_expr' undefNode)) undefNode : rest) : rx)
 
+-- [DO] WHILE loop
+
+tracesStmtM False NoCallsLeft funidents traceelems (((CWhile cond stmt isdowhile) : rest ) : rx) = do
+	tracesStmtM True ExpandCalls funidents (TraceAssign ident assign_op assigned_expr : traceelems) (rest:rx)
+
+tracesStmtM False ExpandCalls funidents traceelems (((CWhile cond stmt isdowhile) : rest ) : rx) = do
+
 
 -- RETURN ------------
 
