@@ -110,37 +110,6 @@ testModelWithParser p m mpath s n = do
   writeFile mzn_fp (layout m)
   let mzn2fzn  = proc (mz_dir ++ "mzn2fzn.exe") [ mzn_fp ]
   (ec1, res, err1) <- readCreateProcessWithExitCode mzn2fzn ""
-  putStrLn $ "testModelWithParser res=" ++ show res
-  putStrLn $ "testModelWithParser err=" ++ err1
-{-
-  (ec1, out1, err1) <- readCreateProcessWithExitCode mzn2fzn ""
-  res <- case err1 of
-         "" -> case s of
-               -- G12/FD solver
-               1 -> do
-                    let fz_options = ["-b", "fd"]
-                                     ++ case (n > 0) of
-                                        True -> ["-n", show n]
-                                        _    -> []
-                                     ++ [fzn_fp]
-                    let flatzinc = proc (mz_dir ++ "minizinc.exe") fz_options
-                    (ec2, out2, err2) <- readCreateProcessWithExitCode flatzinc ""
-                    return $ case err2 of
-                             "" -> out2
-                             _  -> "flatzinc error: " ++ err2 ++ "."
-               -- Choco solver
-               2 -> let antlr        = antlr_path configuration
-                        chocoParser  = chocoparser configuration
-                        chocoSolver  = chocosolver configuration
-                        all_or_first = if (n == 0) then "-a " else ""
-                    in readCreateProcess (shell $ "java -cp ." ++ (intercalate [searchPathSeparator] [chocoSolver, chocoParser, antlr]) ++ " org.chocosolver.parser.flatzinc.ChocoFZN " ++ all_or_first ++ mpath ++ ".fzn") ""
-         _  -> readIO ("mzn2fzn error: " ++ err1 ++ ".")
-  writeFile res_fp res
-  -- Comment lines below for debugging
-  removeFile res_fp
-  removeFile mzn_fp
-  removeFile fzn_fp
--}
   return $ getAllSolutions p res
 
 -- | Writes the model's data file. The 'MZModel' of the argument must contain

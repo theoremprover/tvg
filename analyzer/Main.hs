@@ -167,10 +167,8 @@ tracesStmtM False NoCallsLeft funidents traceelems ((CIf cond_expr then_stmt mb_
 	return $ then_m ++ else_m
 
 tracesStmtM False ExpandCalls funidents traceelems ((CIf cond_expr then_stmt mb_else_stmt if_ni : rest):rx) = do
-	(cond_expr',(funcall_stmts,called_funidents)) <- expandFunCallsM cond_expr
-	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $
-		(if null funcall_stmts then [] else [funcall_stmts]) ++
-		((CIf cond_expr' then_stmt mb_else_stmt if_ni : rest) : rx)
+	tracesStmt_expandFunCallsM funidents traceelems rest rx cond_expr $ \ cond_expr' -> 
+		CIf cond_expr' then_stmt mb_else_stmt if_ni
 
 -- CExpr Nothing -------
 
@@ -183,18 +181,18 @@ tracesStmtM False NoCallsLeft funidents traceelems (((CExpr (Just (CAssign assig
 	tracesStmtM True ExpandCalls funidents (TraceAssign ident assign_op assigned_expr : traceelems) (rest:rx)
 
 tracesStmtM False ExpandCalls funidents traceelems (((CExpr (Just (CAssign assign_op cvar assigned_expr _)) _) : rest ) : rx) = do
-	(assigned_expr',(funcall_stmts,called_funidents)) <- expandFunCallsM assigned_expr
-	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $
-		(if null funcall_stmts then [] else [funcall_stmts]) ++
-		((CExpr (Just (CAssign assign_op cvar assigned_expr' undefNode)) undefNode : rest) : rx)
+	tracesStmt_expandFunCallsM funidents traceelems rest rx assigned_expr $ \ expr' -> 
+		CExpr (Just (CAssign assign_op cvar expr' undefNode)) undefNode
 
 -- [DO] WHILE loop
 
+{-
 tracesStmtM False NoCallsLeft funidents traceelems (((CWhile cond stmt isdowhile) : rest ) : rx) = do
 	tracesStmtM True ExpandCalls funidents (TraceAssign ident assign_op assigned_expr : traceelems) (rest:rx)
 
-tracesStmtM False ExpandCalls funidents traceelems (((CWhile cond stmt isdowhile) : rest ) : rx) = do
-
+tracesStmtM False ExpandCalls funidents traceelems (((CWhile cond stmt isdowhile) : rest ) : rx) =
+	tracesStmt_expandFunCallsM funidents traceelems rest cond $ \ expr' -> 
+-}
 
 -- RETURN ------------
 
@@ -205,15 +203,12 @@ tracesStmtM False NoCallsLeft funidents traceelems ((CReturn mb_ret_val _ : _):r
 			[] -> []:rx
 			(funident:_) -> [ CExpr (Just (CAssign CAssignOp (CVar funident undefNode) ret_val undefNode)) undefNode ] : rx
 
-tracesStmtM False ExpandCalls funidents traceelems ((CReturn mb_ret_val _ : _):rx) = do
-	(mb_ret_val',(funcall_stmts,called_funidents)) <- case mb_ret_val of
-		Nothing -> return (Nothing,([],[]))
+tracesStmtM False ExpandCalls funidents traceelems cret@((CReturn mb_ret_val _ : rest):rx) = do
+	case mb_ret_val of
+		Nothing -> tracesStmtM True NoCallsLeft funidents traceelems cret
 		Just ret_val -> do
-			(v,ss) <- expandFunCallsM ret_val
-			return (Just v,ss)
-	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $
-		(if null funcall_stmts then [] else [funcall_stmts]) ++
-		([CReturn mb_ret_val' undefNode] : rx)
+			tracesStmt_expandFunCallsM funidents traceelems rest rx ret_val $
+				\ ret_val' -> CReturn (Just ret_val') undefNode
 
 
 -- pop funident when reaching [] in head of statements to be processed --------
@@ -249,6 +244,15 @@ tracesStmtM tracing stmtstage funidents traceelems rss = do
 translateSemRepType :: Type -> CTypeSpecifier NodeInfo
 translateSemRepType (DirectType (TyIntegral TyInt) _ _) = CIntType undefNode
 translateSemRepType t = error $ "translateSemRepType " ++ (render.pretty) t ++ " not implemented yet"
+
+-- Expand function calls, this is called from tracesStmtM
+
+tracesStmt_expandFunCallsM :: [Ident] -> Trace -> [CStat] -> [[CStat]] -> CExpr -> (CExpr -> CStat) -> CovVecM [Trace]
+tracesStmt_expandFunCallsM funidents traceelems rest rx expr f_expr' = do
+	(expr',(funcall_stmts,called_funidents)) <- expandFunCallsM expr
+	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $
+		(if null funcall_stmts then [] else [funcall_stmts]) ++
+		((f_expr' expr' : rest) : rx)
 
 -- Expands all function calls in expr and returns a statement handling all function calls, and the modified expression
 
@@ -329,7 +333,6 @@ solveConstraintsM i constraints = do
 	liftIO $ writeFile ("model" ++ show i ++ ".mzn") $ layout model
 	liftIO $ putStrLn "Running model..."
 	res <- liftIO $ runModel model (show i) 1 1
-	liftIO $ putStrLn $ "res = " ++ show res
 	case res of
 		Left err -> error $ show err
 		Right solutions -> do
