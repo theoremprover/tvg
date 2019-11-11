@@ -186,7 +186,6 @@ tracesStmtM False ExpandCalls funidents traceelems (((CExpr (Just (CAssign assig
 
 -- [DO] WHILE loop
 
-{-
 tracesStmtM False NoCallsLeft funidents traceelems (((CWhile cond stmt isdowhile _) : rest ) : rx) = do
 	tracesStmtM True ExpandCalls funidents traceelems ((transl_while ++ rest):rx)
 	where
@@ -195,7 +194,6 @@ tracesStmtM False NoCallsLeft funidents traceelems (((CWhile cond stmt isdowhile
 tracesStmtM False ExpandCalls funidents traceelems (((CWhile cond stmt isdowhile ni) : rest ) : rx) =
 	tracesStmt_expandFunCallsM funidents traceelems rest rx cond $ \ cond' ->
 		CWhile cond' stmt isdowhile ni
--}
 
 -- RETURN ------------
 
