@@ -180,19 +180,20 @@ tracesStmtM False _ funidents traceelems (((CExpr Nothing _) : rest) : rx) =
 tracesStmtM False NoCallsLeft funidents traceelems (((CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _) : rest) : rx) = do
 	tracesStmtM True ExpandCalls funidents (TraceAssign ident assign_op assigned_expr : traceelems) (rest:rx)
 
-tracesStmtM False ExpandCalls funidents traceelems (((CExpr (Just (CAssign assign_op cvar assigned_expr _)) _) : rest ) : rx) = do
+tracesStmtM False ExpandCalls funidents traceelems (((CExpr (Just (CAssign assign_op cvar assigned_expr ni1)) ni2) : rest ) : rx) = do
 	tracesStmt_expandFunCallsM funidents traceelems rest rx assigned_expr $ \ expr' -> 
-		CExpr (Just (CAssign assign_op cvar expr' undefNode)) undefNode
+		CExpr (Just (CAssign assign_op cvar expr' ni1)) ni2
 
 -- [DO] WHILE loop
 
-{-
-tracesStmtM False NoCallsLeft funidents traceelems (((CWhile cond stmt isdowhile) : rest ) : rx) = do
-	tracesStmtM True ExpandCalls funidents (TraceAssign ident assign_op assigned_expr : traceelems) (rest:rx)
+tracesStmtM False NoCallsLeft funidents traceelems (((CWhile cond stmt isdowhile _) : rest ) : rx) = do
+	tracesStmtM True ExpandCalls funidents traceelems ((transl_while ++ rest):rx)
+	where
+	transl_while = 
 
-tracesStmtM False ExpandCalls funidents traceelems (((CWhile cond stmt isdowhile) : rest ) : rx) =
-	tracesStmt_expandFunCallsM funidents traceelems rest cond $ \ expr' -> 
--}
+tracesStmtM False ExpandCalls funidents traceelems (((CWhile cond stmt isdowhile ni) : rest ) : rx) =
+	tracesStmt_expandFunCallsM funidents traceelems rest rx cond $ \ cond' ->
+		CWhile cond' stmt isdowhile ni
 
 -- RETURN ------------
 
