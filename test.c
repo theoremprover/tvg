@@ -3,7 +3,6 @@
 
 int g(int z)
 {
-
 	if(z>5)
 	{
 		return(2*z);
@@ -23,18 +22,11 @@ int f(int x)
 
 	int y = 3*z1;
 
-	if(y>10)
-	{
-		return(g(y));
-	}
-	else
-	{
-		if(z1>5)
-		{
-			x = x + 2;
-			y = g(x);
-		}
-	}
+    while ( x < g(6) )
+    {
+        x = x + 2;
+        y = y + g(x);
+    }
 
 	return(y+1);
 }

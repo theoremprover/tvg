@@ -26,6 +26,7 @@ import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
 import Data.Generics
 import Data.List
+import Data.Maybe (fromJust)
 
 import Interfaces.MZinHaskell
 import Interfaces.MZPrinter
@@ -187,11 +188,30 @@ tracesStmtM False ExpandCalls funidents traceelems (((CExpr (Just (CAssign assig
 -- [DO] WHILE loop
 
 tracesStmtM False NoCallsLeft funidents traceelems (((CWhile cond stmt isdowhile _) : rest ) : rx) = do
-	tracesStmtM True ExpandCalls funidents traceelems ((transl_while ++ rest):rx)
+	tracesStmtM True ExpandCalls funidents traceelems ((transl_while : rest):rx)
 	where
-	transl_while = 
+	while2if 0 = []
+	while2if i = [ CBlockStmt (CIf cond (CCompound [] (CBlockStmt stmt : while2if (i-1)) undefNode) Nothing undefNode) ]
+	transl_while = case isdowhile of
+		True -> error "do-while not implemented yet"
+		False -> CCompound [] (while2if 5) undefNode
 
 tracesStmtM False ExpandCalls funidents traceelems (((CWhile cond stmt isdowhile ni) : rest ) : rx) =
+	tracesStmt_expandFunCallsM funidents traceelems rest rx cond $ \ cond' ->
+		CWhile cond' stmt isdowhile ni
+
+-- FOR loop
+
+tracesStmtM False NoCallsLeft funidents traceelems (((CFor expr_or_decl mb_cond mb_inc stmt _) : rest ) : rx) = do
+	tracesStmtM True ExpandCalls funidents traceelems ((transl_while : rest):rx)
+	where
+	for2if 0 = []
+	for2if i = [ CBlockStmt (CIf cond (CCompound [] (CBlockStmt stmt : while2if (i-1)) undefNode) Nothing undefNode) ]
+	transl_while = case isdowhile of
+		True -> error "do-while not implemented yet"
+		False -> CCompound [] (while2if 5) undefNode
+
+tracesStmtM False ExpandCalls funidents traceelems (((CFor expr_or_decl mb_cond mb_inc stmt _) : rest ) : rx) =
 	tracesStmt_expandFunCallsM funidents traceelems rest rx cond $ \ cond' ->
 		CWhile cond' stmt isdowhile ni
 
@@ -246,11 +266,14 @@ translateSemRepType :: Type -> CTypeSpecifier NodeInfo
 translateSemRepType (DirectType (TyIntegral TyInt) _ _) = CIntType undefNode
 translateSemRepType t = error $ "translateSemRepType " ++ (render.pretty) t ++ " not implemented yet"
 
--- Expand function calls, this is called from tracesStmtM
+-- Expand function calls, this is called by tracesStmtM
 
 tracesStmt_expandFunCallsM :: [Ident] -> Trace -> [CStat] -> [[CStat]] -> CExpr -> (CExpr -> CStat) -> CovVecM [Trace]
 tracesStmt_expandFunCallsM funidents traceelems rest rx expr f_expr' = do
+
 	(expr',(funcall_stmts,called_funidents)) <- expandFunCallsM expr
+	tracesStmt_expandFunCallsM funidents traceelems rest rx expr f_expr'
+	
 	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $
 		(if null funcall_stmts then [] else [funcall_stmts]) ++
 		((f_expr' expr' : rest) : rx)
