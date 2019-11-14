@@ -202,6 +202,7 @@ tracesStmtM False ExpandCalls funidents traceelems (((CWhile cond stmt isdowhile
 
 -- FOR loop
 
+{-
 tracesStmtM False NoCallsLeft funidents traceelems (((CFor expr_or_decl mb_cond mb_inc stmt _) : rest ) : rx) = do
 	tracesStmtM True ExpandCalls funidents traceelems ((transl_while : rest):rx)
 	where
@@ -214,6 +215,7 @@ tracesStmtM False NoCallsLeft funidents traceelems (((CFor expr_or_decl mb_cond 
 tracesStmtM False ExpandCalls funidents traceelems (((CFor expr_or_decl mb_cond mb_inc stmt _) : rest ) : rx) =
 	tracesStmt_expandFunCallsM funidents traceelems rest rx cond $ \ cond' ->
 		CWhile cond' stmt isdowhile ni
+-}
 
 -- RETURN ------------
 
@@ -263,17 +265,24 @@ tracesStmtM tracing stmtstage funidents traceelems rss = do
 	error "Non-exhaustive patterns in tracesStmtM"
 
 translateSemRepType :: Type -> CTypeSpecifier NodeInfo
-translateSemRepType (DirectType (TyIntegral TyInt) _ _) = CIntType undefNode
-translateSemRepType t = error $ "translateSemRepType " ++ (render.pretty) t ++ " not implemented yet"
+translateSemRepType ty = case ty of
+	DirectType (TyIntegral TyInt) _ _ -> CIntType undefNode
+	DirectType (TyIntegral TyShort) _ _ -> CShortType undefNode
+	DirectType (TyIntegral TyLong) _ _ -> CLongType undefNode
+	DirectType (TyFloating TyFloat) _ _ -> CFloatType undefNode
+	DirectType (TyFloating TyDouble) _ _ -> CDoubleType undefNode
+	PtrType ty' _ _ ->
+	ArrayType ty' _ _ _ ->
+	FunctionType (FunType ty' paramdecls isvariadic) _ ->
+	FunctionType (FunTypeIncomplete ty') _ ->
+	TypeDefType (TypeDefRef ident ty' _) _ _ -> 
+	_ -> error $ "translateSemRepType " ++ (render.pretty) ty ++ " not implemented yet"
 
 -- Expand function calls, this is called by tracesStmtM
 
 tracesStmt_expandFunCallsM :: [Ident] -> Trace -> [CStat] -> [[CStat]] -> CExpr -> (CExpr -> CStat) -> CovVecM [Trace]
 tracesStmt_expandFunCallsM funidents traceelems rest rx expr f_expr' = do
-
 	(expr',(funcall_stmts,called_funidents)) <- expandFunCallsM expr
-	tracesStmt_expandFunCallsM funidents traceelems rest rx expr f_expr'
-	
 	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $
 		(if null funcall_stmts then [] else [funcall_stmts]) ++
 		((f_expr' expr' : rest) : rx)
