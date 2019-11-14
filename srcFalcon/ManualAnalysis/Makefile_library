@@ -1,0 +1,17 @@
+CC = gcc
+
+FUNC_FLAGS = -DL_udivdi3 -DL_divdi3 -DL_umoddi3 -DL_moddi3 -DL_subsf3 -DL_mulsf3 -DL_eqsf2 -DL_gtsf2 -DL_gesf2 -DL_ltsf2 -DL_muldi3 -DL_lshrdi3 -DL_udivmoddi4 -DL_fpadd_parts -DL_fcmp_parts_f -DL_floatsisf -DL_floatunsisf -DL_fixunssfsi -DL_fixsfi -DL_pack_f -DL_unpack_f -DL_divsf3 -DL_lesf2 -DL_ashldi3 -DL_ashrdi3 -DL_divdi3 -DL_moddi3 -DL_umoddi3 -DL_nesf2
+
+CFLAGS = -c -m32 -O2 -std=gnu99 -I . $(FUNC_FLAGS)
+CFLAGS += -DIN_GCC -DCROSS_DIRECTORY_STRUCTURE -DIN_LIBGCC2 -D__GCC_FLOAT_NOT_NEEDED -Dinhibit_libc -DHAVE_CC_TLS 
+
+# for debug macros
+CFLAGS += -save-temps
+#CFLAGS += -g3 -dM
+
+LDFLAGS = -Wl,-M -Wl,-Map=link.log
+
+FILES = libgcc2.c fp-bit.c dp-bit.c
+
+build:
+	$(CC) $(CFLAGS) $(FILES) $(LDFLAGS)
