@@ -271,11 +271,13 @@ translateSemRepType ty = case ty of
 	DirectType (TyIntegral TyLong) _ _ -> CLongType undefNode
 	DirectType (TyFloating TyFloat) _ _ -> CFloatType undefNode
 	DirectType (TyFloating TyDouble) _ _ -> CDoubleType undefNode
+{-
 	PtrType ty' _ _ ->
 	ArrayType ty' _ _ _ ->
 	FunctionType (FunType ty' paramdecls isvariadic) _ ->
 	FunctionType (FunTypeIncomplete ty') _ ->
 	TypeDefType (TypeDefRef ident ty' _) _ _ -> 
+-}
 	_ -> error $ "translateSemRepType " ++ (render.pretty) ty ++ " not implemented yet"
 
 -- Expand function calls, this is called by tracesStmtM
