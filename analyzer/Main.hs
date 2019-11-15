@@ -288,6 +288,7 @@ tracesStmt_expandFunCallsM funidents traceelems rest rx expr f_expr' = do
 	tracesStmtM True NoCallsLeft (called_funidents++funidents) traceelems $
 		(if null funcall_stmts then [] else [funcall_stmts]) ++
 		((f_expr' expr' : rest) : rx)
+--	tracesStmt_expandFunCallsM funidents traceelems rest rx expr f_expr'
 
 -- Expands all function calls in expr and returns a statement handling all function calls, and the modified expression
 

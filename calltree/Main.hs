@@ -103,7 +103,7 @@ removeellipses path = do
 		writeFile filename $ unlines $ ls
 
 functions = [
-	"__subsf3","__mulsf3","__eqsf2","__gtsf2","__gesf2",	"__ltsf2","__muldi3","__lshrdi3","__udivdi3","__udivmoddi4","__addsf3",	"_fpadd_parts","__fpcmp_parts_f","__floatsisf","__floatunsisf",	"__fixunssfsi","__fixsfsi","__pack_f","__unpack_f","__divsf3",	"__lesf2","__ashldi3",	"__ashrdi3","__divdi3",	"__moddi3","__umoddi3","__nesf2" ]
+	"dl_main","dl_start","dl_start_final" ]
 
 printCSV ls = unlines $ map (concat . (intersperse ";")) ls
 
