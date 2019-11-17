@@ -381,15 +381,31 @@ solveConstraintsM i constraints = do
 				[ "","------","" ]
 			return (model,solution)
 	where
-	model = varsG ++ constraintsG ++ [ MZAST.solve MZAST.satisfy ]
+	model = includesG ++ varsG ++ constraintsG ++ [ MZAST.solve MZAST.satisfy ]
+	includesG = [ MZAST.include "include.mzn" ]
 	varsG = map (MZAST.var MZAST.Int) $ nub $ everything (++) (mkQ [] searchvar) constraints
 	searchvar :: CExpr -> [String]
 	searchvar (CVar (Ident name _ _) _) = [ name ]
 	searchvar _ = []
-	constraintsG = map (MZAST.constraint . expr2constr) constraints
-	expr2constr (CUnary CNegOp expr _) = MZAST.U (MZAST.Op $ MZAST.stringToIdent "not") (expr2constr expr)
-	expr2constr (CBinary binop expr1 expr2 _) = MZAST.Bi (MZAST.Op $ MZAST.stringToIdent $ render $ pretty binop)
-		(expr2constr expr1) (expr2constr expr2)
-	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
-	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
-	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
+	constraintsG = map (MZAST.constraint . (expr2constr True)) constraints
+	
+	cop2mznop op = maybe ((render.pretty) op) id $ lookup op [(CEqOp,"=")]
+	eq_zero x = MZAST.Bi (MZAST.Op $ MZAST.stringToIdent "=") x (MZAST.IConst 0)
+	
+	-- to_bool is True if an expression must be boolean (this is to allow conditions like if(<int_var>+3)...)
+	expr2constr _ (CUnary CNegOp expr _) = MZAST.U (MZAST.Op $ MZAST.stringToIdent "not") (expr2constr True expr)
+	expr2constr _ (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr False expr) []]
+	expr2constr to_bool (CBinary binop expr1 expr2 _) = (if insert_eq0 then eq_zero else id) $
+		case lookup binop [(CAndOp,"bitwise_and"),(COrOp,"bitwise_or"),(CXorOp,"bitwise_xor")] of
+			Nothing -> MZAST.Bi (MZAST.Op $ MZAST.stringToIdent $ cop2mznop binop) expr1' expr2'
+			Just funname -> MZAST.Call (MZAST.stringToIdent funname) [MZAST.AnnExpr expr1' [],MZAST.AnnExpr expr2' []]
+		where
+		insert_eq0 = to_bool && binop `notElem` [CEqOp,CLeOp,CLeqOp,CGeqOp,CNeqOp]
+		expr1' = expr2constr op_bool_arg expr1
+		expr2' = expr2constr op_bool_arg expr2
+		op_bool_arg = binop `elem` [CLndOp,CLorOp]
+	expr2constr to_bool (CVar (Ident name _ _) _) = (if to_bool then eq_zero else id) $ MZAST.Var $ MZAST.stringToIdent name
+	expr2constr to_bool (CConst (CIntConst (CInteger i _ _) _)) = (if to_bool then eq_zero else id) $ MZAST.IConst $ fromIntegral i
+	expr2constr _ expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
+
+	// FLATTEN nots!

@@ -24,6 +24,7 @@ import Data.Char
 import System.Process
 import System.FilePath
 import System.Directory
+import System.Exit
 import Interfaces.MZAuxiliary
 import Interfaces.MZASTBase (MZModel, Item(Comment))
 import Interfaces.MZAST (GItem(..))
@@ -110,7 +111,9 @@ testModelWithParser p m mpath s n = do
   writeFile mzn_fp (layout m)
   let mzn2fzn  = proc (mz_dir ++ "mzn2fzn.exe") [ mzn_fp ]
   (ec1, res, err1) <- readCreateProcessWithExitCode mzn2fzn ""
-  return $ getAllSolutions p res
+  return $ case ec1 of
+    ExitSuccess -> getAllSolutions p res
+    _ -> error $ err1
 
 -- | Writes the model's data file. The 'MZModel' of the argument must contain
 -- only 'Interfaces.MZASTBase.Assign' items.

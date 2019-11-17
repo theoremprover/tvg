@@ -18,17 +18,13 @@ int g(int z)
 
 int f(int x)
 {
-	int z1 = 2*g(x+1);
-
-	int y = 3*z1;
-
-    while ( x < g(6) )
+    if((x & 1) == 1)
+//    if(((~x) & 1) == 1)
     {
         x = x + 2;
-        y = y + g(x);
     }
 
-	return(y+1);
+	return(x+1);
 }
 
 int main(int argc,char* argv[])
