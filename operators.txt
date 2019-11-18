@@ -1,0 +1,64 @@
+{-
+C AST Binary Operators
+======================
+CMulOp	 
+CDivOp	 
+CRmdOp	remainder of division
+CAddOp	 
+CSubOp	 
+CShlOp	shift left
+CShrOp	shift right
+CLeOp	less
+CGrOp	greater
+CLeqOp	less or equal
+CGeqOp	greater or equal
+CEqOp	equal
+CNeqOp	not equal
+CAndOp	bitwise and
+CXorOp	exclusive bitwise or
+COrOp	inclusive bitwise or
+CLndOp	logical and
+CLorOp	logical or
+
+C AST Unary Op
+==============
+CPreIncOp	prefix increment operator
+CPreDecOp	prefix decrement operator
+CPostIncOp	postfix increment operator
+CPostDecOp	postfix decrement operator
+CAdrOp	address operator
+CIndOp	indirection operator
+CPlusOp	prefix plus
+CMinOp	prefix minus
+CCompOp	one's complement
+CNegOp	logical negation
+
+C AST Ternary Op
+================
+CCond (CExpression a) (Maybe (CExpression a)) (CExpression a) a
+
+C Expr
+=======
+CComma [CExpression a] a	 
+CAssign CAssignOp (CExpression a) (CExpression a) a	 
+CCond (CExpression a) (Maybe (CExpression a)) (CExpression a) a	 
+CBinary CBinaryOp (CExpression a) (CExpression a) a	 
+CCast (CDeclaration a) (CExpression a) a	 
+CUnary CUnaryOp (CExpression a) a	 
+CSizeofExpr (CExpression a) a	 
+CSizeofType (CDeclaration a) a	 
+CAlignofExpr (CExpression a) a	 
+CAlignofType (CDeclaration a) a	 
+CComplexReal (CExpression a) a	 
+CComplexImag (CExpression a) a	 
+CIndex (CExpression a) (CExpression a) a	 
+CCall (CExpression a) [CExpression a] a	 
+CMember (CExpression a) Ident Bool a	 
+CVar Ident a	 
+CConst (CConstant a)	integer, character, floating point and string constants
+CCompoundLit (CDeclaration a) (CInitializerList a) a	C99 compound literal
+CGenericSelection (CExpression a) [(Maybe (CDeclaration a), CExpression a)] a	C11 generic selection
+CStatExpr (CStatement a) a	GNU C compound statement as expr
+CLabAddrExpr Ident a	GNU C address of label
+CBuiltinExpr (CBuiltinThing a)	builtin expressions, see CBuiltin
+-}

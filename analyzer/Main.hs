@@ -392,11 +392,16 @@ solveConstraintsM i constraints = do
 	cop2mznop op = maybe ((render.pretty) op) id $ lookup op [(CEqOp,"=")]
 	eq_zero negative x = MZAST.Bi (MZAST.Op $ MZAST.stringToIdent $ if negative then "!=" else "=") x (MZAST.IConst 0)
 
--- Applicative Functor Style
+-- Applicative Functor Style?
 constrToMZ :: Constraint -> MZAST.Expr
 constrToMZ = expr2constr . (flatten_not False) . (insert_eq0 True)
 	where
-	insert_eq0 to_bool (CUnary CNegOp expr _) = insert_eq0 True expr
+	insert_eq0 :: Bool -> Constraint -> Constraint
+	insert_eq0 _ (CUnary CNegOp expr ni) = CUnary CNegOp (insert_eq0 True expr) ni
+	insert_eq0 must_be_bool (CBinary binop expr1 expr2 ni) =
+		CBinary binop (insert_eq0 must_be_bool' expr1) (insert_eq0 must_be_bool' expr2) ni
+		where
+		must_be_bool' | binop `elem` [] = []
 
 {-
 	-- to_bool is True if an expression must be boolean (this is to allow conditions like if(<int_var>+3)...)
