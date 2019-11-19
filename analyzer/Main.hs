@@ -401,7 +401,10 @@ constrToMZ = expr2constr . (flatten_not False) . (insert_eq0 True)
 	insert_eq0 must_be_bool (CBinary binop expr1 expr2 ni) =
 		CBinary binop (insert_eq0 must_be_bool' expr1) (insert_eq0 must_be_bool' expr2) ni
 		where
-		must_be_bool' | binop `elem` [] = []
+		must_be_bool' | binop `elem` [CLndOp,CLorOp] = True
+		must_be_bool' | binop `elem` [CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp] = False
+		must_be_bool' = must_be_bool
+	insert_eq0 _ expr = error $ "insert_eq0 " ++ show expr ++ " not implemented yet."
 
 {-
 	-- to_bool is True if an expression must be boolean (this is to allow conditions like if(<int_var>+3)...)
