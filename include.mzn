@@ -40,3 +40,25 @@ function var int: bitwise_not(var int: a) =
     constraint a1 = a;
     } in
   sum(j in 0..k-1)(bool2int(not a_bits[j])*pow(2,j));
+
+function var int: bitshift_right(var int: a, var int: i) =
+  let {
+    array[0..k-1] of var bool: a_bits;
+    var 0..pow(2,k)-1: a1 = sum(j in 0..k-1)(bool2int(a_bits[j])*pow(2,j));
+    constraint a1 = a;
+    } in
+  sum(j in 1..k-1)(bool2int(a_bits[j])*pow(2,j-1));
+
+function var int: bitshift_left(var int: a, var int: i) =
+  let {
+    array[0..k-1] of var bool: a_bits;
+    var 0..pow(2,k)-1: a1 = sum(j in 0..k-1)(bool2int(a_bits[j])*pow(2,j));
+    constraint a1 = a;
+    } in
+  sum(j in 0..k-2)(bool2int(a_bits[j])*pow(2,j+1));
+
+%var 0..pow(2,k)-1: x;
+%var 0..pow(2,k)-1: i;
+%constraint bitshift_left(x,i) = 10;
+%
+%solve satisfy;
