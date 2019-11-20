@@ -414,7 +414,7 @@ constrToMZ = expr2constr . (flatten_not False) . (insert_eq0 True)
 	flatten_not True un@(CUnary CCompOp _ _) = error $ "flatten_not True " ++ (render.pretty) un ++ " is impossible!"
 	flatten_not False (CUnary CCompOp expr ni) = CUnary CCompOp (flatten_not False expr) ni
 	flatten_not False cvar@(CVar ident ni) = cvar
-	flatten_not True cvar@(CVar ident ni) = error $ "flatten_not True " ++ show cvar
+	flatten_not True cvar@(CVar ident ni) = error $ "flatten_not True " ++ (render.pretty) cvar ++ " is impossible!"
 	flatten_not False cconst@(CConst _) = cconst
 	flatten_not True cconst@(CConst _) = error $ "flatten_not True " ++ show cconst
 	flatten_not False (CBinary binop expr1 expr2 ni) = CBinary binop (flatten_not False expr1) (flatten_not False expr2) ni
@@ -444,3 +444,5 @@ constrToMZ = expr2constr . (flatten_not False) . (insert_eq0 True)
 		expr2' = expr2constr expr2
 		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"=")]
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
+
+TODO: Bitshifts, Assign *= etc., a->normal_exp
