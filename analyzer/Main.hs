@@ -37,8 +37,6 @@ import DataTree
 
 _PRINT_TRACESTMTS_TRACE = False
 
--- haskellzinc
-
 {--
 stack build :analyzer-exe
 stack exec analyzer-exe -- test.c
@@ -355,9 +353,12 @@ substituteVarInTraceElem ident expr (TraceAssign ident2 assignop expr2) =
 aggregateConstraintsM :: Trace -> Trace -> CovVecM Trace
 aggregateConstraintsM traceelems [] = return traceelems
 aggregateConstraintsM traceelems (traceelem@(TraceAssign ident assignop expr) : rest) = do
-	case assignop of
-		CAssignOp -> aggregateConstraintsM (traceelem : map (substituteVarInTraceElem ident expr) traceelems) rest
-		_ -> error $ "aggregateConstraintsM: " ++ show assignop ++ " not implemented yet"
+	aggregateConstraintsM (traceelem : map (substituteVarInTraceElem ident expr') traceelems) rest
+	where
+	expr' = if assignop==CAssignOp then expr else CBinary assignop' (CVar ident undefNode) expr undefNode
+	Just assignop' = lookup assignop [
+		(CMulAssOp,CMulOp), (CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
+		(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
 
 solveConstraintsM :: Int -> [Constraint] -> CovVecM ([MZAST.ModelData],Maybe Solution)
 solveConstraintsM i constraints = do
@@ -446,4 +447,4 @@ constrToMZ = expr2constr . (flatten_not False) . (insert_eq0 True)
 		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"=")]
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
---TODO: Bitshifts, Assign *= etc., a->normal_exp
+--TODO: Assign *= etc., a->normal_exp

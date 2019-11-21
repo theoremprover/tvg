@@ -61,4 +61,17 @@ CGenericSelection (CExpression a) [(Maybe (CDeclaration a), CExpression a)] a	C1
 CStatExpr (CStatement a) a	GNU C compound statement as expr
 CLabAddrExpr Ident a	GNU C address of label
 CBuiltinExpr (CBuiltinThing a)	builtin expressions, see CBuiltin
--}
+
+Assignment operators
+====================
+CAssignOp
+CMulAssOp
+CDivAssOp
+CRmdAssOp	remainder and assignment
+CAddAssOp
+CSubAssOp
+CShlAssOp
+CShrAssOp
+CAndAssOp
+CXorAssOp
+COrAssOp

@@ -16,12 +16,12 @@ int g(int z)
 	return(z+10);
 }
 
-int f(int x)
+int f(int x,int y)
 {
-//    if((x & 1) == 1)
+    x += y;
     if((x<<1) == (x<<2))
     {
-        x = x + 2;
+        x += 2;
     }
 
 	return(x+1);
@@ -30,7 +30,7 @@ int f(int x)
 int main(int argc,char* argv[])
 {
     int x = atoi(argv[1]);
-    int ret = f(x);
+    int ret = f(x,2);
     printf("f(%i)=%i\n",x,ret);
     return 0;
 }
