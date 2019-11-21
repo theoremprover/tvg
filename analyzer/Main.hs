@@ -436,13 +436,14 @@ constrToMZ = expr2constr . (flatten_not False) . (insert_eq0 True)
 	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
 	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
 	expr2constr (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr expr) []]
-	expr2constr (CBinary binop expr1 expr2 _) = case lookup binop [(CAndOp,"bitwise_and"),(COrOp,"bitwise_or"),(CXorOp,"bitwise_xor")] of
-		Just funname -> MZAST.Call (MZAST.stringToIdent funname) [MZAST.AnnExpr expr1' [],MZAST.AnnExpr expr2' []]
-		Nothing -> MZAST.Bi (MZAST.Op $ MZAST.stringToIdent mznop) expr1' expr2'
+	expr2constr (CBinary binop expr1 expr2 _) = case lookup binop
+		[(CAndOp,"bitwise_and"),(COrOp,"bitwise_or"),(CXorOp,"bitwise_xor"),(CShrOp,"bitshift_right"),(CShlOp,"bitshift_left")] of
+			Just funname -> MZAST.Call (MZAST.stringToIdent funname) [MZAST.AnnExpr expr1' [],MZAST.AnnExpr expr2' []]
+			Nothing -> MZAST.Bi (MZAST.Op $ MZAST.stringToIdent mznop) expr1' expr2'
 		where
 		expr1' = expr2constr expr1
 		expr2' = expr2constr expr2
 		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"=")]
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
-TODO: Bitshifts, Assign *= etc., a->normal_exp
+--TODO: Bitshifts, Assign *= etc., a->normal_exp

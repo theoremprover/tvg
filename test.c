@@ -19,7 +19,7 @@ int g(int z)
 int f(int x)
 {
 //    if((x & 1) == 1)
-    if(((~x) & 1) == 1)
+    if((x<<1) == (x<<2))
     {
         x = x + 2;
     }
