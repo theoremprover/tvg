@@ -42,8 +42,8 @@ maini (gccexe:args) = do
 
 	writeFile "graph.dot" $ unlines $ nub $ map (drawedge vertex2node) (edges callgraph)
 
-	removePathForcibly "calltree_out"
-	createDirectory "calltree_out"
+--	removePathForcibly "calltree_out"
+--	createDirectory "calltree_out"
 	calledfunctions_hull <- forM functions $ \ rootfunname -> do
 		case key2vertex rootfunname of
 			Nothing -> do
@@ -102,16 +102,15 @@ removeellipses path = do
 		print $ length ls
 		writeFile filename $ unlines $ ls
 
-functions = [ "f" ]
-	--"dl_main","dl_start","dl_start_final" ]
+functions = [ "dl_main","dl_start","dl_start_final" ]
 
 printCSV ls = unlines $ map (concat . (intersperse ";")) ls
 
 -- Returns a list of (funname,srcfile,[calledfunname1,...])
 handleSrcFile gccexe preprocess_args srcfilename = do
 	putStrLn $ "handling SrcFile " ++ srcfilename
-	mb_ast <- parseCFile (newGCC gccexe) Nothing preprocess_args srcfilename
---	mb_ast <- parseCFilePre srcfilename
+--	mb_ast <- parseCFile (newGCC gccexe) Nothing preprocess_args srcfilename
+	mb_ast <- parseCFilePre srcfilename
 	case mb_ast of
 		Left err -> error $ show err
 		Right ctranslunit -> execStateT (everywhereM (mkM (searchFunDefs ctranslunit)) ctranslunit) []
