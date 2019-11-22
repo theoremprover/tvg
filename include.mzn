@@ -47,7 +47,7 @@ function var int: bitshift_right(var int: a, var int: i) =
     var 0..pow(2,k)-1: a1 = sum(j in 0..k-1)(bool2int(a_bits[j])*pow(2,j));
     constraint a1 = a;
     } in
-  sum(j in 1..k-1)(bool2int(a_bits[j])*pow(2,j-1));
+  sum(j in i..k-1)(bool2int(a_bits[j])*pow(2,j-i));
 
 function var int: bitshift_left(var int: a, var int: i) =
   let {
@@ -55,7 +55,7 @@ function var int: bitshift_left(var int: a, var int: i) =
     var 0..pow(2,k)-1: a1 = sum(j in 0..k-1)(bool2int(a_bits[j])*pow(2,j));
     constraint a1 = a;
     } in
-  sum(j in 0..k-2)(bool2int(a_bits[j])*pow(2,j+1));
+  sum(j in 0..k-1-i)(bool2int(a_bits[j])*pow(2,j+i));
 
 %var 0..pow(2,k)-1: x;
 %var 0..pow(2,k)-1: i;
