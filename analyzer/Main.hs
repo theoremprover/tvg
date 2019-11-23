@@ -41,6 +41,9 @@ _PRINT_TRACESTMTS_TRACE = False
 stack build :analyzer-exe
 stack exec analyzer-exe -- test.c
 stack build :analyzer-exe && stack exec analyzer-exe
+
+
+fp-bit.i: Function _fpdiv_parts
 --}
 
 gcc = newGCC "gcc"
@@ -447,4 +450,4 @@ constrToMZ = expr2constr . (flatten_not False) . (insert_eq0 True)
 		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"=")]
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
---TODO: Assign *= etc., a->normal_exp
+--TODO: a->normal_exp
