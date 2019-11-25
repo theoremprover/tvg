@@ -337,13 +337,10 @@ expandFunCallsM expr = runStateT (everywhereM (mkM searchfuncalls) expr) ([],[])
 		return $ CVar fun_val_ident call_ni
 	searchfuncalls expr = return expr
 
-eqIdent :: Ident -> Ident -> Bool
-eqIdent (Ident s1 i1 _) (Ident s2 i2 _) = s1==s2 && i1==i2
-
 substituteIdentInStmt :: Ident -> Ident -> Stmt -> Stmt
 substituteIdentInStmt ident1 new_ident stmt = everywhere (mkT substident) stmt where
 	substident :: Ident -> Ident
-	substident ident2 | ident1 `eqIdent` ident2 = new_ident
+	substident ident2 | ident1 == ident2 = new_ident
 	substident ident2 = ident2
 
 substituteVarInTraceElem :: Ident -> CExpr -> TraceElem -> TraceElem
@@ -459,4 +456,4 @@ constrToMZ = MZAST.constraint $ expr2constr . (flatten_not False) . (insert_eq0 
 
 findType ident =
 
--- TODO: a->normal, enumerations
+-- TODO: a->normal, enumerations, global variables
