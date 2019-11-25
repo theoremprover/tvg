@@ -365,6 +365,13 @@ aggregateConstraintsM traceelems (traceelem@(TraceAssign ident assignop expr) : 
 
 solveConstraintsM :: Int -> [Constraint] -> CovVecM ([MZAST.ModelData],Maybe Solution)
 solveConstraintsM i constraints = do
+	constraintsG <- mapM constrToMZ constraints
+	let
+		includesG = [ MZAST.include "include.mzn" ]
+		vars = nub $ everything (++) (mkQ [] searchvar) constraints
+		model = includesG ++ varsG ++ constraintsG ++ [ MZAST.solve MZAST.satisfy ]
+	varsG <- mapM var2MZ vars
+
 	liftIO $ putStrLn $ unlines $
 		[ "","CONSTRAINTS:" ] ++
 		map (render.pretty) constraints ++
@@ -385,16 +392,16 @@ solveConstraintsM i constraints = do
 				[ "","------","" ]
 			return (model,solution)
 	where
-	model = includesG ++ varsG ++ constraintsG ++ [ MZAST.solve MZAST.satisfy ]
-	includesG = [ MZAST.include "include.mzn" ]
-	varsG = map (MZAST.var MZAST.Int) $ nub $ everything (++) (mkQ [] searchvar) constraints
-	searchvar :: CExpr -> [String]
-	searchvar (CVar (Ident name _ _) _) = [ name ]
+	searchvar :: CExpr -> [Ident]
+	searchvar (CVar ident _) = [ ident ]
 	searchvar _ = []
-	constraintsG = map (MZAST.constraint . constrToMZ) constraints
-	
-constrToMZ :: Constraint -> MZAST.Expr
-constrToMZ = expr2constr . (flatten_not False) . (insert_eq0 True)
+
+var2MZ :: Ident -> CovVecM (GItem OK)
+var2MZ ident = do
+	return $ MZAST.var typ name
+
+constrToMZ :: Constraint -> CovVecM (GItem OK)
+constrToMZ = MZAST.constraint $ expr2constr . (flatten_not False) . (insert_eq0 True)
 	where
 	eq0 :: Constraint -> Constraint
 	eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
@@ -450,4 +457,6 @@ constrToMZ = expr2constr . (flatten_not False) . (insert_eq0 True)
 		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"=")]
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
---TODO: a->normal_exp, enumerations
+findType ident =
+
+-- TODO: a->normal, enumerations
