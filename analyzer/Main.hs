@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-tabs -Wno-unrecognised-pragmas #-}
-{-# LANGUAGE TupleSections #-}
+{-# LANGUAGE TupleSections,RankNTypes #-}
 {-# HLINT ignore "Use list literal pattern" #-}
 {-# HLINT ignore "Redundant do" #-}
 {-# HLINT ignore "Redundant bracket" #-}
@@ -347,7 +347,7 @@ substituteVarInTraceElem :: Ident -> CExpr -> TraceElem -> TraceElem
 substituteVarInTraceElem ident expr (TraceAssign ident2 assignop expr2) =
 	TraceAssign ident2 assignop (everywhere (mkT substvar) expr2) where
 	substvar :: CExpr -> CExpr
-	substvar (CVar varid ni) | varid `eqIdent` ident = expr
+	substvar (CVar varid ni) | varid == ident = expr
 	substvar e = e
 
 aggregateConstraintsM :: Trace -> Trace -> CovVecM Trace
@@ -366,8 +366,9 @@ solveConstraintsM i constraints = do
 	let
 		includesG = [ MZAST.include "include.mzn" ]
 		vars = nub $ everything (++) (mkQ [] searchvar) constraints
-		model = includesG ++ varsG ++ constraintsG ++ [ MZAST.solve MZAST.satisfy ]
 	varsG <- mapM var2MZ vars
+	let
+		model = includesG ++ varsG ++ constraintsG ++ [ MZAST.solve MZAST.satisfy ]
 
 	liftIO $ putStrLn $ unlines $
 		[ "","CONSTRAINTS:" ] ++
@@ -393,12 +394,12 @@ solveConstraintsM i constraints = do
 	searchvar (CVar ident _) = [ ident ]
 	searchvar _ = []
 
-var2MZ :: Ident -> CovVecM (GItem OK)
-var2MZ ident = do
-	return $ MZAST.var typ name
+var2MZ :: (MZAST.Varr i) => Ident -> CovVecM (MZAST.GItem i)
+var2MZ (Ident name _ _) = do
+	return $ MZAST.var (MZAST.Int) name
 
-constrToMZ :: Constraint -> CovVecM (GItem OK)
-constrToMZ = MZAST.constraint $ expr2constr . (flatten_not False) . (insert_eq0 True)
+constrToMZ :: Constraint -> CovVecM MZAST.ModelData
+constrToMZ constr = return $ MZAST.constraint (expr2constr . (flatten_not False) . (insert_eq0 True) $ constr)
 	where
 	eq0 :: Constraint -> Constraint
 	eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
@@ -453,7 +454,5 @@ constrToMZ = MZAST.constraint $ expr2constr . (flatten_not False) . (insert_eq0 
 		expr2' = expr2constr expr2
 		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"=")]
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
-
-findType ident =
 
 -- TODO: a->normal, enumerations, global variables

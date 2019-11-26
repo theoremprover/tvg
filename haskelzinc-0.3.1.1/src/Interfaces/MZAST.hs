@@ -16,6 +16,8 @@ of "Interfaces.MZASTBase". With the use of this module, one can represent MiniZi
 module Interfaces.MZAST (
   -- * Items
   GItem(..),
+  DSorOther(..),
+  Varr,
   include, constraint, output, (%), solve, satisfy, minimize, maximize,
   (=.), var, par, ann, predicate, function, test,
   -- * Expressions
