@@ -154,7 +154,7 @@ searchFunCalls currentfunname argdecls ctranslunit ccall@(CCall funname_expr cal
 		let msg = show (posOfNode ni) ++ ": " ++ (render $ pretty ccall) ++ "\n"
 		liftIO $ do
 			putStr $ "searchFunCallsM: Strange funname_expr: " ++ msg
-			appendFile ("calltree_out" </> "strangecalls.txt") msg 
+			appendFile ("calltree_out" </> "strangecalls.txt") msg
 		return ccall
 
 searchFunCalls _ _ _ cexpr = return cexpr
