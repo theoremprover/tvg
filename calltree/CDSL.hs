@@ -62,7 +62,16 @@ f >>> g = \ t -> concat [ g t' | t' <- f t ]
 (<+>) :: (Typeable a,Typeable b) => CFilter a b -> CFilter a b -> CFilter a b
 f <+> g = \ t -> f t ++ g t
 
-findAll :: (Typeable a,Data a,Typeable b,Data b) => CFilter b b -> CFilter a b
+filterPred :: (a -> Bool) -> CFilter a a
+filterPred p = \ t -> if p t then [t] else []
+
+mapFilter :: (a -> b) -> CFilter a b
+mapFilter f = \ t -> [ f t ]
+
+filterFirst :: (Typeable a,Typeable b) => (a -> Bool) -> CFilter (a,b) b
+filterFirst p = filterPred (p.fst) >>> mapFilter snd
+
+findAll :: (Typeable a,Data a,Typeable b,Data b,Typeable c,Data c) => CFilter b c -> CFilter a c
 findAll filt = everything (++) (mkQ [] filt)
 
 findOne :: (Typeable a,Data a,Typeable b,Data b) => CFilter b b -> CFilter a b
@@ -74,6 +83,22 @@ isA = id
 funCall :: CFilter CExpr CExpr
 funCall ccall@(CCall fun args _) = [ccall]
 funCall _ = []
+
+funDef :: CFilter CExtDecl CFunDef
+funDef (CFDefExt cfundef) = [ cfundef ]
+funDef _ = []
+
+funDefName :: CFilter CFunDef Ident
+funDefName (CFunDef _ (CDeclr (Just ident) _ _ _ _) _ _ _) = [ ident ]
+funDefName _ = []
+
+funDecl :: CFilter CExtDecl (CDerivedDeclarator NodeInfo)
+funDecl (CDeclExt (CDecl _ [(Just (CDeclr _ [cfundeclr@(CFunDeclr _ _ _)] Nothing _ _),_,_)] _)) = [ cfundeclr ]
+funDecl _ = []
+
+funDeclName :: CFilter (CDerivedDeclarator NodeInfo) Ident
+HERE funDeclName (CFunDef _ (CDeclr (Just ident) _ _ _ _) _ _ _) = [ ident ]
+funDeclName _ = []
 
 ternaryIf :: CFilter CExpr CExpr
 ternaryIf ccond@(CCond _ _ _ _) = [ccond]
@@ -124,6 +149,20 @@ checkArrayDecl ( CArrSize _ (CConst (CIntConst (CInteger n _ _) _)) : rest , CIn
 checkArrayDecl ( CArrSize _ (CConst (CIntConst (CInteger n _ _) _)) : rest , CInitList initlist ni ) = [ showPos ni ++ "length of initializer list should be " ++ show n ++", but is " ++ show (length initlist) ]
 checkArrayDecl ( _:_ , CInitExpr _ ni ) = [ showPos ni ++ "Expected one more dimension in initializers" ]
 checkArrayDecl ( CArrSize _ sizeexpr : _ , CInitList _ _ ) = [ head (showPretty sizeexpr) ++ " : Array size is not an integer constant" ]
+
+cAssign :: CFilter CExpr (Ident,CExpr)
+cAssign (CAssign CAssignOp (CVar ident _) value _) = [(ident,value)]
+cAssign _ = []
+
+varAssignment :: (Typeable a,Data a) => Ident -> CFilter a CExpr 
+varAssignment ident = findAll cAssign >>> filterFirst (==ident)
+
+defFunName :: (Typeable a,Data a) => Ident -> CFilter a Ident
+defFunName ident = findAll funDef >>> funDefName
+
+declFunName :: (Typeable a,Data a) => Ident -> CFilter a Ident
+declFunName ident = findAll funDecl >>> funDeclName
+
 
 {-
 complexExpr = ternaryIf <+> binaryOp

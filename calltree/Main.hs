@@ -24,6 +24,8 @@ import Data.Maybe
 import System.IO
 import Text.PrettyPrint
 
+import CDSL
+
 main = do
 	args <- getArgs
 	maini args
@@ -125,37 +127,55 @@ searchFunDefs ctranslunit cfundef@(CFunDef _ (CDeclr (Just (Ident funname _ _)) 
 
 -- Returns all directly called functions
 searchFunCalls :: (MonadIO m) => String -> [CDecl] -> CTranslUnit -> CExpr -> StateT [String] m CExpr
-searchFunCalls currentfunname argdecls ctranslunit ccall@(CCall funname_expr callargs ni) = case funname_expr of
-	CVar (Ident name _ _) _ -> do
-		modify (name : )
-		return ccall
-	CUnary CIndOp (CVar (Ident name _ _) _) _ -> do
-		liftIO $ do
-			putStrLn $ "ccall = " ++ (render.pretty) ccall
-			putStrLn $ "currentfunname = " ++ currentfunname
-			putStrLn $ "Ident name = " ++ name
-			putStrLn $ "argdecls = "
-			forM_ argdecls print
-		let
-			[(argnum,_)] = filter (\ (_,CDecl _ [(Just (CDeclr (Just (Ident argname _ _)) _ _ _ _),_,_)] _) -> argname==name) (zip [0..] argdecls)
-			calls :: [CExpr]
-			calls = everything (++) (mkQ [] searchfundefs) ctranslunit
-			searchfundefs :: CFunDef -> [CExpr]
-			searchfundefs (CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ stmt _) = everything (++) (mkQ [] searchfuncalls) stmt
-			searchfundefs _ = []
-			searchfuncalls :: CExpr -> [CExpr]
-			searchfuncalls (CCall (CVar (Ident calledfunname _ _) _) args _) | calledfunname==currentfunname = [ args!!argnum ]
-			searchfuncalls _ = []
-			names = map (\ (CVar (Ident fn _ _) _) -> fn) calls
-		modify (names++)
-		liftIO $ putStrLn $ "Found funptr calls: " ++ show ni ++ " " ++ show names
-		return ccall
-	fne -> do
-		let msg = show (posOfNode ni) ++ ": " ++ (render $ pretty ccall) ++ "\n"
-		liftIO $ do
-			putStr $ "searchFunCallsM: Strange funname_expr: " ++ msg
-			appendFile ("calltree_out" </> "strangecalls.txt") msg
-		return ccall
+searchFunCalls currentfunname argdecls ctranslunit ccall@(CCall funname_expr callargs ni) = do
+	liftIO $ do
+		putStrLn $ "ccall = " ++ (render.pretty) ccall
+		putStrLn $ "currentfunname = " ++ currentfunname
+		putStrLn $ "argdecls = "
+	case funname_expr of
+		CVar (Ident name _ _) _ -> do
+			modify (name : )
+			return ccall
+		CUnary CIndOp (CVar (Ident name _ _) _) _ -> do
+			liftIO $ do
+				putStrLn $ "Ident name = " ++ name
+				forM_ argdecls print
+			let
+				[(argnum,_)] = filter (\ (_,CDecl _ [(Just (CDeclr (Just (Ident argname _ _)) _ _ _ _),_,_)] _) -> argname==name) (zip [0..] argdecls)
+				calls :: [CExpr]
+				calls = everything (++) (mkQ [] searchfundefs) ctranslunit
+				searchfundefs :: CFunDef -> [CExpr]
+				searchfundefs (CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ stmt _) = everything (++) (mkQ [] searchfuncalls) stmt
+				searchfundefs _ = []
+				searchfuncalls :: CExpr -> [CExpr]
+				searchfuncalls (CCall (CVar (Ident calledfunname _ _) _) args _) | calledfunname==currentfunname = [ args!!argnum ]
+				searchfuncalls _ = []
+				names = map (\ (CVar (Ident fn _ _) _) -> fn) calls
+			modify (names++)
+			liftIO $ putStrLn $ "Found (*funptr)(...) type calls: " ++ show ni ++ " " ++ show names
+			return ccall
+		CCast _ expr _ -> searchFunCalls currentfunname argdecls ctranslunit (CCall expr callargs ni)
+		CMember (CVar struct_ident _) member_ident False _ -> do
+			case varAssignment struct_ident ctranslunit of
+				[] -> do
+					
+					error $ "Strange: Identifier " ++ (render.pretty) struct_ident ++ " never assigned!"
+				asss -> forM_ asss $ \case
+					CVar ident _ -> do
+						case defFunName ident ctranslunit of
+							[] -> error $ "Identifier " ++ (render.pretty) ident ++ " not found as a function name"
+							[ Ident name _ _ ] -> do
+								liftIO $ putStrLn $ "Found (a.b)(...) type call: " ++ show ni ++ " " ++ show name
+								modify (name:)
+							_ -> error $ "Identifier " ++ (render.pretty) ident ++ " found more than once as a function name"
+					assexpr -> error $ "assexpr " ++ (render.pretty) assexpr ++ " not implemented"
+			return ccall
+		fne -> do
+			let msg = show (posOfNode ni) ++ ": " ++ (render $ pretty ccall) ++ "\n"
+			liftIO $ do
+				putStr $ "searchFunCallsM: Strange funname_expr: " ++ msg
+				appendFile ("calltree_out" </> "strangecalls.txt") msg
+			return ccall
 
 searchFunCalls _ _ _ cexpr = return cexpr
 
