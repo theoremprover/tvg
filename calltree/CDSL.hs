@@ -92,12 +92,12 @@ funDefName :: CFilter CFunDef Ident
 funDefName (CFunDef _ (CDeclr (Just ident) _ _ _ _) _ _ _) = [ ident ]
 funDefName _ = []
 
-funDecl :: CFilter CExtDecl (CDerivedDeclarator NodeInfo)
-funDecl (CDeclExt (CDecl _ [(Just (CDeclr _ [cfundeclr@(CFunDeclr _ _ _)] Nothing _ _),_,_)] _)) = [ cfundeclr ]
+funDecl :: CFilter CExtDecl CDeclr
+funDecl (CDeclExt (CDecl _ [(Just cdeclr@(CDeclr _ [(CFunDeclr _ _ _)] _ _ _),_,_)] _)) = [ cdeclr ]
 funDecl _ = []
 
-funDeclName :: CFilter (CDerivedDeclarator NodeInfo) Ident
-HERE funDeclName (CFunDef _ (CDeclr (Just ident) _ _ _ _) _ _ _) = [ ident ]
+funDeclName :: CFilter CDeclr Ident
+funDeclName (CDeclr (Just ident) _ _ _ _) = [ ident ]
 funDeclName _ = []
 
 ternaryIf :: CFilter CExpr CExpr
@@ -162,15 +162,3 @@ defFunName ident = findAll funDef >>> funDefName
 
 declFunName :: (Typeable a,Data a) => Ident -> CFilter a Ident
 declFunName ident = findAll funDecl >>> funDeclName
-
-
-{-
-complexExpr = ternaryIf <+> binaryOp
-
-myFilter =
-	findAll complexExpr >>> findAll incOrDecOp >>> showPretty
-
-myFilter =
-	findAll cDecl >>> isA arrayDecl >>> checkArrayDecl >>> toString
-
--}

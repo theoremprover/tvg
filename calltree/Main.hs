@@ -158,7 +158,6 @@ searchFunCalls currentfunname argdecls ctranslunit ccall@(CCall funname_expr cal
 		CMember (CVar struct_ident _) member_ident False _ -> do
 			case varAssignment struct_ident ctranslunit of
 				[] -> do
-					
 					error $ "Strange: Identifier " ++ (render.pretty) struct_ident ++ " never assigned!"
 				asss -> forM_ asss $ \case
 					CVar ident _ -> do
