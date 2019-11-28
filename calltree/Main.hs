@@ -23,8 +23,21 @@ import System.FilePath
 import Data.Maybe
 import System.IO
 import Text.PrettyPrint
+import Data.Time.Clock
 
 import CDSL
+
+outputDir = "calltree_out"
+strangeCalls = "strangecalls.txt"
+logFile = "log.txt"
+
+myError txt = do
+	printLog txt
+	error txt
+
+printLog txt = liftIO $ do
+	putStrLn txt
+	appendFile (outputDir </> logFile) (txt++"\n")
 
 main = do
 	args <- getArgs
@@ -34,31 +47,34 @@ maini [] = do
 	putStrLn "USAGE (in tvg dir): stack exec :calltree-exe -- <GCC-EXE> {<SRCFILEDIR>|<OPT>}*"
 
 maini (gccexe:args) = do
+	removePathForcibly outputDir
+	createDirectory outputDir
+	getCurrentTime >>= return.show >>= writeFile (outputDir </> strangeCalls)
+	getCurrentTime >>= return.show >>= writeFile (outputDir </> logFile)
+	listDirectory outputDir >>= mapM_ print
+	
 	let (preprocess_args,other_args) = partition (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
 	pot_filess <- forM other_args getsrcfiles
 	mapM_ print (concat pot_filess)
 	callss <- forM (concat pot_filess) (handleSrcFile gccexe preprocess_args)
---	forM_ (concat callss) print
 
 	let (callgraph,vertex2node,key2vertex) = graphFromEdges $ map (\(funname,mb_defsrcfile,calledfunnames) -> ((funname,mb_defsrcfile),funname,calledfunnames)) (concat callss)
 
 	writeFile "graph.dot" $ unlines $ nub $ map (drawedge vertex2node) (edges callgraph)
 
---	removePathForcibly "calltree_out"
---	createDirectory "calltree_out"
 	calledfunctions_hull <- forM functions $ \ rootfunname -> do
 		case key2vertex rootfunname of
 			Nothing -> do
-				putStrLn $ "??? Function " ++ rootfunname ++ " not found in source files!"
-				writeFile ("calltree_out" </> (rootfunname ++ "_NOT_FOUND")) ""
+				printLog $ "\n??? Function " ++ rootfunname ++ " not found in source files!"
+				writeFile (outputDir </> (rootfunname ++ "_NOT_FOUND")) ""
 				return []
 			Just rootvertex -> do
 				forM (reachable callgraph rootvertex) $ \ vertex -> do
 					let
 						calledfuns = map (\ v -> let (node,key,_) = vertex2node v in (node,key)) $ reachable callgraph vertex
 						((sourcefun,mb_sourcefile),_,_) = vertex2node vertex
-					createDirectoryIfMissing True ("calltree_out" </> rootfunname)
-					writeFile ("calltree_out" </> rootfunname </> sourcefun <.> "csv") $ printCSV $ ["FUNCTIONS CALLED DIRECTLY OR INDIRECTLY","FUNCTION DEFINED IN","DIRECTLY CALLED BY"] :
+					createDirectoryIfMissing True (outputDir </> rootfunname)
+					writeFile (outputDir </> rootfunname </> sourcefun <.> "csv") $ printCSV $ ["FUNCTIONS CALLED DIRECTLY OR INDIRECTLY","FUNCTION DEFINED IN","DIRECTLY CALLED BY"] :
 						[ [f, maybe "<NOWHERE>" id mb_srcfile, concat $ intersperse ","
 							[ caller | (callerv,calledv) <- edges callgraph, Just calledv == key2vertex fk, let ((caller,_),_,_) = vertex2node callerv ] ] | ((f,mb_srcfile),fk) <- calledfuns ]
 					return (sourcefun,map (fst.fst) calledfuns \\ [sourcefun])
@@ -66,7 +82,7 @@ maini (gccexe:args) = do
 	-- JSON output shall also contain indirectly called functions
 	let functionhull = nub $ concat calledfunctions_hull
 	json_liness :: [[String]] <- forM functionhull $ \ (funname,calledfuns) -> return ( map ("    "++) $ [ show funname ++ ": {", "  \"calltree\": [" ] ++ map ("    "++) (interspersef (++",") id (map show calledfuns)) ++ [ "  ]", "}" ] )
-	writeFile ("calltree_out" </> "calltree.json") $ unlines $ [
+	writeFile (outputDir </> "calltree.json") $ unlines $ [
 		"{",
 		"  \"info\": {" ] ++
 		concat (interspersef (interspersef id (++",")) id json_liness) ++ [
@@ -104,15 +120,15 @@ removeellipses path = do
 		print $ length ls
 		writeFile filename $ unlines $ ls
 
-functions = [ "dl_main","dl_start","dl_start_final" ]
+functions = [ "dl_main","_dl_start","_dl_start_final" ]
 
 printCSV ls = unlines $ map (concat . (intersperse ";")) ls
 
 -- Returns a list of (funname,srcfile,[calledfunname1,...])
 handleSrcFile gccexe preprocess_args srcfilename = do
 	putStrLn $ "handling SrcFile " ++ srcfilename
---	mb_ast <- parseCFile (newGCC gccexe) Nothing preprocess_args srcfilename
-	mb_ast <- parseCFilePre srcfilename
+	mb_ast <- parseCFile (newGCC gccexe) Nothing preprocess_args srcfilename
+--	mb_ast <- parseCFilePre srcfilename
 	case mb_ast of
 		Left err -> error $ show err
 		Right ctranslunit -> execStateT (everywhereM (mkM (searchFunDefs ctranslunit)) ctranslunit) []
@@ -129,17 +145,17 @@ searchFunDefs ctranslunit cfundef@(CFunDef _ (CDeclr (Just (Ident funname _ _)) 
 searchFunCalls :: (MonadIO m) => String -> [CDecl] -> CTranslUnit -> CExpr -> StateT [String] m CExpr
 searchFunCalls currentfunname argdecls ctranslunit ccall@(CCall funname_expr callargs ni) = do
 	liftIO $ do
-		putStrLn $ "ccall = " ++ (render.pretty) ccall
-		putStrLn $ "currentfunname = " ++ currentfunname
-		putStrLn $ "argdecls = "
+		printLog $ "\n====== searchFunCalls ==========="
+		printLog $ "ccall = " ++ (render.pretty) ccall
+		printLog $ "currentfunname = " ++ currentfunname
 	case funname_expr of
 		CVar (Ident name _ _) _ -> do
+			printLog $ "Found plain fun(...) call: " ++ show ni ++ " " ++ show name
 			modify (name : )
 			return ccall
+
+-- (*<var>)(..)
 		CUnary CIndOp (CVar (Ident name _ _) _) _ -> do
-			liftIO $ do
-				putStrLn $ "Ident name = " ++ name
-				forM_ argdecls print
 			let
 				[(argnum,_)] = filter (\ (_,CDecl _ [(Just (CDeclr (Just (Ident argname _ _)) _ _ _ _),_,_)] _) -> argname==name) (zip [0..] argdecls)
 				calls :: [CExpr]
@@ -151,29 +167,37 @@ searchFunCalls currentfunname argdecls ctranslunit ccall@(CCall funname_expr cal
 				searchfuncalls (CCall (CVar (Ident calledfunname _ _) _) args _) | calledfunname==currentfunname = [ args!!argnum ]
 				searchfuncalls _ = []
 				names = map (\ (CVar (Ident fn _ _) _) -> fn) calls
+			printLog $ name ++ " is arg nr. " ++ show argnum ++ " of currentfunname = " ++ currentfunname
+			printLog $ currentfunname ++ " is called by " ++ show names
 			modify (names++)
-			liftIO $ putStrLn $ "Found (*funptr)(...) type calls: " ++ show ni ++ " " ++ show names
+			printLog $ "Found (*funptr)(...) type calls: " ++ show ni ++ " " ++ show names
 			return ccall
 		CCast _ expr _ -> searchFunCalls currentfunname argdecls ctranslunit (CCall expr callargs ni)
+
+-- (<struct_ident>.<member_ident>)(..)
 		CMember (CVar struct_ident _) member_ident False _ -> do
 			case varAssignment struct_ident ctranslunit of
 				[] -> do
-					error $ "Strange: Identifier " ++ (render.pretty) struct_ident ++ " never assigned!"
-				asss -> forM_ asss $ \case
-					CVar ident _ -> do
+					printLog $ (render.pretty) struct_ident ++ " is assigned nowhere, hence it must have been declared external, so we cannot know where it is called from."
+					return ()
+				asss -> forM_ asss $ \ ass -> case ass of
+					CVar ident ni -> do
+						printLog $ (render.pretty) struct_ident ++ " is assigned at " ++ show ni ++ " as " ++ (render.pretty) ass
 						case defFunName ident ctranslunit of
-							[] -> error $ "Identifier " ++ (render.pretty) ident ++ " not found as a function name"
-							[ Ident name _ _ ] -> do
+							[] -> myError $ "Identifier " ++ (render.pretty) ident ++ " not found as a function name"
+							[ Ident name _ ni ] -> do
 								liftIO $ putStrLn $ "Found (a.b)(...) type call: " ++ show ni ++ " " ++ show name
 								modify (name:)
-							_ -> error $ "Identifier " ++ (render.pretty) ident ++ " found more than once as a function name"
-					assexpr -> error $ "assexpr " ++ (render.pretty) assexpr ++ " not implemented"
+							_ -> myError $ "Identifier " ++ (render.pretty) ident ++ " found more than once as a function name"
+					assexpr -> myError $ "assexpr " ++ (render.pretty) assexpr ++ " not implemented"
 			return ccall
+
+-- other calls
 		fne -> do
 			let msg = show (posOfNode ni) ++ ": " ++ (render $ pretty ccall) ++ "\n"
 			liftIO $ do
-				putStr $ "searchFunCallsM: Strange funname_expr: " ++ msg
-				appendFile ("calltree_out" </> "strangecalls.txt") msg
+				printLog $ "searchFunCallsM: Strange funname_expr: " ++ msg
+				appendFile (outputDir </> "strangecalls.txt") msg
 			return ccall
 
 searchFunCalls _ _ _ cexpr = return cexpr
