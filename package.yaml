@@ -33,8 +33,7 @@ dependencies:
 - binary
 - containers
 - haskelzinc
-#- template-haskell >= 2.15
-#- g2
+- extra
 
 library:
   source-dirs: src

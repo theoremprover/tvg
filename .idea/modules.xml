@@ -2,6 +2,7 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
+      <module fileurl="file://$PROJECT_DIR$/haskelzinc-0.3.1.1/haskelzinc.iml" filepath="$PROJECT_DIR$/haskelzinc-0.3.1.1/haskelzinc.iml" />
       <module fileurl="file://$PROJECT_DIR$/tvg.iml" filepath="$PROJECT_DIR$/tvg.iml" />
     </modules>
   </component>

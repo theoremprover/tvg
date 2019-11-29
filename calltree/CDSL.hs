@@ -84,6 +84,10 @@ funCall :: CFilter CExpr CExpr
 funCall ccall@(CCall fun args _) = [ccall]
 funCall _ = []
 
+getCallArgs :: CFilter CExpr [CExpr]
+getCallArgs (CCall _ args _) = [ args ]
+getCallArgs _ = []
+
 funDef :: CFilter CExtDecl CFunDef
 funDef (CFDefExt cfundef) = [ cfundef ]
 funDef _ = []

@@ -12,6 +12,7 @@ import System.Directory
 import Data.List
 import Control.Monad
 import Control.Monad.IO.Class
+import Control.Monad.Extra
 import Language.C
 import Language.C.Data.Ident
 import Language.C.System.GCC
@@ -135,70 +136,87 @@ handleSrcFile gccexe preprocess_args srcfilename = do
 
 -- For all function definitons in the current source file:
 searchFunDefs :: CTranslUnit -> CFunDef -> StateT [(String,Maybe FilePath,[String])] IO CFunDef
-searchFunDefs ctranslunit cfundef@(CFunDef _ (CDeclr (Just (Ident funname _ _)) (CFunDeclr (Right (argdecls,_)) _ _ : _) _ _ _) _ stmt ni) = do
-	calledfunnames <- execStateT (everywhereM (mkM $ searchFunCalls funname argdecls ctranslunit) stmt) []
+searchFunDefs ctranslunit cfundef@(CFunDef _ (CDeclr (Just fun_ident@(Ident funname _ _)) (CFunDeclr (Right (argdecls,_)) _ _ : _) _ _ _) _ stmt ni) = do
+	calledfunnames <- execStateT (everywhereM (mkM $ searchFunCalls argdecls fun_ident ctranslunit) stmt) []
 --	liftIO $ print calledfunnames
 	modify ((funname,fileOfNode ni,nub calledfunnames) : )
 	return cfundef
 
--- Returns all directly called functions
-searchFunCalls :: (MonadIO m) => String -> [CDecl] -> CTranslUnit -> CExpr -> StateT [String] m CExpr
-searchFunCalls currentfunname argdecls ctranslunit ccall@(CCall funname_expr callargs ni) = do
+-- Returns all called functions
+searchFunCalls :: (MonadIO m) => [CDecl] -> Ident -> CTranslUnit -> CExpr -> StateT [String] m CExpr
+searchFunCalls argdecls fun_ident ctranslunit ccall@(CCall funname_expr _ ni) = do
 	liftIO $ do
 		printLog $ "\n====== searchFunCalls ==========="
-		printLog $ "ccall = " ++ (render.pretty) ccall
-		printLog $ "currentfunname = " ++ currentfunname
-	case funname_expr of
-		CVar (Ident name _ _) _ -> do
-			printLog $ "Found plain fun(...) call: " ++ show ni ++ " " ++ show name
-			modify (name : )
-			return ccall
+		printLog $ "current function = " ++ (render.pretty) fun_ident
+		printLog $ "Call at " ++ show ni ++ ": " ++ (render.pretty) ccall
+	names <- chaseFun funname_expr
+	modify (names++)
+	return ccall
 
+	where
+	
+	chaseFun :: (MonadIO m) => CExpr -> StateT [String] m [String]
+	chaseFun funname_expr = do
+		liftIO $ printLog $ "chaseFun " ++ (render.pretty) funname_expr
+		case funname_expr of
+-- ((<cast_type> expr)(..)
+			CCast _ expr _ -> do
+				liftIO $ printLog $ "Ignoring cast..."
+				chaseFun expr
+	
 -- (*<var>)(..)
-		CUnary CIndOp (CVar (Ident name _ _) _) _ -> do
-			let
-				[(argnum,_)] = filter (\ (_,CDecl _ [(Just (CDeclr (Just (Ident argname _ _)) _ _ _ _),_,_)] _) -> argname==name) (zip [0..] argdecls)
-				calls :: [CExpr]
-				calls = everything (++) (mkQ [] searchfundefs) ctranslunit
-				searchfundefs :: CFunDef -> [CExpr]
-				searchfundefs (CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ stmt _) = everything (++) (mkQ [] searchfuncalls) stmt
-				searchfundefs _ = []
-				searchfuncalls :: CExpr -> [CExpr]
-				searchfuncalls (CCall (CVar (Ident calledfunname _ _) _) args _) | calledfunname==currentfunname = [ args!!argnum ]
-				searchfuncalls _ = []
-				names = map (\ (CVar (Ident fn _ _) _) -> fn) calls
-			printLog $ name ++ " is arg nr. " ++ show argnum ++ " of currentfunname = " ++ currentfunname
-			printLog $ currentfunname ++ " is called by " ++ show names
-			modify (names++)
-			printLog $ "Found (*funptr)(...) type calls: " ++ show ni ++ " " ++ show names
-			return ccall
-		CCast _ expr _ -> searchFunCalls currentfunname argdecls ctranslunit (CCall expr callargs ni)
+			CUnary CIndOp expr _ -> do
+				printLog $ "Found *<expr>, but ignoring it: " ++ show ni ++ " " ++ (render.pretty) expr
+				chaseFun expr
+	
+-- <var>(..)
+--			CVar ident _ | ident==fun_ident -> return []  -- Recursive call occurence check
+			CVar ident@(Ident name _ _) _ -> do
+				printLog $ "Found <ident>: " ++ show ni ++ " " ++ (render.pretty) ident
+				let
+					argident_is_ident (_,CDecl _ [(Just (CDeclr (Just argident) _ _ _ _),_,_)] _) = argident==ident
+					argident_is_ident _ = False
+				case filter argident_is_ident (zip [0..] argdecls) of
+					[(argnum,_)] -> do
+						printLog $ name ++ " is arg nr. " ++ show argnum
+						concatMapM chaseFun $ map (!!argnum) $
+							(findAll funCall >>> filterPred calledfunname_is_ident >>> getCallArgs) ctranslunit
+							where
+							calledfunname_is_ident (CCall (CVar i _) _ _) = i==fun_ident
+							calledfunname_is_ident _ = False
+					[] -> do
+						printLog $ name ++ " is not an argument of the current function, hence plain function call"
+						return [ name ]
 
+{-
 -- (<struct_ident>.<member_ident>)(..)
-		CMember (CVar struct_ident _) member_ident False _ -> do
-			case varAssignment struct_ident ctranslunit of
-				[] -> do
-					printLog $ (render.pretty) struct_ident ++ " is assigned nowhere, hence it must have been declared external, so we cannot know where it is called from."
-					return ()
-				asss -> forM_ asss $ \ ass -> case ass of
-					CVar ident ni -> do
-						printLog $ (render.pretty) struct_ident ++ " is assigned at " ++ show ni ++ " as " ++ (render.pretty) ass
-						case defFunName ident ctranslunit of
-							[] -> myError $ "Identifier " ++ (render.pretty) ident ++ " not found as a function name"
-							[ Ident name _ ni ] -> do
-								liftIO $ putStrLn $ "Found (a.b)(...) type call: " ++ show ni ++ " " ++ show name
-								modify (name:)
-							_ -> myError $ "Identifier " ++ (render.pretty) ident ++ " found more than once as a function name"
-					assexpr -> myError $ "assexpr " ++ (render.pretty) assexpr ++ " not implemented"
-			return ccall
-
+			CMember (CVar struct_ident _) member_ident False _ -> do
+				case varAssignment struct_ident ctranslunit of
+					[] -> do
+						printLog $ (render.pretty) struct_ident ++ " is assigned nowhere, hence it must have been declared external, so it is called from outside => out of scope"
+						return ()
+					asss -> forM_ asss $ \ ass -> case ass of
+						CVar ident ni -> do
+							printLog $ (render.pretty) struct_ident ++ " is assigned at " ++ show ni ++ " as " ++ (render.pretty) ass
+							case defFunName ident ctranslunit of
+								[] -> myError $ "Identifier " ++ (render.pretty) ident ++ " not found as a function name"
+								[ Ident name _ ni ] -> do
+									liftIO $ putStrLn $ "Found (a.b)(...) type call: " ++ show ni ++ ", called function is " ++ show name
+									modify (name:)
+								_ -> myError $ "Identifier " ++ (render.pretty) ident ++ " found more than once as a function name"
+						assexpr -> myError $ "assexpr " ++ (render.pretty) assexpr ++ " not implemented"
+				return ccall
+-}
 -- other calls
-		fne -> do
-			let msg = show (posOfNode ni) ++ ": " ++ (render $ pretty ccall) ++ "\n"
-			liftIO $ do
-				printLog $ "searchFunCallsM: Strange funname_expr: " ++ msg
-				appendFile (outputDir </> "strangecalls.txt") msg
-			return ccall
+			fne -> do
+				let msg = show (posOfNode ni) ++ ": " ++ (render $ pretty ccall) ++ "\n"
+				liftIO $ do
+					printLog $ "searchFunCallsM: Strange funname_expr: " ++ msg
+					appendFile (outputDir </> "strangecalls.txt") msg
+				return []
 
 searchFunCalls _ _ _ cexpr = return cexpr
+
+
+
 
