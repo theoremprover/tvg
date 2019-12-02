@@ -177,4 +177,4 @@ defFunName :: (Typeable a,Data a) => Ident -> CFilter a Ident
 defFunName ident = findAll funDef >>> funDefName
 
 declFunName :: (Typeable a,Data a) => Ident -> CFilter a Ident
-declFunName ident = findAll funDecl >>> funDeclName
+declFunName ident = findAll funDecl >>> funDeclName >>> filterPred (==ident)

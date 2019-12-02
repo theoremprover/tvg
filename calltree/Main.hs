@@ -209,13 +209,20 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 					calledfunname_is_ident (CCall (CVar i _) _ _) = i==fun_ident
 					calledfunname_is_ident _ = False
 			[] -> do
-				printLog $ show name ++ " is not an argument of the current function"
-				printLog $ "Searching for assignments to " ++ show name ++ " ..."
-				case varAssignmentWithFunDef (isEqualExpr cvar) ctranslunit of
+				printLog $ show name ++ " is not an argument of the current function."
+				printLog $ "Searching for a function declaration for " ++ show name ++ " ..."
+				case declFunName ident ctranslunit of
+					(Ident found_name _ ni):_ -> do
+						printLog $ "Found function declaration for " ++ show name ++ " at " ++ show ni
+						return [ found_name ]
 					[] -> do
-						printLog $ "No assignment found to " ++ show name ++ ", hence assuming it is a function."
-						return [ name ]
-					asss -> concatMapM chaseValue asss
+						printLog $ "No function declaration found."
+						printLog $ "Searching for assignments to " ++ show name ++ " ..."
+						case varAssignmentWithFunDef (isEqualExpr cvar) ctranslunit of
+							[] -> do
+								printLog $ "No assignment found to " ++ show name ++ ", hence assuming it is a built-in function."
+								return [ name ]
+							asss -> concatMapM chaseValue asss
 
 -- <expr>
 	chaseValue (_,expr) = do
