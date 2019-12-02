@@ -71,8 +71,14 @@ mapFilter f = \ t -> [ f t ]
 filterFirst :: (Typeable a,Typeable b) => (a -> Bool) -> CFilter (a,b) b
 filterFirst p = filterPred (p.fst) >>> mapFilter snd
 
+filterSecondFirst :: (Typeable a,Typeable b,Typeable b,Data b,Typeable c,Data c) => (c -> Bool) -> CFilter (a,(c,b)) (a,b)
+filterSecondFirst p = filterPred (p.fst.snd) >>> mapFilter (\ (a,(_,b)) -> (a,b))
+
 findAll :: (Typeable a,Data a,Typeable b,Data b,Typeable c,Data c) => CFilter b c -> CFilter a c
 findAll filt = everything (++) (mkQ [] filt)
+
+rememberInProduct :: (Typeable a,Data a,Typeable b,Data b) => CFilter a b -> CFilter a (a,b)
+rememberInProduct filt = \ t -> map ((t,)) (filt t)
 
 findOne :: (Typeable a,Data a,Typeable b,Data b) => CFilter b b -> CFilter a b
 findOne filt =  take 1 . findAll filt
@@ -154,12 +160,18 @@ checkArrayDecl ( CArrSize _ (CConst (CIntConst (CInteger n _ _) _)) : rest , CIn
 checkArrayDecl ( _:_ , CInitExpr _ ni ) = [ showPos ni ++ "Expected one more dimension in initializers" ]
 checkArrayDecl ( CArrSize _ sizeexpr : _ , CInitList _ _ ) = [ head (showPretty sizeexpr) ++ " : Array size is not an integer constant" ]
 
-cAssign :: CFilter CExpr (Ident,CExpr)
-cAssign (CAssign CAssignOp (CVar ident _) value _) = [(ident,value)]
+cAssign :: CFilter CExpr (CExpr,CExpr)
+cAssign (CAssign CAssignOp expr value _) = [(expr,value)]
 cAssign _ = []
 
-varAssignment :: (Typeable a,Data a) => Ident -> CFilter a CExpr 
-varAssignment ident = findAll cAssign >>> filterFirst (==ident)
+cAssignWithFunDef :: (Typeable a,Data a) => CFilter a (CFunDef,(CExpr,CExpr))
+cAssignWithFunDef = findAll funDef >>> rememberInProduct (findAll cAssign)
+
+varAssignment :: (Typeable a,Data a) => (CExpr -> Bool) -> CFilter a CExpr 
+varAssignment pred = findAll cAssign >>> filterFirst pred
+
+varAssignmentWithFunDef :: (Typeable a,Data a) => (CExpr -> Bool) -> CFilter a (CFunDef,CExpr)
+varAssignmentWithFunDef pred = cAssignWithFunDef >>> filterSecondFirst pred
 
 defFunName :: (Typeable a,Data a) => Ident -> CFilter a Ident
 defFunName ident = findAll funDef >>> funDefName
