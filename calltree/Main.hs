@@ -58,10 +58,11 @@ maini (gccexe:args) = do
 	
 	let (preprocess_args,other_args) = partition (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
 	pot_filess <- forM other_args getsrcfiles
-	mapM_ print (concat pot_filess)
-	callss <- forM (concat pot_filess) (handleSrcFile gccexe preprocess_args)
+	let pot_files = concat pot_filess
+	mapM_ print pot_files
+	calls <- handleSrcFiles gccexe preprocess_args pot_files
 
-	let (callgraph,vertex2node,key2vertex) = graphFromEdges $ map (\(funname,mb_defsrcfile,calledfunnames) -> ((funname,mb_defsrcfile),funname,calledfunnames)) (concat callss)
+	let (callgraph,vertex2node,key2vertex) = graphFromEdges $ map (\(funname,mb_defsrcfile,calledfunnames) -> ((funname,mb_defsrcfile),funname,calledfunnames)) calls
 
 	writeFile "graph.dot" $ unlines $ nub $ map (drawedge vertex2node) (edges callgraph)
 
@@ -128,13 +129,16 @@ functions = [ "dl_main","_dl_start","_dl_start_final" ]
 printCSV ls = unlines $ map (concat . (intersperse ";")) ls
 
 -- Returns a list of (funname,srcfile,[calledfunname1,...])
-handleSrcFile gccexe preprocess_args srcfilename = do
-	putStrLn $ "handling SrcFile " ++ srcfilename
-	mb_ast <- parseCFile (newGCC gccexe) Nothing preprocess_args srcfilename
---	mb_ast <- parseCFilePre srcfilename
-	case mb_ast of
-		Left err -> error $ show err
-		Right ctranslunit -> execStateT (everywhereM (mkM (searchFunDefs ctranslunit)) ctranslunit) []
+handleSrcFiles gccexe preprocess_args srcfilenames = do
+	extdeclss <- forM srcfilenames $ \ srcfilename -> do
+		putStrLn $ "handling SrcFile " ++ srcfilename
+	--	mb_ast <- parseCFile (newGCC gccexe) Nothing preprocess_args srcfilename
+		mb_ast <- parseCFilePre srcfilename
+		case mb_ast of
+			Left err -> error $ show err
+			Right (CTranslUnit extdecls _) -> return extdecls
+	let ctranslunit = CTranslUnit (concat extdeclss) undefNode
+	execStateT (everywhereM (mkM (searchFunDefs ctranslunit)) ctranslunit) []
 
 -- For all function definitons in the current source file:
 searchFunDefs :: CTranslUnit -> CFunDef -> StateT [(String,Maybe FilePath,[String])] IO CFunDef
@@ -182,15 +186,6 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 			expr -> do
 				printLog $ "Chasing value " ++ (render.pretty) expr
 				chaseValue (fundef0,expr)
-{-
--- other calls
-			fne -> do
-				let msg = show (posOfNode ni) ++ ": " ++ (render $ pretty ccall) ++ "\n"
-				liftIO $ do
-					printLog $ "searchFunCallsM: Strange funname_expr: " ++ msg
-					appendFile (outputDir </> "strangecalls.txt") msg
-				return []
--}
 
 	chaseValue :: (MonadIO m) => (CFunDef,CExpr) -> StateT [String] m [String]
 
@@ -223,6 +218,10 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 								printLog $ "No assignment found to " ++ show name ++ ", hence assuming it is a built-in function."
 								return [ name ]
 							asss -> concatMapM chaseValue asss
+{-
+	chaseValue (fundef,cmember@(CMember obj_expr member_ident isptr _)) = do
+		printLog $ "Found CMember: " ++ (render.pretty) cmember
+-}
 
 -- <expr>
 	chaseValue (_,expr) = do
