@@ -3,6 +3,8 @@
 
 {-
 stack build :calltree-exe && stack exec calltree-exe -- "gcc" <SRCDIR>
+
+_rtld_local._dl_rtld_lock_recursive
 -}
 
 module Main where
@@ -27,10 +29,13 @@ import Text.PrettyPrint
 import Data.Time.Clock
 
 import CDSL
+import DataTree
+
 
 outputDir = "calltree_out"
 strangeCalls = "strangecalls.txt"
 logFile = "log.txt"
+writeASTFiles = True
 
 myError :: (MonadIO m) => forall a . String -> m a
 myError txt = do
@@ -58,10 +63,11 @@ maini (gccexe:args) = do
 	
 	let (preprocess_args,other_args) = partition (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
 	pot_filess <- forM other_args getsrcfiles
-	let pot_files = concat pot_filess
-	mapM_ print pot_files
-	calls <- handleSrcFiles gccexe preprocess_args pot_files
-
+	let pot_files = concat pot_filess -- [ [ "ifiles/xstrdup.i" ] ]
+--	mapM_ print pot_files
+	callss <- forM pot_files $ handleSrcFile gccexe preprocess_args
+	let calls = concat callss
+	
 	let (callgraph,vertex2node,key2vertex) = graphFromEdges $ map (\(funname,mb_defsrcfile,calledfunnames) -> ((funname,mb_defsrcfile),funname,calledfunnames)) calls
 
 	writeFile "graph.dot" $ unlines $ nub $ map (drawedge vertex2node) (edges callgraph)
@@ -129,15 +135,14 @@ functions = [ "dl_main","_dl_start","_dl_start_final" ]
 printCSV ls = unlines $ map (concat . (intersperse ";")) ls
 
 -- Returns a list of (funname,srcfile,[calledfunname1,...])
-handleSrcFiles gccexe preprocess_args srcfilenames = do
-	extdeclss <- forM srcfilenames $ \ srcfilename -> do
-		putStrLn $ "handling SrcFile " ++ srcfilename
-	--	mb_ast <- parseCFile (newGCC gccexe) Nothing preprocess_args srcfilename
-		mb_ast <- parseCFilePre srcfilename
-		case mb_ast of
-			Left err -> error $ show err
-			Right (CTranslUnit extdecls _) -> return extdecls
-	let ctranslunit = CTranslUnit (concat extdeclss) undefNode
+handleSrcFile gccexe preprocess_args srcfilename = do
+	putStrLn $ "handling SrcFile " ++ srcfilename
+--	mb_ast <- parseCFile (newGCC gccexe) Nothing preprocess_args srcfilename
+	mb_ast <- parseCFilePre srcfilename
+	ctranslunit <- case mb_ast of
+		Left err -> error $ show err
+		Right ast -> return ast
+	when writeASTFiles $ liftIO $ writeFile (outputDir </> (takeFileName srcfilename) <.> ".ast.html") $ genericToHTMLString ctranslunit
 	execStateT (everywhereM (mkM (searchFunDefs ctranslunit)) ctranslunit) []
 
 -- For all function definitons in the current source file:
@@ -206,6 +211,7 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 			[] -> do
 				printLog $ show name ++ " is not an argument of the current function."
 				printLog $ "Searching for a function declaration for " ++ show name ++ " ..."
+				liftIO $ mapM_ putStrLn $ (findAll funDecl >>> showPretty) ctranslunit
 				case declFunName ident ctranslunit of
 					(Ident found_name _ ni):_ -> do
 						printLog $ "Found function declaration for " ++ show name ++ " at " ++ show ni

@@ -103,7 +103,7 @@ funDefName (CFunDef _ (CDeclr (Just ident) _ _ _ _) _ _ _) = [ ident ]
 funDefName _ = []
 
 funDecl :: CFilter CExtDecl CDeclr
-funDecl (CDeclExt (CDecl _ [(Just cdeclr@(CDeclr _ [(CFunDeclr _ _ _)] _ _ _),_,_)] _)) = [ cdeclr ]
+funDecl (CDeclExt (CDecl _ [(Just cdeclr@(CDeclr _ ((CFunDeclr _ _ _):_) _ _ _),_,_)] _)) = [ cdeclr ]
 funDecl _ = []
 
 funDeclName :: CFilter CDeclr Ident
