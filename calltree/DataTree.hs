@@ -23,7 +23,7 @@ instance {-# OVERLAPS #-} DataTreeNode (K1 i NodeInfo) where
 	dataTree _ (K1 c) = [Leaf $ show c]
 
 instance {-# OVERLAPS #-} DataTreeNode (K1 i Ident) where
-	dataTree _ (K1 (Ident name _ _)) = [Leaf $ "Ident " ++ show name]
+	dataTree _ (K1 (Ident name i _)) = [Leaf $ "Ident " ++ show name ++ " " ++ show i]
 
 instance {-# OVERLAPS #-} DataTreeNode (K1 i Int) where
 	dataTree _ (K1 c) = [Leaf $ show c]
