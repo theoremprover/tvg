@@ -35,7 +35,7 @@ import DataTree
 outputDir = "calltree_out"
 strangeCalls = "strangecalls.txt"
 logFile = "log.txt"
-writeASTFiles = True
+writeASTFiles = False
 
 myError :: (MonadIO m) => forall a . String -> m a
 myError txt = do
@@ -44,7 +44,7 @@ myError txt = do
 
 printLog :: (MonadIO m) => String -> m ()
 printLog txt = liftIO $ do
-	putStrLn txt
+--	putStrLn txt
 	appendFile (outputDir </> logFile) (txt++"\n")
 
 main = do
@@ -63,9 +63,11 @@ maini (gccexe:args) = do
 	
 	let (preprocess_args,other_args) = partition (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
 	pot_filess <- forM other_args getsrcfiles
-	let pot_files = concat pot_filess -- [ [ "ifiles/xstrdup.i" ] ]
+	let pot_files = nub $ concat pot_filess -- [ [ "ifiles/xstrdup.i" ] ]
+	let num_srcfiles = length pot_files
+	printLog $ "Found " ++ show num_srcfiles ++ " source files."
 --	mapM_ print pot_files
-	callss <- forM pot_files $ handleSrcFile gccexe preprocess_args
+	callss <- forM (zip [1..] pot_files) $ handleSrcFile gccexe preprocess_args num_srcfiles
 	let calls = concat callss
 	
 	let (callgraph,vertex2node,key2vertex) = graphFromEdges $ map (\(funname,mb_defsrcfile,calledfunnames) -> ((funname,mb_defsrcfile),funname,calledfunnames)) calls
@@ -135,8 +137,8 @@ functions = [ "dl_main","_dl_start","_dl_start_final" ]
 printCSV ls = unlines $ map (concat . (intersperse ";")) ls
 
 -- Returns a list of (funname,srcfile,[calledfunname1,...])
-handleSrcFile gccexe preprocess_args srcfilename = do
-	putStrLn $ "handling SrcFile " ++ srcfilename
+handleSrcFile gccexe preprocess_args num_srcfiles (i,srcfilename) = do
+	printLog $ "[ " ++ show (div (i*100) num_srcfiles) ++ "% ] Handling SrcFile " ++ show i ++ " of " ++ show num_srcfiles ++ ": " ++ srcfilename
 --	mb_ast <- parseCFile (newGCC gccexe) Nothing preprocess_args srcfilename
 	mb_ast <- parseCFilePre srcfilename
 	ctranslunit <- case mb_ast of
@@ -179,7 +181,7 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 
 -- (<cast_type> expr)(..)
 			CCast _ expr _ -> do
-				liftIO $ printLog $ "Ignoring cast..."
+				printLog $ "Ignoring cast..."
 				chaseFun expr
 
 -- (*<var>)(..)
@@ -211,7 +213,6 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 			[] -> do
 				printLog $ show name ++ " is not an argument of the current function."
 				printLog $ "Searching for a function declaration for " ++ show name ++ " ..."
-				liftIO $ mapM_ putStrLn $ (findAll funDecl >>> showPretty) ctranslunit
 				case declFunName ident ctranslunit of
 					(Ident found_name _ ni):_ -> do
 						printLog $ "Found function declaration for " ++ show name ++ " at " ++ show ni
