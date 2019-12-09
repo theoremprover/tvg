@@ -202,28 +202,36 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 -- <expr>
 			expr -> do
 				printLog $ "Chasing value " ++ (render.pretty) expr
-				chaseValue (fundef0,expr)
+				chaseValue [funname] (fundef0,expr)
 
-	chaseValue :: (MonadIO m) => (CFunDef,CExpr) -> StateT AnalyzeState m [String]
+	chaseValue :: (MonadIO m) => [String] -> (CFunDef,CExpr) -> StateT AnalyzeState m [String]
+
+-- occurs check
+	chaseValue occuredfunctions (CFunDef _ (CDeclr (Just fun_ident@(Ident funname _ _)) _ _ _ _) _ _ _,_) |
+		funname `elem` occuredfunctions = do
+			printLog $ "chaseValue occurs check: " ++ funname ++ " is in " ++ show occuredfunctions
+			return []
 
 -- <varname>
-	chaseValue (fundef@(CFunDef _ (CDeclr (Just fun_ident@(Ident funname _ _)) ((CFunDeclr (Right (argdecls,_)) _ _):_) _ _ _) _ _ _),cvar@(CVar ident@(Ident name _ _) _)) = do
+	chaseValue occuredfunctions (fundef@(CFunDef _ (CDeclr (Just fun_ident@(Ident funname _ _)) ((CFunDeclr (Right (argdecls,_)) _ _):_) _ _ _) _ _ _),cvar@(CVar ident@(Ident name _ _) _)) = do
 		printLog $ "chaseValue ( _ , " ++ (render.pretty) cvar ++ " )"
 		let
 			argident_is_ident (_,CDecl _ [(Just (CDeclr (Just argident) _ _ _ _),_,_)] _) = argident==ident
 			argident_is_ident _ = False
 			filtered = filter argident_is_ident (zip [0..] argdecls)
+{-
 		when (name=="eq_fn") $ liftIO $ do
 			writeFile "fundef.html" $ genericToHTMLString fundef
 			printLog $ "ident=" ++ show ident
 			printLog $ "filtered=" ++ show filtered
+-}
 		case filtered of
 			[(argnum,_)] -> do
 				printLog $ name ++ " is arg nr. " ++ show argnum ++ " in function " ++ funname
 				let calls = (findAll funCall >>> filterPred calledfunname_is_ident) ctranslunit
 				printLog $ "Found these calls calling " ++ show funname ++ ":"
 				forM_ calls $ \ call -> printLog $ "    " ++ (render.pretty) call
-				concatMapM chaseValue $ map (\ cargs -> (fundef,cargs!!argnum)) $ map getcallargs calls
+				concatMapM (chaseValue $ funname:occuredfunctions) $ map (\ cargs -> (fundef,cargs!!argnum)) $ map getcallargs calls
 				where
 				getcallargs (CCall _ args _) = args
 				calledfunname_is_ident (CCall (CVar i _) _ _) = i==fun_ident
@@ -242,20 +250,20 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 							[] -> do
 								printLog $ "No assignment found to " ++ show name ++ ", hence assuming it is a built-in function."
 								return [ name ]
-							asss -> concatMapM chaseValue asss
+							asss -> concatMapM (chaseValue occuredfunctions) asss
 {-
 	chaseValue (fundef,cmember@(CMember obj_expr member_ident isptr _)) = do
 		printLog $ "Found CMember: " ++ (render.pretty) cmember
 -}
 
 -- <expr>
-	chaseValue (_,expr) = do
+	chaseValue occuredfunctions (_,expr) = do
 		printLog $ "chaseValue ( _ , " ++ (render.pretty) expr ++ " )"
 		case varAssignmentWithFunDef (isEqualExpr expr) ctranslunit of
 			[] -> do
 				printLog $ (render.pretty) expr ++ " is assigned nowhere, hence it must have been declared external, so it is called from outside => out of scope"
 				return []
 			asss -> do
-				concatMapM chaseValue asss
+				concatMapM (chaseValue occuredfunctions) asss
 
 searchFunCalls _ _ cexpr = return cexpr
