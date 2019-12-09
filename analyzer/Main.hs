@@ -49,7 +49,7 @@ fp-bit.i: Function _fpdiv_parts
 gcc = newGCC "gcc"
 
 data CovVecState = CovVecState {
-	allDefs :: Map.Map Ident IdentDecl,
+	globDecls :: GlobalDecls,
 	newNameIndex :: Int
 	}
 
@@ -71,9 +71,9 @@ main = do
 			writeFile (filename++".ast.html") $ genericToHTMLString translunit
 			case runTrav_ $ analyseAST translunit of
 				Left errs -> forM_ errs print
-				Right (GlobalDecls globobjs _ _,soft_errors) -> do
+				Right (globdecls,soft_errors) -> do
 					forM_ soft_errors print
-					res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globobjs 1
+					res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globdecls 1
 					lss <- forM res $ \ (trace,constraints,model,solution) -> do
 						return $
 							[ "TRACE:" ] ++
@@ -91,7 +91,7 @@ type Constraint = CExpr
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
-	map <- gets allDefs
+	map <- gets (gObjs.globDecls)
 	case Map.lookup ident map of
 		Just (FunctionDef fundef) -> return fundef
 		_ -> error $ "Function " ++ (show ident) ++ " not found"
@@ -357,7 +357,7 @@ aggregateConstraintsM traceelems (traceelem@(TraceAssign ident assignop expr) : 
 	where
 	expr' = if assignop==CAssignOp then expr else CBinary assignop' (CVar ident undefNode) expr undefNode
 	Just assignop' = lookup assignop [
-		(CMulAssOp,CMulOp), (CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
+		(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
 		(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
 
 solveConstraintsM :: Int -> [Constraint] -> CovVecM ([MZAST.ModelData],Maybe Solution)
@@ -395,7 +395,9 @@ solveConstraintsM i constraints = do
 	searchvar _ = []
 
 var2MZ :: (MZAST.Varr i) => Ident -> CovVecM (MZAST.GItem i)
-var2MZ (Ident name _ _) = do
+var2MZ ident@(Ident name _ _) = do
+	GlobalDecls _ tags typedefs <- gets globDecls
+	-- CONTINUE HERE
 	return $ MZAST.var (MZAST.Int) name
 
 constrToMZ :: Constraint -> CovVecM MZAST.ModelData

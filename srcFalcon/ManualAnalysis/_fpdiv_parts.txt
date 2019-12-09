@@ -1,3 +1,40 @@
+// http://dcjtech.info/topic/machine-modes-used-in-c-attributes/
+typedef unsigned int UHItype __attribute__ ((mode (HI)));
+typedef unsigned int USItype __attribute__ ((mode (SI)));
+typedef unsigned int UDItype __attribute__ ((mode (DI)));
+
+ typedef USItype fractype;
+ typedef UHItype halffractype;
+
+typedef struct
+{
+  fp_class_type class;
+  unsigned int sign;
+  int normal_exp;
+
+  union
+    {
+      fractype ll;
+      halffractype l[2];
+    } fraction;
+} fp_number_type;
+
+static int
+iszero ( fp_number_type * x)
+{
+  return x->class == CLASS_ZERO;
+}
+
+
+typedef enum
+{
+  CLASS_SNAN,
+  CLASS_QNAN,
+  CLASS_ZERO,
+  CLASS_NUMBER,
+  CLASS_INFINITY
+} fp_class_type;
+
 static inline __attribute__ ((__always_inline__)) fp_number_type *
 _fpdiv_parts (fp_number_type * a,
 	      fp_number_type * b)
