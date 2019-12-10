@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards,LambdaCase,OverloadedStrings,ScopedTypeVariables,StandaloneDeriving,FlexibleInstances,TypeSynonymInstances #-}
+{-# LANGUAGE RecordWildCards,LambdaCase,OverloadedStrings,TupleSections,ScopedTypeVariables,StandaloneDeriving,FlexibleInstances,TypeSynonymInstances #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 {-
@@ -138,11 +138,11 @@ functions = [ "dl_main","_dl_start","_dl_start_final" ]
 
 printCSV ls = unlines $ map (concat . (intersperse ";")) ls
 
-type AnalyzeState = [String]
+type AnalyzeState = [Ident]
 newAnalyzeState = []
 type AnalyzeS m a = StateT AnalyzeState m a
 
-addNamesS :: (MonadIO m) => [String] -> AnalyzeS m ()
+addNamesS :: (MonadIO m) => [Ident] -> AnalyzeS m ()
 addNamesS names = modify (names++)
 
 -- Returns a list of (funname,srcfile,[calledfunname1,...])
@@ -161,8 +161,8 @@ handleSrcFile gccexe preprocess_args num_srcfiles (i,srcfilename) = do
 -- For all function definitons in the current source file:
 searchFunDefs :: CTranslUnit -> CFunDef -> StateT [(String,Maybe FilePath,[String])] IO CFunDef
 searchFunDefs ctranslunit cfundef@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ stmt ni) = do
-	calledfunnames <- execStateT (everywhereM (mkM $ searchFunCalls cfundef ctranslunit) stmt) newAnalyzeState
-	modify ((funname,fileOfNode ni,nub calledfunnames) : )
+	calledfunidents <- execStateT (everywhereM (mkM $ searchFunCalls cfundef ctranslunit) stmt) newAnalyzeState
+	modify ((funname,fileOfNode ni,map identToString $ nub calledfunidents) : )
 	return cfundef
 
 isEqualExpr :: CExpr -> CExpr -> Bool
@@ -173,43 +173,49 @@ isEqualExpr expr1 expr2 = False
 
 -- Returns all called functions
 searchFunCalls :: (MonadIO m) => CFunDef -> CTranslUnit -> CExpr -> StateT AnalyzeState m CExpr
-searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ _ _) ctranslunit ccall@(CCall funname_expr _ ni) = do
+searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ _ _) ctranslunit ccall@(CCall _ _ ni) = do
 	liftIO $ putStrLn $ "In function " ++ funname ++ ": " ++ (render.pretty) ccall
 	printLog $ "\n====== searchFunCalls ==========="
 	printLog $ "current function = " ++ funname
 	printLog $ "Call at " ++ show ni ++ ": " ++ (render.pretty) ccall
-	names <- chaseFun funname_expr
-	addNamesS names
+	idents <- chaseFun (fundef0,ccall)
+	addNamesS idents
 	return ccall
 
 	where
 	
-	chaseFun :: (MonadIO m) => CExpr -> StateT AnalyzeState m [String]
-	chaseFun funname_expr = do
-		liftIO $ printLog $ "chaseFun " ++ (render.pretty) funname_expr
+	chaseFun :: (MonadIO m) => (CFunDef,CExpr) -> StateT AnalyzeState m [Ident]
+	chaseFun (fundef,CCall funname_expr _ _) = do
+		printLog $ "chaseFun " ++ (render.pretty) funname_expr
 		case funname_expr of
 
 -- (<cast_type> expr)(..)
 			CCast _ expr _ -> do
 				printLog $ "Ignoring cast..."
-				chaseFun expr
+				chaseFun (fundef,expr)
 
 -- (*<var>)(..)
 			CUnary CIndOp expr _ -> do
 				printLog $ "Found *<expr>, but ignoring it: " ++ show ni ++ " " ++ (render.pretty) expr
-				chaseFun expr
+				chaseFun (fundef,expr)
 
 -- <expr>
 			expr -> do
 				printLog $ "Chasing value " ++ (render.pretty) expr
-				chaseValue [funname] (fundef0,expr)
+				chaseValue [ getFunDefIdent fundef ] (fundef,expr)
 
-	chaseValue :: (MonadIO m) => [String] -> (CFunDef,CExpr) -> StateT AnalyzeState m [String]
+	chaseFun (fundef,CVar ident _) = do
+		printLog $ "chaseFun found variable " ++ (render.pretty) ident
+		return [ident]
+
+	chaseFun (fundef,expr) = error $ "chaseFun " ++ (render.pretty) expr ++ " not implemented"
+
+	chaseValue :: (MonadIO m) => [Ident] -> (CFunDef,CExpr) -> StateT AnalyzeState m [Ident]
 
 -- occurs check
-	chaseValue occuredfunctions (CFunDef _ (CDeclr (Just fun_ident@(Ident funname _ _)) _ _ _ _) _ _ _,_) |
-		funname `elem` occuredfunctions = do
-			printLog $ "chaseValue occurs check: " ++ funname ++ " is in " ++ show occuredfunctions
+	chaseValue occuredfunctions (CFunDef _ (CDeclr (Just fun_ident) _ _ _ _) _ _ _,_) |
+		fun_ident `elem` occuredfunctions = do
+			printLog $ "chaseValue occurs check: " ++ (render.pretty) fun_ident ++ " is in " ++ show (map identToString occuredfunctions)
 			return []
 
 -- <varname>
@@ -228,28 +234,29 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 		case filtered of
 			[(argnum,_)] -> do
 				printLog $ name ++ " is arg nr. " ++ show argnum ++ " in function " ++ funname
-				let calls = (findAll funCall >>> filterPred calledfunname_is_ident) ctranslunit
 				printLog $ "Found these calls calling " ++ show funname ++ ":"
-				forM_ calls $ \ call -> printLog $ "    " ++ (render.pretty) call
-				concatMapM (chaseValue $ funname:occuredfunctions) $ map (\ cargs -> (fundef,cargs!!argnum)) $ map getcallargs calls
-				where
-				getcallargs (CCall _ args _) = args
-				calledfunname_is_ident (CCall (CVar i _) _ _) = i==fun_ident
-				calledfunname_is_ident _ = False
+				funss1 <- forM ((findAll funCallInFunDef) ctranslunit) $ \ (fundef',call'@(CCall callexpr args _)) -> do
+					calledidents <- chaseFun (fundef',callexpr)
+					funss <- forM (filter (==fun_ident) calledidents) $ \ calledident -> do
+						let call_source_funident = getFunDefIdent fundef
+						printLog $ "#### " ++ (render.pretty) call' ++ " in " ++ (render.pretty) call_source_funident
+						chaseValue (call_source_funident:occuredfunctions) (fundef',args!!argnum)
+					return $ concat funss
+				return $ concat funss1
 			[] -> do
 				printLog $ show name ++ " is not an argument of the current function."
 				printLog $ "Searching for a function declaration for " ++ show name ++ " ..."
 				case declFunName ident ctranslunit of
-					(Ident found_name _ ni):_ -> do
+					(found_ident@(Ident found_name _ ni)):_ -> do
 						printLog $ "Found function declaration for " ++ show name ++ " at " ++ show ni
-						return [ found_name ]
+						return [ found_ident ]
 					[] -> do
 						printLog $ "No function declaration found."
 						printLog $ "Searching for assignments to " ++ show name ++ " ..."
 						case varAssignmentWithFunDef (isEqualExpr cvar) ctranslunit of
 							[] -> do
 								printLog $ "No assignment found to " ++ show name ++ ", hence assuming it is a built-in function."
-								return [ name ]
+								return [ ident ]
 							asss -> concatMapM (chaseValue occuredfunctions) asss
 {-
 	chaseValue (fundef,cmember@(CMember obj_expr member_ident isptr _)) = do
