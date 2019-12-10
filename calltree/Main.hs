@@ -225,12 +225,6 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 			argident_is_ident (_,CDecl _ [(Just (CDeclr (Just argident) _ _ _ _),_,_)] _) = argident==ident
 			argident_is_ident _ = False
 			filtered = filter argident_is_ident (zip [0..] argdecls)
-{-
-		when (name=="eq_fn") $ liftIO $ do
-			writeFile "fundef.html" $ genericToHTMLString fundef
-			printLog $ "ident=" ++ show ident
-			printLog $ "filtered=" ++ show filtered
--}
 		case filtered of
 			[(argnum,_)] -> do
 				printLog $ name ++ " is arg nr. " ++ show argnum ++ " in function " ++ funname
