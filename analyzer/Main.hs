@@ -34,8 +34,11 @@ import qualified Interfaces.MZAST as MZAST
 import Interfaces.FZSolutionParser
 
 import DataTree
+import GlobDecls
+
 
 _PRINT_TRACESTMTS_TRACE = False
+_WRITE_GLOBALDECLS = True
 
 {--
 stack build :analyzer-exe
@@ -73,6 +76,7 @@ main = do
 				Left errs -> forM_ errs print
 				Right (globdecls,soft_errors) -> do
 					forM_ soft_errors print
+					when _WRITE_GLOBALDECLS $ writeFile (filename++".globdecls.html") $ globdeclsToHTMLString globdecls
 					res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globdecls 1
 					lss <- forM res $ \ (trace,constraints,model,solution) -> do
 						return $

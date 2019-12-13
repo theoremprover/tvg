@@ -23,7 +23,7 @@ instance {-# OVERLAPS #-} DataTreeNode (K1 i NodeInfo) where
 	dataTree _ (K1 c) = [Leaf $ show c]
 
 instance {-# OVERLAPS #-} DataTreeNode (K1 i Ident) where
-	dataTree _ (K1 (Ident name _ _)) = [Leaf $ "Ident " ++ show name]
+	dataTree _ (K1 (Ident name i _)) = [Leaf $ "Ident " ++ show name ++ " " ++ show i]
 
 instance {-# OVERLAPS #-} DataTreeNode (K1 i Int) where
 	dataTree _ (K1 c) = [Leaf $ show c]
@@ -73,9 +73,10 @@ dataTreeToHtml (DataTree s subtrees) = (li ! [identifier "myUL"]) ((thespan ! [m
 genericToHTMLString :: (Generic a,DataTreeNode (Rep a)) => a -> String
 genericToHTMLString x = renderHtml $ pageframe $ map dataTreeToHtml $ toDataTree x
 	where
+	chkbox = primHtml "<input type=CHECKBOX id=cbtoggleexpand onclick=toggleexpand()>Expand all</input>"
 	pageframe tree_htmls =
 		header (style css) +++
-		body ( concatHtml tree_htmls +++ tag "script" toggler )
+		body ( concatHtml (chkbox : tree_htmls) +++ tag "script" toggler +++ tag "script" expandall )
 
 css = primHtml "\
 \ ul, #myUL {\
@@ -143,5 +144,17 @@ toggler = primHtml "\
 \    this.parentElement.querySelector(\".nested\").classList.toggle(\"active\");\
 \    this.classList.toggle(\"caret-down\");\
 \  });\
+\ }"
+
+expandall = primHtml "\
+\ function toggleexpand() {\
+\   var checkBox = document.getElementById(\"cbtoggleexpand\");\
+\   if (checkBox.checked == true){\
+\     document.querySelectorAll(\".nested\").forEach(function(elt) { elt.classList.add(\"active\"); } );\
+\     document.querySelectorAll(\".caret\").forEach(function(elt) {elt.classList.add(\"caret-down\");} );\
+\   } else {\
+\     document.querySelectorAll(\".nested\").forEach(function(elt) { elt.classList.remove(\"active\"); } );\
+\     document.querySelectorAll(\".caret\").forEach(function(elt) {elt.classList.remove(\"caret-down\");} );\
+\   }\
 \ }\
 \ "
