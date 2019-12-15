@@ -12,7 +12,7 @@ import Control.Monad.Trans.State.Strict
 import Control.Monad
 import Control.Monad.Trans.Class (lift)
 import System.Environment
-import Control.Applicative hiding (empty)
+--import Control.Applicative hiding (empty)
 import Control.Monad.IO.Class (liftIO)
 import Language.C
 import Language.C.Data.Ident

@@ -14,16 +14,15 @@ import Language.C.Analysis.TravMonad
 import Language.C.Analysis.SemRep
 import Language.C.Data.Ident
 import Language.C.Data.Position
---import qualified GHC.Generics as GHCG
+import qualified GHC.Generics as GHCG
 import System.FilePath
 import qualified Data.Map.Strict as Map
---import Data.Data
---import Data.Generics
+import Data.Data
+import Data.Generics
 import Language.C.Pretty
 import Text.PrettyPrint hiding ((<+>))
 import Text.Printf
 
-{-
 deriving instance GHCG.Generic IdentDecl
 deriving instance GHCG.Generic Decl
 deriving instance GHCG.Generic ObjDef
@@ -54,7 +53,6 @@ deriving instance GHCG.Generic CompTyKind
 deriving instance GHCG.Generic EnumTypeRef
 deriving instance GHCG.Generic EnumType
 deriving instance GHCG.Generic TypeQuals
--}
 
 type CFilter a b = a -> [b]
 
