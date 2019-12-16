@@ -173,12 +173,12 @@ isEqualExpr expr1 expr2 = False
 
 -- Returns all called functions
 searchFunCalls :: (MonadIO m) => CFunDef -> CTranslUnit -> CExpr -> StateT AnalyzeState m CExpr
-searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ _ _) ctranslunit ccall@(CCall _ _ ni) = do
+searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ _ _) ctranslunit ccall@(CCall funexpr _ ni) = do
 	liftIO $ putStrLn $ "In function " ++ funname ++ ": " ++ (render.pretty) ccall
 	printLog $ "\n====== searchFunCalls ==========="
 	printLog $ "current function = " ++ funname
 	printLog $ "Call at " ++ show ni ++ ": " ++ (render.pretty) ccall
-	idents <- chaseFun (fundef0,ccall)
+	idents <- chaseFun (fundef0,funexpr)
 	addNamesS idents
 	return ccall
 
@@ -200,16 +200,44 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 				chaseFun (fundef,expr)
 
 -- <expr>
+			CVar ident _ -> do
+				printLog $ "Found CVar " ++ (render.pretty) ident
+				let
+					CFunDef _ (CDeclr (Just funident) ((CFunDeclr (Right (argdecls,_)) _ _):_) _ _ _) _ _ _ = fundef
+					argident_is_ident (_,CDecl _ [(Just (CDeclr (Just argident) _ _ _ _),_,_)] _) = argident==funident
+					argident_is_ident _ = False
+					currentfunname = (render.pretty) funident
+				case filter argident_is_ident (zip [0..] argdecls) of
+					-- is formal parameter
+					[(argnum,_)] -> do
+						printLog $ name ++ " is arg with index " ++ show argnum ++ " of function " ++ currentfunname
+						printLog $ "Found these calls calling " ++ currentfunname ++ ":"
+						funss1 <- forM ((findAll funCallInFunDef) ctranslunit) $ \ (fundef',call'@(CCall callexpr args _)) -> do
+							let call_source_funident = getFunDefIdent fundef'
+							printLog $ "CALL: " ++ (render.pretty) call' ++ " in " ++ (render.pretty) call_source_funident
+							-- CONTINUE HERE
+{-
+							calledidents <- chaseFun (fundef',callexpr)
+							funss <- forM (filter (==fun_ident) calledidents) $ \ calledident -> do
+								let call_source_funident = getFunDefIdent fundef
+								printLog $ "#### " ++ (render.pretty) call' ++ " in " ++ (render.pretty) call_source_funident
+								chaseValue (call_source_funident:occuredfunctions) (fundef',args!!argnum)
+							return $ concat funss
+						return $ concat funss1
+-}
+
+					-- is no a param...
+					[] -> do
+						-- CONTINUE_HERE
+						return []
+
 			expr -> do
 				printLog $ "Chasing value " ++ (render.pretty) expr
 				chaseValue [ getFunDefIdent fundef ] (fundef,expr)
 
-	chaseFun (fundef,CVar ident _) = do
-		printLog $ "chaseFun found variable " ++ (render.pretty) ident
-		return [ident]
-
 	chaseFun (fundef,expr) = error $ "chaseFun " ++ (render.pretty) expr ++ " not implemented"
 
+{-
 	chaseValue :: (MonadIO m) => [Ident] -> (CFunDef,CExpr) -> StateT AnalyzeState m [Ident]
 
 -- occurs check
@@ -266,5 +294,6 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 				return []
 			asss -> do
 				concatMapM (chaseValue occuredfunctions) asss
+-}
 
 searchFunCalls _ _ cexpr = return cexpr
