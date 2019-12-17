@@ -90,7 +90,7 @@ funCall :: CFilter CExpr CExpr
 funCall ccall@(CCall fun args _) = [ccall]
 funCall _ = []
 
-funCallInFunDef :: CFilter CExtDecl (CFunDef,CExpr)
+funCallInFunDef :: (Typeable a,Data a) => CFilter a (CFunDef,CExpr)
 funCallInFunDef = findAll funDef >>> rememberInProduct (findAll funCall)
 
 getCallArgs :: CFilter CExpr [CExpr]
@@ -104,9 +104,9 @@ funDef _ = []
 funDefName :: CFilter CFunDef Ident
 funDefName fundef = [ getFunDefIdent fundef ]
 
-funDecl :: CFilter CExtDecl CDeclr
-funDecl (CDeclExt (CDecl _ [(Just cdeclr@(CDeclr _ _{-((CFunDeclr _ _ _):_)-} _ _ _),_,_)] _)) = [ cdeclr ]
-funDecl _ = []
+-- funDecl finds both declarations and definitions
+cDeclr :: CFilter CDeclr CDeclr
+cDeclr cdeclr@(CDeclr _ _ _ _ _) = [ cdeclr ]
 
 funDeclName :: CFilter CDeclr Ident
 funDeclName (CDeclr (Just ident) _ _ _ _) = [ ident ]
@@ -179,9 +179,8 @@ defFunName :: (Typeable a,Data a) => Ident -> CFilter a Ident
 defFunName ident = findAll funDef >>> funDefName
 
 declFunName :: (Typeable a,Data a) => Ident -> CFilter a Ident
-declFunName ident = findAll funDecl >>> funDeclName >>> filterPred (==ident)
+declFunName ident = findAll cDeclr >>> funDeclName >>> filterPred (==ident)
 
 getFunDefIdent :: CFunDef -> Ident
 getFunDefIdent (CFunDef _ (CDeclr (Just ident) _ _ _ _) _ _ _) = ident
 getFunDefIdent fundef = error $ "getFunDefIdent: " ++ (render.pretty) fundef ++ " has no name!"
-
