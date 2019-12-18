@@ -86,6 +86,10 @@ findOne filt =  take 1 . findAll filt
 isA :: (Typeable a,Data a,Typeable b,Data b) => CFilter a b -> CFilter a b
 isA = id
 
+isCVarWithIdent :: Ident -> CExpr -> Bool
+isCVarWithIdent ident (CVar cvarident _) = ident==cvarident
+isCVarWithIdent _ _ = False
+
 funCall :: CFilter CExpr CExpr
 funCall ccall@(CCall fun args _) = [ccall]
 funCall _ = []
@@ -108,9 +112,9 @@ funDefName fundef = [ getFunDefIdent fundef ]
 cDeclr :: CFilter CDeclr CDeclr
 cDeclr cdeclr@(CDeclr _ _ _ _ _) = [ cdeclr ]
 
-funDeclName :: CFilter CDeclr Ident
-funDeclName (CDeclr (Just ident) _ _ _ _) = [ ident ]
-funDeclName _ = []
+declrName :: CFilter CDeclr Ident
+declrName (CDeclr (Just ident) _ _ _ _) = [ ident ]
+declrName _ = []
 
 ternaryIf :: CFilter CExpr CExpr
 ternaryIf ccond@(CCond _ _ _ _) = [ccond]
@@ -178,8 +182,8 @@ varAssignmentWithFunDef pred = cAssignWithFunDef >>> filterSecondFirst pred
 defFunName :: (Typeable a,Data a) => Ident -> CFilter a Ident
 defFunName ident = findAll funDef >>> funDefName
 
-declFunName :: (Typeable a,Data a) => Ident -> CFilter a Ident
-declFunName ident = findAll cDeclr >>> funDeclName >>> filterPred (==ident)
+declName :: (Typeable a,Data a) => Ident -> CFilter a Ident
+declName ident = findAll cDeclr >>> declrName >>> filterPred (==ident)
 
 getFunDefIdent :: CFunDef -> Ident
 getFunDefIdent (CFunDef _ (CDeclr (Just ident) _ _ _ _) _ _ _) = ident
