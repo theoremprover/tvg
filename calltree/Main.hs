@@ -246,15 +246,33 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 										printLog $ "Found assignment to " ++ ident_name ++ " at " ++ show (nodeInfo expr')
 										chaseFun occured_funs ass
 
-			CMember structexpr member_ident False _ -> do
-				return []
+{-
+struct ABC {
+void def(..);
+}
+extern struct ABC abc;
+|
+abc.def = f;
 
+(abc.def)(..)
+-}
+			CMember structexpr member_ident False _ -> do
+				case structexpr of
+					CVar structident _ -> do
+						
+
+{-
 			CMember ptrexpr member_ident True _ -> do
 				return []
+-}
 
-			expr -> do
-				printLog $ "Strange FunCall: " ++ (render.pretty) expr
-				liftIO $ appendFile strangeCalls $ showPositionAndPretty expr ++ "\n"
-				return []
+			expr -> strangecall expr
 
+		where
+
+		strangecall expr = do
+			printLog $ "Strange FunCall: " ++ (render.pretty) expr
+			liftIO $ appendFile strangeCalls $ showPositionAndPretty expr ++ "\n"
+			return []
+		
 searchFunCalls _ _ cexpr = return cexpr
