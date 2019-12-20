@@ -23,7 +23,7 @@ import Language.C.System.GCC
 import System.FilePath
 import Text.Printf
 import qualified Data.Map.Strict as Map
-import Text.PrettyPrint
+import Text.PrettyPrint as TPP
 import Data.Generics
 import Data.List
 import Data.Maybe (fromJust)
@@ -35,6 +35,7 @@ import Interfaces.FZSolutionParser
 
 import DataTree
 import GlobDecls
+import CDSL
 
 
 _PRINT_TRACESTMTS_TRACE = False
@@ -53,7 +54,8 @@ gcc = newGCC "gcc"
 
 data CovVecState = CovVecState {
 	globDecls :: GlobalDecls,
-	newNameIndex :: Int
+	newNameIndex :: Int,
+	translUnit :: CTranslUnit
 	}
 
 type CovVecM = StateT CovVecState IO
@@ -76,8 +78,8 @@ main = do
 				Left errs -> forM_ errs print
 				Right (globdecls,soft_errors) -> do
 					forM_ soft_errors print
-					when _WRITE_GLOBALDECLS $ writeFile (filename++".globdecls.html") $ globdeclsToHTMLString globdecls
-					res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globdecls 1
+					when _WRITE_GLOBALDECLS $ writeFile ("analyzer" </> filename++".globdecls.html") $ globdeclsToHTMLString globdecls
+					res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globdecls 1 translunit
 					lss <- forM res $ \ (trace,constraints,model,solution) -> do
 						return $
 							[ "TRACE:" ] ++
@@ -123,7 +125,7 @@ getNewIdent name_prefix = do
 data TraceElem = TraceAssign Ident CAssignOp CExpr -- | TraceCondition CExpr
 	deriving Show
 instance Pretty TraceElem where
-	pretty (TraceAssign ident op expr) = pretty ident <+> text ":=" <+> pretty expr
+	pretty (TraceAssign ident op expr) = pretty ident TPP.<+> text ":=" TPP.<+> pretty expr
 
 type Trace = [TraceElem]
 type FunList = [Ident]
@@ -379,7 +381,7 @@ solveConstraintsM i constraints = do
 		map (render.pretty) constraints ++
 		[ "","MODEL:" ] ++
 		[ layout model ]
-	liftIO $ writeFile ("model" ++ show i ++ ".mzn") $ layout model
+	liftIO $ writeFile ("analyzer" </> "model" ++ show i ++ ".mzn") $ layout model
 	liftIO $ putStrLn "Running model..."
 	res <- liftIO $ runModel model (show i) 1 1
 	case res of
@@ -400,9 +402,13 @@ solveConstraintsM i constraints = do
 
 var2MZ :: (MZAST.Varr i) => Ident -> CovVecM (MZAST.GItem i)
 var2MZ ident@(Ident name _ _) = do
-	GlobalDecls _ tags typedefs <- gets globDecls
-	-- CONTINUE HERE
-	return $ MZAST.var (MZAST.Int) name
+	globdecls <- gets globDecls
+	case identType ident globdecls of
+		[ ty ] -> do
+			liftIO $ putStrLn $ name ++ " is of type " ++ (render.pretty) ty
+			return $ MZAST.var (MZAST.Int) name
+		tys -> error $ "Could not find unique VarDecl declaring " ++ name ++ " in GlobalDecls" ++ "\n" ++
+			"Found " ++ show (map (render.pretty) tys)
 
 constrToMZ :: Constraint -> CovVecM MZAST.ModelData
 constrToMZ constr = return $ MZAST.constraint (expr2constr . (flatten_not False) . (insert_eq0 True) $ constr)
