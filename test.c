@@ -6,6 +6,8 @@ struct a {
     double c;
 };
 
+int x = 7;
+
 int g(int z)
 {
     struct a ainst;

@@ -1,19 +1,64 @@
-{-# OPTIONS_GHC -fno-warn-tabs -Wno-unrecognised-pragmas #-}
-{-# LANGUAGE TupleSections,RankNTypes #-}
-{-# HLINT ignore "Use list literal pattern" #-}
-{-# HLINT ignore "Redundant do" #-}
-{-# HLINT ignore "Redundant bracket" #-}
-{-# HLINT ignore "Redundant $" #-}
-{-# HLINT ignore "Eta reduce" #-}
+{-# OPTIONS_GHC -fno-warn-tabs #-}
+{-# LANGUAGE UnicodeSyntax,LambdaCase #-}
 
 module Main where
 
+import System.Environment
+import System.FilePath
+import Language.C
+import Language.C.Data.Ident
+import Language.C.Analysis.AstAnalysis
+import Language.C.Analysis.TravMonad
+import Language.C.Analysis.SemRep
+import Language.C.System.GCC
+import Control.Monad
+import Prelude.Unicode
+
+import DataTree
+import GlobDecls
+
+analyzerPath = "analyzer"
+
+main = do
+	gcc:filename:funname:opts <- getArgs >>= return . \case
+		[] -> [ "gcc","test.c","f",[] ]
+		args -> args
+
+	parseCFile (newGCC gcc) Nothing [] filename >>= \case
+		Left err -> error $ show err
+		Right translunit@(CTranslUnit extdecls _) -> do
+			when ("-writeAST" ∈ opts) $
+				writeFile (analyzerPath </> filename <.> "ast.html") $ genericToHTMLString translunit
+			case runTrav_ $ analyseAST translunit of
+				Left errs -> putStrLn "ERRORS:" >> forM_ errs print
+				Right (globdecls,soft_errors) -> do
+					putStrLn "Soft errors:" >> forM_ soft_errors print
+					when ("-writeGlobalDecls" ∈ opts) $
+						writeFile (analyzerPath </> filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
+
+{-
+					res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globdecls 1 translunit
+					lss <- forM res $ \ (trace,constraints,model,solution) -> do
+						return $
+							[ "TRACE:" ] ++
+							map (render.pretty) trace ++
+							[ "","CONSTRAINTS:" ] ++
+							map (render.pretty) constraints ++
+							[ "","MODEL:" ] ++
+							[ layout model ] ++
+							[ "","SOLUTION:" ] ++
+							[ show solution ] ++
+							[ "","------","" ]
+					writeFile traces_filename (unlines $ concat lss)
+-}
+
+{-
 import Control.Monad.Trans.State.Strict
 import Control.Monad
 import Control.Monad.Trans.Class (lift)
 import System.Environment
 --import Control.Applicative hiding (empty)
-import Control.Monad.IO.Class (liftIO)
+import Control.Monad.IO.Class (liftIO,MonadIO)
 import Language.C
 import Language.C.Data.Ident
 import Language.C.Analysis.AstAnalysis
@@ -40,6 +85,7 @@ import CDSL
 
 _PRINT_TRACESTMTS_TRACE = False
 _WRITE_GLOBALDECLS = True
+_WRITE_AST = True
 
 {--
 stack build :analyzer-exe
@@ -73,7 +119,8 @@ main = do
 	case mb_ast of
 		Left err -> error $ show err
 		Right translunit@(CTranslUnit extdecls _) -> do
-			writeFile (filename++".ast.html") $ genericToHTMLString translunit
+--			translunit <- uniquifyIdents translunit1
+			when _WRITE_AST $ writeFile ("analyzer" </> filename ++ ".ast.html") $ genericToHTMLString translunit
 			case runTrav_ $ analyseAST translunit of
 				Left errs -> forM_ errs print
 				Right (globdecls,soft_errors) -> do
@@ -93,6 +140,33 @@ main = do
 							[ "","------","" ]
 					writeFile traces_filename (unlines $ concat lss)
 
+{-
+data UniquifyState = UniquifyState {
+	uniqueIndexUS :: Int,
+	envUS :: [(Ident,Ident)]
+	}
+initialUniquifyState = UniquifyState 1 []
+
+uniquifyIdents :: (MonadIO m) => CTranslUnit -> m CTranslUnit
+uniquifyIdents ctranslunit = everywhere (mkT $ searchfundefs) ctranslunit
+	where
+	searchfundefs :: CFunDef -> CFunDef
+	searchfundefs (CFunDef declspecs fundeclr cdecls stmt ni) = CFunDef declspecs fundeclr cdecls' stmt' ni
+		where
+		
+		stmt' = everywhere (mkT searchandreplace) stmt
+		searchandreplace :: CStat -> CStat
+		searchandreplace (CCompound idents cbis ni) = CCompound idents cbis' ni where
+			cbis' = 
+		
+		
+		(cdecls',env) = runStateT (everywhereM (mkM collectandreplace) cdecls) []
+		
+		collectandreplace :: 
+		
+		stmt' = searchandreplace env stmt
+-}
+		
 type Constraint = CExpr
 
 lookupFunM :: Ident -> CovVecM FunDef
@@ -402,6 +476,8 @@ solveConstraintsM i constraints = do
 
 var2MZ :: (MZAST.Varr i) => Ident -> CovVecM (MZAST.GItem i)
 var2MZ ident@(Ident name _ _) = do
+	return $ MZAST.var (MZAST.Int) name
+{-
 	globdecls <- gets globDecls
 	case identType ident globdecls of
 		[ ty ] -> do
@@ -409,6 +485,7 @@ var2MZ ident@(Ident name _ _) = do
 			return $ MZAST.var (MZAST.Int) name
 		tys -> error $ "Could not find unique VarDecl declaring " ++ name ++ " in GlobalDecls" ++ "\n" ++
 			"Found " ++ show (map (render.pretty) tys)
+-}
 
 constrToMZ :: Constraint -> CovVecM MZAST.ModelData
 constrToMZ constr = return $ MZAST.constraint (expr2constr . (flatten_not False) . (insert_eq0 True) $ constr)
@@ -468,3 +545,4 @@ constrToMZ constr = return $ MZAST.constraint (expr2constr . (flatten_not False)
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
 -- TODO: a->normal, enumerations, global variables
+-}

@@ -35,6 +35,7 @@ dependencies:
 - haskelzinc
 - extra
 - blaze-html
+- base-unicode-symbols
 
 library:
   source-dirs: src
