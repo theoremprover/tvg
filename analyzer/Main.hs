@@ -13,6 +13,13 @@ import Language.C.Analysis.SemRep
 import Language.C.System.GCC
 import Control.Monad
 import Prelude.Unicode
+import Control.Monad.Trans.State.Strict
+import Interfaces.FZSolutionParser
+import qualified Interfaces.MZAST as MZAST
+import Interfaces.MZPrinter
+import Control.Monad.IO.Class (liftIO,MonadIO)
+import Data.Generics
+import qualified Data.Map.Strict as Map
 
 import DataTree
 import GlobDecls
@@ -21,12 +28,12 @@ analyzerPath = "analyzer"
 
 main = do
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> [ "gcc","test.c","f",[] ]
+		[] -> "gcc" : "test.c" : "f" : []
 		args -> args
 
 	parseCFile (newGCC gcc) Nothing [] filename >>= \case
 		Left err -> error $ show err
-		Right translunit@(CTranslUnit extdecls _) -> do
+		Right translunit -> do
 			when ("-writeAST" ∈ opts) $
 				writeFile (analyzerPath </> filename <.> "ast.html") $ genericToHTMLString translunit
 			case runTrav_ $ analyseAST translunit of
@@ -35,6 +42,13 @@ main = do
 					putStrLn "Soft errors:" >> forM_ soft_errors print
 					when ("-writeGlobalDecls" ∈ opts) $
 						writeFile (analyzerPath </> filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
+					covvectors <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
+					putStrLn "SOLUTIONS:"
+					forM_ covvectors $ \ (model,solution) -> do
+						putStrLn "MODEL:"
+						putStrLn $ layout model
+						putStrLn "SOLUTION:"
+						print solution
 
 {-
 					res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globdecls 1 translunit
@@ -51,6 +65,57 @@ main = do
 							[ "","------","" ]
 					writeFile traces_filename (unlines $ concat lss)
 -}
+
+{-
+uniquifyIdents :: (MonadIO m) => CTranslUnit -> m CTranslUnit
+uniquifyIdents translunit = evalStateT (everywhereM (mkM searchfundefs) translunit) 1
+	where
+	searchfundefs :: (MonadIO m) => CFunDef -> StateT Int m CFunDef
+	searchfundefs (CFunDef declspecs fundeclr cdecls stmt ni) = do
+		let cdecls' = error ""
+		let stmt' = error ""
+		return $ CFunDef declspecs fundeclr cdecls' stmt' ni
+-}
+
+data CovVecState = CovVecState {
+	globDeclsCVS    :: GlobalDecls,
+	newNameIndexCVS :: Int,
+	translUnitCVS   :: CTranslUnit
+	}
+
+type CovVecM = StateT CovVecState IO
+
+lookupFunM :: Ident -> CovVecM FunDef
+lookupFunM ident = do
+	funs <- gets (gObjs.globDeclsCVS)
+	case Map.lookup ident funs of
+		Just (FunctionDef fundef) -> return fundef
+		_ -> error $ "Function " ++ (show ident) ++ " not found"
+
+createNewIdent :: String -> CovVecM Ident
+createNewIdent name_prefix = do
+	new_var_num <- gets newNameIndexCVS
+	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
+	return $ internalIdent (name_prefix ++ "$" ++ show new_var_num)
+
+type Env = [(Ident,Ident)]
+
+declaration2EnvItem :: Declaration n => n -> CovVecM (Ident,Ident)
+declaration2EnvItem decl = do
+	let oldident = declIdent decl
+	newident <- createNewIdent (identToString oldident)
+	return (oldident,newident)
+
+covVectorsM :: String -> CovVecM [([MZAST.ModelData],Maybe Solution)]
+covVectorsM funname = do
+	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
+	env <- forM paramdecls declaration2EnvItem
+	followTraceM env body
+
+followTraceM :: Env -> CStat -> CovVecM [([MZAST.ModelData],Maybe Solution)]
+followTraceM env (CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _) = do
+	-- continue here
+	return []
 
 {-
 import Control.Monad.Trans.State.Strict

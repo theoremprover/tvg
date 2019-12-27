@@ -1,20 +1,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-struct a {
-    int b;
-    double c;
-};
-
 int x = 7;
 
 int g(int z)
 {
-    struct a ainst;
-    ainst.b;
-    struct a * ptr = & ainst;
-    ptr -> c;
-
 	if(z>5)
 	{
 		return(2*z);
@@ -30,19 +20,20 @@ int g(int z)
 
 int f(int x,int y)
 {
-    x += y;
-    if((x<<1) == (x<<2))
+    int z;
+    if(x>y)
     {
-        x += 2;
+        z = g(x)+g(y);
     }
 
-	return(x+1);
+	return(z+1);
 }
 
 int main(int argc,char* argv[])
 {
     int x = atoi(argv[1]);
-    int ret = g(x);
-    printf("f(%i)=%i\n",x,ret);
+    int y = atoi(argv[2]);
+    int ret = f(x,y);
+    printf("f(%i,%i)=%i\n",x,y,ret);
     return 0;
 }
