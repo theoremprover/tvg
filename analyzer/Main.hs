@@ -118,7 +118,7 @@ covVectorsM funname = do
 	param_env <- forM paramdecls declaration2EnvItem
 	glob_env <- forM globdecls declaration2EnvItem
 	let env = param_env++glob_env
-	printEnv env
+--	printEnv env
 	followTracesM [env] [] [[CBlockStmt body]] >>= mapM foldTraceM
 
 -- UNFOLD TRACES
@@ -135,7 +135,9 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 			Nothing        -> followTracesM envs trace ( (cond_cbi : rest) : rest2 )
 			Just else_stmt -> followTracesM envs trace ( (cond_cbi : CBlockStmt else_stmt : rest) : rest2 )
 		return $ then_traces ++ else_traces
-	CReturn mb_ret_expr _ -> followTracesM envs trace ([ CBlockStmt (CExpr mb_ret_expr undefNode) ] : rest2)
+	CReturn mb_ret_expr _ -> do
+		let retval_ident = internalIdent (name_prefix ++ "_$" ++ show new_var_num)
+		followTracesM envs trace ([ CBlockStmt (CExpr mb_ret_expr undefNode) ] : rest2)
 	CExpr (Just (CAssign CAssignOp (CVar ident _) assigned_expr _)) _ ->
 		followTracesM envs (Assignment ident assigned_expr : trace) (rest:rest2)
 	CExpr (Just other_expr) _ ->

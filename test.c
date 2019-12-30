@@ -1,22 +1,34 @@
 //#include <stdio.h>
 //#include <stdlib.h>
 
-int x = 7;
+int x1 = 7;
 
 enum Zahl { EINS, ZWEI };
 
 typedef int MYINT;
 
-float f(MYINT x)
+int g(int x)
 {
-    float z = 0.1;
-    if(x>7)
+    if(x>=0)
+}
+
+short f(MYINT x,enum Zahl z)
+{
+    int x1 = x*2;
+    if(x1>7)
     {
-        short abc;
-        z = z+1;
+        short abc = x+x1;
+        return(abc*2);
+    }
+    else
+    {
+        if(z==EINS)
+        {
+            x1 = x1-2;
+        }
     }
 
-	return(z+1);
+	return((short)(x1 % 0xffff));
 }
 
 //int main(int argc,char* argv[])
@@ -24,7 +36,7 @@ int main()
 {
 //    int x = atoi(argv[1]);
 //    int y = atoi(argv[2]);
-    int ret = f(x);
+    int ret = f(5,EINS);
 //    printf("f(%i)=%i\n",x,ret);
     return 0;
 }
