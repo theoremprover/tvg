@@ -1,39 +1,30 @@
-#include <stdio.h>
-#include <stdlib.h>
+//#include <stdio.h>
+//#include <stdlib.h>
 
 int x = 7;
 
-int g(int z)
+enum Zahl { EINS, ZWEI };
+
+typedef int MYINT;
+
+float f(MYINT x)
 {
-	if(z>5)
-	{
-		return(2*z);
-    }
-
-	else
-	{
-		z = z + 1;
-	}
-
-	return(z+10);
-}
-
-int f(int x,int y)
-{
-    int z;
-    if(x>y)
+    float z = 0.1;
+    if(x>7)
     {
-        z = g(x)+g(y);
+        short abc;
+        z = z+1;
     }
 
 	return(z+1);
 }
 
-int main(int argc,char* argv[])
+//int main(int argc,char* argv[])
+int main()
 {
-    int x = atoi(argv[1]);
-    int y = atoi(argv[2]);
-    int ret = f(x,y);
-    printf("f(%i,%i)=%i\n",x,y,ret);
+//    int x = atoi(argv[1]);
+//    int y = atoi(argv[2]);
+    int ret = f(x);
+//    printf("f(%i)=%i\n",x,ret);
     return 0;
 }

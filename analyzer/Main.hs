@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
-{-# LANGUAGE UnicodeSyntax,LambdaCase #-}
+{-# LANGUAGE UnicodeSyntax,LambdaCase,ScopedTypeVariables #-}
 
 module Main where
 
@@ -20,6 +20,7 @@ import Interfaces.MZPrinter
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
 import qualified Data.Map.Strict as Map
+import Text.PrettyPrint
 
 import DataTree
 import GlobDecls
@@ -28,7 +29,7 @@ analyzerPath = "analyzer"
 
 main = do
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : "test.c" : "f" : []
+		[] -> "gcc" : "test.c" : "f" : [{-"-writeAST"-}]
 		args -> args
 
 	parseCFile (newGCC gcc) Nothing [] filename >>= \case
@@ -39,14 +40,13 @@ main = do
 			case runTrav_ $ analyseAST translunit of
 				Left errs -> putStrLn "ERRORS:" >> forM_ errs print
 				Right (globdecls,soft_errors) -> do
-					putStrLn "Soft errors:" >> forM_ soft_errors print
+					when (not $ null soft_errors) $ putStrLn "Soft errors:" >> forM_ soft_errors print
 					when ("-writeGlobalDecls" ∈ opts) $
 						writeFile (analyzerPath </> filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 					covvectors <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
-					putStrLn "SOLUTIONS:"
 					forM_ covvectors $ \ (model,solution) -> do
-						putStrLn "MODEL:"
-						putStrLn $ layout model
+						putStrLn "\nMODEL:"
+--						putStrLn $ layout model
 						putStrLn "SOLUTION:"
 						print solution
 
@@ -64,17 +64,6 @@ main = do
 							[ show solution ] ++
 							[ "","------","" ]
 					writeFile traces_filename (unlines $ concat lss)
--}
-
-{-
-uniquifyIdents :: (MonadIO m) => CTranslUnit -> m CTranslUnit
-uniquifyIdents translunit = evalStateT (everywhereM (mkM searchfundefs) translunit) 1
-	where
-	searchfundefs :: (MonadIO m) => CFunDef -> StateT Int m CFunDef
-	searchfundefs (CFunDef declspecs fundeclr cdecls stmt ni) = do
-		let cdecls' = error ""
-		let stmt' = error ""
-		return $ CFunDef declspecs fundeclr cdecls' stmt' ni
 -}
 
 data CovVecState = CovVecState {
@@ -96,26 +85,97 @@ createNewIdent :: String -> CovVecM Ident
 createNewIdent name_prefix = do
 	new_var_num <- gets newNameIndexCVS
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
-	return $ internalIdent (name_prefix ++ "$" ++ show new_var_num)
+	return $ internalIdent (name_prefix ++ "_$" ++ show new_var_num)
 
-type Env = [(Ident,Ident)]
+type EnvItem = (Ident,(Ident,Type))
+type Env = [EnvItem]
 
-declaration2EnvItem :: Declaration n => n -> CovVecM (Ident,Ident)
+declaration2EnvItem :: Declaration decl => decl -> CovVecM EnvItem
 declaration2EnvItem decl = do
-	let oldident = declIdent decl
 	newident <- createNewIdent (identToString oldident)
-	return (oldident,newident)
+	return (oldident,(newident,ty))
+	where
+	VarDecl (VarName oldident _) _ ty = getVarDecl decl
 
-covVectorsM :: String -> CovVecM [([MZAST.ModelData],Maybe Solution)]
+printEnv :: (MonadIO m) => Env -> m ()
+printEnv env = do
+	let env' = filter (\ (ident,_) -> not (isBuiltinPos $ posOfNode $ nodeInfo ident)) env
+	liftIO $ do
+		forM_ env' $ \ (idold,(idnew,ty)) -> putStrLn $ (render.pretty) idold ++ " |-> " ++ (render.pretty) idnew ++ " :: " ++ (render.pretty) ty
+		putStrLn "Leaving out builtin bindings.\n"
+
+data Assignment = Assignment Ident CExpr
+instance Show Assignment where
+	show (Assignment ident expr) = (render.pretty) ident ++ " := " ++ (render.pretty) expr
+type Trace = [Assignment]
+
+type TraceAnalysisResult = ([MZAST.ModelData],Maybe Solution)
+
+covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
 	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
-	env <- forM paramdecls declaration2EnvItem
-	followTraceM env body
+	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
+	param_env <- forM paramdecls declaration2EnvItem
+	glob_env <- forM globdecls declaration2EnvItem
+	let env = param_env++glob_env
+	printEnv env
+	followTracesM [env] [] [[CBlockStmt body]] >>= mapM foldTraceM
 
-followTraceM :: Env -> CStat -> CovVecM [([MZAST.ModelData],Maybe Solution)]
-followTraceM env (CExpr (Just (CAssign assign_op (CVar ident _) assigned_expr _)) _) = do
-	-- continue here
-	return []
+-- UNFOLD TRACES
+
+followTracesM :: [Env] -> Trace -> [[CBlockItem]] -> CovVecM [Trace]
+
+followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
+	CLabel _ cstat _ _ -> followTracesM envs trace ((CBlockStmt cstat:rest):rest2)
+	CCompound _ cbis _ -> followTracesM ([]:envs) trace (cbis : rest : rest2)
+	CIf cond then_stmt mb_else_stmt _ -> do
+		let cond_cbi = CBlockStmt (CExpr (Just cond) undefNode)
+		then_traces <- followTracesM envs trace ( (cond_cbi : CBlockStmt then_stmt : rest) : rest2 )
+		else_traces <- case mb_else_stmt of
+			Nothing        -> followTracesM envs trace ( (cond_cbi : rest) : rest2 )
+			Just else_stmt -> followTracesM envs trace ( (cond_cbi : CBlockStmt else_stmt : rest) : rest2 )
+		return $ then_traces ++ else_traces
+	CReturn mb_ret_expr _ -> followTracesM envs trace ([ CBlockStmt (CExpr mb_ret_expr undefNode) ] : rest2)
+	CExpr (Just (CAssign CAssignOp (CVar ident _) assigned_expr _)) _ ->
+		followTracesM envs (Assignment ident assigned_expr : trace) (rest:rest2)
+	CExpr (Just other_expr) _ ->
+		followTracesM envs trace (rest:rest2) -- TODO! Could contain function calls!
+
+followTracesM (env:envs) trace ( (CBlockDecl cdecl : rest) : rest2 ) = do
+	case runTrav [] (withExtDeclHandler (analyseDecl True cdecl) handledecl) of
+		Left errs -> do
+			liftIO $ putStrLn "ERRORS:" >> forM_ errs print
+			error "runTrav analyseDecl"
+		Right (_,decls) -> do
+{-
+			liftIO $ do
+				putStrLn "decls:"
+				mapM_ (print.(render.pretty)) (userState decls)
+-}
+			let identdecls = userState decls
+			new_envitems <- mapM declaration2EnvItem identdecls
+			let new_inits = concatMap objdef2assign identdecls
+			followTracesM ((new_envitems++env):envs) (new_inits++trace) (rest:rest2)
+	where
+	handledecl (LocalEvent identdecl) = modifyUserState (identdecl:)
+	handledecl _ = return ()
+	objdef2assign objdef@(ObjectDef (ObjDef _ (Just (CInitExpr expr _)) _)) = [ Assignment (declIdent objdef) expr ]
+	objdef2assign objdef@(ObjectDef (ObjDef _ (Just (CInitList _ _)) _)) = error "objdef2assign: CInitList not yet implemented"
+	objdef2assign _ = []
+
+followTracesM (_:restenvs) trace ([]:rest2) = followTracesM restenvs trace rest2
+
+followTracesM _ trace [] = return [trace]
+
+followTracesM _ _ ((cbi:_):_) = error $ "followTraceM " ++ (render.pretty) cbi ++ " not implemented yet."
+
+
+-- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
+
+foldTraceM :: Trace -> CovVecM TraceAnalysisResult
+foldTraceM trace = do
+	liftIO $ print trace
+	return ([],Nothing)
 
 {-
 import Control.Monad.Trans.State.Strict
