@@ -143,10 +143,14 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 	CExpr (Just other_expr) _ ->
 		followTracesM envs trace (rest:rest2) -- TODO! Could contain function calls!
 
-followTracesM (env:envs) trace ( (CBlockDecl (CDecl _ triples _) : rest) : rest2 ) = do
-	forM triples $ \ (Just 
--- CONTINUE HERE!
+followTracesM (env:envs) trace ( (CBlockDecl cdecl : rest) : rest2 ) = do
 {-
+	decls_inits <- forM triples $ \ (Just ident,mb_init,Nothing) -> do
+		ident' <- 
+		case mb_init of
+		
+-- CONTINUE HERE!
+-}
 	case runTrav [] (withExtDeclHandler (analyseDecl True cdecl) handledecl) of
 		Left errs -> do
 			liftIO $ putStrLn "ERRORS:" >> forM_ errs print
@@ -161,7 +165,6 @@ followTracesM (env:envs) trace ( (CBlockDecl (CDecl _ triples _) : rest) : rest2
 			new_envitems <- mapM declaration2EnvItem identdecls
 			let new_inits = concatMap objdef2assign identdecls
 			followTracesM ((new_envitems++env):envs) (new_inits++trace) (rest:rest2)
--}
 	where
 	handledecl (LocalEvent identdecl) = modifyUserState (identdecl:)
 	handledecl _ = return ()
