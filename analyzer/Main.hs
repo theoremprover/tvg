@@ -136,14 +136,17 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 			Just else_stmt -> followTracesM envs trace ( (cond_cbi : CBlockStmt else_stmt : rest) : rest2 )
 		return $ then_traces ++ else_traces
 	CReturn mb_ret_expr _ -> do
-		let retval_ident = internalIdent (name_prefix ++ "_$" ++ show new_var_num)
+		retval_ident <- createNewIdent "ret"
 		followTracesM envs trace ([ CBlockStmt (CExpr mb_ret_expr undefNode) ] : rest2)
 	CExpr (Just (CAssign CAssignOp (CVar ident _) assigned_expr _)) _ ->
 		followTracesM envs (Assignment ident assigned_expr : trace) (rest:rest2)
 	CExpr (Just other_expr) _ ->
 		followTracesM envs trace (rest:rest2) -- TODO! Could contain function calls!
 
-followTracesM (env:envs) trace ( (CBlockDecl cdecl : rest) : rest2 ) = do
+followTracesM (env:envs) trace ( (CBlockDecl (CDecl _ triples _) : rest) : rest2 ) = do
+	forM triples $ \ (Just 
+-- CONTINUE HERE!
+{-
 	case runTrav [] (withExtDeclHandler (analyseDecl True cdecl) handledecl) of
 		Left errs -> do
 			liftIO $ putStrLn "ERRORS:" >> forM_ errs print
@@ -158,6 +161,7 @@ followTracesM (env:envs) trace ( (CBlockDecl cdecl : rest) : rest2 ) = do
 			new_envitems <- mapM declaration2EnvItem identdecls
 			let new_inits = concatMap objdef2assign identdecls
 			followTracesM ((new_envitems++env):envs) (new_inits++trace) (rest:rest2)
+-}
 	where
 	handledecl (LocalEvent identdecl) = modifyUserState (identdecl:)
 	handledecl _ = return ()

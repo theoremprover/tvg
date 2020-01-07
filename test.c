@@ -7,11 +7,6 @@ enum Zahl { EINS, ZWEI };
 
 typedef int MYINT;
 
-int g(int x)
-{
-    if(x>=0)
-}
-
 short f(MYINT x,enum Zahl z)
 {
     int x1 = x*2;
