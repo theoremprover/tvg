@@ -90,10 +90,13 @@ createNewIdent name_prefix = do
 type EnvItem = (Ident,(Ident,Type))
 type Env = [EnvItem]
 
-declaration2EnvItem :: Declaration decl => decl -> CovVecM EnvItem
-declaration2EnvItem decl = do
+oldident2EnvItem :: Ident -> CovVecM EnvItem
+oldident2EnvItem ty oldident = do
 	newident <- createNewIdent (identToString oldident)
 	return (oldident,(newident,ty))
+
+declaration2EnvItem :: Declaration decl => decl -> CovVecM EnvItem
+declaration2EnvItem decl = oldident2EnvItem ty oldident
 	where
 	VarDecl (VarName oldident _) _ ty = getVarDecl decl
 
@@ -143,24 +146,28 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 	CExpr (Just other_expr) _ ->
 		followTracesM envs trace (rest:rest2) -- TODO! Could contain function calls!
 
-followTracesM (env:envs) trace ( (CBlockDecl cdecl : rest) : rest2 ) = do
-{-
+followTracesM (env:envs) trace ( (CBlockDecl cdecl@(CDecl _ triples _) : rest) : rest2 ) = do
 	decls_inits <- forM triples $ \ (Just ident,mb_init,Nothing) -> do
-		ident' <- 
-		case mb_init of
+		let ty = DirectType TyVoid noTypeQuals [] -- find out ty here
+		envitem <- oldident2EnvItem ty ident
+		let assign_items = case mb_init of
+			Nothing -> []
+			Just expr -> [ Assignment ident expr ]
+		return (envitem,assign_items)
+	followTracesM ((map fst decls_inits ++ env):envs) (concatMap snd decls_inits ++ trace) (rest:rest2)
 		
 -- CONTINUE HERE!
--}
+{-
 	case runTrav [] (withExtDeclHandler (analyseDecl True cdecl) handledecl) of
 		Left errs -> do
 			liftIO $ putStrLn "ERRORS:" >> forM_ errs print
 			error "runTrav analyseDecl"
 		Right (_,decls) -> do
+-}
 {-
 			liftIO $ do
 				putStrLn "decls:"
 				mapM_ (print.(render.pretty)) (userState decls)
--}
 			let identdecls = userState decls
 			new_envitems <- mapM declaration2EnvItem identdecls
 			let new_inits = concatMap objdef2assign identdecls
@@ -171,6 +178,7 @@ followTracesM (env:envs) trace ( (CBlockDecl cdecl : rest) : rest2 ) = do
 	objdef2assign objdef@(ObjectDef (ObjDef _ (Just (CInitExpr expr _)) _)) = [ Assignment (declIdent objdef) expr ]
 	objdef2assign objdef@(ObjectDef (ObjDef _ (Just (CInitList _ _)) _)) = error "objdef2assign: CInitList not yet implemented"
 	objdef2assign _ = []
+-}
 
 followTracesM (_:restenvs) trace ([]:rest2) = followTracesM restenvs trace rest2
 
