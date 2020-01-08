@@ -64,7 +64,7 @@ maini (gccexe:args) = do
 --	createDirectory outputDir
 	getCurrentTime >>= return.(++"\n\n").show >>= writeFile strangeCalls
 	getCurrentTime >>= return.(++"\n\n").show >>= writeFile logFile
-	
+
 	let (preprocess_args,other_args) = partition (\ arg -> any (`isPrefixOf` arg) ["-I","-D"]) args
 	pot_filess <- forM other_args getsrcfiles
 	let pot_files =  nub $ concat pot_filess  

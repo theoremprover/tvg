@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
-{-# LANGUAGE UnicodeSyntax,LambdaCase,ScopedTypeVariables #-}
+{-# LANGUAGE UnicodeSyntax,LambdaCase,ScopedTypeVariables,TypeSynonymInstances,FlexibleInstances #-}
 
 module Main where
 
@@ -21,17 +21,27 @@ import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
+import Data.Time.Clock
+import Data.Foldable
 
 import DataTree
 import GlobDecls
 
 analyzerPath = "analyzer"
+logFile = analyzerPath </> "log.txt"
+
+printLog :: (MonadIO m) => String -> m ()
+printLog text = liftIO $ do
+	putStrLn text
+	appendFile logFile (text++"\n")
 
 main = do
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : "test.c" : "f" : [{-"-writeAST"-}]
+		[] -> "gcc" : "test.c" : "f" : ["-writeAST"]
 		args -> args
 
+	getCurrentTime >>= return.(++"\n\n").show >>= writeFile logFile
+	
 	parseCFile (newGCC gcc) Nothing [] filename >>= \case
 		Left err -> error $ show err
 		Right translunit -> do
@@ -44,27 +54,15 @@ main = do
 					when ("-writeGlobalDecls" ∈ opts) $
 						writeFile (analyzerPath </> filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 					covvectors <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
-					forM_ covvectors $ \ (model,solution) -> do
-						putStrLn "\nMODEL:"
---						putStrLn $ layout model
-						putStrLn "SOLUTION:"
-						print solution
-
-{-
-					res <- evalStateT (funCovVectorsM (builtinIdent funname)) $ CovVecState globdecls 1 translunit
-					lss <- forM res $ \ (trace,constraints,model,solution) -> do
-						return $
-							[ "TRACE:" ] ++
-							map (render.pretty) trace ++
-							[ "","CONSTRAINTS:" ] ++
-							map (render.pretty) constraints ++
-							[ "","MODEL:" ] ++
-							[ layout model ] ++
-							[ "","SOLUTION:" ] ++
-							[ show solution ] ++
-							[ "","------","" ]
-					writeFile traces_filename (unlines $ concat lss)
--}
+					forM_ covvectors $ \ (trace,model,solution) -> printLog $ unlines $
+						[ "","=== TRACE =======================" ] ++
+						map show trace ++
+						[ "",
+						"--- MODEL -------------------------",
+--						layout model
+						"",
+						"--- SOLUTION ----------------------",
+						show solution ]
 
 data CovVecState = CovVecState {
 	globDeclsCVS    :: GlobalDecls,
@@ -74,12 +72,19 @@ data CovVecState = CovVecState {
 
 type CovVecM = StateT CovVecState IO
 
+lookupTypeDefM :: Ident -> CovVecM Type
+lookupTypeDefM ident = do
+	typedefs <- gets (gTypeDefs.globDeclsCVS)
+	case Map.lookup ident typedefs of
+		Just (TypeDef _ ty _ _) -> return ty
+		Nothing -> error $ "TypeDef " ++ (show ident) ++ " not found"
+
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
 	funs <- gets (gObjs.globDeclsCVS)
 	case Map.lookup ident funs of
 		Just (FunctionDef fundef) -> return fundef
-		_ -> error $ "Function " ++ (show ident) ++ " not found"
+		Nothing -> error $ "Function " ++ (show ident) ++ " not found"
 
 createNewIdent :: String -> CovVecM Ident
 createNewIdent name_prefix = do
@@ -88,9 +93,11 @@ createNewIdent name_prefix = do
 	return $ internalIdent (name_prefix ++ "_$" ++ show new_var_num)
 
 type EnvItem = (Ident,(Ident,Type))
+instance Pretty EnvItem where
+	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> pretty idnew <+> text " :: " <+> pretty ty
 type Env = [EnvItem]
 
-oldident2EnvItem :: Ident -> CovVecM EnvItem
+oldident2EnvItem :: Type -> Ident -> CovVecM EnvItem
 oldident2EnvItem ty oldident = do
 	newident <- createNewIdent (identToString oldident)
 	return (oldident,(newident,ty))
@@ -100,19 +107,23 @@ declaration2EnvItem decl = oldident2EnvItem ty oldident
 	where
 	VarDecl (VarName oldident _) _ ty = getVarDecl decl
 
+{-
 printEnv :: (MonadIO m) => Env -> m ()
 printEnv env = do
 	let env' = filter (\ (ident,_) -> not (isBuiltinPos $ posOfNode $ nodeInfo ident)) env
 	liftIO $ do
-		forM_ env' $ \ (idold,(idnew,ty)) -> putStrLn $ (render.pretty) idold ++ " |-> " ++ (render.pretty) idnew ++ " :: " ++ (render.pretty) ty
-		putStrLn "Leaving out builtin bindings.\n"
+		forM_ env' (putStrLn.render.pretty)
+		printLog "Leaving out builtin bindings.\n"
+-}
 
-data Assignment = Assignment Ident CExpr
-instance Show Assignment where
-	show (Assignment ident expr) = (render.pretty) ident ++ " := " ++ (render.pretty) expr
-type Trace = [Assignment]
+data TraceElem = Assignment Ident CExpr | Condition CExpr | NewDeclaration EnvItem
+instance Show TraceElem where
+	show (Assignment ident expr)  = (render.pretty) ident ++ " := " ++ (render.pretty) expr
+	show (Condition expr)         = "COND " ++ (render.pretty) expr
+	show (NewDeclaration envitem) = "DECL " ++ (render.pretty) envitem
+type Trace = [TraceElem]
 
-type TraceAnalysisResult = ([MZAST.ModelData],Maybe Solution)
+type TraceAnalysisResult = (Trace,[MZAST.ModelData],Maybe Solution)
 
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
@@ -120,7 +131,7 @@ covVectorsM funname = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
 	param_env <- forM paramdecls declaration2EnvItem
 	glob_env <- forM globdecls declaration2EnvItem
-	let env = param_env++glob_env
+	let env = param_env ++ glob_env
 --	printEnv env
 	followTracesM [env] [] [[CBlockStmt body]] >>= mapM foldTraceM
 
@@ -132,53 +143,31 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 	CLabel _ cstat _ _ -> followTracesM envs trace ((CBlockStmt cstat:rest):rest2)
 	CCompound _ cbis _ -> followTracesM ([]:envs) trace (cbis : rest : rest2)
 	CIf cond then_stmt mb_else_stmt _ -> do
-		let cond_cbi = CBlockStmt (CExpr (Just cond) undefNode)
-		then_traces <- followTracesM envs trace ( (cond_cbi : CBlockStmt then_stmt : rest) : rest2 )
+		then_traces <- followTracesM envs (Condition cond : trace) ( (CBlockStmt then_stmt : rest) : rest2 )
+		let not_cond = Condition $ CUnary CNegOp cond undefNode
 		else_traces <- case mb_else_stmt of
-			Nothing        -> followTracesM envs trace ( (cond_cbi : rest) : rest2 )
-			Just else_stmt -> followTracesM envs trace ( (cond_cbi : CBlockStmt else_stmt : rest) : rest2 )
+			Nothing        -> followTracesM envs (not_cond : trace) ( rest : rest2 )
+			Just else_stmt -> followTracesM envs (not_cond : trace) ( (CBlockStmt else_stmt : rest) : rest2 )
 		return $ then_traces ++ else_traces
 	CReturn mb_ret_expr _ -> do
-		retval_ident <- createNewIdent "ret"
 		followTracesM envs trace ([ CBlockStmt (CExpr mb_ret_expr undefNode) ] : rest2)
 	CExpr (Just (CAssign CAssignOp (CVar ident _) assigned_expr _)) _ ->
 		followTracesM envs (Assignment ident assigned_expr : trace) (rest:rest2)
 	CExpr (Just other_expr) _ ->
 		followTracesM envs trace (rest:rest2) -- TODO! Could contain function calls!
 
-followTracesM (env:envs) trace ( (CBlockDecl cdecl@(CDecl _ triples _) : rest) : rest2 ) = do
-	decls_inits <- forM triples $ \ (Just ident,mb_init,Nothing) -> do
-		let ty = DirectType TyVoid noTypeQuals [] -- find out ty here
+followTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
+	(env',trace') <- foldrM folddecls (env,trace) triples
+	followTracesM (env':envs) trace' (rest:rest2)
+	where
+	-- folding right-to-left, hence env/trace order is correct when putting new elements as head
+	folddecls (Just (CDeclr (Just ident) derivdeclrs _ _ _),mb_init,Nothing) (envitems,traceelems) = do
+		ty <- tyspec2TypeM typespec >>= elimTypeDefsM   -- TODO: consider derivdeclrs
 		envitem <- oldident2EnvItem ty ident
 		let assign_items = case mb_init of
 			Nothing -> []
-			Just expr -> [ Assignment ident expr ]
-		return (envitem,assign_items)
-	followTracesM ((map fst decls_inits ++ env):envs) (concatMap snd decls_inits ++ trace) (rest:rest2)
-		
--- CONTINUE HERE!
-{-
-	case runTrav [] (withExtDeclHandler (analyseDecl True cdecl) handledecl) of
-		Left errs -> do
-			liftIO $ putStrLn "ERRORS:" >> forM_ errs print
-			error "runTrav analyseDecl"
-		Right (_,decls) -> do
--}
-{-
-			liftIO $ do
-				putStrLn "decls:"
-				mapM_ (print.(render.pretty)) (userState decls)
-			let identdecls = userState decls
-			new_envitems <- mapM declaration2EnvItem identdecls
-			let new_inits = concatMap objdef2assign identdecls
-			followTracesM ((new_envitems++env):envs) (new_inits++trace) (rest:rest2)
-	where
-	handledecl (LocalEvent identdecl) = modifyUserState (identdecl:)
-	handledecl _ = return ()
-	objdef2assign objdef@(ObjectDef (ObjDef _ (Just (CInitExpr expr _)) _)) = [ Assignment (declIdent objdef) expr ]
-	objdef2assign objdef@(ObjectDef (ObjDef _ (Just (CInitList _ _)) _)) = error "objdef2assign: CInitList not yet implemented"
-	objdef2assign _ = []
--}
+			Just (CInitExpr expr _) -> [ Assignment ident expr ]
+		return (envitem : envitems, assign_items ++ [ NewDeclaration envitem ] ++ traceelems)
 
 followTracesM (_:restenvs) trace ([]:rest2) = followTracesM restenvs trace rest2
 
@@ -186,13 +175,29 @@ followTracesM _ trace [] = return [trace]
 
 followTracesM _ _ ((cbi:_):_) = error $ "followTraceM " ++ (render.pretty) cbi ++ " not implemented yet."
 
+tyspec2TypeM :: CTypeSpec -> CovVecM Type
+tyspec2TypeM typespec = case typespec of
+	CVoidType _ -> return $ DirectType TyVoid noTypeQuals noAttributes
+	CIntType _ -> return $ DirectType (TyIntegral TyInt) noTypeQuals noAttributes
+	CCharType _ -> return $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes
+	CShortType _ -> return $ DirectType (TyIntegral TyShort) noTypeQuals noAttributes
+	CFloatType _ -> return $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
+	CTypeDef ident _ -> lookupTypeDefM ident
+	_ -> error $ "typespec " ++ (render.pretty) typespec ++ " not implemented yet."
+
+elimTypeDefsM :: Type -> CovVecM Type
+elimTypeDefsM directtype@(DirectType _ _ _) = pure directtype
+elimTypeDefsM (TypeDefType (TypeDefRef ident _ _) tyquals attrs) = lookupTypeDefM ident >>= elimTypeDefsM
+elimTypeDefsM (PtrType ty tyquals attrs) = PtrType <$> elimTypeDefsM ty <*> pure tyquals <*> pure attrs
+elimTypeDefsM (ArrayType ty size tyquals attrs) = ArrayType <$> elimTypeDefsM ty <*> pure size <*> pure tyquals <*> pure attrs
+elimTypeDefsM (FunctionType funty attrs) = error $ "elimTypeDefsM: FunctionType not implemented yet."
+
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
 
 foldTraceM :: Trace -> CovVecM TraceAnalysisResult
 foldTraceM trace = do
-	liftIO $ print trace
-	return ([],Nothing)
+	return (trace,[],Nothing)
 
 {-
 import Control.Monad.Trans.State.Strict

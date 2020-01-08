@@ -5,14 +5,16 @@ int x1 = 7;
 
 enum Zahl { EINS, ZWEI };
 
-typedef int MYINT;
+typedef int MYINT2;
+typedef MYINT2 MYINT;
 
 short f(MYINT x,enum Zahl z)
 {
-    int x1 = x*2;
+    MYINT2 x1 = x*2;
     if(x1>7)
     {
-        short abc = x+x1;
+        short abc;
+        abc = x+x1;
         return(abc*2);
     }
     else
