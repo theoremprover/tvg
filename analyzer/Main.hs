@@ -133,7 +133,7 @@ covVectorsM funname = do
 	glob_env <- forM globdecls declaration2EnvItem
 	let env = param_env ++ glob_env
 --	printEnv env
-	followTracesM [env] [] [[CBlockStmt body]] >>= mapM foldTraceM
+	followTracesM [env] [] [[CBlockStmt body]] >>= mapM foldTraceM >>= mapM solveTraceM
 
 -- UNFOLD TRACES
 
@@ -195,9 +195,31 @@ elimTypeDefsM (FunctionType funty attrs) = error $ "elimTypeDefsM: FunctionType 
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
 
-foldTraceM :: Trace -> CovVecM TraceAnalysisResult
+--(Trace,[MZAST.ModelData],Maybe Solution)
+--data TraceElem = Assignment Ident CExpr | Condition CExpr | NewDeclaration EnvItem
+
+foldTraceM :: Trace -> CovVecM (Trace,[CExpr])
 foldTraceM trace = do
+-- CONTINUE HERE
+	return (trace,conds)
+	where
+	foldtrace :: [CExpr] -> TraceItem 
+	foldtrace cond_exprs (Assignment ident expr) =
+
+{-
+foldTraceM traceelems [] = return traceelems
+foldTraceM traceelems (traceelem@(TraceAssign ident assignop expr) : rest) = do
+	foldTraceM (traceelem : map (substituteVarInTraceElem ident expr') traceelems) rest
+	where
+	expr' = if assignop==CAssignOp then expr else CBinary assignop' (CVar ident undefNode) expr undefNode
+	Just assignop' = lookup assignop [
+		(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
+		(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
 	return (trace,[],Nothing)
+-}
+
+solveTraceM :: (Trace,[CExpr]) -> CovVecM TraceAnalysisResult
+solveTraceM (trace,conds) = return (trace,[],Nothing)
 
 {-
 import Control.Monad.Trans.State.Strict
