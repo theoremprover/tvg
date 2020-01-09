@@ -11,11 +11,12 @@ typedef MYINT2 MYINT;
 short f(MYINT x,enum Zahl z)
 {
     MYINT2 x1 = x*2;
+    x1 += 3;
     if(x1>7)
     {
         short abc;
         abc = x+x1;
-        return(abc*2);
+        return(abc*x1);
     }
     else
     {

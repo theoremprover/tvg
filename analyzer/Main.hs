@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
-{-# LANGUAGE UnicodeSyntax,LambdaCase,ScopedTypeVariables,TypeSynonymInstances,FlexibleInstances #-}
+{-# LANGUAGE UnicodeSyntax,LambdaCase,ScopedTypeVariables,TypeSynonymInstances,FlexibleInstances,StandaloneDeriving,DeriveDataTypeable #-}
 
 module Main where
 
@@ -54,8 +54,10 @@ main = do
 					when ("-writeGlobalDecls" ∈ opts) $
 						writeFile (analyzerPath </> filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 					covvectors <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
-					forM_ covvectors $ \ (trace,model,solution) -> printLog $ unlines $
-						[ "","=== TRACE =======================" ] ++
+					forM_ covvectors $ \ (origtrace,trace,model,solution) -> printLog $ unlines $
+						[ "","=== ORIG TRACE ====================" ] ++
+						map show origtrace ++
+						[ "","--- TRACE -------------------------" ] ++
 						map show trace ++
 						[ "",
 						"--- MODEL -------------------------",
@@ -116,14 +118,16 @@ printEnv env = do
 		printLog "Leaving out builtin bindings.\n"
 -}
 
-data TraceElem = Assignment Ident CExpr | Condition CExpr | NewDeclaration EnvItem
+data TraceElem = Assignment Ident CAssignOp CExpr | Condition CExpr | NewDeclaration EnvItem
+--deriving instance Typeable TraceElem
+deriving instance Data TraceElem
 instance Show TraceElem where
-	show (Assignment ident expr)  = (render.pretty) ident ++ " := " ++ (render.pretty) expr
+	show (Assignment ident assignop expr)  = (render.pretty) ident ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
 	show (Condition expr)         = "COND " ++ (render.pretty) expr
 	show (NewDeclaration envitem) = "DECL " ++ (render.pretty) envitem
 type Trace = [TraceElem]
 
-type TraceAnalysisResult = (Trace,[MZAST.ModelData],Maybe Solution)
+type TraceAnalysisResult = (Trace,Trace,[MZAST.ModelData],Maybe Solution)
 
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
@@ -133,7 +137,7 @@ covVectorsM funname = do
 	glob_env <- forM globdecls declaration2EnvItem
 	let env = param_env ++ glob_env
 --	printEnv env
-	followTracesM [env] [] [[CBlockStmt body]] >>= mapM foldTraceM >>= mapM solveTraceM
+	followTracesM [env] [] [[CBlockStmt body]] >>= mapM elimAssignmentsM >>= mapM solveTraceM
 
 -- UNFOLD TRACES
 
@@ -143,20 +147,22 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 	CLabel _ cstat _ _ -> followTracesM envs trace ((CBlockStmt cstat:rest):rest2)
 	CCompound _ cbis _ -> followTracesM ([]:envs) trace (cbis : rest : rest2)
 	CIf cond then_stmt mb_else_stmt _ -> do
-		then_traces <- followTracesM envs (Condition cond : trace) ( (CBlockStmt then_stmt : rest) : rest2 )
-		let not_cond = Condition $ CUnary CNegOp cond undefNode
+		then_traces <- followTracesM envs (translateidents (Condition cond) : trace) ( (CBlockStmt then_stmt : rest) : rest2 )
+		let not_cond = translateidents $ Condition (CUnary CNegOp cond undefNode)
 		else_traces <- case mb_else_stmt of
 			Nothing        -> followTracesM envs (not_cond : trace) ( rest : rest2 )
 			Just else_stmt -> followTracesM envs (not_cond : trace) ( (CBlockStmt else_stmt : rest) : rest2 )
 		return $ then_traces ++ else_traces
 	CReturn mb_ret_expr _ -> do
 		followTracesM envs trace ([ CBlockStmt (CExpr mb_ret_expr undefNode) ] : rest2)
-	CExpr (Just (CAssign CAssignOp (CVar ident _) assigned_expr _)) _ ->
-		followTracesM envs (Assignment ident assigned_expr : trace) (rest:rest2)
+	CExpr (Just (CAssign assignop (CVar ident _) assigned_expr _)) _ -> do
+		followTracesM envs (translateidents (Assignment ident assignop assigned_expr) : trace) (rest:rest2)
 	CExpr (Just other_expr) _ ->
 		followTracesM envs trace (rest:rest2) -- TODO! Could contain function calls!
+	where
+	translateidents = translateIdents envs
 
-followTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
+followTracesM allenv@(env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	(env',trace') <- foldrM folddecls (env,trace) triples
 	followTracesM (env':envs) trace' (rest:rest2)
 	where
@@ -166,8 +172,10 @@ followTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples
 		envitem <- oldident2EnvItem ty ident
 		let assign_items = case mb_init of
 			Nothing -> []
-			Just (CInitExpr expr _) -> [ Assignment ident expr ]
-		return (envitem : envitems, assign_items ++ [ NewDeclaration envitem ] ++ traceelems)
+			Just (CInitExpr expr _) -> [ translateidents $ Assignment ident CAssignOp expr ]
+		return (envitem : envitems, assign_items ++ traceelems)
+
+	translateidents = translateIdents allenv
 
 followTracesM (_:restenvs) trace ([]:rest2) = followTracesM restenvs trace rest2
 
@@ -175,11 +183,19 @@ followTracesM _ trace [] = return [trace]
 
 followTracesM _ _ ((cbi:_):_) = error $ "followTraceM " ++ (render.pretty) cbi ++ " not implemented yet."
 
+-- Translate C source idents to new unique idents given in environment
+translateIdents :: [Env] -> TraceElem -> TraceElem
+translateIdents envs traceitem = everywhere (mkT transident) traceitem
+	where
+	transident :: Ident -> Ident
+	transident ident = ident' where
+		Just (ident',_) = lookup ident (concat envs)
+
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
 tyspec2TypeM typespec = case typespec of
-	CVoidType _ -> return $ DirectType TyVoid noTypeQuals noAttributes
-	CIntType _ -> return $ DirectType (TyIntegral TyInt) noTypeQuals noAttributes
-	CCharType _ -> return $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes
+	CVoidType _  -> return $ DirectType TyVoid noTypeQuals noAttributes
+	CIntType _   -> return $ DirectType (TyIntegral TyInt) noTypeQuals noAttributes
+	CCharType _  -> return $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes
 	CShortType _ -> return $ DirectType (TyIntegral TyShort) noTypeQuals noAttributes
 	CFloatType _ -> return $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
 	CTypeDef ident _ -> lookupTypeDefM ident
@@ -195,31 +211,48 @@ elimTypeDefsM (FunctionType funty attrs) = error $ "elimTypeDefsM: FunctionType 
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
 
---(Trace,[MZAST.ModelData],Maybe Solution)
---data TraceElem = Assignment Ident CExpr | Condition CExpr | NewDeclaration EnvItem
-
-foldTraceM :: Trace -> CovVecM (Trace,[CExpr])
-foldTraceM trace = do
--- CONTINUE HERE
-	return (trace,conds)
+elimAssignmentsM :: Trace -> CovVecM (Trace,Trace)
+elimAssignmentsM trace = return (trace,foldtrace [] trace)
 	where
-	foldtrace :: [CExpr] -> TraceItem 
-	foldtrace cond_exprs (Assignment ident expr) =
+	foldtrace :: Trace -> Trace -> Trace
+	foldtrace result [] = result
+	foldtrace result (Assignment ident assignop expr : rest) = foldtrace (everywhere (mkT (substvar ident expr')) result) rest where
+		expr' = if assignop==CAssignOp then expr else CBinary assignop' (CVar ident undefNode) expr undefNode
+		Just assignop' = lookup assignop [
+			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
+			(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
+	foldtrace result (traceitem@(NewDeclaration _) : rest) = foldtrace result rest
+	foldtrace result (cond@(Condition _) : rest) = foldtrace (cond:result) rest
 
-{-
-foldTraceM traceelems [] = return traceelems
-foldTraceM traceelems (traceelem@(TraceAssign ident assignop expr) : rest) = do
-	foldTraceM (traceelem : map (substituteVarInTraceElem ident expr') traceelems) rest
+	substvar :: Ident -> CExpr -> CExpr -> CExpr
+	substvar ident expr (CVar varid _) | varid == ident = expr
+	substvar _ _ e = e
+
+var2MZ :: (MZAST.Varr i) => Env -> Ident -> CovVecM (MZAST.GItem i)
+var2MZ env ident = do
+	let Just (newident,ty) = lookup ident env
+	mzty <- ty2mz ty
+	return $ MZAST.var (ty2mz ty) (identToString newident)
 	where
-	expr' = if assignop==CAssignOp then expr else CBinary assignop' (CVar ident undefNode) expr undefNode
-	Just assignop' = lookup assignop [
-		(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
-		(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
-	return (trace,[],Nothing)
--}
+	ty2mz ty@(DirectType tyname _ _) = case tyname of
+		TyVoid -> error "ty2mz DirectType TyVoid should not occur!"
+		TyIntegral intty -> case intty of
+			TyBool -> return MZAST.Bool
+			TyShort -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
+			TyInt -> return MZAST.Int 
+			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
+		TyFloating floatty -> case floatty of
+			TyFloat -> return MZAST.Float
+			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
+		TyEnum (EnumTypeRef (NamedRef ident) _) -> do
+			-- Continue HERE
+		_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
+	ty2mz ty = error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 
-solveTraceM :: (Trace,[CExpr]) -> CovVecM TraceAnalysisResult
-solveTraceM (trace,conds) = return (trace,[],Nothing)
+solveTraceM :: (Trace,Trace) -> CovVecM TraceAnalysisResult
+solveTraceM (orig_trace,trace) = do
+	-- Continue HERE
+	return (orig_trace,trace,[],Nothing)
 
 {-
 import Control.Monad.Trans.State.Strict
@@ -646,15 +679,6 @@ solveConstraintsM i constraints = do
 var2MZ :: (MZAST.Varr i) => Ident -> CovVecM (MZAST.GItem i)
 var2MZ ident@(Ident name _ _) = do
 	return $ MZAST.var (MZAST.Int) name
-{-
-	globdecls <- gets globDecls
-	case identType ident globdecls of
-		[ ty ] -> do
-			liftIO $ putStrLn $ name ++ " is of type " ++ (render.pretty) ty
-			return $ MZAST.var (MZAST.Int) name
-		tys -> error $ "Could not find unique VarDecl declaring " ++ name ++ " in GlobalDecls" ++ "\n" ++
-			"Found " ++ show (map (render.pretty) tys)
--}
 
 constrToMZ :: Constraint -> CovVecM MZAST.ModelData
 constrToMZ constr = return $ MZAST.constraint (expr2constr . (flatten_not False) . (insert_eq0 True) $ constr)
