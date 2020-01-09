@@ -235,25 +235,28 @@ elimAssignmentsM trace = return (trace,foldtrace [] trace)
 	substvar ident expr (CVar varid _) | varid == ident = expr
 	substvar _ _ e = e
 
-var2MZ :: (MZAST.Varr i) => Env -> Ident -> CovVecM (MZAST.GItem i)
-var2MZ env ident = do
+var2MZs :: Env -> Ident -> CovVecM [MZAST.ModelData]
+var2MZs env ident = do
 	let Just (newident,ty) = lookup ident env
-	mzty <- ty2mz ty
-	return $ MZAST.var (ty2mz ty) (identToString newident)
+	(mzty,mz_defs) <- ty2mz ty
+	return $ mz_defs ++ [ MZAST.var mzty (identToString newident) ]
 	where
 	ty2mz ty@(DirectType tyname _ _) = case tyname of
 		TyVoid -> error "ty2mz DirectType TyVoid should not occur!"
 		TyIntegral intty -> case intty of
-			TyBool -> return MZAST.Bool
-			TyShort -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
-			TyInt -> return MZAST.Int 
+			TyBool -> return (MZAST.Bool,[])
+			TyShort -> return (MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767),[])
+			TyInt -> return (MZAST.Int,[])
 			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 		TyFloating floatty -> case floatty of
-			TyFloat -> return MZAST.Float
+			TyFloat -> return (MZAST.Float,[])
 			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 		TyEnum (EnumTypeRef sueref _) -> do
-			EnumDef (_ enums _ _) <- lookupTagM sueref
-			forM enums $ \ (Enumerator ident _ _ _) -> identToString ident
+			EnumDef (EnumType _ enums _ _) <- lookupTagM sueref
+			let (consts,mzdefs) = unzip $ map (\ (Enumerator (Ident name _ _) (CConst (CIntConst (CInteger i _ _) _)) _ _) ->
+				(MZAST.Var (MZAST.Simpl name) , name MZAST.=. (MZAST.IConst (fromIntegral i)) )
+				) enums
+			return (MZAST.CT (MZAST.SetLit consts),mzdefs)
 		_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 	ty2mz ty = error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 
