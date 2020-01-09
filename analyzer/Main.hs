@@ -88,6 +88,13 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		Nothing -> error $ "Function " ++ (show ident) ++ " not found"
 
+lookupTagM :: SUERef -> CovVecM TagDef
+lookupTagM ident = do
+	tags <- gets (gTags.globDeclsCVS)
+	case Map.lookup ident tags of
+		Just tagdef -> return tagdef
+		Nothing -> error $ "Tag " ++ (show ident) ++ " not found"
+
 createNewIdent :: String -> CovVecM Ident
 createNewIdent name_prefix = do
 	new_var_num <- gets newNameIndexCVS
@@ -244,8 +251,9 @@ var2MZ env ident = do
 		TyFloating floatty -> case floatty of
 			TyFloat -> return MZAST.Float
 			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
-		TyEnum (EnumTypeRef (NamedRef ident) _) -> do
-			-- Continue HERE
+		TyEnum (EnumTypeRef sueref _) -> do
+			EnumDef (_ enums _ _) <- lookupTagM sueref
+			forM enums $ \ (Enumerator ident _ _ _) -> identToString ident
 		_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 	ty2mz ty = error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 
