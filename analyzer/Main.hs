@@ -56,16 +56,19 @@ main = do
 						writeFile (analyzerPath </> filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 					covvectors <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
 					forM_ covvectors $ \ (origtrace,trace,model,solution) -> printLog $ unlines $
-						[ "","=== ORIG TRACE ====================" ] ++
-						map show origtrace ++
-						[ "","--- TRACE -------------------------" ] ++
-						map show trace ++
+						[ "","=== ORIG TRACE ====================","<leaving out builtins...>" ] ++
+						map show (filter isnotbuiltin origtrace) ++
+						[ "","--- TRACE -------------------------","<leaving out builtins...>" ] ++
+						map show (filter isnotbuiltin trace) ++
 						[ "",
 						"--- MODEL -------------------------",
 						layout model,
 						"",
 						"--- SOLUTION ----------------------",
 						show solution ]
+	where
+	isnotbuiltin (NewDeclaration (ident,_)) = not $ "__" `isPrefixOf` (identToString ident)
+	isnotbuiltin _ = True
 
 data CovVecState = CovVecState {
 	globDeclsCVS    :: GlobalDecls,
@@ -110,7 +113,8 @@ type Env = [EnvItem]
 oldident2EnvItem :: Type -> Ident -> CovVecM EnvItem
 oldident2EnvItem ty oldident = do
 	newident <- createNewIdent (identToString oldident)
-	return (oldident,(newident,ty))
+	ty' <- elimTypeDefsM ty
+	return (oldident,(newident,ty'))
 
 declaration2EnvItem :: Declaration decl => decl -> CovVecM EnvItem
 declaration2EnvItem decl = oldident2EnvItem ty oldident
@@ -127,7 +131,6 @@ printEnv env = do
 -}
 
 data TraceElem = Assignment Ident CAssignOp CExpr | Condition CExpr | NewDeclaration (Ident,Type)
---deriving instance Typeable TraceElem
 deriving instance Data TraceElem
 instance Show TraceElem where
 	show (Assignment ident assignop expr)  = (render.pretty) ident ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
@@ -181,11 +184,12 @@ followTracesM allenv@(env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] 
 	-- folding right-to-left, hence env/trace order is correct when putting new elements as head
 	folddecls (Just (CDeclr (Just ident) derivdeclrs _ _ _),mb_init,Nothing) (envitems,traceelems) = do
 		ty <- tyspec2TypeM typespec >>= elimTypeDefsM   -- TODO: consider derivdeclrs
-		envitem <- oldident2EnvItem ty ident
+		envitem@(_,tyenvitem) <- oldident2EnvItem ty ident
 		let assign_items = case mb_init of
 			Nothing -> []
 			Just (CInitExpr expr _) -> [ translateidents $ Assignment ident CAssignOp expr ]
-		return (envitem : envitems, assign_items ++ traceelems)
+		let declitem = NewDeclaration tyenvitem
+		return (envitem : envitems, assign_items ++ [declitem] ++ traceelems)
 
 	translateidents = translateIdents allenv
 
@@ -218,7 +222,11 @@ elimTypeDefsM directtype@(DirectType _ _ _) = pure directtype
 elimTypeDefsM (TypeDefType (TypeDefRef ident _ _) tyquals attrs) = lookupTypeDefM ident >>= elimTypeDefsM
 elimTypeDefsM (PtrType ty tyquals attrs) = PtrType <$> elimTypeDefsM ty <*> pure tyquals <*> pure attrs
 elimTypeDefsM (ArrayType ty size tyquals attrs) = ArrayType <$> elimTypeDefsM ty <*> pure size <*> pure tyquals <*> pure attrs
-elimTypeDefsM (FunctionType funty attrs) = error $ "elimTypeDefsM: FunctionType not implemented yet."
+elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionType <$> (
+	FunType <$> elimTypeDefsM funty <*> mapM eliminparamdecl paramdecls <*> pure bool) <*> pure attrs
+	where
+	eliminparamdecl (ParamDecl (VarDecl varname declattrs ty) ni) =
+		ParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
 
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
@@ -332,7 +340,9 @@ traceelemToMZ _ = return []
 
 solveTraceM :: (Trace,Trace) -> CovVecM TraceAnalysisResult
 solveTraceM (orig_trace,trace) = do
-	let tyenv = concatMap () trace -- CONTINUE HERE
+	let tyenv = concatMap traceitem2tyenv trace where
+		traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
+		traceitem2tyenv _ = []
 	constraintsG <- concatMapM traceelemToMZ trace
 	let
 		includesG = [ MZAST.include "include.mzn" ]
