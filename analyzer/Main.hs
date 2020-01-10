@@ -23,6 +23,7 @@ import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
 import Data.Time.Clock
 import Data.Foldable
+import Data.List
 
 import DataTree
 import GlobDecls
@@ -61,7 +62,7 @@ main = do
 						map show trace ++
 						[ "",
 						"--- MODEL -------------------------",
---						layout model
+						layout model,
 						"",
 						"--- SOLUTION ----------------------",
 						show solution ]
@@ -125,13 +126,13 @@ printEnv env = do
 		printLog "Leaving out builtin bindings.\n"
 -}
 
-data TraceElem = Assignment Ident CAssignOp CExpr | Condition CExpr | NewDeclaration EnvItem
+data TraceElem = Assignment Ident CAssignOp CExpr | Condition CExpr | NewDeclaration (Ident,Type)
 --deriving instance Typeable TraceElem
 deriving instance Data TraceElem
 instance Show TraceElem where
 	show (Assignment ident assignop expr)  = (render.pretty) ident ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
 	show (Condition expr)         = "COND " ++ (render.pretty) expr
-	show (NewDeclaration envitem) = "DECL " ++ (render.pretty) envitem
+	show (NewDeclaration (ident,ty)) = "DECL " ++ (render.pretty) ident ++ " :: " ++ (render.pretty) ty
 type Trace = [TraceElem]
 
 type TraceAnalysisResult = (Trace,Trace,[MZAST.ModelData],Maybe Solution)
@@ -143,8 +144,12 @@ covVectorsM funname = do
 	param_env <- forM paramdecls declaration2EnvItem
 	glob_env <- forM globdecls declaration2EnvItem
 	let env = param_env ++ glob_env
+	let newdecls = map envitem2newdecl env
 --	printEnv env
-	followTracesM [env] [] [[CBlockStmt body]] >>= mapM elimAssignmentsM >>= mapM solveTraceM
+	followTracesM [env] newdecls [[CBlockStmt body]] >>= mapM elimAssignmentsM >>= mapM solveTraceM
+	where
+	envitem2newdecl :: EnvItem -> TraceElem
+	envitem2newdecl (_,(newident,ty)) = NewDeclaration (newident,ty)
 
 -- UNFOLD TRACES
 
@@ -228,18 +233,22 @@ elimAssignmentsM trace = return (trace,foldtrace [] trace)
 		Just assignop' = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
 			(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
-	foldtrace result (traceitem@(NewDeclaration _) : rest) = foldtrace result rest
+	foldtrace result (decl@(NewDeclaration _) : rest) = foldtrace (decl:result) rest
 	foldtrace result (cond@(Condition _) : rest) = foldtrace (cond:result) rest
 
 	substvar :: Ident -> CExpr -> CExpr -> CExpr
 	substvar ident expr (CVar varid _) | varid == ident = expr
 	substvar _ _ e = e
 
-var2MZs :: Env -> Ident -> CovVecM [MZAST.ModelData]
-var2MZs env ident = do
-	let Just (newident,ty) = lookup ident env
+type TyEnv = [(Ident,Type)]
+
+var2MZs :: TyEnv -> Ident -> CovVecM [MZAST.ModelData]
+var2MZs tyenv ident = do
+	let ty = case lookup ident tyenv of
+		Just ty -> ty
+		Nothing -> error $ "Could not find " ++ show ident ++ " in " ++ unlines (map (\ (ident,ty) -> (render.pretty) ident ++ " |-> " ++ (render.pretty) ty ) tyenv)
 	(mzty,mz_defs) <- ty2mz ty
-	return $ mz_defs ++ [ MZAST.var mzty (identToString newident) ]
+	return $ mz_defs ++ [ MZAST.var mzty (identToString ident) ]
 	where
 	ty2mz ty@(DirectType tyname _ _) = case tyname of
 		TyVoid -> error "ty2mz DirectType TyVoid should not occur!"
@@ -260,10 +269,104 @@ var2MZs env ident = do
 		_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 	ty2mz ty = error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 
+type Constraint = CExpr
+
+traceelemToMZ :: TraceElem -> CovVecM [MZAST.ModelData]
+traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (flatten_not False) . (insert_eq0 True) $ constr) ]
+	where
+	eq0 :: Constraint -> Constraint
+	eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
+	insert_eq0 :: Bool -> Constraint -> Constraint
+	insert_eq0 _ (CUnary CNegOp expr ni) = CUnary CNegOp (insert_eq0 True expr) ni
+	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then eq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
+	insert_eq0 must_be_bool cvar@(CVar ident ni) = (if must_be_bool then eq0 else id) cvar
+	insert_eq0 must_be_bool const@(CConst _) = (if must_be_bool then eq0 else id) const
+	insert_eq0 must_be_bool (CBinary binop expr1 expr2 ni) = mb_eq0 $
+		CBinary binop (insert_eq0 must_be_bool' expr1) (insert_eq0 must_be_bool' expr2) ni
+		where
+		(must_be_bool',mb_eq0) = case must_be_bool of
+			_ | binop `elem` [CLndOp,CLorOp] -> (True,id)
+			_ | binop `elem` [CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp] -> (False,id)
+			True -> (False,eq0)
+			_ -> (False,id)
+	insert_eq0 _ expr = error $ "insert_eq0 " ++ (render.pretty) expr ++ " not implemented yet."
+
+	flatten_not :: Bool -> Constraint -> Constraint
+	flatten_not is_neg (CUnary CNegOp expr ni) = flatten_not (not is_neg) expr
+	flatten_not True un@(CUnary CCompOp _ _) = error $ "flatten_not True " ++ (render.pretty) un ++ " is impossible!"
+	flatten_not False (CUnary CCompOp expr ni) = CUnary CCompOp (flatten_not False expr) ni
+	flatten_not False cvar@(CVar ident ni) = cvar
+	flatten_not True cvar@(CVar ident ni) = error $ "flatten_not True " ++ (render.pretty) cvar ++ " is impossible!"
+	flatten_not False cconst@(CConst _) = cconst
+	flatten_not True cconst@(CConst _) = error $ "flatten_not True " ++ show cconst
+	flatten_not False (CBinary binop expr1 expr2 ni) = CBinary binop (flatten_not False expr1) (flatten_not False expr2) ni
+	flatten_not True (CBinary binop expr1 expr2 ni) = CBinary binop' (flatten_not is_neg' expr1) (flatten_not is_neg' expr2) ni
+		where
+		(binop',is_neg') = case binop of
+			CLeOp -> (CGeqOp,False)
+			CGrOp -> (CLeqOp,False)
+			CLeqOp -> (CGrOp,False)
+			CGeqOp -> (CLeOp,False)
+			CEqOp -> (CNeqOp,False)
+			CNeqOp -> (CEqOp,False)
+			CLndOp -> (CLorOp,True)
+			CLorOp -> (CLndOp,True)
+			op -> error $ "flatten_not True " ++ show op ++ " is impossible!"
+	flatten_not is_neg expr = error $ "flatten_not " ++ show is_neg ++ " " ++ (render.pretty) expr ++ " not implemented yet"
+
+	expr2constr (CUnary CNegOp _ _) = error $ "expr2constr CUnaryOp CNegOp!"
+	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
+	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
+	expr2constr (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr expr) []]
+	expr2constr (CBinary binop expr1 expr2 _) = case lookup binop
+		[(CAndOp,"bitwise_and"),(COrOp,"bitwise_or"),(CXorOp,"bitwise_xor"),(CShrOp,"bitshift_right"),(CShlOp,"bitshift_left")] of
+			Just funname -> MZAST.Call (MZAST.stringToIdent funname) [MZAST.AnnExpr expr1' [],MZAST.AnnExpr expr2' []]
+			Nothing -> MZAST.Bi (MZAST.Op $ MZAST.stringToIdent mznop) expr1' expr2'
+		where
+		expr1' = expr2constr expr1
+		expr2' = expr2constr expr2
+		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"=")]
+	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
+
+traceelemToMZ _ = return []
+
 solveTraceM :: (Trace,Trace) -> CovVecM TraceAnalysisResult
 solveTraceM (orig_trace,trace) = do
-	-- Continue HERE
-	return (orig_trace,trace,[],Nothing)
+	let tyenv = concatMap () trace -- CONTINUE HERE
+	constraintsG <- concatMapM traceelemToMZ trace
+	let
+		includesG = [ MZAST.include "include.mzn" ]
+		vars = nub $ everything (++) (mkQ [] searchvar) trace
+	varsG <- concatMapM (var2MZs tyenv) vars
+	let model = includesG ++ varsG ++ constraintsG ++ [ MZAST.solve MZAST.satisfy ]
+
+	return (orig_trace,trace,model,Nothing)
+
+{-
+	liftIO $ putStrLn $ unlines $
+		[ "","CONSTRAINTS:" ] ++
+		map (render.pretty) constraints ++
+		[ "","MODEL:" ] ++
+		[ layout model ]
+	liftIO $ writeFile ("analyzer" </> "model" ++ show i ++ ".mzn") $ layout model
+	liftIO $ putStrLn "Running model..."
+	res <- liftIO $ runModel model (show i) 1 1
+	case res of
+		Left err -> error $ show err
+		Right solutions -> do
+			let solution = case solutions of
+				[] -> Nothing
+				(sol:_) -> Just sol
+			liftIO $ putStrLn $ unlines $
+				[ "","SOLUTION:" ] ++
+				[ show solution ] ++
+				[ "","------","" ]
+			return (model,solution)
+-}
+	where
+	searchvar :: CExpr -> [Ident]
+	searchvar (CVar ident _) = [ ident ]
+	searchvar _ = []
 
 {-
 import Control.Monad.Trans.State.Strict
@@ -682,71 +785,7 @@ solveConstraintsM i constraints = do
 				[ show solution ] ++
 				[ "","------","" ]
 			return (model,solution)
-	where
-	searchvar :: CExpr -> [Ident]
-	searchvar (CVar ident _) = [ ident ]
-	searchvar _ = []
 
-var2MZ :: (MZAST.Varr i) => Ident -> CovVecM (MZAST.GItem i)
-var2MZ ident@(Ident name _ _) = do
-	return $ MZAST.var (MZAST.Int) name
-
-constrToMZ :: Constraint -> CovVecM MZAST.ModelData
-constrToMZ constr = return $ MZAST.constraint (expr2constr . (flatten_not False) . (insert_eq0 True) $ constr)
-	where
-	eq0 :: Constraint -> Constraint
-	eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
-	insert_eq0 :: Bool -> Constraint -> Constraint
-	insert_eq0 _ (CUnary CNegOp expr ni) = CUnary CNegOp (insert_eq0 True expr) ni
-	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then eq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
-	insert_eq0 must_be_bool cvar@(CVar ident ni) = (if must_be_bool then eq0 else id) cvar
-	insert_eq0 must_be_bool const@(CConst _) = (if must_be_bool then eq0 else id) const
-	insert_eq0 must_be_bool (CBinary binop expr1 expr2 ni) = mb_eq0 $
-		CBinary binop (insert_eq0 must_be_bool' expr1) (insert_eq0 must_be_bool' expr2) ni
-		where
-		(must_be_bool',mb_eq0) = case must_be_bool of
-			_ | binop `elem` [CLndOp,CLorOp] -> (True,id)
-			_ | binop `elem` [CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp] -> (False,id)
-			True -> (False,eq0)
-			_ -> (False,id)
-	insert_eq0 _ expr = error $ "insert_eq0 " ++ (render.pretty) expr ++ " not implemented yet."
-
-	flatten_not :: Bool -> Constraint -> Constraint
-	flatten_not is_neg (CUnary CNegOp expr ni) = flatten_not (not is_neg) expr
-	flatten_not True un@(CUnary CCompOp _ _) = error $ "flatten_not True " ++ (render.pretty) un ++ " is impossible!"
-	flatten_not False (CUnary CCompOp expr ni) = CUnary CCompOp (flatten_not False expr) ni
-	flatten_not False cvar@(CVar ident ni) = cvar
-	flatten_not True cvar@(CVar ident ni) = error $ "flatten_not True " ++ (render.pretty) cvar ++ " is impossible!"
-	flatten_not False cconst@(CConst _) = cconst
-	flatten_not True cconst@(CConst _) = error $ "flatten_not True " ++ show cconst
-	flatten_not False (CBinary binop expr1 expr2 ni) = CBinary binop (flatten_not False expr1) (flatten_not False expr2) ni
-	flatten_not True (CBinary binop expr1 expr2 ni) = CBinary binop' (flatten_not is_neg' expr1) (flatten_not is_neg' expr2) ni
-		where
-		(binop',is_neg') = case binop of
-			CLeOp -> (CGeqOp,False)
-			CGrOp -> (CLeqOp,False)
-			CLeqOp -> (CGrOp,False)
-			CGeqOp -> (CLeOp,False)
-			CEqOp -> (CNeqOp,False)
-			CNeqOp -> (CEqOp,False)
-			CLndOp -> (CLorOp,True)
-			CLorOp -> (CLndOp,True)
-			op -> error $ "flatten_not True " ++ show op ++ " is impossible!"
-	flatten_not is_neg expr = error $ "flatten_not " ++ show is_neg ++ " " ++ (render.pretty) expr ++ " not implemented yet"
-
-	expr2constr (CUnary CNegOp _ _) = error $ "expr2constr CUnaryOp CNegOp!"
-	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
-	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
-	expr2constr (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr expr) []]
-	expr2constr (CBinary binop expr1 expr2 _) = case lookup binop
-		[(CAndOp,"bitwise_and"),(COrOp,"bitwise_or"),(CXorOp,"bitwise_xor"),(CShrOp,"bitshift_right"),(CShlOp,"bitshift_left")] of
-			Just funname -> MZAST.Call (MZAST.stringToIdent funname) [MZAST.AnnExpr expr1' [],MZAST.AnnExpr expr2' []]
-			Nothing -> MZAST.Bi (MZAST.Op $ MZAST.stringToIdent mznop) expr1' expr2'
-		where
-		expr1' = expr2constr expr1
-		expr2' = expr2constr expr2
-		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"=")]
-	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
 -- TODO: a->normal, enumerations, global variables
 -}
