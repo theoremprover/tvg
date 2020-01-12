@@ -14,9 +14,12 @@ import Language.C.System.GCC
 import Control.Monad
 import Prelude.Unicode
 import Control.Monad.Trans.State.Strict
+
 import Interfaces.FZSolutionParser
 import qualified Interfaces.MZAST as MZAST
 import Interfaces.MZPrinter
+import Interfaces.MZinHaskell
+
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
 import qualified Data.Map.Strict as Map
@@ -24,9 +27,11 @@ import Text.PrettyPrint
 import Data.Time.Clock
 import Data.Foldable
 import Data.List
+import System.IO
 
 import DataTree
 import GlobDecls
+
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -37,8 +42,10 @@ printLog text = liftIO $ do
 	appendFile logFile (text++"\n")
 
 main = do
+	hSetBuffering stdout NoBuffering
+
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : "test.c" : "f" : ["-writeAST"]
+		[] -> "gcc" : "test.c" : "f" : ["-writeAST","-writeGlobalDecls"]
 		args -> args
 
 	getCurrentTime >>= return.(++"\n\n").show >>= writeFile logFile
@@ -55,16 +62,16 @@ main = do
 					when ("-writeGlobalDecls" ∈ opts) $
 						writeFile (analyzerPath </> filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 					covvectors <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
-					forM_ covvectors $ \ (origtrace,trace,model,solution) -> printLog $ unlines $
-						[ "","=== ORIG TRACE ====================","<leaving out builtins...>" ] ++
+					forM_ covvectors $ \ (i,origtrace,trace,model,solution) -> let is = show i in printLog $ unlines $
+						[ "","=== ORIG TRACE " ++ is ++ " ====================","<leaving out builtins...>" ] ++
 						map show (filter isnotbuiltin origtrace) ++
-						[ "","--- TRACE -------------------------","<leaving out builtins...>" ] ++
+						[ "","--- TRACE " ++ is ++ " -------------------------","<leaving out builtins...>" ] ++
 						map show (filter isnotbuiltin trace) ++
 						[ "",
-						"--- MODEL -------------------------",
+						"--- MODEL " ++ is ++ " -------------------------",
 						layout model,
 						"",
-						"--- SOLUTION ----------------------",
+						"--- SOLUTION " ++ is ++ " ----------------------",
 						show solution ]
 	where
 	isnotbuiltin (NewDeclaration (ident,_)) = not $ "__" `isPrefixOf` (identToString ident)
@@ -103,7 +110,7 @@ createNewIdent :: String -> CovVecM Ident
 createNewIdent name_prefix = do
 	new_var_num <- gets newNameIndexCVS
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
-	return $ internalIdent (name_prefix ++ "_$" ++ show new_var_num)
+	return $ internalIdent (name_prefix ++ "_" ++ show new_var_num)
 
 type EnvItem = (Ident,(Ident,Type))
 instance Pretty EnvItem where
@@ -121,24 +128,15 @@ declaration2EnvItem decl = oldident2EnvItem ty oldident
 	where
 	VarDecl (VarName oldident _) _ ty = getVarDecl decl
 
-{-
-printEnv :: (MonadIO m) => Env -> m ()
-printEnv env = do
-	let env' = filter (\ (ident,_) -> not (isBuiltinPos $ posOfNode $ nodeInfo ident)) env
-	liftIO $ do
-		forM_ env' (putStrLn.render.pretty)
-		printLog "Leaving out builtin bindings.\n"
--}
-
 data TraceElem = Assignment Ident CAssignOp CExpr | Condition CExpr | NewDeclaration (Ident,Type)
 deriving instance Data TraceElem
 instance Show TraceElem where
 	show (Assignment ident assignop expr)  = (render.pretty) ident ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
-	show (Condition expr)         = "COND " ++ (render.pretty) expr
+	show (Condition expr)            = "COND " ++ (render.pretty) expr
 	show (NewDeclaration (ident,ty)) = "DECL " ++ (render.pretty) ident ++ " :: " ++ (render.pretty) ty
 type Trace = [TraceElem]
 
-type TraceAnalysisResult = (Trace,Trace,[MZAST.ModelData],Maybe Solution)
+type TraceAnalysisResult = (Int,Trace,Trace,[MZAST.ModelData],Maybe Solution)
 
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
@@ -148,11 +146,17 @@ covVectorsM funname = do
 	glob_env <- forM globdecls declaration2EnvItem
 	let env = param_env ++ glob_env
 	let newdecls = map envitem2newdecl env
---	printEnv env
-	followTracesM [env] newdecls [[CBlockStmt body]] >>= mapM elimAssignmentsM >>= mapM solveTraceM
+	let enumdefs = concatMap enum2stmt globdecls
+	followTracesM [env] newdecls [enumdefs++[CBlockStmt body]] >>= return.(zip [1..]) >>= mapM elimAssignmentsM >>= mapM solveTraceM
 	where
 	envitem2newdecl :: EnvItem -> TraceElem
 	envitem2newdecl (_,(newident,ty)) = NewDeclaration (newident,ty)
+	
+	enum2stmt :: IdentDecl -> [CBlockItem]
+	enum2stmt (EnumeratorDef (Enumerator ident expr _ _)) =
+		[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
+	enum2stmt _ = []
+
 
 -- UNFOLD TRACES
 
@@ -231,8 +235,8 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
 
-elimAssignmentsM :: Trace -> CovVecM (Trace,Trace)
-elimAssignmentsM trace = return (trace,foldtrace [] trace)
+elimAssignmentsM :: (Int,Trace) -> CovVecM (Int,Trace,Trace)
+elimAssignmentsM (i,trace) = return (i,trace,foldtrace [] trace)
 	where
 	foldtrace :: Trace -> Trace -> Trace
 	foldtrace result [] = result
@@ -250,30 +254,29 @@ elimAssignmentsM trace = return (trace,foldtrace [] trace)
 
 type TyEnv = [(Ident,Type)]
 
-var2MZs :: TyEnv -> Ident -> CovVecM [MZAST.ModelData]
-var2MZs tyenv ident = do
+var2MZ :: TyEnv -> Ident -> CovVecM MZAST.ModelData
+var2MZ tyenv ident = do
 	let ty = case lookup ident tyenv of
 		Just ty -> ty
 		Nothing -> error $ "Could not find " ++ show ident ++ " in " ++ unlines (map (\ (ident,ty) -> (render.pretty) ident ++ " |-> " ++ (render.pretty) ty ) tyenv)
-	(mzty,mz_defs) <- ty2mz ty
-	return $ mz_defs ++ [ MZAST.var mzty (identToString ident) ]
+	mzty <- ty2mz ty
+	return $ MZAST.var mzty (identToString ident)
 	where
 	ty2mz ty@(DirectType tyname _ _) = case tyname of
 		TyVoid -> error "ty2mz DirectType TyVoid should not occur!"
 		TyIntegral intty -> case intty of
-			TyBool -> return (MZAST.Bool,[])
-			TyShort -> return (MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767),[])
-			TyInt -> return (MZAST.Int,[])
+			TyBool -> return MZAST.Bool
+			TyShort -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
+			TyInt -> return MZAST.Int
 			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 		TyFloating floatty -> case floatty of
-			TyFloat -> return (MZAST.Float,[])
+			TyFloat -> return MZAST.Float
 			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 		TyEnum (EnumTypeRef sueref _) -> do
 			EnumDef (EnumType _ enums _ _) <- lookupTagM sueref
-			let (consts,mzdefs) = unzip $ map (\ (Enumerator (Ident name _ _) (CConst (CIntConst (CInteger i _ _) _)) _ _) ->
-				(MZAST.Var (MZAST.Simpl name) , name MZAST.=. (MZAST.IConst (fromIntegral i)) )
-				) enums
-			return (MZAST.CT (MZAST.SetLit consts),mzdefs)
+			return $ MZAST.CT $ MZAST.SetLit $
+				map (\ (Enumerator _ (CConst (CIntConst (CInteger i _ _) _)) _ _) ->
+					MZAST.IConst (fromIntegral i)) enums
 		_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 	ty2mz ty = error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 
@@ -338,8 +341,8 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 
 traceelemToMZ _ = return []
 
-solveTraceM :: (Trace,Trace) -> CovVecM TraceAnalysisResult
-solveTraceM (orig_trace,trace) = do
+solveTraceM :: (Int,Trace,Trace) -> CovVecM TraceAnalysisResult
+solveTraceM (i,orig_trace,trace) = do
 	let tyenv = concatMap traceitem2tyenv trace where
 		traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
 		traceitem2tyenv _ = []
@@ -347,10 +350,21 @@ solveTraceM (orig_trace,trace) = do
 	let
 		includesG = [ MZAST.include "include.mzn" ]
 		vars = nub $ everything (++) (mkQ [] searchvar) trace
-	varsG <- concatMapM (var2MZs tyenv) vars
+	varsG <- mapM (var2MZ tyenv) vars
 	let model = includesG ++ varsG ++ constraintsG ++ [ MZAST.solve MZAST.satisfy ]
+	let modelpath = analyzerPath </> "model" ++ show i
+	liftIO $ writeFile (modelpath ++ ".mzn") $ layout model
+	printLog "Running model..."
 
-	return (orig_trace,trace,model,Nothing)
+	res <- liftIO $ runModel model modelpath 1 1
+	mb_solution <- case res of
+		Left err -> do
+			printLog $ show err
+			return Nothing
+		Right [] -> return Nothing
+		Right (sol:_) -> return $ Just sol
+
+	return (i,orig_trace,trace,model,mb_solution)
 
 {-
 	liftIO $ putStrLn $ unlines $
