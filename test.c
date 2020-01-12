@@ -8,6 +8,18 @@ enum Zahl { EINS, ZWEI };
 typedef int MYINT2;
 typedef MYINT2 MYINT;
 
+float g(int x)
+{
+    if(x>=0)
+    {
+        return((float)(2*x));
+    }
+    else
+    {
+        return((float)(3*(-x)));
+    }
+}
+
 short f(MYINT x,enum Zahl z)
 {
     MYINT2 x1 = x*2;
@@ -15,14 +27,14 @@ short f(MYINT x,enum Zahl z)
     if(x1>7)
     {
         short abc;
-        abc = x+x1;
+        abc = x+(short)g(x1);
         return(abc*x1);
     }
     else
     {
         if(z==EINS)
         {
-            x1 = x1-2;
+            x1 = (int)g(x1-2);
         }
     }
 

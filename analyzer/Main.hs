@@ -33,6 +33,15 @@ import DataTree
 import GlobDecls
 
 
+{--
+stack build :analyzer-exe
+stack exec analyzer-exe -- test.c
+stack build :analyzer-exe && stack exec analyzer-exe
+
+
+fp-bit.i: Function _fpdiv_parts
+--}
+
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
 
@@ -365,28 +374,6 @@ solveTraceM (i,orig_trace,trace) = do
 		Right (sol:_) -> return $ Just sol
 
 	return (i,orig_trace,trace,model,mb_solution)
-
-{-
-	liftIO $ putStrLn $ unlines $
-		[ "","CONSTRAINTS:" ] ++
-		map (render.pretty) constraints ++
-		[ "","MODEL:" ] ++
-		[ layout model ]
-	liftIO $ writeFile ("analyzer" </> "model" ++ show i ++ ".mzn") $ layout model
-	liftIO $ putStrLn "Running model..."
-	res <- liftIO $ runModel model (show i) 1 1
-	case res of
-		Left err -> error $ show err
-		Right solutions -> do
-			let solution = case solutions of
-				[] -> Nothing
-				(sol:_) -> Just sol
-			liftIO $ putStrLn $ unlines $
-				[ "","SOLUTION:" ] ++
-				[ show solution ] ++
-				[ "","------","" ]
-			return (model,solution)
--}
 	where
 	searchvar :: CExpr -> [Ident]
 	searchvar (CVar ident _) = [ ident ]
@@ -427,14 +414,6 @@ _PRINT_TRACESTMTS_TRACE = False
 _WRITE_GLOBALDECLS = True
 _WRITE_AST = True
 
-{--
-stack build :analyzer-exe
-stack exec analyzer-exe -- test.c
-stack build :analyzer-exe && stack exec analyzer-exe
-
-
-fp-bit.i: Function _fpdiv_parts
---}
 
 gcc = newGCC "gcc"
 
