@@ -20,11 +20,11 @@ float g(int x)
     }
 }
 
-short f(MYINT x,enum Zahl z)
+short f(MYINT x,int y,enum Zahl z)
 {
     MYINT2 x1 = x*2;
     x1 += 3;
-    if(x1>7)
+    if(x1>g(y+1))
     {
         short abc;
         abc = x+(short)g(x1);
@@ -46,7 +46,7 @@ int main()
 {
 //    int x = atoi(argv[1]);
 //    int y = atoi(argv[2]);
-    int ret = f(5,EINS);
+    int ret = f(5,7,EINS);
 //    printf("f(%i)=%i\n",x,ret);
     return 0;
 }
