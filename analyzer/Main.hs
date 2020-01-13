@@ -284,8 +284,9 @@ expandCallsM env (i,orig_trace,trace) = do
 	expandcall (CCall funexpr@(CVar funident _) args _) = do
 		let Just (_,FunctionType (FunType ty _ _) _) = lookup funident env
 		newfunident <- lift $ createNewIdent (identToString funident)
-		modify ( NewDeclaration (newfunident,ty) : )
+		
 		-- CONTINUE HERE: Insert Function Body analysis
+		modify ( NewDeclaration (newfunident,ty) : )
 		return $ CVar newfunident undefNode
 	expandcall x = return x
 
