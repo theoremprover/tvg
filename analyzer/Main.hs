@@ -147,12 +147,17 @@ declaration2EnvItemNoSubst decl = do
 	ty' <- elimTypeDefsM ty
 	return (oldident,(oldident,ty'))
 
-data TraceElem = Assignment Ident CAssignOp CExpr | Condition CExpr | NewDeclaration (Ident,Type)
+data TraceElem =
+	Assignment Ident CAssignOp CExpr |
+	Condition CExpr |
+	NewDeclaration (Ident,Type) |
+	Return CExpr
 deriving instance Data TraceElem
 instance Show TraceElem where
 	show (Assignment ident assignop expr)  = (render.pretty) ident ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
 	show (Condition expr)            = "COND " ++ (render.pretty) expr
 	show (NewDeclaration (ident,ty)) = "DECL " ++ (render.pretty) ident ++ " :: " ++ (render.pretty) ty
+	show (Return expr)               = "RET  " ++ (render.pretty) expr
 type Trace = [TraceElem]
 
 type TraceAnalysisResult = (Int,Trace,Trace,[MZAST.ModelData],Maybe Solution)
@@ -164,18 +169,21 @@ covVectorsM funname = do
 	param_env <- forM paramdecls declaration2EnvItem
 	glob_env <- forM globdecls declaration2EnvItemNoSubst
 	let env = param_env ++ glob_env
-	let newdecls = map envitem2newdecl env
-	let enumdefs = concatMap enum2stmt globdecls
+	let
+		envitem2newdecl :: EnvItem -> TraceElem
+		envitem2newdecl (_,(newident,ty)) = NewDeclaration (newident,ty)
+		
+		newdecls = map envitem2newdecl env
+	let
+		enumdefs = concatMap enum2stmt globdecls
+		
+		enum2stmt :: IdentDecl -> [CBlockItem]
+		enum2stmt (EnumeratorDef (Enumerator ident expr _ _)) =
+			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
+		enum2stmt _ = []
+
 	followTracesM [env] newdecls [enumdefs++[CBlockStmt body]] >>= return.(zip [1..]) >>=
 		mapM elimAssignmentsM >>= mapM (expandCallsM glob_env) >>= mapM solveTraceM
-	where
-	envitem2newdecl :: EnvItem -> TraceElem
-	envitem2newdecl (_,(newident,ty)) = NewDeclaration (newident,ty)
-	
-	enum2stmt :: IdentDecl -> [CBlockItem]
-	enum2stmt (EnumeratorDef (Enumerator ident expr _ _)) =
-		[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
-	enum2stmt _ = []
 
 
 -- UNFOLD TRACES
@@ -192,12 +200,11 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 			Nothing        -> followTracesM envs (not_cond : trace) ( rest : rest2 )
 			Just else_stmt -> followTracesM envs (not_cond : trace) ( (CBlockStmt else_stmt : rest) : rest2 )
 		return $ then_traces ++ else_traces
-	CReturn mb_ret_expr _ -> do
-		followTracesM envs trace ([ CBlockStmt (CExpr mb_ret_expr undefNode) ] : rest2)
+	CReturn Nothing _ -> return [ trace ]
+	CReturn (Just ret_expr) _ -> return [ translateidents (Return ret_expr) : trace ]
 	CExpr (Just (CAssign assignop (CVar ident _) assigned_expr _)) _ -> do
 		followTracesM envs (translateidents (Assignment ident assignop assigned_expr) : trace) (rest:rest2)
-	CExpr (Just other_expr) _ ->
-		followTracesM envs trace (rest:rest2)
+	CExpr (Just other_expr) _ -> error $ "followTracesM " ++ (render.pretty) stmt ++ " not implemented yet" --followTracesM envs trace (rest:rest2)
 	where
 	translateidents = translateIdents envs
 
@@ -265,8 +272,7 @@ elimAssignmentsM (i,trace) = return (i,trace,foldtrace [] trace)
 		Just assignop' = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
 			(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
-	foldtrace result (decl@(NewDeclaration _) : rest) = foldtrace (decl:result) rest
-	foldtrace result (cond@(Condition _) : rest) = foldtrace (cond:result) rest
+	foldtrace result (traceitem : rest) = foldtrace (traceitem:result) rest
 
 	substvar :: Ident -> CExpr -> CExpr -> CExpr
 	substvar ident expr (CVar varid _) | varid == ident = expr
