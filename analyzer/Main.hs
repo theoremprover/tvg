@@ -175,7 +175,7 @@ prepareFollowTracesM include_glob_trace funname = do
 	let
 		envitem2newdecl :: EnvItem -> TraceElem
 		envitem2newdecl (_,(newident,ty)) = NewDeclaration (newident,ty)
-		newdecls = if include_glob_trace then map envitem2newdecl env else []
+		newdecls = map envitem2newdecl $ if include_glob_trace then env else param_env
 	let
 		enumdefs = concatMap enum2stmt globdecls
 		enum2stmt :: IdentDecl -> [CBlockItem]
@@ -203,13 +203,17 @@ createReturnValPredicatesM fun_ret_ident funname = do
 	createpredicatesM :: (Int,Trace,Trace) -> CovVecM Trace
 	createpredicatesM (i,_,trace) = case last trace of
 		Return ret_expr -> do
-			forM (init trace) $ \case
+			trace' <- forM (init trace) $ \case
 				decl@(NewDeclaration _) -> return decl
 				Condition expr -> return $ Condition $ CBinary CLorOp
 					(CUnary CNegOp expr undefNode)
 					(CBinary CEqOp (CVar fun_ret_ident undefNode) ret_expr undefNode)
-					undefNode 
-
+					undefNode
+			liftIO $ do
+				putStrLn "\n::::::::::::"
+				forM_ trace' print
+			return trace'
+			
 		_ -> error $ "createpredicatesM: no RET found"
 {-
 		printLog "%%%%%%%%%%%%"
@@ -339,7 +343,7 @@ var2MZ :: TyEnv -> Ident -> CovVecM MZAST.ModelData
 var2MZ tyenv ident = do
 	let ty = case lookup ident tyenv of
 		Just ty -> ty
-		Nothing -> error $ "Could not find " ++ show ident ++ " in " ++ unlines (map (\ (ident,ty) -> (render.pretty) ident ++ " |-> " ++ (render.pretty) ty ) tyenv)
+		Nothing -> error $ "Could not find " ++ show ident ++ " in\n" ++ unlines (map (\ (ident,ty) -> (render.pretty) ident ++ " |-> " ++ (render.pretty) ty ) tyenv)
 	mzty <- ty2mz ty
 	return $ MZAST.var mzty (identToString ident)
 	where
@@ -370,7 +374,10 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 	eq0 :: Constraint -> Constraint
 	eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
 	insert_eq0 :: Bool -> Constraint -> Constraint
-	insert_eq0 _ (CUnary CNegOp expr ni) = CUnary CNegOp (insert_eq0 True expr) ni
+	insert_eq0 _ (CUnary unop expr ni) = case unop of
+		CNegOp -> CUnary CNegOp (insert_eq0 True expr) ni
+		unop   -> mb_eq0 $ CUnary unop (insert_eq0 False expr) ni
+	insert_eq0 must_be_bool (CCast _ expr _) = insert_eq0 must_be_bool expr
 	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then eq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
 	insert_eq0 must_be_bool cvar@(CVar ident ni) = (if must_be_bool then eq0 else id) cvar
 	insert_eq0 must_be_bool const@(CConst _) = (if must_be_bool then eq0 else id) const
@@ -387,6 +394,7 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 	
 	flatten_not :: Bool -> Constraint -> Constraint
 	flatten_not is_neg (CUnary CNegOp expr ni) = flatten_not (not is_neg) expr
+	flatten_not is_neg (CUnary unop expr ni) = CUnary unop (flatten_not is_neg expr) ni
 	flatten_not True un@(CUnary CCompOp _ _) = error $ "flatten_not True " ++ (render.pretty) un ++ " is impossible!"
 	flatten_not False (CUnary CCompOp expr ni) = CUnary CCompOp (flatten_not False expr) ni
 	flatten_not False cvar@(CVar ident ni) = cvar
