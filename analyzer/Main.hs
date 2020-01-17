@@ -86,9 +86,9 @@ main = do
 						"",
 						"--- SOLUTION " ++ is ++ " ----------------------",
 						show solution ]
-	where
-	isnotbuiltin (NewDeclaration (ident,_)) = not $ "__" `isPrefixOf` (identToString ident)
-	isnotbuiltin _ = True
+
+isnotbuiltin (NewDeclaration (ident,_)) = not $ "__" `isPrefixOf` (identToString ident)
+isnotbuiltin _ = True
 
 data CovVecState = CovVecState {
 	globDeclsCVS    :: GlobalDecls,
@@ -162,28 +162,62 @@ type Trace = [TraceElem]
 
 type TraceAnalysisResult = (Int,Trace,Trace,[MZAST.ModelData],Maybe Solution)
 
-covVectorsM :: String -> CovVecM [TraceAnalysisResult]
-covVectorsM funname = do
-	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
+-- Prepares and follows the traces, returning the traces
+-- (including or excluding the trace elements that stem from the global environment)
+
+prepareFollowTracesM :: Bool -> String -> CovVecM [(Int,Trace,Trace)]
+prepareFollowTracesM include_glob_trace funname = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
-	param_env <- forM paramdecls declaration2EnvItem
 	glob_env <- forM globdecls declaration2EnvItemNoSubst
+	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
+	param_env <- forM paramdecls declaration2EnvItem
 	let env = param_env ++ glob_env
 	let
 		envitem2newdecl :: EnvItem -> TraceElem
 		envitem2newdecl (_,(newident,ty)) = NewDeclaration (newident,ty)
-		
-		newdecls = map envitem2newdecl env
+		newdecls = if include_glob_trace then map envitem2newdecl env else []
 	let
 		enumdefs = concatMap enum2stmt globdecls
-		
 		enum2stmt :: IdentDecl -> [CBlockItem]
 		enum2stmt (EnumeratorDef (Enumerator ident expr _ _)) =
 			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
 		enum2stmt _ = []
 
 	followTracesM [env] newdecls [enumdefs++[CBlockStmt body]] >>= return.(zip [1..]) >>=
-		mapM elimAssignmentsM >>= mapM (expandCallsM glob_env) >>= mapM solveTraceM
+		mapM elimAssignmentsM >>= mapM (expandCallsM glob_env)
+
+
+-- Find input vectors that fully cover the given function
+
+covVectorsM :: String -> CovVecM [TraceAnalysisResult]
+covVectorsM funname = do
+	prepareFollowTracesM True funname >>= mapM solveTraceM
+
+
+-- For a given function, find all traces together with their constraints and return values
+
+createReturnValPredicatesM :: Ident -> String -> CovVecM [Trace]
+createReturnValPredicatesM fun_ret_ident funname = do
+	prepareFollowTracesM False funname >>= mapM createpredicatesM
+	where
+	createpredicatesM :: (Int,Trace,Trace) -> CovVecM Trace
+	createpredicatesM (i,_,trace) = case last trace of
+		Return ret_expr -> do
+			forM (init trace) $ \case
+				decl@(NewDeclaration _) -> return decl
+				Condition expr -> return $ Condition $ CBinary CLorOp
+					(CUnary CNegOp expr undefNode)
+					(CBinary CEqOp (CVar fun_ret_ident undefNode) ret_expr undefNode)
+					undefNode 
+
+		_ -> error $ "createpredicatesM: no RET found"
+{-
+		printLog "%%%%%%%%%%%%"
+		printLog $ "createpredicatesM for "
+		forM_ (filter isnotbuiltin trace) (printLog.show)
+		printLog "%%%%%%%%%%%%"
+		return []
+-}
 
 
 -- UNFOLD TRACES
@@ -290,9 +324,9 @@ expandCallsM env (i,orig_trace,trace) = do
 	expandcall (CCall funexpr@(CVar funident _) args _) = do
 		let Just (_,FunctionType (FunType ty _ _) _) = lookup funident env
 		newfunident <- lift $ createNewIdent (identToString funident)
-		
-		-- CONTINUE HERE: Insert Function Body analysis
 		modify ( NewDeclaration (newfunident,ty) : )
+		constraintss <- lift $ createReturnValPredicatesM newfunident (identToString funident)
+		modify ((concat constraintss) ++)
 		return $ CVar newfunident undefNode
 	expandcall x = return x
 
