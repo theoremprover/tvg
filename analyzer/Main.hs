@@ -94,7 +94,6 @@ main = do
 						where
 						showarg (oldident,(newident,_)) =
 							identToString oldident ++ "=" ++ case lookup (identToString newident) solution of
-								Nothing -> "DONT_CARE"
 								Just (MInt i) -> show i
 								Just (MFloat f) -> show f
 								val -> error $ "showarg " ++ show val ++ " not yet implemented"
