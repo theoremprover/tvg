@@ -374,9 +374,9 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 	eq0 :: Constraint -> Constraint
 	eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
 	insert_eq0 :: Bool -> Constraint -> Constraint
-	insert_eq0 _ (CUnary unop expr ni) = case unop of
+	insert_eq0 must_be_bool (CUnary unop expr ni) = case unop of
 		CNegOp -> CUnary CNegOp (insert_eq0 True expr) ni
-		unop   -> mb_eq0 $ CUnary unop (insert_eq0 False expr) ni
+		unop   -> (if must_be_bool then eq0 else id) $ CUnary unop (insert_eq0 False expr) ni
 	insert_eq0 must_be_bool (CCast _ expr _) = insert_eq0 must_be_bool expr
 	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then eq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
 	insert_eq0 must_be_bool cvar@(CVar ident ni) = (if must_be_bool then eq0 else id) cvar
@@ -417,7 +417,9 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 	flatten_not _ expr | promiscuousMode = expr
 	flatten_not is_neg expr = error $ "flatten_not " ++ show is_neg ++ " " ++ (render.pretty) expr ++ " not implemented yet"
 
-	expr2constr (CUnary CNegOp _ _) = error $ "expr2constr CUnaryOp CNegOp!"
+	expr2constr (CUnary unop _ _) = case unop of
+		CNegOp -> error $ "expr2constr CUnaryOp CNegOp!"
+		unop -> MZAST. (expr2constr 
 	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
 	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
 	expr2constr (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr expr) []]
