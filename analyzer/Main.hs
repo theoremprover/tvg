@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
-{-# LANGUAGE UnicodeSyntax,LambdaCase,ScopedTypeVariables,TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,DeriveDataTypeable #-}
+{-# LANGUAGE UnicodeSyntax,LambdaCase,ScopedTypeVariables,TupleSections,TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,DeriveDataTypeable #-}
 
 module Main where
 
@@ -20,6 +20,7 @@ import Interfaces.FZSolutionParser
 import qualified Interfaces.MZAST as MZAST
 import Interfaces.MZPrinter
 import Interfaces.MZinHaskell
+import qualified Interfaces.MZBuiltIns as MZB
 
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
@@ -44,7 +45,7 @@ fp-bit.i: Function _fpdiv_parts
 --}
 
 promiscuousMode = False
-solveIt = False
+solveIt = True
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -75,7 +76,7 @@ main = do
 					when ("-writeGlobalDecls" ∈ opts) $
 						writeFile (analyzerPath </> filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 					covvectors <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
-					forM_ covvectors $ \ (i,origtrace,trace,model,solution) -> let is = show i in printLog $ unlines $
+					forM_ covvectors $ \ (i,origtrace,trace,model,mb_solution) -> let is = show i in printLog $ unlines $
 						[ "","=== ORIG TRACE " ++ is ++ " ====================","<leaving out builtins...>" ] ++
 						map show (filter isnotbuiltin origtrace) ++
 						[ "","--- TRACE " ++ is ++ " -------------------------","<leaving out builtins...>" ] ++
@@ -85,7 +86,18 @@ main = do
 						layout model,
 						"",
 						"--- SOLUTION " ++ is ++ " ----------------------",
-						show solution ]
+						show_solution mb_solution ]
+					where
+					show_solution Nothing = "No solution"
+					show_solution (Just (env,solution)) = unlines [ show solution,
+						funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ]
+						where
+						showarg (oldident,(newident,_)) =
+							identToString oldident ++ "=" ++ case lookup (identToString newident) solution of
+								Nothing -> "DONT_CARE"
+								Just (MInt i) -> show i
+								Just (MFloat f) -> show f
+								val -> error $ "showarg " ++ show val ++ " not yet implemented"
 
 isnotbuiltin (NewDeclaration (ident,_)) = not $ "__" `isPrefixOf` (identToString ident)
 isnotbuiltin _ = True
@@ -160,12 +172,12 @@ instance Show TraceElem where
 	show (Return expr)               = "RET  " ++ (render.pretty) expr
 type Trace = [TraceElem]
 
-type TraceAnalysisResult = (Int,Trace,Trace,[MZAST.ModelData],Maybe Solution)
+type TraceAnalysisResult = (Int,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution))
 
 -- Prepares and follows the traces, returning the traces
 -- (including or excluding the trace elements that stem from the global environment)
 
-prepareFollowTracesM :: Bool -> String -> CovVecM [(Int,Trace,Trace)]
+prepareFollowTracesM :: Bool -> String -> CovVecM ([(Int,Trace,Trace,Env)])
 prepareFollowTracesM include_glob_trace funname = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
 	glob_env <- forM globdecls declaration2EnvItemNoSubst
@@ -184,7 +196,7 @@ prepareFollowTracesM include_glob_trace funname = do
 		enum2stmt _ = []
 
 	followTracesM [env] newdecls [enumdefs++[CBlockStmt body]] >>= return.(zip [1..]) >>=
-		mapM elimAssignmentsM >>= mapM (expandCallsM glob_env)
+		mapM elimAssignmentsM >>= mapM (expandCallsM glob_env param_env)
 
 
 -- Find input vectors that fully cover the given function
@@ -200,8 +212,8 @@ createReturnValPredicatesM :: Ident -> String -> CovVecM [Trace]
 createReturnValPredicatesM fun_ret_ident funname = do
 	prepareFollowTracesM False funname >>= mapM createpredicatesM
 	where
-	createpredicatesM :: (Int,Trace,Trace) -> CovVecM Trace
-	createpredicatesM (i,_,trace) = case last trace of
+	createpredicatesM :: (Int,Trace,Trace,Env) -> CovVecM Trace
+	createpredicatesM (i,_,trace,_) = case last trace of
 		Return ret_expr -> do
 			trace' <- forM (init trace) $ \case
 				decl@(NewDeclaration _) -> return decl
@@ -215,13 +227,6 @@ createReturnValPredicatesM fun_ret_ident funname = do
 			return trace'
 			
 		_ -> error $ "createpredicatesM: no RET found"
-{-
-		printLog "%%%%%%%%%%%%"
-		printLog $ "createpredicatesM for "
-		forM_ (filter isnotbuiltin trace) (printLog.show)
-		printLog "%%%%%%%%%%%%"
-		return []
--}
 
 
 -- UNFOLD TRACES
@@ -319,10 +324,10 @@ elimAssignmentsM (i,trace) = return (i,trace,foldtrace [] trace)
 
 -- Expand Calls in Expressions
 
-expandCallsM :: Env -> (Int,Trace,Trace) -> CovVecM (Int,Trace,Trace)
-expandCallsM env (i,orig_trace,trace) = do
+expandCallsM :: Env -> Env -> (Int,Trace,Trace) -> CovVecM (Int,Trace,Trace,Env)
+expandCallsM env param_env (i,orig_trace,trace) = do
 	(trace',additional_traceelems) <- runStateT (everywhereM (mkM expandcall) trace) []
-	return (i,orig_trace,additional_traceelems++trace')
+	return (i,orig_trace,additional_traceelems++trace',param_env)
 	where
 	expandcall :: CExpr -> StateT [TraceElem] CovVecM CExpr
 	expandcall (CCall funexpr@(CVar funident _) args _) = do
@@ -330,8 +335,11 @@ expandCallsM env (i,orig_trace,trace) = do
 		newfunident <- lift $ createNewIdent (identToString funident)
 		modify ( NewDeclaration (newfunident,ty) : )
 		constraintss <- lift $ createReturnValPredicatesM newfunident (identToString funident)
-		modify ((concat constraintss) ++)
+		arg_constrs <- forM (zip param_env args) $ \ ((_,(arg_ident,_)),arg) -> do
+			return $ Condition $ CBinary CEqOp (CVar arg_ident undefNode) arg undefNode
+		modify ((concat constraintss ++ arg_constrs) ++)
 		return $ CVar newfunident undefNode
+	expandcall ccall@(CCall funexpr _ _) = error $ "expandcall: " ++ (render.pretty) ccall ++ " not implemented yet"
 	expandcall x = return x
 
 
@@ -374,11 +382,11 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 	eq0 :: Constraint -> Constraint
 	eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
 	insert_eq0 :: Bool -> Constraint -> Constraint
+	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then eq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
 	insert_eq0 must_be_bool (CUnary unop expr ni) = case unop of
 		CNegOp -> CUnary CNegOp (insert_eq0 True expr) ni
 		unop   -> (if must_be_bool then eq0 else id) $ CUnary unop (insert_eq0 False expr) ni
 	insert_eq0 must_be_bool (CCast _ expr _) = insert_eq0 must_be_bool expr
-	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then eq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
 	insert_eq0 must_be_bool cvar@(CVar ident ni) = (if must_be_bool then eq0 else id) cvar
 	insert_eq0 must_be_bool const@(CConst _) = (if must_be_bool then eq0 else id) const
 	insert_eq0 must_be_bool (CBinary binop expr1 expr2 ni) = mb_eq0 $
@@ -394,9 +402,9 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 	
 	flatten_not :: Bool -> Constraint -> Constraint
 	flatten_not is_neg (CUnary CNegOp expr ni) = flatten_not (not is_neg) expr
-	flatten_not is_neg (CUnary unop expr ni) = CUnary unop (flatten_not is_neg expr) ni
 	flatten_not True un@(CUnary CCompOp _ _) = error $ "flatten_not True " ++ (render.pretty) un ++ " is impossible!"
 	flatten_not False (CUnary CCompOp expr ni) = CUnary CCompOp (flatten_not False expr) ni
+	flatten_not is_neg (CUnary unop expr ni) = CUnary unop (flatten_not is_neg expr) ni
 	flatten_not False cvar@(CVar ident ni) = cvar
 	flatten_not True cvar@(CVar ident ni) = error $ "flatten_not True " ++ (render.pretty) cvar ++ " is impossible!"
 	flatten_not False cconst@(CConst _) = cconst
@@ -417,12 +425,12 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 	flatten_not _ expr | promiscuousMode = expr
 	flatten_not is_neg expr = error $ "flatten_not " ++ show is_neg ++ " " ++ (render.pretty) expr ++ " not implemented yet"
 
-	expr2constr (CUnary unop _ _) = case unop of
-		CNegOp -> error $ "expr2constr CUnaryOp CNegOp!"
-		unop -> MZAST. (expr2constr 
+	expr2constr (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr expr) []]
+	expr2constr (CUnary CNegOp expr _) = error $ "expr2constr CUnaryOp CNegOp!"
+	expr2constr (CUnary unop expr _) = MZAST.U (MZAST.Op $ MZAST.stringToIdent $ (render.pretty) unop) (expr2constr expr)
 	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
 	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
-	expr2constr (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr expr) []]
+	expr2constr (CConst (CFloatConst (CFloat s_float) _)) = MZAST.FConst (read s_float :: Float)
 	expr2constr (CBinary binop expr1 expr2 _) = case lookup binop
 		[(CAndOp,"bitwise_and"),(COrOp,"bitwise_or"),(CXorOp,"bitwise_xor"),(CShrOp,"bitshift_right"),(CShlOp,"bitshift_left")] of
 			Just funname -> MZAST.Call (MZAST.stringToIdent funname) [MZAST.AnnExpr expr1' [],MZAST.AnnExpr expr2' []]
@@ -430,14 +438,15 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 		where
 		expr1' = expr2constr expr1
 		expr2' = expr2constr expr2
-		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"=")]
+		-- Hopefully, the minzinc operators have the same precedences as in C
+		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"="),(CLndOp,"/\\"),(CLorOp,"\\/")]
 	expr2constr expr | promiscuousMode = MZAST.IConst 0
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
 traceelemToMZ _ = return []
 
-solveTraceM :: (Int,Trace,Trace) -> CovVecM TraceAnalysisResult
-solveTraceM (i,orig_trace,trace) = do
+solveTraceM :: (Int,Trace,Trace,Env) -> CovVecM TraceAnalysisResult
+solveTraceM (i,orig_trace,trace,param_env) = do
 	let tyenv = concatMap traceitem2tyenv trace where
 		traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
 		traceitem2tyenv _ = []
@@ -459,7 +468,7 @@ solveTraceM (i,orig_trace,trace) = do
 			printLog $ show err
 			return Nothing
 		Right [] -> return Nothing
-		Right (sol:_) -> return $ Just sol
+		Right (sol:_) -> return $ Just (param_env,sol)
 
 	return (i,orig_trace,trace,model,mb_solution)
 	where

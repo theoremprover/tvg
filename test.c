@@ -27,7 +27,7 @@ short f(MYINT x,int y,enum Zahl z)
     if(x1>g(y+1))
     {
         short abc;
-        abc = x+(short)g(x1);
+        abc = x+1; //(short)g(x1);
         return(abc*x1);
     }
     else
