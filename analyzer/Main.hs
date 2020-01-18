@@ -93,7 +93,8 @@ main = do
 						funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ]
 						where
 						showarg (oldident,(newident,_)) =
-							identToString oldident ++ "=" ++ case lookup (identToString newident) solution of
+							identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
+								Nothing -> "DONT_CARE"
 								Just (MInt i) -> show i
 								Just (MFloat f) -> show f
 								val -> error $ "showarg " ++ show val ++ " not yet implemented"
@@ -220,9 +221,6 @@ createReturnValPredicatesM fun_ret_ident funname = do
 					(CUnary CNegOp expr undefNode)
 					(CBinary CEqOp (CVar fun_ret_ident undefNode) ret_expr undefNode)
 					undefNode
-			liftIO $ do
-				putStrLn "\n::::::::::::"
-				forM_ trace' print
 			return trace'
 			
 		_ -> error $ "createpredicatesM: no RET found"
