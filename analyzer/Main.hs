@@ -89,8 +89,9 @@ main = do
 						show_solution mb_solution ]
 					where
 					show_solution Nothing = "No solution"
-					show_solution (Just (env,solution)) = unlines [ show solution,
-						funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ]
+					show_solution (Just (env,solution,mb_retval)) = unlines [ show solution,
+						funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )",
+						"    = " ++ maybe "<NO_RETURN>" (render.pretty) mb_retval ]
 						where
 						showarg (oldident,(newident,_)) =
 							identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
@@ -172,7 +173,7 @@ instance Show TraceElem where
 	show (Return expr)               = "RET  " ++ (render.pretty) expr
 type Trace = [TraceElem]
 
-type TraceAnalysisResult = (Int,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution))
+type TraceAnalysisResult = (Int,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 
 -- Prepares and follows the traces, returning the traces
 -- (including or excluding the trace elements that stem from the global environment)
@@ -215,8 +216,8 @@ covVectorsM funname = do
 createReturnValPredicatesM :: Ident -> String -> CovVecM ([Trace],Env)
 createReturnValPredicatesM fun_ret_ident funname = do
 	(traces,calledfun_param_env) <- prepareFollowTracesM False funname
-	traces' <- mapM createpredicatesM traces
-	return (traces',calledfun_param_env)
+	traces_rets <- mapM createpredicatesM traces
+	return (traces_rets,calledfun_param_env)
 	where
 	createpredicatesM :: (Int,Trace,Trace) -> CovVecM Trace
 	createpredicatesM (i,_,trace) = case last trace of
@@ -264,7 +265,7 @@ followTracesM allenv@(env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] 
 		envitem@(_,tyenvitem) <- oldident2EnvItem ty ident
 		let assign_items = case mb_init of
 			Nothing -> []
-			Just (CInitExpr expr _) -> [ translateidents $ Assignment ident CAssignOp expr ]
+			Just (CInitExpr expr _) -> [ translateIdents ((envitem:env):envs) $ Assignment ident CAssignOp expr ]
 		let declitem = NewDeclaration tyenvitem
 		return (envitem : envitems, assign_items ++ [declitem] ++ traceelems)
 
@@ -281,8 +282,9 @@ translateIdents :: [Env] -> TraceElem -> TraceElem
 translateIdents envs traceitem = everywhere (mkT transident) traceitem
 	where
 	transident :: Ident -> Ident
-	transident ident = ident' where
-		Just (ident',_) = lookup ident (concat envs)
+	transident ident = case lookup ident (concat envs) of
+		Just (ident',_) -> ident'
+		Nothing -> error $ "translateIdents: Could not find " ++ (render.pretty) ident
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
 tyspec2TypeM typespec = case typespec of
@@ -363,7 +365,7 @@ var2MZ tyenv ident = do
 		TyIntegral intty -> case intty of
 			TyBool -> return MZAST.Bool
 			TyShort -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
-			TyInt -> return $ MZAST.Range (MZAST.IConst (-10)) (MZAST.IConst 10) --MZAST.Int
+			TyInt -> return $ MZAST.Int --MZAST.Range (MZAST.IConst (-1000)) (MZAST.IConst 1000)
 			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 		TyFloating floatty -> case floatty of
 			TyFloat -> return MZAST.Float
@@ -433,7 +435,7 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 	expr2constr (CUnary unop expr _) = MZAST.U (MZAST.Op $ MZAST.stringToIdent $ (render.pretty) unop) (expr2constr expr)
 	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
 	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
-	expr2constr (CConst (CFloatConst (CFloat s_float) _)) = MZAST.FConst (read s_float :: Float)
+	expr2constr (CConst (CFloatConst (CFloat s_float) _)) = MZAST.FConst $ read s_float
 	expr2constr (CBinary binop expr1 expr2 _) = case lookup binop
 		[(CAndOp,"bitwise_and"),(COrOp,"bitwise_or"),(CXorOp,"bitwise_xor"),(CShrOp,"bitshift_right"),(CShlOp,"bitshift_left")] of
 			Just funname -> MZAST.Call (MZAST.stringToIdent funname) [MZAST.AnnExpr expr1' [],MZAST.AnnExpr expr2' []]
@@ -441,7 +443,7 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 		where
 		expr1' = expr2constr expr1
 		expr2' = expr2constr expr2
-		-- Hopefully, the minzinc operators have the same precedences as in C
+		-- Leaving out brackets: Hopefully, the minzinc operators have the same precedences as in C
 		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"="),(CLndOp,"/\\"),(CLorOp,"\\/")]
 	expr2constr expr | promiscuousMode = MZAST.IConst 0
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
@@ -450,6 +452,10 @@ traceelemToMZ _ = return []
 
 solveTraceM :: Env -> (Int,Trace,Trace) -> CovVecM TraceAnalysisResult
 solveTraceM param_env (i,orig_trace,trace) = do
+	let mb_ret_val = case last trace of
+		Return ret_expr -> Just ret_expr
+		_               -> Nothing
+
 	let tyenv = concatMap traceitem2tyenv trace where
 		traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
 		traceitem2tyenv _ = []
@@ -458,7 +464,18 @@ solveTraceM param_env (i,orig_trace,trace) = do
 		includesG = [ MZAST.include "include.mzn" ]
 		vars = nub $ everything (++) (mkQ [] searchvar) trace
 	varsG <- mapM (var2MZ tyenv) vars
-	let model = includesG ++ varsG ++ constraintsG ++ [ MZAST.solve MZAST.satisfy ]
+	let
+		solution_vars =
+			(map (\ (_,(argident,_)) -> identToString argident) param_env)
+			`intersect`
+			(map identToString vars)
+		model = includesG ++ varsG ++ constraintsG ++
+			[ MZAST.solve $ MZAST.satisfy MZAST.|: MZAST.Annotation "int_search" [
+				MZAST.E (MZAST.ArrayLit $ map (MZAST.Var . MZAST.Simpl) solution_vars),
+				MZAST.E (MZAST.Var $ MZAST.Simpl "input_order"),
+				MZAST.E (MZAST.Var $ MZAST.Simpl "indomain_median"),
+				MZAST.E (MZAST.Var $ MZAST.Simpl "complete") ] ]
+
 	let modelpath = analyzerPath </> "model" ++ show i
 	liftIO $ writeFile (modelpath ++ ".mzn") $ layout model
 	printLog "Running model..."
@@ -471,7 +488,7 @@ solveTraceM param_env (i,orig_trace,trace) = do
 			printLog $ show err
 			return Nothing
 		Right [] -> return Nothing
-		Right (sol:_) -> return $ Just (param_env,sol)
+		Right (sol:_) -> return $ Just (param_env,sol,mb_ret_val)
 
 	return (i,orig_trace,trace,model,mb_solution)
 	where
