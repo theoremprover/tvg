@@ -177,7 +177,7 @@ type TraceAnalysisResult = (Int,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solutio
 -- Prepares and follows the traces, returning the traces
 -- (including or excluding the trace elements that stem from the global environment)
 
-prepareFollowTracesM :: Bool -> String -> CovVecM ([(Int,Trace,Trace,Env)])
+prepareFollowTracesM :: Bool -> String -> CovVecM ([(Int,Trace,Trace)],Env)
 prepareFollowTracesM include_glob_trace funname = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
 	glob_env <- forM globdecls declaration2EnvItemNoSubst
@@ -195,25 +195,31 @@ prepareFollowTracesM include_glob_trace funname = do
 			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
 		enum2stmt _ = []
 
-	followTracesM [env] newdecls [enumdefs++[CBlockStmt body]] >>= return.(zip [1..]) >>=
-		mapM elimAssignmentsM >>= mapM (expandCallsM glob_env param_env)
+	followTracesM [env] newdecls [enumdefs++[CBlockStmt body]] >>=
+		return . (zip [1..]) >>=
+		mapM elimAssignmentsM >>=
+		mapM (expandCallsM glob_env) >>=
+		return . (,param_env)
 
 
 -- Find input vectors that fully cover the given function
 
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
-	prepareFollowTracesM True funname >>= mapM solveTraceM
+	(traces,param_env) <- prepareFollowTracesM True funname
+	mapM (solveTraceM param_env) traces
 
 
 -- For a given function, find all traces together with their constraints and return values
 
-createReturnValPredicatesM :: Ident -> String -> CovVecM [Trace]
+createReturnValPredicatesM :: Ident -> String -> CovVecM ([Trace],Env)
 createReturnValPredicatesM fun_ret_ident funname = do
-	prepareFollowTracesM False funname >>= mapM createpredicatesM
+	(traces,calledfun_param_env) <- prepareFollowTracesM False funname
+	traces' <- mapM createpredicatesM traces
+	return (traces',calledfun_param_env)
 	where
-	createpredicatesM :: (Int,Trace,Trace,Env) -> CovVecM Trace
-	createpredicatesM (i,_,trace,_) = case last trace of
+	createpredicatesM :: (Int,Trace,Trace) -> CovVecM Trace
+	createpredicatesM (i,_,trace) = case last trace of
 		Return ret_expr -> do
 			trace' <- forM (init trace) $ \case
 				decl@(NewDeclaration _) -> return decl
@@ -321,18 +327,18 @@ elimAssignmentsM (i,trace) = return (i,trace,foldtrace [] trace)
 
 -- Expand Calls in Expressions
 
-expandCallsM :: Env -> Env -> (Int,Trace,Trace) -> CovVecM (Int,Trace,Trace,Env)
-expandCallsM env param_env (i,orig_trace,trace) = do
+expandCallsM :: Env -> (Int,Trace,Trace) -> CovVecM (Int,Trace,Trace)
+expandCallsM env (i,orig_trace,trace) = do
 	(trace',additional_traceelems) <- runStateT (everywhereM (mkM expandcall) trace) []
-	return (i,orig_trace,additional_traceelems++trace',param_env)
+	return (i,orig_trace,additional_traceelems++trace')
 	where
 	expandcall :: CExpr -> StateT [TraceElem] CovVecM CExpr
 	expandcall (CCall funexpr@(CVar funident _) args _) = do
 		let Just (_,FunctionType (FunType ty _ _) _) = lookup funident env
 		newfunident <- lift $ createNewIdent (identToString funident)
 		modify ( NewDeclaration (newfunident,ty) : )
-		constraintss <- lift $ createReturnValPredicatesM newfunident (identToString funident)
-		arg_constrs <- forM (zip param_env args) $ \ ((_,(arg_ident,_)),arg) -> do
+		(constraintss,calledfun_param_env) <- lift $ createReturnValPredicatesM newfunident (identToString funident)
+		arg_constrs <- forM (zip calledfun_param_env args) $ \ ((_,(arg_ident,_)),arg) -> do
 			return $ Condition $ CBinary CEqOp (CVar arg_ident undefNode) arg undefNode
 		modify ((concat constraintss ++ arg_constrs) ++)
 		return $ CVar newfunident undefNode
@@ -442,8 +448,8 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 
 traceelemToMZ _ = return []
 
-solveTraceM :: (Int,Trace,Trace,Env) -> CovVecM TraceAnalysisResult
-solveTraceM (i,orig_trace,trace,param_env) = do
+solveTraceM :: Env -> (Int,Trace,Trace) -> CovVecM TraceAnalysisResult
+solveTraceM param_env (i,orig_trace,trace) = do
 	let tyenv = concatMap traceitem2tyenv trace where
 		traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
 		traceitem2tyenv _ = []
