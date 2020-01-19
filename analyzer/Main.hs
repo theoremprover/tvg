@@ -357,7 +357,7 @@ var2MZ tyenv ident = do
 		TyIntegral intty -> case intty of
 			TyBool -> return MZAST.Bool
 			TyShort -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
-			TyInt -> return MZAST.Int
+			TyInt -> return $ MZAST.Range (MZAST.IConst (-10)) (MZAST.IConst 10) --MZAST.Int
 			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 		TyFloating floatty -> case floatty of
 			TyFloat -> return MZAST.Float

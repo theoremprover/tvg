@@ -41,12 +41,22 @@ short f(MYINT x,int y,enum Zahl z)
 	return((short)(x1 % 0xffff));
 }
 
+/*
+x_9 = -10;
+g_8 = 30.0;
+x_1 = 1;
+x1_4 = -2;
+x_7 = 0;
+g_6 = 0.0;
+y_2 = 0;
+*/
+
 //int main(int argc,char* argv[])
 int main()
 {
 //    int x = atoi(argv[1]);
 //    int y = atoi(argv[2]);
-    int ret = f(5,7,EINS);
+    int ret = f(1,0,EINS);
 //    printf("f(%i)=%i\n",x,ret);
     return 0;
 }
