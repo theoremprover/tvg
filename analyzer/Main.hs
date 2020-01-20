@@ -41,11 +41,11 @@ stack exec analyzer-exe -- test.c
 stack build :analyzer-exe && stack exec analyzer-exe
 
 
-fp-bit.i: Function _fpdiv_parts
+fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
 promiscuousMode = False
-solveIt = False
+solveIt = True
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -59,7 +59,7 @@ main = do
 	hSetBuffering stdout NoBuffering
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : "test.c" : "f" : ["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "analyzer\\fp-bit.i" : "_fpdiv_parts" : [] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
 	getCurrentTime >>= return.(++"\n\n").show >>= writeFile logFile
@@ -306,6 +306,7 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 	where
 	eliminparamdecl (ParamDecl (VarDecl varname declattrs ty) ni) =
 		ParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
+	eliminparamdecl x = error $ "eliminparamdecl: " ++ (render.pretty) x ++ " not implemented"
 
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
