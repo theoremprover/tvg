@@ -26,7 +26,7 @@ import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
-import Data.Time.Clock
+import Data.Time.LocalTime
 import Data.Foldable
 import Data.List
 import System.IO
@@ -59,10 +59,10 @@ main = do
 	hSetBuffering stdout NoBuffering
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : "analyzer\\fp-bit.i" : "_fpdiv_parts" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : [] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
-	getCurrentTime >>= return.(++"\n\n").show >>= writeFile logFile
+	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
 	
 	parseCFile (newGCC gcc) Nothing [] filename >>= \case
 		Left err -> error $ show err
@@ -214,6 +214,7 @@ covVectorsM funname = do
 -- For a given function, find all traces together with their constraints and return values
 
 createReturnValPredicatesM :: Ident -> String -> CovVecM ([Trace],Env)
+--createReturnValPredicatesM fun_ret_ident funname = TODO: BUILTIN FUNCTIONS HERE
 createReturnValPredicatesM fun_ret_ident funname = do
 	(traces,calledfun_param_env) <- prepareFollowTracesM False funname
 	traces_rets <- mapM createpredicatesM traces
@@ -306,7 +307,8 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 	where
 	eliminparamdecl (ParamDecl (VarDecl varname declattrs ty) ni) =
 		ParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
-	eliminparamdecl x = error $ "eliminparamdecl: " ++ (render.pretty) x ++ " not implemented"
+	eliminparamdecl (AbstractParamDecl (VarDecl varname declattrs ty) ni) =
+		AbstractParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
 
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
