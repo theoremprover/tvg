@@ -45,7 +45,7 @@ fp-bit.i: Function _fpdiv_parts
 --}
 
 promiscuousMode = False
-solveIt = True
+solveIt = False
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
