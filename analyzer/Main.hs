@@ -95,13 +95,17 @@ main = do
 						"    = " ++ maybe "<NO_RETURN>" (render.pretty) mb_retval ]
 						where
 						showarg (oldident,(newident,_)) =
-							identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
+							lvalueToString oldident ++ " = " ++ case lookup (lvalueToString newident) solution of
 								Nothing -> "DONT_CARE"
 								Just (MInt i) -> show i
 								Just (MFloat f) -> show f
 								val -> error $ "showarg " ++ show val ++ " not yet implemented"
 
-isnotbuiltin (NewDeclaration (ident,_)) = not $ "__" `isPrefixOf` (identToString ident)
+lvalueToString :: LValue -> String
+lvalueToString (LIdent ident) = identToString ident
+lvalueToString (LMember expr ident isptr) = (render.pretty) $ CMember expr ident isptr undefNode
+
+isnotbuiltin (NewDeclaration (lvalue,_)) = not $ "__" `isPrefixOf` (lvalueToString lvalue)
 isnotbuiltin _ = True
 
 data CovVecState = CovVecState {
@@ -133,21 +137,22 @@ lookupTagM ident = do
 		Just tagdef -> return tagdef
 		Nothing -> error $ "Tag " ++ (show ident) ++ " not found"
 
-createNewIdent :: String -> CovVecM Ident
-createNewIdent name_prefix = do
+createNewIdent :: (Ident -> LValue) -> String -> CovVecM LValue
+createNewIdent ident2lval name_prefix = do
 	new_var_num <- gets newNameIndexCVS
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
-	return $ internalIdent (name_prefix ++ "_" ++ show new_var_num)
+	return $ ident2lval $ internalIdent (name_prefix ++ "_" ++ show new_var_num)
 
-type EnvItem = (Ident,(Ident,Type))
+type EnvItem = (LValue,(LValue,Type))
 instance Pretty EnvItem where
-	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> pretty idnew <+> text " :: " <+> pretty ty
+	pretty (idold,(idnew,ty)) = text (show idold) <+> text " |-> " <+> text (show idnew) <+> text " :: " <+> pretty ty
 type Env = [EnvItem]
 
-oldident2EnvItem :: Type -> Ident -> CovVecM EnvItem
+oldident2EnvItem :: Type -> LValue -> CovVecM EnvItem
 oldident2EnvItem ty oldident = do
-	newident <- createNewIdent (identToString oldident)
 	ty' <- elimTypeDefsM ty
+	
+	newident <- createNewIdent ident2lval (lvalueToString oldident)
 	return (oldident,(newident,ty'))
 
 declaration2EnvItem :: Declaration decl => decl -> CovVecM EnvItem
@@ -161,14 +166,20 @@ declaration2EnvItemNoSubst decl = do
 	ty' <- elimTypeDefsM ty
 	return (oldident,(oldident,ty'))
 
+data LValue = LIdent Ident | LMember CExpr Ident Bool deriving Eq
+deriving instance Data LValue
+instance Show LValue where
+	show (LIdent ident) = (render.pretty) ident
+	show (LMember ptrexpr member isptr) = (render.pretty) $ CMember ptrexpr member isptr undefNode
+
 data TraceElem =
-	Assignment Ident CAssignOp CExpr |
+	Assignment LValue CAssignOp CExpr |
 	Condition CExpr |
-	NewDeclaration (Ident,Type) |
+	NewDeclaration (LValue,Type) |
 	Return CExpr
 deriving instance Data TraceElem
 instance Show TraceElem where
-	show (Assignment ident assignop expr)  = (render.pretty) ident ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
+	show (Assignment lval assignop expr)  = show lval ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
 	show (Condition expr)            = "COND " ++ (render.pretty) expr
 	show (NewDeclaration (ident,ty)) = "DECL " ++ (render.pretty) ident ++ " :: " ++ (render.pretty) ty
 	show (Return expr)               = "RET  " ++ (render.pretty) expr
@@ -251,8 +262,8 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 		return $ then_traces ++ else_traces
 	CReturn Nothing _ -> return [ trace ]
 	CReturn (Just ret_expr) _ -> return [ translateidents (Return ret_expr) : trace ]
-	CExpr (Just (CAssign assignop (CVar ident _) assigned_expr _)) _ -> do
-		followTracesM envs (translateidents (Assignment ident assignop assigned_expr) : trace) (rest:rest2)
+	CExpr (Just (CAssign assignop lexpr assigned_expr _)) _ -> do
+		followTracesM envs (translateidents (Assignment lexpr assignop assigned_expr) : trace) (rest:rest2)
 	CExpr (Just other_expr) _ -> error $ "followTracesM " ++ (render.pretty) stmt ++ " not implemented yet" --followTracesM envs trace (rest:rest2)
 	where
 	translateidents = translateIdents envs
@@ -267,7 +278,7 @@ followTracesM allenv@(env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] 
 		envitem@(_,tyenvitem) <- oldident2EnvItem ty ident
 		let assign_items = case mb_init of
 			Nothing -> []
-			Just (CInitExpr expr _) -> [ translateIdents ((envitem:env):envs) $ Assignment ident CAssignOp expr ]
+			Just (CInitExpr expr _) -> [ translateIdents ((envitem:env):envs) $ Assignment (CVar ident undefNode) CAssignOp expr ]
 		let declitem = NewDeclaration tyenvitem
 		return (envitem : envitems, assign_items ++ [declitem] ++ traceelems)
 
@@ -321,16 +332,23 @@ elimAssignmentsM (i,trace) = return (i,trace,foldtrace [] trace)
 	where
 	foldtrace :: Trace -> Trace -> Trace
 	foldtrace result [] = result
-	foldtrace result (Assignment ident assignop expr : rest) = foldtrace (everywhere (mkT (substvar ident expr')) result) rest where
-		expr' = if assignop==CAssignOp then expr else CBinary assignop' (CVar ident undefNode) expr undefNode
+	foldtrace result (Assignment lexpr assignop expr : rest) = foldtrace (everywhere (mkT (substexpr lexpr expr')) result) rest where
+		expr' = if assignop==CAssignOp then expr else CBinary assignop' lexpr expr undefNode
 		Just assignop' = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
 			(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
 	foldtrace result (traceitem : rest) = foldtrace (traceitem:result) rest
 
-	substvar :: Ident -> CExpr -> CExpr -> CExpr
-	substvar ident expr (CVar varid _) | varid == ident = expr
-	substvar _ _ e = e
+	substexpr :: CExpr -> CExpr -> CExpr -> CExpr
+	substexpr lexpr expr rexpr = if lexpr ≅ rexpr then expr else rexpr
+
+-- Two expressions are equivalent if they are lvalues and syntactically identical modulo arithmetic
+(≅) :: CExpr -> CExpr -> Bool
+(CVar id1 _) ≅ (CVar id2 _) = id1==id2
+(CMember ptrexpr1 ident1 isptr1 _) ≅ (CMember ptrexpr2 ident2 isptr2 _) =
+	ident1==ident2 && isptr1==isptr2 && ptrexpr1 ≅ ptrexpr2
+-- and some more arithmetic...
+_ ≅ _ = False
 
 
 -- Expand Calls in Expressions

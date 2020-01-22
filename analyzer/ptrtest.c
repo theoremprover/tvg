@@ -10,14 +10,15 @@ typedef struct
 
 STRUCT* f(STRUCT *p,int x)
 {
-    if(p->member2 > 0)
+    if(p->member1 == EINS)
     {
-        p->member2 = p->member2 + 1;
+        p->member1 = ZWEI;
     }
 
-    p = p + 1;
-    p->member2 = ZWEI;
-    p->member2 = (p-1)->member2 + 2;
+    if(p->member2 > 0)
+    {
+        p->member2 = p->member2 + x;
+    }
 
     return(p);
 }
