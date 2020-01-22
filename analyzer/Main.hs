@@ -59,7 +59,8 @@ main = do
 	hSetBuffering stdout NoBuffering
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
 	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
@@ -278,7 +279,9 @@ followTracesM allenv trace [] = return [trace]
 
 followTracesM _ _ ((cbi:_):_) = error $ "followTraceM " ++ (render.pretty) cbi ++ " not implemented yet."
 
+
 -- Translate C source idents to new unique idents given in environment
+
 translateIdents :: [Env] -> TraceElem -> TraceElem
 translateIdents envs traceitem = everywhere (mkT transident) traceitem
 	where
