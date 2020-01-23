@@ -15,9 +15,9 @@ STRUCT* f(STRUCT *p,int x)
         p->member1 = ZWEI;
     }
 
-    if(p->member2 > 0)
+    if(p->member2 > x)
     {
-        p->member2 = p->member2 + x;
+        p->member2 = p->member2 + 1;
     }
 
     return(p);

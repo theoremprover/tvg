@@ -133,16 +133,16 @@ lookupTagM ident = do
 		Just tagdef -> return tagdef
 		Nothing -> error $ "Tag " ++ (show ident) ++ " not found"
 
+type EnvItem = (Ident,(Ident,Type))
+instance Pretty EnvItem where
+	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> pretty idnew <+> text " :: " <+> pretty ty
+type Env = [EnvItem]
+
 createNewIdent :: String -> CovVecM Ident
 createNewIdent name_prefix = do
 	new_var_num <- gets newNameIndexCVS
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
 	return $ internalIdent (name_prefix ++ "_" ++ show new_var_num)
-
-type EnvItem = (Ident,(Ident,Type))
-instance Pretty EnvItem where
-	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> pretty idnew <+> text " :: " <+> pretty ty
-type Env = [EnvItem]
 
 oldident2EnvItem :: Type -> Ident -> CovVecM EnvItem
 oldident2EnvItem ty oldident = do
@@ -151,7 +151,8 @@ oldident2EnvItem ty oldident = do
 	return (oldident,(newident,ty'))
 
 declaration2EnvItem :: Declaration decl => decl -> CovVecM EnvItem
-declaration2EnvItem decl = oldident2EnvItem ty oldident
+declaration2EnvItem decl = do
+	oldident2EnvItem ty oldident
 	where
 	VarDecl (VarName oldident _) _ ty = getVarDecl decl
 
