@@ -95,11 +95,15 @@ main = do
 						"    = " ++ maybe "<NO_RETURN>" (render.pretty) mb_retval ]
 						where
 						showarg (oldident,(newident,_)) =
-							identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
+							identToString oldident ++ " = " ++ case lookup (lvalueToString newident) solution of
 								Nothing -> "DONT_CARE"
 								Just (MInt i) -> show i
 								Just (MFloat f) -> show f
 								val -> error $ "showarg " ++ show val ++ " not yet implemented"
+
+lvalueToString :: LValue -> String
+lvalueToString (LIdent ident) = identToString ident
+lvalueToString (LMember expr ident isptr) = (render.pretty) $ CMember expr ident isptr undefNode
 
 isnotbuiltin (NewDeclaration (ident,_)) = not $ "__" `isPrefixOf` (identToString ident)
 isnotbuiltin _ = True
@@ -133,21 +137,31 @@ lookupTagM ident = do
 		Just tagdef -> return tagdef
 		Nothing -> error $ "Tag " ++ (show ident) ++ " not found"
 
-createNewIdent :: String -> CovVecM Ident
-createNewIdent name_prefix = do
+createNewName :: CovVecM Int
+createNewName = do
 	new_var_num <- gets newNameIndexCVS
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
-	return $ internalIdent (name_prefix ++ "_" ++ show new_var_num)
+	return new_var_num
 
-type EnvItem = (Ident,(Ident,Type))
+createNewIdent :: String -> CovVecM LValue
+createNewIdent name_prefix = do
+	new_var_num <- createNewName
+	return $ LIdent $ internalIdent (name_prefix ++ "_" ++ show new_var_num)
+
+createNewMember :: CExpr -> String -> Bool -> CovVecM LValue
+createNewMember ptr_expr name_prefix isptr = do
+	new_var_num <- createNewName
+	return $ LMember ptr_expr (internalIdent (name_prefix ++ "_" ++ show new_var_num)) isptr
+
+type EnvItem = (Ident,(LValue,Type))
 instance Pretty EnvItem where
-	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> pretty idnew <+> text " :: " <+> pretty ty
+	pretty (idold,(idnew,ty)) = text (show idold) <+> text " |-> " <+> text (show idnew) <+> text " :: " <+> pretty ty
 type Env = [EnvItem]
 
 oldident2EnvItem :: Type -> Ident -> CovVecM EnvItem
 oldident2EnvItem ty oldident = do
-	newident <- createNewIdent (identToString oldident)
 	ty' <- elimTypeDefsM ty
+	newident <- createNewIdent $ identToString oldident
 	return (oldident,(newident,ty'))
 
 declaration2EnvItem :: Declaration decl => decl -> CovVecM EnvItem
@@ -159,13 +173,7 @@ declaration2EnvItemNoSubst :: Declaration decl => decl -> CovVecM EnvItem
 declaration2EnvItemNoSubst decl = do
 	let VarDecl (VarName oldident _) _ ty = getVarDecl decl
 	ty' <- elimTypeDefsM ty
-	return (oldident,(oldident,ty'))
-
-instance Eq CExpr where
-	(CVar id1 _) == (CVar id2 _) = id1==id2
-	(CMember ptrexpr1 ident1 isptr1 _) == (CMember ptrexpr2 ident2 isptr2 _) =
-		ident1==ident2 && isptr1==isptr2 && ptrexpr1 == ptrexpr2
-	_ == _ = False
+	return (oldident,(LIdent oldident,ty'))
 
 data LValue = LIdent Ident | LMember CExpr Ident Bool deriving Eq
 deriving instance Data LValue
@@ -180,9 +188,9 @@ data TraceElem =
 	Return CExpr
 deriving instance Data TraceElem
 instance Show TraceElem where
-	show (Assignment lvalue assignop expr)  = show lvalue ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
+	show (Assignment lval assignop expr)  = show lval ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
 	show (Condition expr)            = "COND " ++ (render.pretty) expr
-	show (NewDeclaration (ident,ty)) = "DECL " ++ (render.pretty) ident ++ " :: " ++ (render.pretty) ty
+	show (NewDeclaration (lvalue,ty)) = "DECL " ++ show lvalue ++ " :: " ++ (render.pretty) ty
 	show (Return expr)               = "RET  " ++ (render.pretty) expr
 type Trace = [TraceElem]
 
@@ -226,9 +234,9 @@ covVectorsM funname = do
 
 -- For a given function, find all traces together with their constraints and return values
 
-createReturnValPredicatesM :: Ident -> String -> CovVecM ([Trace],Env)
+createReturnValPredicatesM :: LValue -> String -> CovVecM ([Trace],Env)
 --createReturnValPredicatesM fun_ret_ident funname = TODO: BUILTIN FUNCTIONS HERE
-createReturnValPredicatesM fun_ret_ident funname = do
+createReturnValPredicatesM (LIdent fun_ret_ident) funname = do
 	(traces,calledfun_param_env) <- prepareFollowTracesM False funname
 	traces_rets <- mapM createpredicatesM traces
 	return (traces_rets,calledfun_param_env)
@@ -300,11 +308,11 @@ followTracesM _ _ ((cbi:_):_) = error $ "followTraceM " ++ (render.pretty) cbi +
 translateIdents :: [Env] -> TraceElem -> TraceElem
 translateIdents envs traceitem = everywhere (mkT transident) traceitem
 	where
-	transident :: CExpr -> CExpr
-	transident (CVar ident _) = case lookup ident (concat envs) of
-		Just (ident',_) -> CVar ident' undefNode
+	transident :: Ident -> Ident
+	transident ident = case lookup ident (concat envs) of
+		Just (LIdent ident',_) -> ident'
+		Just (lmember@(LMember _ _ _),_) -> error $ "transident: lookup " ++ (render.pretty) ident ++ " lead to " ++ show lmember
 		Nothing -> error $ "translateIdents: Could not find " ++ (render.pretty) ident
-	transident expr = expr
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
 tyspec2TypeM typespec = case typespec of
@@ -337,19 +345,25 @@ elimAssignmentsM (i,trace) = return (i,trace,foldtrace [] trace)
 	where
 	foldtrace :: Trace -> Trace -> Trace
 	foldtrace result [] = result
-	foldtrace result (Assignment lvalue assignop expr : rest) = foldtrace (everywhere (mkT (substlvalue lvalue expr')) result) rest where
+	foldtrace result (Assignment lvalue assignop expr : rest) = foldtrace (everywhere (mkT (substexpr lvalue expr')) result) rest where
 		expr' = if assignop==CAssignOp then expr else CBinary assignop' (lvalueToExpr lvalue) expr undefNode
 		Just assignop' = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
 			(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
 	foldtrace result (traceitem : rest) = foldtrace (traceitem:result) rest
 
-	substlvalue :: LValue -> CExpr -> CExpr -> CExpr
-	substlvalue lvalue expr found_expr = if (lvalueToExpr lvalue) == found_expr then expr else found_expr
+	substexpr :: LValue -> CExpr -> CExpr -> CExpr
+	substexpr lvalue expr found_expr = if (lvalueToExpr lvalue) == found_expr then expr else found_expr
 
 lvalueToExpr :: LValue -> CExpr
 lvalueToExpr (LMember lexpr ident isptr) = CMember lexpr ident isptr undefNode
 lvalueToExpr (LIdent ident) = CVar ident undefNode
+
+instance Eq CExpr where
+	(CVar id1 _) == (CVar id2 _) = id1==id2
+	(CMember ptrexpr1 ident1 isptr1 _) == (CMember ptrexpr2 ident2 isptr2 _) =
+		ident1==ident2 && isptr1==isptr2 && ptrexpr1 == ptrexpr2
+	_ == _ = False
 
 
 -- Expand Calls in Expressions
@@ -365,10 +379,10 @@ expandCallsM env (i,orig_trace,trace) = do
 		newfunident <- lift $ createNewIdent (identToString funident)
 		modify ( NewDeclaration (newfunident,ty) : )
 		(constraintss,calledfun_param_env) <- lift $ createReturnValPredicatesM newfunident (identToString funident)
-		arg_constrs <- forM (zip calledfun_param_env args) $ \ ((_,(arg_ident,_)),arg) -> do
+		arg_constrs <- forM (zip calledfun_param_env args) $ \ ((_,(LIdent arg_ident,_)),arg) -> do
 			return $ Condition $ CBinary CEqOp (CVar arg_ident undefNode) arg undefNode
 		modify ((concat constraintss ++ arg_constrs) ++)
-		return $ CVar newfunident undefNode
+		return $ lvalueToExpr newfunident
 	expandcall ccall@(CCall funexpr _ _) = error $ "expandcall: " ++ (render.pretty) ccall ++ " not implemented yet"
 	expandcall x = return x
 
@@ -401,7 +415,6 @@ var2MZ tyenv ident = do
 				map (\ (Enumerator _ (CConst (CIntConst (CInteger i _ _) _)) _ _) ->
 					MZAST.IConst (fromIntegral i)) enums
 		_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
-	ty2mz (PtrType target_ty _ _) = return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 65535)
 	ty2mz _ | promiscuousMode = return MZAST.Bool
 	ty2mz ty = error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 
@@ -428,7 +441,6 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 			_ | binop `elem` [CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp] -> (False,id)
 			True -> (False,eq0)
 			_ -> (False,id)
-	insert_eq0 must_be_bool cmember@(CMember _ _ _ _) = (if must_be_bool then eq0 else id) cmember
 	insert_eq0 _ expr | promiscuousMode = expr
 	insert_eq0 _ expr = error $ "insert_eq0 " ++ (render.pretty) expr ++ " not implemented yet."
 	
@@ -437,8 +449,6 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 	flatten_not True un@(CUnary CCompOp _ _) = error $ "flatten_not True " ++ (render.pretty) un ++ " is impossible!"
 	flatten_not False (CUnary CCompOp expr ni) = CUnary CCompOp (flatten_not False expr) ni
 	flatten_not is_neg (CUnary unop expr ni) = CUnary unop (flatten_not is_neg expr) ni
-	flatten_not False cmember@(CMember ptr_expr ident isptr ni) = cmember
-	flatten_not True cmember@(CMember ptr_expr ident isptr ni) = error $ "flatten_not True " ++ (render.pretty) cmember ++ " is impossible!"
 	flatten_not False cvar@(CVar ident ni) = cvar
 	flatten_not True cvar@(CVar ident ni) = error $ "flatten_not True " ++ (render.pretty) cvar ++ " is impossible!"
 	flatten_not False cconst@(CConst _) = cconst
@@ -462,10 +472,6 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 	expr2constr (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr expr) []]
 	expr2constr (CUnary CNegOp expr _) = error $ "expr2constr CUnaryOp CNegOp!"
 	expr2constr (CUnary unop expr _) = MZAST.U (MZAST.Op $ MZAST.stringToIdent $ (render.pretty) unop) (expr2constr expr)
-	expr2constr cmember@(CMember ptr_expr (Ident name _ _) _ _) = MZAST.Var $ MZAST.stringToIdent (expr_str ++ "_" ++ name) where
-		expr_str = case normalizeExpr ptr_expr of
-			cvar@(CVar ident _) -> identToString ident
-			other -> error $ "expr2constr " ++ (render.pretty) cmember ++ ": ptr_expr = " ++ (render.pretty) other
 	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
 	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
 	expr2constr (CConst (CFloatConst (CFloat s_float) _)) = MZAST.FConst $ read s_float
@@ -482,9 +488,6 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
 traceelemToMZ _ = return []
-
-normalizeExpr :: CExpr -> CExpr
-normalizeExpr expr = expr -- TODO!
 
 solveTraceM :: Env -> (Int,Trace,Trace) -> CovVecM TraceAnalysisResult
 solveTraceM param_env (i,orig_trace,trace) = do
