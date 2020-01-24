@@ -34,7 +34,8 @@ short f(MYINT x,int y,enum Zahl z)
     {
         if(z==EINS)
         {
-            x1 = g(x1-2);
+           x1++;
+           x1 = g((--x1)-2);
         }
     }
 

@@ -59,8 +59,9 @@ main = do
 	hSetBuffering stdout NoBuffering
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
+		[] -> "gcc" : (analyzerPath++"test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
 	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
@@ -178,12 +179,14 @@ data TraceElem =
 	Assignment LValue CAssignOp CExpr |
 	Condition CExpr |
 	NewDeclaration (Ident,Type) |
+	SideEffect CExpr |
 	Return CExpr
 deriving instance Data TraceElem
 instance Show TraceElem where
 	show (Assignment lvalue assignop expr)  = show lvalue ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
 	show (Condition expr)            = "COND " ++ (render.pretty) expr
 	show (NewDeclaration (ident,ty)) = "DECL " ++ (render.pretty) ident ++ " :: " ++ (render.pretty) ty
+	show (SideEffect expr)           = "SIDE " ++ (render.pretty) expr
 	show (Return expr)               = "RET  " ++ (render.pretty) expr
 type Trace = [TraceElem]
 
@@ -269,7 +272,8 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 			CVar ident _ -> LIdent ident
 			CMember expr ident isptr _ -> LMember expr ident isptr
 		followTracesM envs (translateidents (Assignment lvalue assignop assigned_expr) : trace) (rest:rest2)
-	CExpr (Just other_expr) _ -> error $ "followTracesM " ++ (render.pretty) stmt ++ " not implemented yet" --followTracesM envs trace (rest:rest2)
+	CExpr (Just expr) _ -> followTracesM envs (translateidents (SideEffects expr) : trace) ( rest : rest2 )
+	_ -> error $ "followTracesM " ++ (render.pretty) stmt ++ " not implemented yet" --followTracesM envs trace (rest:rest2)
 	where
 	translateidents = translateIdents envs
 
