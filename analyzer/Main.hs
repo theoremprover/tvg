@@ -179,14 +179,14 @@ data TraceElem =
 	Assignment LValue CAssignOp CExpr |
 	Condition CExpr |
 	NewDeclaration (Ident,Type) |
-	SideEffect CExpr |
+	SideEffects CExpr |
 	Return CExpr
 deriving instance Data TraceElem
 instance Show TraceElem where
 	show (Assignment lvalue assignop expr)  = show lvalue ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
 	show (Condition expr)            = "COND " ++ (render.pretty) expr
 	show (NewDeclaration (ident,ty)) = "DECL " ++ (render.pretty) ident ++ " :: " ++ (render.pretty) ty
-	show (SideEffect expr)           = "SIDE " ++ (render.pretty) expr
+	show (SideEffects expr)          = "SIDE " ++ (render.pretty) expr
 	show (Return expr)               = "RET  " ++ (render.pretty) expr
 type Trace = [TraceElem]
 
