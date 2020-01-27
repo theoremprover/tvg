@@ -59,8 +59,9 @@ main = do
 	hSetBuffering stdout NoBuffering
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
@@ -272,7 +273,10 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 			CVar ident _ -> LIdent ident
 			CMember expr ident isptr _ -> LMember expr ident isptr
 		followTracesM envs (translateidents (Assignment lvalue assignop assigned_expr) : trace) (rest:rest2)
-	CExpr (Just expr) _ -> followTracesM envs (translateidents (SideEffects expr) : trace) ( rest : rest2 )
+	CExpr (Just (CUnary unaryop cmember _)) _ -> followTracesM envs trace ( (stmt : rest) : rest2 ) where
+		stmt = CBlockStmt $ CExpr (Just $ CAssign assignop cmember (CConst $ CIntConst (cInteger 1) undefNode) undefNode) undefNode
+		Just assignop = lookup unaryop [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
+--	CExpr (Just expr) _ -> followTracesM envs (translateidents (SideEffects expr) : trace) ( rest : rest2 )
 	_ -> error $ "followTracesM " ++ (render.pretty) stmt ++ " not implemented yet" --followTracesM envs trace (rest:rest2)
 	where
 	translateidents = translateIdents envs
