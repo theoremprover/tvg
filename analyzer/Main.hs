@@ -193,6 +193,7 @@ type Trace = [TraceElem]
 
 type TraceAnalysisResult = (Int,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 
+
 -- Prepares and follows the traces, returning the traces
 -- (including or excluding the trace elements that stem from the global environment)
 
@@ -268,17 +269,18 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 		return $ then_traces ++ else_traces
 	CReturn Nothing _ -> return [ trace ]
 	CReturn (Just ret_expr) _ -> return [ translateidents (Return ret_expr) : trace ]
-	CExpr (Just (CAssign assignop lexpr assigned_expr _)) _ -> do
+	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
 		let lvalue = case lexpr of
 			CVar ident _ -> LIdent ident
 			CMember expr ident isptr _ -> LMember expr ident isptr
 		followTracesM envs (translateidents (Assignment lvalue assignop assigned_expr) : trace) (rest:rest2)
-	CExpr (Just (CUnary unaryop cmember _)) _ -> followTracesM envs trace ( (stmt : rest) : rest2 ) where
-		stmt = CBlockStmt $ CExpr (Just $ CAssign assignop cmember (CConst $ CIntConst (cInteger 1) undefNode) undefNode) undefNode
+	CExpr (Just (CUnary unaryop expr _)) _ -> followTracesM envs trace ( (CBlockStmt stmt' : rest) : rest2 ) where
+		stmt' = CExpr (Just $ CAssign assignop expr (CConst $ CIntConst (cInteger 1) undefNode) undefNode) undefNode
 		Just assignop = lookup unaryop [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
-	CWhile cond body False _ -> followTracesM envs trace ((unroll_loop 8 ++ rest) : rest2 ) where
+	CWhile cond body False _ -> followTracesM envs trace ((unroll_loop 8 ++ rest) : rest2 )
+		where
 		unroll_loop :: Int -> [CBlockItem]
-		unroll_loop 0 = [ CBlockStmt body ]
+		unroll_loop 0 = []
 		unroll_loop i = [ CBlockStmt $ CIf cond (CCompound [] (CBlockStmt body : unroll_loop (i-1)) undefNode) Nothing undefNode ]
 
 --  TODO: extend to arbitrary CExpr Statements
@@ -315,11 +317,17 @@ followTracesM _ _ ((cbi:_):_) = error $ "followTraceM " ++ (render.pretty) cbi +
 translateIdents :: [Env] -> TraceElem -> TraceElem
 translateIdents envs traceitem = everywhere (mkT transident) traceitem
 	where
+{-
 	transident :: CExpr -> CExpr
 	transident (CVar ident _) = case lookup ident (concat envs) of
 		Just (ident',_) -> CVar ident' undefNode
 		Nothing -> error $ "translateIdents: Could not find " ++ (render.pretty) ident
 	transident expr = expr
+-}
+	transident :: Ident -> Ident
+	transident ident = case lookup ident (concat envs) of
+		Just (ident',_) -> ident'
+		Nothing -> error $ "translateIdents: Could not find " ++ (render.pretty) ident
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
 tyspec2TypeM typespec = case typespec of
