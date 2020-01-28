@@ -276,7 +276,13 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 	CExpr (Just (CUnary unaryop cmember _)) _ -> followTracesM envs trace ( (stmt : rest) : rest2 ) where
 		stmt = CBlockStmt $ CExpr (Just $ CAssign assignop cmember (CConst $ CIntConst (cInteger 1) undefNode) undefNode) undefNode
 		Just assignop = lookup unaryop [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
---	CExpr (Just expr) _ -> followTracesM envs (translateidents (SideEffects expr) : trace) ( rest : rest2 )
+	CWhile cond body False _ -> followTracesM envs trace ((unroll_loop 8 ++ rest) : rest2 ) where
+		unroll_loop :: Int -> [CBlockItem]
+		unroll_loop 0 = [ CBlockStmt body ]
+		unroll_loop i = [ CBlockStmt $ CIf cond (CCompound [] (CBlockStmt body : unroll_loop (i-1)) undefNode) Nothing undefNode ]
+
+--  TODO: extend to arbitrary CExpr Statements
+-- 	CExpr (Just expr) _ -> followTracesM envs (translateidents (SideEffects expr) : trace) ( rest : rest2 )
 	_ -> error $ "followTracesM " ++ (render.pretty) stmt ++ " not implemented yet" --followTracesM envs trace (rest:rest2)
 	where
 	translateidents = translateIdents envs
