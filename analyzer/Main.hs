@@ -232,6 +232,7 @@ covVectorsM funname = do
 
 -- For a given function, find all traces together with their constraints and return values
 
+{-
 createReturnValPredicatesM :: Ident -> String -> CovVecM ([Trace],Env)
 --createReturnValPredicatesM fun_ret_ident funname = TODO: BUILTIN FUNCTIONS HERE
 createReturnValPredicatesM fun_ret_ident funname = do
@@ -251,6 +252,7 @@ createReturnValPredicatesM fun_ret_ident funname = do
 			return trace'
 			
 		_ -> error $ "createpredicatesM: no RET found"
+-}
 
 
 -- UNFOLD TRACES
