@@ -30,6 +30,7 @@ import Data.Time.LocalTime
 import Data.Foldable
 import Data.List
 import System.IO
+import Data.Either
 
 import DataTree
 import GlobDecls
@@ -232,7 +233,6 @@ covVectorsM funname = do
 
 -- For a given function, find all traces together with their constraints and return values
 
-{-
 createReturnValPredicatesM :: Ident -> String -> CovVecM ([Trace],Env)
 --createReturnValPredicatesM fun_ret_ident funname = TODO: BUILTIN FUNCTIONS HERE
 createReturnValPredicatesM fun_ret_ident funname = do
@@ -243,6 +243,11 @@ createReturnValPredicatesM fun_ret_ident funname = do
 	createpredicatesM :: (Int,Trace,Trace) -> CovVecM Trace
 	createpredicatesM (i,_,trace) = case last trace of
 		Return ret_expr -> do
+			let
+				(condexprs,decls) = partitionEithers $ map (\case i
+					Condition cond -> Left cond
+					decl@(NewDeclaration _) -> Right decl) trace
+			-- CONTINUE_HERE
 			trace' <- forM (init trace) $ \case
 				decl@(NewDeclaration _) -> return decl
 				Condition expr -> return $ Condition $ CBinary CLorOp
@@ -251,8 +256,7 @@ createReturnValPredicatesM fun_ret_ident funname = do
 					undefNode
 			return trace'
 			
-		_ -> error $ "createpredicatesM: no RET found"
--}
+		_ -> error $ "createpredicatesM: no RET found in last position"
 
 
 -- UNFOLD TRACES
