@@ -188,3 +188,6 @@ declName ident = findAll cDeclr >>> declrName >>> filterPred (==ident)
 getFunDefIdent :: CFunDef -> Ident
 getFunDefIdent (CFunDef _ (CDeclr (Just ident) _ _ _ _) _ _ _) = ident
 getFunDefIdent fundef = error $ "getFunDefIdent: " ++ (render.pretty) fundef ++ " has no name!"
+
+findDef :: (Typeable a,Data a) => CExpr -> CFilter a CExpr
+findDef expr = varAssignment (\ ex -> (render.pretty) expr == (render.pretty) ex)

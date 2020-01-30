@@ -71,8 +71,8 @@ maini (gccexe:args) = do
 --	let pot_files =  [ "ifiles/tlsdesc.i" ]
 	let num_srcfiles = length pot_files
 	printLog $ "Found " ++ show num_srcfiles ++ " source files."
---	mapM_ print pot_files
-	callss <- forM (zip [1..] pot_files) $ handleSrcFile gccexe preprocess_args num_srcfiles
+	transl_units <- forM (zip [1..] pot_files) $ parseSrcFile gccexe preprocess_args num_srcfiles
+	callss <- forM (zip3 [1..] pot_files transl_units) $ handleSrcFile num_srcfiles transl_units
 	let calls = concat callss
 	
 	let (callgraph,vertex2node,key2vertex) = graphFromEdges $ map (\(funname,mb_defsrcfile,calledfunnames) -> ((funname,mb_defsrcfile),funname,calledfunnames)) calls
@@ -148,23 +148,28 @@ type AnalyzeS m a = StateT AnalyzeState m a
 addNamesS :: (MonadIO m) => [Ident] -> AnalyzeS m ()
 addNamesS names = modify (names++)
 
--- Returns a list of (funname,srcfile,[calledfunname1,...])
-handleSrcFile gccexe preprocess_args num_srcfiles (i,srcfilename) = do
+parseSrcFile gccexe preprocess_args num_srcfiles (i,srcfilename) = do
 	printLog $ "\n=============================================================="
 	printLog $ "FILENAME = " ++ srcfilename ++ "\n"
-	putStrLn $ "[ " ++ show (div (i*100) num_srcfiles) ++ "% ] Handling SrcFile " ++ show i ++ " of " ++ show num_srcfiles ++ ": " ++ srcfilename
---	mb_ast <- parseCFile (newGCC gccexe) Nothing preprocess_args srcfilename
+	putStrLn $ "[ " ++ show (div (i*100) num_srcfiles) ++ "% ] Parsing SrcFile " ++ show i ++ " of " ++ show num_srcfiles ++ ": " ++ srcfilename
 	mb_ast <- parseCFilePre srcfilename
 	ctranslunit <- case mb_ast of
 		Left err -> error $ show err
 		Right ast -> return ast
 	when writeASTFiles $ liftIO $ writeFile (outputDir </> (takeFileName srcfilename) <.> ".ast.html") $ genericToHTMLString ctranslunit
-	execStateT (everywhereM (mkM (searchFunDefs ctranslunit)) ctranslunit) []
+	return ctranslunit
+
+-- Returns a list of (funname,srcfile,[calledfunname1,...])
+handleSrcFile num_srcfiles ctranslunits (i,srcfilename,ctranslunit) = do
+	printLog $ "\n=============================================================="
+	printLog $ "FILENAME = " ++ srcfilename ++ "\n"
+	putStrLn $ "[ " ++ show (div (i*100) num_srcfiles) ++ "% ] Handling SrcFile " ++ show i ++ " of " ++ show num_srcfiles ++ ": " ++ srcfilename
+	execStateT (everywhereM (mkM (searchFunDefs ctranslunits ctranslunit)) ctranslunit) []
 
 -- For all function definitons in the current source file:
-searchFunDefs :: CTranslUnit -> CFunDef -> StateT [(String,Maybe FilePath,[String])] IO CFunDef
-searchFunDefs ctranslunit cfundef@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ stmt ni) = do
-	calledfunidents <- execStateT (everywhereM (mkM $ searchFunCalls cfundef ctranslunit) stmt) newAnalyzeState
+searchFunDefs :: [CTranslUnit] -> CTranslUnit -> CFunDef -> StateT [(String,Maybe FilePath,[String])] IO CFunDef
+searchFunDefs ctranslunits ctranslunit cfundef@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ stmt ni) = do
+	calledfunidents <- execStateT (everywhereM (mkM $ searchFunCalls cfundef ctranslunits ctranslunit) stmt) newAnalyzeState
 	modify ((funname,fileOfNode ni,map identToString $ nub calledfunidents) : )
 	return cfundef
 
@@ -175,8 +180,8 @@ isEqualExpr (CMember lexpr1 member_ident1 isptr1 _) (CMember lexpr2 member_ident
 isEqualExpr expr1 expr2 = False
 
 -- Returns all called functions
-searchFunCalls :: (MonadIO m) => CFunDef -> CTranslUnit -> CExpr -> StateT AnalyzeState m CExpr
-searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ _ _) ctranslunit ccall@(CCall funexpr _ ni) = do
+searchFunCalls :: (MonadIO m) => CFunDef -> [CTranslUnit] -> CTranslUnit -> CExpr -> StateT AnalyzeState m CExpr
+searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ _ _) ctranslunits ctranslunit ccall@(CCall funexpr _ ni) = do
 	liftIO $ putStrLn $ "In function " ++ funname ++ ": " ++ (render.pretty) ccall
 	printLog $ "\n====== searchFunCalls ==========="
 	printLog $ "current function = " ++ funname
@@ -216,7 +221,7 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 
 -- (*<var>)(..)
 			CUnary CIndOp expr _ -> do
-				printLog $ "Found *<expr>, but ignoring it: " ++ showPositionAndPretty expr
+				printLog $ "Found *<expr>, but ignoring the star : " ++ showPositionAndPretty expr
 				chaseFun occured_funs (fundef,expr)
 
 -- <expr>
@@ -226,7 +231,7 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 				-- is formal param
 					Just argnum -> do
 						printLog $ (render.pretty) ident ++ " is arg with index " ++ show argnum ++ " of function " ++ currentfunname
-						concatForM (funCallInFunDef ctranslunit) $ \ (fundef',call'@(CCall callexpr args _)) -> do
+						concatForM (funCallInFunDef ctranslunits) $ \ (fundef',call'@(CCall callexpr args _)) -> do
 							case callexpr of
 								CVar src_fun_ident _ | currentfunident==src_fun_ident -> do
 									printLog $ "Resolved call to " ++ currentfunname ++ " at " ++ showPositionAndPretty call'
@@ -258,9 +263,18 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 				printLog $ "Found CMember(CVar) ptr=" ++ show isptr ++ " at " ++ showPositionAndPretty cmember
 				printLog $ "Returning member " ++ (render.pretty) member_ident
 				return [ member_ident ]
-{-
 				case isFormalParam fundef structident of
 					Nothing -> do
+						printLog $ struct_ident_name ++ " is no formal param of " ++ currentfunname ++ ","
+						printLog $ "searching for definition of " ++ (render.pretty) cmember
+						let defs = findDef cmember ctranslunits
+						forM defs $ \ defdexpr -> case defdexpr of
+							CVar ident _ -> do
+								printLog $ "Found " ++ showPositionAndPretty defdexpr
+								return ident
+							_ -> error $ " defd of form " ++ (render.pretty) defdexpr ++ " not implemented yet!"
+{-
+
 						let ident_name = (render.pretty) structident
 						printLog $ ident_name ++ " is no formal parameter, searching for declaration"
 						case declName structident ctranslunit of
@@ -273,7 +287,11 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 									_ -> myError "Found assignments, but not implemented yet." 
 							[] -> do
 								myError $ "No declaration of " ++ struct_ident_name ++ " found!"
+-}
 					Just argnum -> do
+						printLog $ struct_ident_name ++ " is formal param of " ++ currentfunname ++ " not implemented yet!"
+						return []
+{-
 						printLog $ (render.pretty) structident ++ " is arg with index " ++ show argnum ++ " of function " ++ currentfunname
 						printLog $ "Found these calls calling " ++ currentfunname ++ ":"
 						funss1 <- forM (funCallInFunDef ctranslunit) $ \ (fundef',call'@(CCall callexpr args _)) -> do
@@ -293,4 +311,4 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 			liftIO $ appendFile strangeCalls $ showPositionAndPretty expr ++ "\n"
 			return []
 		
-searchFunCalls _ _ cexpr = return cexpr
+searchFunCalls _ _ _ cexpr = return cexpr
