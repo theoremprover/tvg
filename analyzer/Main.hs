@@ -47,6 +47,7 @@ fp-bit.i: Function _fpdiv_parts, Zeile 1039
 
 promiscuousMode = False
 solveIt = True
+_UNROLLING_DEPTH = 3
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -244,17 +245,17 @@ createReturnValPredicatesM fun_ret_ident funname = do
 	createpredicatesM (i,_,trace) = case last trace of
 		Return ret_expr -> do
 			let
-				(condexprs,decls) = partitionEithers $ map (\case i
-					Condition cond -> Left cond
-					decl@(NewDeclaration _) -> Right decl) trace
-			-- CONTINUE_HERE
-			trace' <- forM (init trace) $ \case
-				decl@(NewDeclaration _) -> return decl
-				Condition expr -> return $ Condition $ CBinary CLorOp
-					(CUnary CNegOp expr undefNode)
-					(CBinary CEqOp (CVar fun_ret_ident undefNode) ret_expr undefNode)
-					undefNode
-			return trace'
+				(condexprs,decls) = partitionEithers $ map (\case
+					Condition cond          -> Left  cond
+					decl@(NewDeclaration _) -> Right decl) (init trace)
+				foldedconds = case condexprs of
+					[] -> []
+					condexprs -> [ Condition $ CBinary CLorOp foldedexpr retval_eq_result undefNode ]
+						where
+						retval_eq_result = CBinary CEqOp (CVar fun_ret_ident undefNode) ret_expr undefNode
+						foldedexpr = foldl1 (\ c1 c2 -> CBinary CLorOp
+							(CUnary CNegOp c1 undefNode) (CUnary CNegOp c2 undefNode) undefNode) condexprs
+			return $ decls ++ foldedconds
 			
 		_ -> error $ "createpredicatesM: no RET found in last position"
 
@@ -283,7 +284,7 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 	CExpr (Just (CUnary unaryop expr _)) _ -> followTracesM envs trace ( (CBlockStmt stmt' : rest) : rest2 ) where
 		stmt' = CExpr (Just $ CAssign assignop expr (CConst $ CIntConst (cInteger 1) undefNode) undefNode) undefNode
 		Just assignop = lookup unaryop [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
-	CWhile cond body False _ -> followTracesM envs trace ((unroll_loop 8 ++ rest) : rest2 )
+	CWhile cond body False _ -> followTracesM envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
 		where
 		unroll_loop :: Int -> [CBlockItem]
 		unroll_loop 0 = []
@@ -323,13 +324,6 @@ followTracesM _ _ ((cbi:_):_) = error $ "followTraceM " ++ (render.pretty) cbi +
 translateIdents :: [Env] -> TraceElem -> TraceElem
 translateIdents envs traceitem = everywhere (mkT transident) traceitem
 	where
-{-
-	transident :: CExpr -> CExpr
-	transident (CVar ident _) = case lookup ident (concat envs) of
-		Just (ident',_) -> CVar ident' undefNode
-		Nothing -> error $ "translateIdents: Could not find " ++ (render.pretty) ident
-	transident expr = expr
--}
 	transident :: Ident -> Ident
 	transident ident = case lookup ident (concat envs) of
 		Just (ident',_) -> ident'
