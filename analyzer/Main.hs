@@ -45,7 +45,6 @@ stack build :analyzer-exe && stack exec analyzer-exe
 fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
-promiscuousMode = False
 solveIt = True
 _UNROLLING_DEPTH = 3
 
@@ -63,6 +62,7 @@ main = do
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 		args -> args
@@ -250,11 +250,10 @@ createReturnValPredicatesM fun_ret_ident funname = do
 					decl@(NewDeclaration _) -> Right decl) (init trace)
 				foldedconds = case condexprs of
 					[] -> []
-					condexprs -> [ Condition $ CBinary CLorOp foldedexpr retval_eq_result undefNode ]
+					condexprs -> [ Condition $ CBinary CLorOp (CUnary CNegOp foldedexpr undefNode) retval_eq_result undefNode ]
 						where
 						retval_eq_result = CBinary CEqOp (CVar fun_ret_ident undefNode) ret_expr undefNode
-						foldedexpr = foldl1 (\ c1 c2 -> CBinary CLorOp
-							(CUnary CNegOp c1 undefNode) (CUnary CNegOp c2 undefNode) undefNode) condexprs
+						foldedexpr = foldl1 (\ c1 c2 -> CBinary CLndOp c1 c2 undefNode) condexprs
 			return $ decls ++ foldedconds
 			
 		_ -> error $ "createpredicatesM: no RET found in last position"
@@ -425,13 +424,12 @@ var2MZ tyenv ident = do
 					MZAST.IConst (fromIntegral i)) enums
 		_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 	ty2mz (PtrType target_ty _ _) = return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 65535)
-	ty2mz _ | promiscuousMode = return MZAST.Bool
 	ty2mz ty = error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 
 type Constraint = CExpr
 
 traceelemToMZ :: TraceElem -> CovVecM [MZAST.ModelData]
-traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (flatten_not False) . (insert_eq0 True) $ constr) ]
+traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . elim_or_uneq . (flatten_not False) . (insert_eq0 True) $ constr) ]
 	where
 	eq0 :: Constraint -> Constraint
 	eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
@@ -452,7 +450,6 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 			True -> (False,eq0)
 			_ -> (False,id)
 	insert_eq0 must_be_bool cmember@(CMember _ _ _ _) = (if must_be_bool then eq0 else id) cmember
-	insert_eq0 _ expr | promiscuousMode = expr
 	insert_eq0 _ expr = error $ "insert_eq0 " ++ (render.pretty) expr ++ " not implemented yet."
 	
 	flatten_not :: Bool -> Constraint -> Constraint
@@ -465,22 +462,37 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 	flatten_not False cvar@(CVar ident ni) = cvar
 	flatten_not True cvar@(CVar ident ni) = error $ "flatten_not True " ++ (render.pretty) cvar ++ " is impossible!"
 	flatten_not False cconst@(CConst _) = cconst
-	flatten_not True cconst@(CConst _) = error $ "flatten_not True " ++ show cconst
+	flatten_not True cconst@(CConst _) = error $ "flatten_not True " ++ show cconst ++ " is impossible!"
 	flatten_not False (CBinary binop expr1 expr2 ni) = CBinary binop (flatten_not False expr1) (flatten_not False expr2) ni
 	flatten_not True (CBinary binop expr1 expr2 ni) = CBinary binop' (flatten_not is_neg' expr1) (flatten_not is_neg' expr2) ni
 		where
 		(binop',is_neg') = case binop of
-			CLeOp -> (CGeqOp,False)
-			CGrOp -> (CLeqOp,False)
-			CLeqOp -> (CGrOp,False)
-			CGeqOp -> (CLeOp,False)
-			CEqOp -> (CNeqOp,False)
-			CNeqOp -> (CEqOp,False)
+			CLeOp  -> (CGeqOp,False)
+			CGrOp  -> (CLeqOp,False)
+			CLeqOp -> (CGrOp, False)
+			CGeqOp -> (CLeOp, False)
+			CEqOp  -> (CNeqOp,False)
+			CNeqOp -> (CEqOp, False)
 			CLndOp -> (CLorOp,True)
 			CLorOp -> (CLndOp,True)
 			op -> error $ "flatten_not True " ++ show op ++ " is impossible!"
-	flatten_not _ expr | promiscuousMode = expr
 	flatten_not is_neg expr = error $ "flatten_not " ++ show is_neg ++ " " ++ (render.pretty) expr ++ " not implemented yet"
+
+	elim_or_uneq :: CExpr -> CExpr
+	elim_or_uneq x = x
+{-
+	elim_or_uneq (CBinary CLorOp (CBinary uneqop1 op11 op12 _) (CBinary uneqop2 op21 op22 _) ni) |
+		is_uneq_op uneqop1 && is_uneq_op uneqop2 = CBinary CLndOp
+			(elim_or_uneq $ flatten_not True $ CBinary uneqop1 op11 op12 undefNode)
+			(elim_or_uneq $ flatten_not True $ CBinary uneqop2 op21 op22 undefNode)
+			undefNode
+		where
+		is_uneq_op op = op `elem` [CGeqOp,CLeOp,CGrOp,CLeqOp,CNeqOp]
+	-- TODO: Does this also work for only one operand being an unequation? 
+	elim_or_uneq (CUnary unop expr _) = CUnary unop (elim_or_uneq expr) undefNode
+	elim_or_uneq (CBinary binop expr1 expr2 _) = CBinary binop (elim_or_uneq expr1) (elim_or_uneq expr2) undefNode
+	elim_or_uneq x = x
+-}
 
 	expr2constr (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr expr) []]
 	expr2constr (CUnary CNegOp expr _) = error $ "expr2constr CUnaryOp CNegOp!"
@@ -501,7 +513,6 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 		expr2' = expr2constr expr2
 		-- Leaving out brackets: Hopefully, the minzinc operators have the same precedences as in C
 		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"="),(CLndOp,"/\\"),(CLorOp,"\\/")]
-	expr2constr expr | promiscuousMode = MZAST.IConst 0
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
 traceelemToMZ _ = return []
@@ -532,7 +543,7 @@ solveTraceM param_env (i,orig_trace,trace) = do
 			[ MZAST.solve $ MZAST.satisfy MZAST.|: MZAST.Annotation "int_search" [
 				MZAST.E (MZAST.ArrayLit $ map (MZAST.Var . MZAST.Simpl) solution_vars),
 				MZAST.E (MZAST.Var $ MZAST.Simpl "input_order"),
-				MZAST.E (MZAST.Var $ MZAST.Simpl "indomain_median"),
+				MZAST.E (MZAST.Var $ MZAST.Simpl "indomain_min"),
 				MZAST.E (MZAST.Var $ MZAST.Simpl "complete") ] ]
 
 	let modelpath = analyzerPath </> "model" ++ show i
