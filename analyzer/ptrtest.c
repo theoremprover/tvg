@@ -1,3 +1,8 @@
+#ifdef CALC
+#include <stdio.h>
+#include <stdlib.h>
+#endif
+
 enum Zahl { EINS, ZWEI };
 
 typedef enum Zahl MYENUM;
@@ -23,9 +28,24 @@ STRUCT* f(STRUCT *p,int x)
     return(p);
 }
 
-int main()
+int e(STRUCT *q,int y)
 {
-    STRUCT p[2] = { { EINS,5 }, { EINS,6 } };
-    f(p,3);
+    STRUCT *r;
+    r = f(q,y);
+    if(r->member1==EINS) return 0;
+    if(r->member2>0) return 1;
+    return 2;
+}
+
+int main(int argc, char* argv[])
+{
+#ifdef CALC
+    int m1 = atoi(argv[1]);
+    int m2 = atoi(argv[2]);
+    int y = atoi(argv[3]);
+    STRUCT p = { m1, m2 };
+
+    printf("f(p_m1=%i, p_m2=%i, y=%i) = %i\n",m1,m2,y,e(&p,y));
+#endif
     return 0;
 }
