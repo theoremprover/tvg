@@ -232,33 +232,6 @@ covVectorsM funname = do
 	mapM (solveTraceM param_env) traces
 
 
--- For a given function, find all traces together with their constraints and return values
-
-createReturnValPredicatesM :: Ident -> String -> CovVecM ([Trace],Env)
---createReturnValPredicatesM fun_ret_ident funname = TODO: BUILTIN FUNCTIONS HERE
-createReturnValPredicatesM fun_ret_ident funname = do
-	(traces,calledfun_param_env) <- prepareFollowTracesM False funname
-	traces_rets <- mapM createpredicatesM traces
-	return (traces_rets,calledfun_param_env)
-	where
-	createpredicatesM :: (Int,Trace,Trace) -> CovVecM Trace
-	createpredicatesM (i,_,trace) = case last trace of
-		Return ret_expr -> do
-			let
-				(condexprs,decls) = partitionEithers $ map (\case
-					Condition cond          -> Left  cond
-					decl@(NewDeclaration _) -> Right decl) (init trace)
-				foldedconds = case condexprs of
-					[] -> []
-					condexprs -> [ Condition $ CBinary CLorOp (CUnary CNegOp foldedexpr undefNode) retval_eq_result undefNode ]
-						where
-						retval_eq_result = CBinary CEqOp (CVar fun_ret_ident undefNode) ret_expr undefNode
-						foldedexpr = foldl1 (\ c1 c2 -> CBinary CLndOp c1 c2 undefNode) condexprs
-			return $ decls ++ foldedconds
-			
-		_ -> error $ "createpredicatesM: no RET found in last position"
-
-
 -- UNFOLD TRACES
 
 followTracesM :: [Env] -> Trace -> [[CBlockItem]] -> CovVecM [Trace]
@@ -444,6 +417,33 @@ expandCallsM env (i,orig_trace,trace) = do
 		return $ CVar newfunident undefNode
 	expandcall ccall@(CCall funexpr _ _) = error $ "expandcall: " ++ (render.pretty) ccall ++ " not implemented yet"
 	expandcall x = return x
+
+
+-- For a given function, find all traces together with their constraints and return values
+
+createReturnValPredicatesM :: Ident -> String -> CovVecM ([Trace],Env)
+--createReturnValPredicatesM fun_ret_ident funname = TODO: BUILTIN FUNCTIONS HERE
+createReturnValPredicatesM fun_ret_ident funname = do
+	(traces,calledfun_param_env) <- prepareFollowTracesM False funname
+	traces_rets <- mapM createpredicatesM traces
+	return (traces_rets,calledfun_param_env)
+	where
+	createpredicatesM :: (Int,Trace,Trace) -> CovVecM Trace
+	createpredicatesM (i,_,trace) = case last trace of
+		Return ret_expr -> do
+			let
+				(condexprs,decls) = partitionEithers $ map (\case
+					Condition cond          -> Left  cond
+					decl@(NewDeclaration _) -> Right decl) (init trace)
+				foldedconds = case condexprs of
+					[] -> []
+					condexprs -> [ Condition $ CBinary CLorOp (CUnary CNegOp foldedexpr undefNode) retval_eq_result undefNode ]
+						where
+						retval_eq_result = CBinary CEqOp (CVar fun_ret_ident undefNode) ret_expr undefNode
+						foldedexpr = foldl1 (\ c1 c2 -> CBinary CLndOp c1 c2 undefNode) condexprs
+			return $ decls ++ foldedconds
+			
+		_ -> error $ "createpredicatesM: no RET found in last position"
 
 
 createMemberVarNamesM :: Ident -> Type -> CovVecM [(String,Type)]
