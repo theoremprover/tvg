@@ -148,23 +148,23 @@ createNewIdent name_prefix = do
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
 	return $ internalIdent (name_prefix ++ "_" ++ show new_var_num)
 
-oldident2EnvItem :: Type -> Ident -> CovVecM EnvItem
+oldident2EnvItem :: Type -> Ident -> CovVecM [EnvItem]
 oldident2EnvItem ty oldident = do
 	newident <- createNewIdent (identToString oldident)
 	ty' <- elimTypeDefsM ty
-	return (oldident,(newident,ty'))
+	return [(oldident,(newident,ty'))]
 
-declaration2EnvItem :: Declaration decl => decl -> CovVecM EnvItem
+declaration2EnvItem :: Declaration decl => decl -> CovVecM [EnvItem]
 declaration2EnvItem decl = do
 	oldident2EnvItem ty oldident
 	where
 	VarDecl (VarName oldident _) _ ty = getVarDecl decl
 
-declaration2EnvItemNoSubst :: Declaration decl => decl -> CovVecM EnvItem
+declaration2EnvItemNoSubst :: Declaration decl => decl -> CovVecM [EnvItem]
 declaration2EnvItemNoSubst decl = do
 	let VarDecl (VarName oldident _) _ ty = getVarDecl decl
 	ty' <- elimTypeDefsM ty
-	return (oldident,(oldident,ty'))
+	return [(oldident,(oldident,ty'))]
 
 instance Eq CExpr where
 	(CVar id1 _) == (CVar id2 _) = id1==id2
@@ -202,9 +202,9 @@ type TraceAnalysisResult = (Int,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solutio
 prepareFollowTracesM :: Bool -> String -> CovVecM ([(Int,Trace,Trace)],Env)
 prepareFollowTracesM include_glob_trace funname = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
-	glob_env <- forM globdecls declaration2EnvItemNoSubst
+	glob_env <- concatMapM declaration2EnvItemNoSubst globdecls
 	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
-	param_env <- forM paramdecls declaration2EnvItem
+	param_env <- concatMapM declaration2EnvItem paramdecls 
 	let env = param_env ++ glob_env
 	let
 		envitem2newdecl :: EnvItem -> TraceElem
@@ -304,12 +304,12 @@ followTracesM allenv@(env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] 
 	-- folding right-to-left, hence env/trace order is correct when putting new elements as head
 	folddecls (Just (CDeclr (Just ident) derivdeclrs _ _ _),mb_init,Nothing) (envitems,traceelems) = do
 		ty <- tyspec2TypeM typespec >>= elimTypeDefsM   -- TODO: consider derivdeclrs
-		envitem@(_,tyenvitem) <- oldident2EnvItem ty ident
+		envitems' <- oldident2EnvItem ty ident
 		let assign_items = case mb_init of
 			Nothing -> []
-			Just (CInitExpr expr _) -> [ translateTEidents ((envitem:env):envs) $ Assignment (LIdent ident) CAssignOp expr ]
-		let declitem = NewDeclaration tyenvitem
-		return (envitem : envitems, assign_items ++ [declitem] ++ traceelems)
+			Just (CInitExpr expr _) -> [ translateTEidents ((envitems'++env):envs) $ Assignment (LIdent ident) CAssignOp expr ]
+		let declitems = map NewDeclaration (map snd envitems')
+		return (envitems' ++ envitems, assign_items ++ declitems ++ traceelems)
 
 followTracesM (_:restenvs) trace ([]:rest2) = followTracesM restenvs trace rest2
 
@@ -404,32 +404,29 @@ expandCallsM :: Env -> (Int,Trace,Trace) -> CovVecM (Int,Trace,Trace)
 expandCallsM env (i,orig_trace,trace) = do
 	(trace',additional_traceelems) <- runStateT (everywhereM (mkM expandcall) trace) []
 	return (i,orig_trace,additional_traceelems++trace')
+
 	where
+
 	expandcall :: CExpr -> StateT [TraceElem] CovVecM CExpr
 	expandcall (CCall funexpr@(CVar funident _) args _) = do
 		let Just (_,FunctionType (FunType ty _ _) _) = lookup funident env
 		newfunident <- lift $ createNewIdent (identToString funident)
 		modify ( NewDeclaration (newfunident,ty) : )
-		(constraintss,calledfun_param_env) <- lift $ createReturnValPredicatesM newfunident (identToString funident)
-		arg_constrs <- forM (zip calledfun_param_env args) $ \ ((_,(arg_ident,_)),arg) -> do
-			return $ Condition $ CBinary CEqOp (CVar arg_ident undefNode) arg undefNode
-		modify ((concat constraintss ++ arg_constrs) ++)
+		(traces,calledfun_param_env) <- lift $ prepareFollowTracesM False (identToString funident)
+		constraintss <- mapM (lift . createpredicatesM newfunident) traces
+		arg_constrss <- forM (zip calledfun_param_env args) $ \ ((_,(param_ident,param_ty)),arg) -> do
+			param_membernames <- lift $ createMemberVarNamesM (CVar param_ident undefNode) param_ty
+			arg_membernames <- lift $ createMemberVarNamesM arg param_ty
+			memberconds <- forM (zip param_membernames arg_membernames) $ \ ((param_name,_),(arg_name,_)) -> return $
+				Condition $ CBinary CEqOp (CVar (internalIdent param_name) undefNode) (CVar (internalIdent arg_name) undefNode) undefNode
+			return $ Condition (CBinary CEqOp (CVar param_ident undefNode) arg undefNode) : memberconds
+		modify ((concat constraintss ++ concat arg_constrss) ++)
 		return $ CVar newfunident undefNode
 	expandcall ccall@(CCall funexpr _ _) = error $ "expandcall: " ++ (render.pretty) ccall ++ " not implemented yet"
 	expandcall x = return x
 
-
--- For a given function, find all traces together with their constraints and return values
-
-createReturnValPredicatesM :: Ident -> String -> CovVecM ([Trace],Env)
---createReturnValPredicatesM fun_ret_ident funname = TODO: BUILTIN FUNCTIONS HERE
-createReturnValPredicatesM fun_ret_ident funname = do
-	(traces,calledfun_param_env) <- prepareFollowTracesM False funname
-	traces_rets <- mapM createpredicatesM traces
-	return (traces_rets,calledfun_param_env)
-	where
-	createpredicatesM :: (Int,Trace,Trace) -> CovVecM Trace
-	createpredicatesM (i,_,trace) = case last trace of
+	createpredicatesM :: Ident -> (Int,Trace,Trace) -> CovVecM Trace
+	createpredicatesM fun_ret_ident (i,_,trace) = case last trace of
 		Return ret_expr -> do
 			let
 				(condexprs,decls) = partitionEithers $ map (\case
@@ -446,8 +443,8 @@ createReturnValPredicatesM fun_ret_ident funname = do
 		_ -> error $ "createpredicatesM: no RET found in last position"
 
 
-createMemberVarNamesM :: Ident -> Type -> CovVecM [(String,Type)]
-createMemberVarNamesM ident ty = do
+createMemberVarNamesM :: CExpr -> Type -> CovVecM [(String,Type)]
+createMemberVarNamesM (CVar ident _) ty = do
 	case ty of
 		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> do
 			lookupTagM sueref >>= \case
@@ -479,7 +476,7 @@ var2MZ tyenv ident = do
 		Just ty -> ty
 		Nothing -> error $ "Could not find " ++ show ident ++ " in\n" ++
 			unlines (map (\ (ident,ty) -> (render.pretty) ident ++ " |-> " ++ (render.pretty) ty ) tyenv)
-	mzmembervars <- createMemberVarNamesM ident ty >>= mapM mkmzvarM
+	mzmembervars <- createMemberVarNamesM (CVar ident undefNode) ty >>= mapM mkmzvarM
 	mzvar <- mkmzvarM (identToString ident,ty)
 	return $ mzvar : mzmembervars
 	where
