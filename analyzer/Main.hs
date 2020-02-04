@@ -200,7 +200,7 @@ prepareFollowTracesM include_glob_trace funname = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
 	glob_env <- concatMapM (declaration2EnvItem False) globdecls
 	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
-	param_env <- concatMapM (declaration2EnvItem True) paramdecls 
+	param_env <- concatMapM (declaration2EnvItem True) paramdecls
 	let env = param_env ++ glob_env
 	let
 		envitem2newdecl :: EnvItem -> TraceElem
@@ -224,8 +224,8 @@ prepareFollowTracesM include_glob_trace funname = do
 
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
-	(traces,param_env) <- prepareFollowTracesM True funname
-	mapM (solveTraceM param_env) traces
+	(triples,param_env) <- prepareFollowTracesM True funname
+	mapM (solveTraceM param_env) triples
 
 
 -- UNFOLD TRACES
@@ -410,7 +410,6 @@ expandCallsM env (i,orig_trace,trace) = do
 		fun_name_mem_names <- lift $ createMemberVarNamesM (CVar newfunident undefNode) ty
 		let fun_name_mem_decls = for fun_name_mem_names $ \ (name,mem_ty) -> NewDeclaration (internalIdent name,mem_ty)
 		modify (( NewDeclaration (newfunident,ty) : fun_name_mem_decls ) ++)
-		modify ( NewDeclaration (newfunident,ty) :)
 		(traces,calledfun_param_env) <- lift $ prepareFollowTracesM False (identToString funident)
 		constraintss <- mapM (lift . createpredicatesM ty newfunident) traces
 		arg_constrss <- forM (zip calledfun_param_env args) $ \ ((_,(param_ident,param_ty)),arg) -> do
@@ -428,23 +427,30 @@ expandCallsM env (i,orig_trace,trace) = do
 				(condexprs,decls) = partitionEithers $ map (\case
 					Condition cond          -> Left  cond
 					decl@(NewDeclaration _) -> Right decl) (init trace)
-				foldedconds = case condexprs of
-					[] -> []
-					condexprs -> [ Condition $ CBinary CLorOp (CUnary CNegOp foldedexpr undefNode) retval_eq_result undefNode ]
+			foldedconds <- case condexprs of
+					[] -> return []
+					condexprs -> do
+						retval_mem_eq_results <- createMemberExprsM ret_type (CVar fun_ret_ident undefNode) ret_expr
+						return [ Condition $ CBinary CLorOp (CUnary CNegOp (fold_and condexprs) undefNode)
+							(fold_and $ retval_eq_result : retval_mem_eq_results) undefNode ]
 						where
 						retval_eq_result = CBinary CEqOp (CVar fun_ret_ident undefNode) ret_expr undefNode
-						foldedexpr = foldl1 (\ c1 c2 -> CBinary CLndOp c1 c2 undefNode) condexprs
-			ret_val_mem_items <- createMemberCondsM ret_type (CVar fun_ret_ident undefNode) ret_expr
-			return $ decls ++ foldedconds ++ ret_val_mem_items
+						fold_and exprs = foldl1 (\ c1 c2 -> CBinary CLndOp c1 c2 undefNode) exprs
+			return $ decls ++ foldedconds
 			
 		_ -> error $ "createpredicatesM: no RET found in last position"
 
 createMemberCondsM :: Type -> CExpr -> CExpr -> CovVecM [TraceElem]
 createMemberCondsM ty expr1 expr2 = do
+	exprs <- createMemberExprsM ty expr1 expr2
+	return $ map Condition exprs
+
+createMemberExprsM :: Type -> CExpr -> CExpr -> CovVecM [CExpr]
+createMemberExprsM ty expr1 expr2 = do
 	mvns1 <- createMemberVarNamesM expr1 ty
 	mvns2 <- createMemberVarNamesM expr2 ty
 	forM (zip mvns1 mvns2) $ \ ((name1,_),(name2,_)) -> return $
-		Condition $ CBinary CEqOp (CVar (internalIdent name1) undefNode) (CVar (internalIdent name2) undefNode) undefNode
+		CBinary CEqOp (CVar (internalIdent name1) undefNode) (CVar (internalIdent name2) undefNode) undefNode
 
 createMemberVarNamesM :: CExpr -> Type -> CovVecM [(String,Type)]
 createMemberVarNamesM expr@(CVar ident _) ty = do
@@ -479,9 +485,9 @@ var2MZ tyenv ident = do
 		Just ty -> ty
 		Nothing -> error $ "Could not find " ++ show ident ++ " in\n" ++
 			unlines (map (\ (ident,ty) -> (render.pretty) ident ++ " |-> " ++ (render.pretty) ty ) tyenv)
-	mzmembervars <- createMemberVarNamesM (CVar ident undefNode) ty >>= mapM mkmzvarM
+--	mzmembervars <- createMemberVarNamesM (CVar ident undefNode) ty >>= mapM mkmzvarM
 	mzvar <- mkmzvarM (identToString ident,ty)
-	return $ mzvar : mzmembervars
+	return $ mzvar : [] --mzmembervars
 	where
 	mkmzvarM :: (String,Type) -> CovVecM MZAST.ModelData
 	mkmzvarM (mzident,ty) = do
@@ -492,7 +498,7 @@ var2MZ tyenv ident = do
 		TyIntegral intty -> case intty of
 			TyBool -> return MZAST.Bool
 			TyShort -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
-			TyInt -> return $ MZAST.Int --MZAST.Range (MZAST.IConst (-1000)) (MZAST.IConst 1000)
+			TyInt -> return $ MZAST.Range (MZAST.IConst (-10)) (MZAST.IConst 10) --MZAST.Int
 			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 		TyFloating floatty -> case floatty of
 			TyFloat -> return MZAST.Float
@@ -584,13 +590,19 @@ solveTraceM param_env (i,orig_trace,trace) = do
 		Return ret_expr -> Just ret_expr
 		_               -> Nothing
 
+	constraintsG <- concatMapM traceelemToMZ trace
+	
 	let tyenv = concatMap traceitem2tyenv trace where
 		traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
 		traceitem2tyenv _ = []
-	constraintsG <- concatMapM traceelemToMZ trace
 	let
 		includesG = [ MZAST.include "include.mzn" ]
-		vars = nub $ everything (++) (mkQ [] searchvar) trace
+		vars = nub $ everything (++) (mkQ [] searchvar) trace where
+        	searchvar :: CExpr -> [Ident]
+        	searchvar (CVar ident _) = [ ident ]
+        	searchvar (CMember expr ident _ _) = [ internalIdent $ createMemberVarName expr ident ]
+        	searchvar _ = []
+
 	varsG <- concatMapM (var2MZ tyenv) vars
 	let
 		solution_vars =
@@ -619,7 +631,4 @@ solveTraceM param_env (i,orig_trace,trace) = do
 		Right (sol:_) -> return $ Just (param_env,sol,mb_ret_val)
 
 	return (i,orig_trace,trace,model,mb_solution)
-	where
-	searchvar :: CExpr -> [Ident]
-	searchvar (CVar ident _) = [ ident ]
-	searchvar _ = []
+
