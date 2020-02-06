@@ -183,7 +183,7 @@ data TraceElem =
 	Return CExpr
 deriving instance Data TraceElem
 instance Show TraceElem where
-	show (Assignment lvalue assignop expr)  = show lvalue ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
+	show (Assignment lvalue assignop expr)  = "ASSN " ++ show lvalue ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
 	show (Condition expr)            = "COND " ++ (render.pretty) expr
 	show (NewDeclaration (ident,ty)) = "DECL " ++ (render.pretty) ident ++ " :: " ++ (render.pretty) ty
 	show (SideEffects expr)          = "SIDE " ++ (render.pretty) expr
@@ -406,10 +406,15 @@ expandCallsM env (i,orig_trace,trace) = do
 	expandcall x = return x
 
 	createpredicatesM :: Type -> Ident -> (Int,Trace,Trace) -> CovVecM Trace
-	createpredicatesM ret_type fun_ret_ident (i,_,trace) = case last trace of
+	createpredicatesM ret_type fun_ret_ident (i,orig_trace,trace) = case last trace of
 		Return ret_expr -> do
+			printLog $ " =============== "
+			printLog $ "createpredicates ORIG TRACE:"
+			mapM_ printLog $ map show (filter isnotbuiltin orig_trace)
+			printLog $ " --------------- "
 			printLog $ "createpredicates TRACE:"
 			mapM_ printLog $ map show (filter isnotbuiltin trace)
+			printLog $ " =============== "
 			let
 				(condexprs,decls) = partitionEithers $ map (\case
 					Condition cond          -> Left  cond
