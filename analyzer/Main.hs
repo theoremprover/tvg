@@ -65,7 +65,8 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "e" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "e" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
 	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
@@ -255,24 +256,7 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 				CMember expr ident isptr _ -> LMember expr ident isptr
 			lval_assignment = Assignment lvalue assignop assigned_expr
 			
-			member_assignments = []
-{-
-		member_assignments <- case lvalue of
-			LMember expr ident isptr -> return []
-			LIdent ident -> do
-				case lookup ident (concat envs) of
-					Nothing -> error $ "followTracesM " ++ (render.pretty) stmt ++ " : Could not find " ++ (render.pretty) ident
-					Just (_,ty) -> do
-						printLog $ "ty= " ++ (render.pretty
-						mvns <- createMemberVarNamesM ident ty
-						forM mvns $ \ (varname,_) -> do
-							let memberident = internalIdent varname
-							return $ Assignment (LMember (CVar ident undefNode) memberident True) CAssignOp
-								(CMember assigned_expr memberident True undefNode)
-		printLog $ "MEMBER ASSIGNMENTS: "
-		mapM_ (printLog.show) member_assignments 
--}
-		followTracesM envs (map translateteidents (lval_assignment:member_assignments) ++ trace) (rest:rest2)
+		followTracesM envs ( translateteidents lval_assignment : trace ) (rest:rest2)
 
 	CExpr (Just (CUnary unaryop expr _)) _ -> followTracesM envs trace ( (CBlockStmt stmt' : rest) : rest2 ) where
 		stmt' = CExpr (Just $ CAssign assignop expr (CConst $ CIntConst (cInteger 1) undefNode) undefNode) undefNode
@@ -320,6 +304,7 @@ translateTEidents envs (Assignment lval assop expr) = Assignment lval' assop (tr
 	lval' = case lval of
 		LIdent ident -> let CVar ident' _ = translateIdents envs (CVar ident undefNode) in LIdent ident'
 		LMember expr ident bool -> LMember (translateIdents envs expr) ident bool
+translateTEidents envs te = error $ "translateTEidents " ++ show te ++ " not implemented yet!"
 
 -- Translate C source idents to new unique idents given in environment
 
@@ -466,6 +451,7 @@ createMemberVarNamesM expr@(CVar ident _) ty = do
 					bf -> error $ "createMemberVarNamesM: AnonBitField " ++ (render.pretty) bf ++ " not implemented yet!"
 				EnumDef _ -> error $ "createMemberVarNamesM looking up CompType should not result in a EnumDef!"
 		_ -> return []
+createMemberVarNamesM _ _ = return []
 
 createMemberVarName :: CExpr -> Ident -> String
 createMemberVarName expr ident = expr_str ++ "_" ++ identToString ident where

@@ -45,7 +45,7 @@ int main(int argc, char* argv[])
     int y = atoi(argv[3]);
     STRUCT p = { m1, m2 };
 
-    printf("f(p_m1=%i, p_m2=%i, y=%i) = %i\n",m1,m2,y,e(&p,y));
+    printf("<fun>(p_m1=%i, p_m2=%i, y=%i) = %i\n",m1,m2,y,e(&p,y));
 #endif
     return 0;
 }
