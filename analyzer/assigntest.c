@@ -19,7 +19,7 @@ int f(int x)
 
     if(x == 0)
     {
-        y = 1;
+        y++;
     }
 
     return(y);

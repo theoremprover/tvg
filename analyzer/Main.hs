@@ -65,8 +65,8 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "e" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "e" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
 	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
@@ -451,7 +451,7 @@ createMemberVarNamesM expr@(CVar ident _) ty = do
 					bf -> error $ "createMemberVarNamesM: AnonBitField " ++ (render.pretty) bf ++ " not implemented yet!"
 				EnumDef _ -> error $ "createMemberVarNamesM looking up CompType should not result in a EnumDef!"
 		_ -> return []
-createMemberVarNamesM _ _ = return []
+createMemberVarNamesM expr _ = error $ "createMemberVarNamesM " ++ (render.pretty) expr ++ " not implemented yet!"
 
 createMemberVarName :: CExpr -> Ident -> String
 createMemberVarName expr ident = expr_str ++ "_" ++ identToString ident where
