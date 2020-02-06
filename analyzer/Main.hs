@@ -423,6 +423,8 @@ expandCallsM env (i,orig_trace,trace) = do
 	createpredicatesM :: Type -> Ident -> (Int,Trace,Trace) -> CovVecM Trace
 	createpredicatesM ret_type fun_ret_ident (i,_,trace) = case last trace of
 		Return ret_expr -> do
+			printLog $ "createpredicates TRACE:"
+			mapM_ printLog $ map show (filter isnotbuiltin trace)
 			let
 				(condexprs,decls) = partitionEithers $ map (\case
 					Condition cond          -> Left  cond
