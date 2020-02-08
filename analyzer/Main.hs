@@ -192,7 +192,7 @@ type Trace = [TraceElem]
 
 type TraceAnalysisResult = (Int,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 
-
+{-
 -- Prepares and follows the traces, returning the traces
 -- (including or excluding the trace elements that stem from the global environment)
 
@@ -215,18 +215,43 @@ prepareFollowTracesM include_glob_trace funname = do
 		enum2stmt _ = []
 
 	followTracesM [env] newdecls [enumdefs++[CBlockStmt body]] >>=
-		return . (zip [1..]) >>=
-		mapM elimAssignmentsM >>=
-		mapM (expandCallsM glob_env) >>=
+--		return . (zip [1..]) >>=
+		expandExprsM glob_env >>=
+--		mapM elimAssignmentsM >>=
 		return . (,param_env)
+-}
+
+
+enterFunctionM :: String -> CovVecM ([TraceElem],Env)
+enterFunctionM funname = do
+	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
+	param_env <- concatMapM (declaration2EnvItem True) paramdecls
+	let
+		envitem2newdecl :: EnvItem -> TraceElem
+		envitem2newdecl (_,(newident,ty)) = NewDeclaration (newident,ty)
+		newdecls = map envitem2newdecl $ param_env
+	return (newdecls,param_env)
 
 
 -- Find input vectors that fully cover the given function
 
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
-	(triples,param_env) <- prepareFollowTracesM True funname
-	mapM (solveTraceM param_env) triples
+	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
+	glob_env <- concatMapM (declaration2EnvItem False) globdecls
+	(newdecls,param_env) <- enterFunctionM funname
+	let
+		env = param_env ++ glob_env
+		enumdefs = concatMap enum2stmt globdecls
+		enum2stmt :: IdentDecl -> [CBlockItem]
+		enum2stmt (EnumeratorDef (Enumerator ident expr _ _)) =
+			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
+		enum2stmt _ = []
+
+	followTracesM [env] newdecls [enumdefs++[CBlockStmt body]] >>=
+		expandExprsM glob_env >>=
+		mapM elimAssignmentsM >>=
+		mapM (solveTraceM param_env)
 
 
 -- UNFOLD TRACES
@@ -250,17 +275,15 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 	CReturn (Just ret_expr) _ -> return [ translateteidents (Return ret_expr) : trace ]
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
-		let
-			lvalue = case lexpr of
-				CVar ident _ -> LIdent ident
-				CMember expr ident isptr _ -> LMember expr ident isptr
-			lval_assignment = Assignment lvalue assignop assigned_expr
+		let lval_assignment = Assignment (exprToLValue lexpr) assignop assigned_expr
 			
 		followTracesM envs ( translateteidents lval_assignment : trace ) (rest:rest2)
 
+{-
 	CExpr (Just (CUnary unaryop expr _)) _ -> followTracesM envs trace ( (CBlockStmt stmt' : rest) : rest2 ) where
 		stmt' = CExpr (Just $ CAssign assignop expr (CConst $ CIntConst (cInteger 1) undefNode) undefNode) undefNode
 		Just assignop = lookup unaryop [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
+-}
 
 	CWhile cond body False _ -> followTracesM envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
 		where
@@ -296,6 +319,10 @@ followTracesM (_:restenvs) trace ([]:rest2) = followTracesM restenvs trace rest2
 followTracesM allenv trace [] = return [trace]
 
 followTracesM _ _ ((cbi:_):_) = error $ "followTraceM " ++ (render.pretty) cbi ++ " not implemented yet."
+
+
+exprToLValue (CVar ident _) = LIdent ident
+exprToLValue (CMember expr ident isptr _) = LMember expr ident isptr
 
 
 translateTEidents envs (Condition cond) = Condition $ translateIdents envs cond
@@ -348,43 +375,54 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 		AbstractParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
 
 
--- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
+-- Expand Calls and side effects in Expressions
 
-elimAssignmentsM :: (Int,Trace) -> CovVecM (Int,Trace,Trace)
-elimAssignmentsM (i,trace) = do
-	foldedtrace <- foldtraceM [] trace
-	return (i,trace,foldedtrace)
+expandExprsM :: Env -> [Trace] -> CovVecM [([Int],Trace,Trace)]
+expandExprsM env traces = concatForM (zip (map (:[]) [1..]) traces) $ expandcallsM []
 	where
-	foldtraceM :: Trace -> Trace -> CovVecM Trace
-	foldtraceM result [] = return result
-	foldtraceM result (Assignment lvalue assignop expr : rest) = do
-		let
-			result' = subst lvalue expr result
-		foldtraceM result' rest
+	-- TODO: Precondition: Only expressions where no inner sequence points are needed to correctly evaluate their incs/decs
+	expandcallsM :: Trace -> ([Int],Trace) -> CovVecM [([Int],Trace,Trace)]
+	expandcallsM result (is,[]) = return [(is,trace,result)]
+	expandcallsM result (is, traceelem : rest) = do
+		(traceelem',preposts) <- runStateT (everywhereM (mkM expandexpr) traceelem) ([],[])
+		concatForM (zip [1..] preposts) $ \ (i,(pres,posts)) -> expandcallsM (i:is,pres ++ [traceelem'], posts ++ result) rest
+
+	expandexpr :: CExpr -> StateT [(Trace,Trace)] CovVecM CExpr
+
+	expandexpr (CUnary unop expr _) | unop ∈ [CPreIncOp,CPostIncOp,CPreDecOp,CPostDecOp] = do
+		modify $ \ (pres,posts) -> case unop of
+			CPreIncOp  -> ( ass CAddAssOp : pres , posts )
+			CPostIncOp -> ( pres                 , ass CAddAssOp : posts)
+			CPreDecOp  -> ( ass CSubAssOp : pres , posts)
+			CPostDecOp -> ( pres                 , ass CSubAssOp : posts)
+		return expr
 		where
-		expr' = if assignop==CAssignOp then expr else CBinary assignop' (lvalueToExpr lvalue) expr undefNode
-		Just assignop' = lookup assignop [
-			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
-			(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
-	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
+		ass op = Assignment (exprToLValue expr) op (CConst $ CIntConst (cInteger 1) undefNode)
+		
+	expandexpr (CCall funexpr@(CVar funident _) args _) = do
+		let
+			Just (_,FunctionType (FunType ty _ _) _) = lookup funident env
+			funname = identToString funident
+		newfunident <- lift $ createNewIdent funname
+		fun_name_mem_names <- lift $ createMemberVarNamesM (CVar newfunident undefNode) ty
+		let fun_name_mem_decls = for fun_name_mem_names $ \ (name,mem_ty) -> NewDeclaration (internalIdent name,mem_ty)
+		modify $ \ (leadings,trailings) -> (( NewDeclaration (newfunident,ty) : fun_name_mem_decls ) ++ leadings, trailings )
 
-	substlvalue :: LValue -> CExpr -> CExpr -> CExpr
-	substlvalue lvalue expr found_expr = if (lvalueToExpr lvalue) == found_expr then expr else found_expr
+		(newdecls,param_env) <- enterFunctionM funname
+		(traces,calledfun_param_env) <- lift $ prepareFollowTracesM False (identToString funident)
 
-	subst :: LValue -> CExpr -> Trace -> Trace
-	subst lvalue expr trace = everywhere (mkT (substlvalue lvalue expr)) trace
-
-lvalueToExpr :: LValue -> CExpr
-lvalueToExpr (LMember lexpr ident isptr) = CMember lexpr ident isptr undefNode
-lvalueToExpr (LIdent ident) = CVar ident undefNode
-
-
--- Expand Calls in Expressions
-
-expandCallsM :: Env -> (Int,Trace,Trace) -> CovVecM (Int,Trace,Trace)
-expandCallsM env (i,orig_trace,trace) = do
+		constraintss <- mapM (lift . createpredicatesM ty newfunident) traces
+		arg_constrss <- forM (zip calledfun_param_env args) $ \ ((_,(param_ident,param_ty)),arg) -> do
+			memberconds <- lift $ createMemberCondsM param_ty (CVar param_ident undefNode) arg
+			return $ Condition (CBinary CEqOp (CVar param_ident undefNode) arg undefNode) : memberconds
+		modify $ \ (leadings,trailings) -> ((concat constraintss ++ concat arg_constrss) ++ leadings, trailings )
+		return $ CVar newfunident undefNode
+	
+	expandexpr expr = return expr
+	
+{-
 	(trace',additional_traceelems) <- runStateT (everywhereM (mkM expandcall) trace) []
-	return (i,orig_trace,additional_traceelems++trace')
+	return (i,trace,additional_traceelems++trace')
 
 	where
 
@@ -404,6 +442,7 @@ expandCallsM env (i,orig_trace,trace) = do
 		return $ CVar newfunident undefNode
 	expandcall ccall@(CCall funexpr _ _) = error $ "expandcall: " ++ (render.pretty) ccall ++ " not implemented yet"
 	expandcall x = return x
+-}
 
 	createpredicatesM :: Type -> Ident -> (Int,Trace,Trace) -> CovVecM Trace
 	createpredicatesM ret_type fun_ret_ident (i,orig_trace,trace) = case last trace of
@@ -466,6 +505,35 @@ createMemberVarName expr ident = expr_str ++ "_" ++ identToString ident where
 
 normalizeExpr :: CExpr -> CExpr
 normalizeExpr expr = expr -- TODO!
+
+
+-- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
+
+elimAssignmentsM :: ([Int],Trace,Trace) -> CovVecM ([Int],Trace,Trace)
+elimAssignmentsM (is,orig_trace,trace) = do
+	foldedtrace <- foldtraceM [] trace
+	return (is,trace,foldedtrace)
+	where
+	foldtraceM :: Trace -> Trace -> CovVecM Trace
+	foldtraceM result [] = return result
+	foldtraceM result (Assignment lvalue assignop expr : rest) = do
+		foldtraceM (subst lvalue expr' result) rest
+		where
+		expr' = if assignop==CAssignOp then expr else CBinary assignop' (lvalueToExpr lvalue) expr undefNode where
+			Just assignop' = lookup assignop [
+				(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
+				(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
+
+		subst :: LValue -> CExpr -> Trace -> Trace
+		subst lvalue expr trace = everywhere (mkT (substlvalue lvalue expr)) trace where
+			substlvalue :: LValue -> CExpr -> CExpr -> CExpr
+			substlvalue lvalue expr found_expr = if (lvalueToExpr lvalue) == found_expr then expr else found_expr
+
+	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
+
+	lvalueToExpr :: LValue -> CExpr
+	lvalueToExpr (LMember lexpr ident isptr) = CMember lexpr ident isptr undefNode
+	lvalueToExpr (LIdent ident) = CVar ident undefNode
 
 
 -- MiniZinc Model Generation
