@@ -83,7 +83,7 @@ main = do
 					when ("-writeGlobalDecls" ∈ opts) $
 						writeFile (analyzerPath </> filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 					covvectors <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
-					forM_ covvectors $ \ (i,origtrace,trace,model,mb_solution) -> let is = show i in printLog $ unlines $
+					forM_ covvectors $ \ (is,origtrace,trace,model,mb_solution) -> printLog $ unlines $
 						[ "","=== ORIG TRACE " ++ is ++ " ====================","<leaving out builtins...>" ] ++
 						map show (filter isnotbuiltin origtrace) ++
 						[ "","--- TRACE " ++ is ++ " -------------------------","<leaving out builtins...>" ] ++
@@ -190,7 +190,7 @@ instance Show TraceElem where
 	show (Return expr)               = "RET  " ++ (render.pretty) expr
 type Trace = [TraceElem]
 
-type TraceAnalysisResult = (Int,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
+type TraceAnalysisResult = (String,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 
 {-
 -- Prepares and follows the traces, returning the traces
@@ -222,7 +222,7 @@ prepareFollowTracesM include_glob_trace funname = do
 -}
 
 
-enterFunctionM :: String -> CovVecM ([TraceElem],Env)
+enterFunctionM :: String -> CovVecM ([TraceElem],Env,CStat)
 enterFunctionM funname = do
 	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
 	param_env <- concatMapM (declaration2EnvItem True) paramdecls
@@ -230,7 +230,7 @@ enterFunctionM funname = do
 		envitem2newdecl :: EnvItem -> TraceElem
 		envitem2newdecl (_,(newident,ty)) = NewDeclaration (newident,ty)
 		newdecls = map envitem2newdecl $ param_env
-	return (newdecls,param_env)
+	return (newdecls,param_env,body)
 
 
 -- Find input vectors that fully cover the given function
@@ -239,7 +239,7 @@ covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
 	glob_env <- concatMapM (declaration2EnvItem False) globdecls
-	(newdecls,param_env) <- enterFunctionM funname
+	(newdecls,param_env,body) <- enterFunctionM funname
 	let
 		env = param_env ++ glob_env
 		enumdefs = concatMap enum2stmt globdecls
@@ -249,7 +249,8 @@ covVectorsM funname = do
 		enum2stmt _ = []
 
 	followTracesM [env] newdecls [enumdefs++[CBlockStmt body]] >>=
-		expandExprsM glob_env >>=
+--		expandExprsM glob_env >>=
+		return . zip (map (:[]) [1..]) >>=
 		mapM elimAssignmentsM >>=
 		mapM (solveTraceM param_env)
 
@@ -374,7 +375,7 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 	eliminparamdecl (AbstractParamDecl (VarDecl varname declattrs ty) ni) =
 		AbstractParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
 
-
+{-
 -- Expand Calls and side effects in Expressions
 
 expandExprsM :: Env -> [Trace] -> CovVecM [([Int],Trace,Trace)]
@@ -470,6 +471,7 @@ expandExprsM env traces = concatForM (zip (map (:[]) [1..]) traces) $ expandcall
 			return $ decls ++ foldedconds
 			
 		_ -> error $ "createpredicatesM: no RET found in last position"
+-}
 
 createMemberCondsM :: Type -> CExpr -> CExpr -> CovVecM [TraceElem]
 createMemberCondsM ty expr1 expr2 = do
@@ -509,8 +511,8 @@ normalizeExpr expr = expr -- TODO!
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
 
-elimAssignmentsM :: ([Int],Trace,Trace) -> CovVecM ([Int],Trace,Trace)
-elimAssignmentsM (is,orig_trace,trace) = do
+elimAssignmentsM :: ([Int],Trace) -> CovVecM ([Int],Trace,Trace)
+elimAssignmentsM (is,trace) = do
 	foldedtrace <- foldtraceM [] trace
 	return (is,trace,foldedtrace)
 	where
@@ -645,8 +647,8 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 
 traceelemToMZ _ = return []
 
-solveTraceM :: Env -> (Int,Trace,Trace) -> CovVecM TraceAnalysisResult
-solveTraceM param_env (i,orig_trace,trace) = do
+solveTraceM :: Env -> ([Int],Trace,Trace) -> CovVecM TraceAnalysisResult
+solveTraceM param_env (is,orig_trace,trace) = do
 	let mb_ret_val = case last trace of
 		Return ret_expr -> Just ret_expr
 		_               -> Nothing
@@ -677,7 +679,8 @@ solveTraceM param_env (i,orig_trace,trace) = do
 				MZAST.E (MZAST.Var $ MZAST.Simpl "indomain_min"),
 				MZAST.E (MZAST.Var $ MZAST.Simpl "complete") ] ]
 
-	let modelpath = analyzerPath </> "model" ++ show i
+	let tracename = intercalate "_" $ map show is
+	let modelpath = analyzerPath </> "model_" ++ tracename
 	liftIO $ writeFile (modelpath ++ ".mzn") $ layout model
 	printLog "Running model..."
 
@@ -691,5 +694,4 @@ solveTraceM param_env (i,orig_trace,trace) = do
 		Right [] -> return Nothing
 		Right (sol:_) -> return $ Just (param_env,sol,mb_ret_val)
 
-	return (i,orig_trace,trace,model,mb_solution)
-
+	return (tracename,orig_trace,trace,model,mb_solution)
