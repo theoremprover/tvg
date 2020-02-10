@@ -110,6 +110,28 @@ main = do
 isnotbuiltin (NewDeclaration (ident,_)) = not $ "__" `isPrefixOf` (identToString ident)
 isnotbuiltin _ = True
 
+
+-- Find input vectors that fully cover the given function
+
+covVectorsM :: String -> CovVecM [TraceAnalysisResult]
+covVectorsM funname = do
+	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
+	glob_env <- concatMapM (declaration2EnvItem False) globdecls
+	(newdecls,param_env,body) <- enterFunctionM funname
+	let
+		env = param_env ++ glob_env
+		enumdefs = concatMap enum2stmt globdecls
+		enum2stmt :: IdentDecl -> [CBlockItem]
+		enum2stmt (EnumeratorDef (Enumerator ident expr _ _)) =
+			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
+		enum2stmt _ = []
+
+	followTracesM [env] newdecls [enumdefs++[CBlockStmt body]] >>=
+		expandExprsM glob_env >>=
+		mapM elimAssignmentsM >>=
+		mapM (solveTraceM param_env)
+
+
 data CovVecState = CovVecState {
 	globDeclsCVS    :: GlobalDecls,
 	newNameIndexCVS :: Int,
@@ -233,28 +255,6 @@ enterFunctionM funname = do
 	return (newdecls,param_env,body)
 
 
--- Find input vectors that fully cover the given function
-
-covVectorsM :: String -> CovVecM [TraceAnalysisResult]
-covVectorsM funname = do
-	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
-	glob_env <- concatMapM (declaration2EnvItem False) globdecls
-	(newdecls,param_env,body) <- enterFunctionM funname
-	let
-		env = param_env ++ glob_env
-		enumdefs = concatMap enum2stmt globdecls
-		enum2stmt :: IdentDecl -> [CBlockItem]
-		enum2stmt (EnumeratorDef (Enumerator ident expr _ _)) =
-			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
-		enum2stmt _ = []
-
-	followTracesM [env] newdecls [enumdefs++[CBlockStmt body]] >>=
---		expandExprsM glob_env >>=
-		return . zip (map (:[]) [1..]) >>=
-		mapM elimAssignmentsM >>=
-		mapM (solveTraceM param_env)
-
-
 -- UNFOLD TRACES
 
 followTracesM :: [Env] -> Trace -> [[CBlockItem]] -> CovVecM [Trace]
@@ -277,7 +277,6 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
 		let lval_assignment = Assignment (exprToLValue lexpr) assignop assigned_expr
-			
 		followTracesM envs ( translateteidents lval_assignment : trace ) (rest:rest2)
 
 {-
@@ -375,11 +374,20 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 	eliminparamdecl (AbstractParamDecl (VarDecl varname declattrs ty) ni) =
 		AbstractParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
 
-{-
 -- Expand Calls and side effects in Expressions
 
 expandExprsM :: Env -> [Trace] -> CovVecM [([Int],Trace,Trace)]
-expandExprsM env traces = concatForM (zip (map (:[]) [1..]) traces) $ expandcallsM []
+expandExprsM env traces = concatForM (zip (map (:[]) [1..]) traces) $ expandexprsM []
+	where
+	expandexprsM :: [Trace] -> ([Int],Trace) -> ([Int],Trace,Trace)
+	expandexprsM (is,trace) = do
+		trace's <- expandtesM [] trace
+
+		trace' <- concatForM trace expandteM
+		return (
+
+{-
+concatForM (zip (map (:[]) [1..]) traces) $ expandcallsM []
 	where
 	-- TODO: Precondition: Only expressions where no inner sequence points are needed to correctly evaluate their incs/decs
 	expandcallsM :: Trace -> ([Int],Trace) -> CovVecM [([Int],Trace,Trace)]
