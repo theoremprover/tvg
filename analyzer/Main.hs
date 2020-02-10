@@ -265,8 +265,9 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 	CCompound _ cbis _ -> followTracesM ([]:envs) trace (cbis : rest : rest2)
 
 	CIf cond then_stmt mb_else_stmt _ -> do
+		(cond',bis) <- expandExprM cond
 		then_traces <- followTracesM envs (translateteidents (Condition cond) : trace) ( (CBlockStmt then_stmt : rest) : rest2 )
-		let not_cond = translateteidents $ Condition (CUnary CNegOp cond undefNode)
+		let not_cond = translateteidents $ Condition (CUnary CNegOp cond' undefNode)
 		else_traces <- case mb_else_stmt of
 			Nothing        -> followTracesM envs (not_cond : trace) ( rest : rest2 )
 			Just else_stmt -> followTracesM envs (not_cond : trace) ( (CBlockStmt else_stmt : rest) : rest2 )
@@ -321,6 +322,10 @@ followTracesM allenv trace [] = return [trace]
 followTracesM _ _ ((cbi:_):_) = error $ "followTraceM " ++ (render.pretty) cbi ++ " not implemented yet."
 
 
+expandExprM :: CExpr -> CovVecM (CExpr,[CBlockItem])
+expandExprM expr = do
+	
+
 exprToLValue (CVar ident _) = LIdent ident
 exprToLValue (CMember expr ident isptr _) = LMember expr ident isptr
 
@@ -374,6 +379,7 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 	eliminparamdecl (AbstractParamDecl (VarDecl varname declattrs ty) ni) =
 		AbstractParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
 
+{-
 -- Expand Calls and side effects in Expressions
 
 expandExprsM :: Env -> [Trace] -> CovVecM [([Int],Trace,Trace)]
@@ -385,7 +391,7 @@ expandExprsM env traces = concatForM (zip (map (:[]) [1..]) traces) $ expandexpr
 
 		trace' <- concatForM trace expandteM
 		return (
-
+-}
 {-
 concatForM (zip (map (:[]) [1..]) traces) $ expandcallsM []
 	where
