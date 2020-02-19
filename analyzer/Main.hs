@@ -232,9 +232,9 @@ covVectorsM funname = do
 
 -- For a given function, find all traces together with their constraints and return values
 
-{-
 createReturnValPredicatesM :: Ident -> String -> CovVecM ([Trace],Env)
---createReturnValPredicatesM fun_ret_ident funname = TODO: BUILTIN FUNCTIONS HERE
+createReturnValPredicatesM fun_ret_ident funname = error "TODO: BUILTIN FUNCTIONS HERE"
+{-
 createReturnValPredicatesM fun_ret_ident funname = do
 	(traces,calledfun_param_env) <- prepareFollowTracesM False funname
 	traces_rets <- mapM createpredicatesM traces
