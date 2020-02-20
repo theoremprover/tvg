@@ -297,6 +297,14 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 							CVar target_ident _ ->do
 								printLog $ "Returning call arg CVar: " ++ showPositionAndPretty target_ident
 								return [ target_ident ]
+							CUnary CAdrOp (CVar target_ident _) _ -> do
+								printLog $ "Returning " ++ (render.pretty) target_ident ++ " from call arg : " ++ showPositionAndPretty (args!!argnum)
+								return [ target_ident ]							
+							CCast (CDecl [CTypeSpec (CVoidType _)] [(Just (CDeclr Nothing [CPtrDeclr _ _] Nothing [] _),Nothing,Nothing)] _) (CConst (CIntConst (CInteger 0 _ _ ) _)) _ -> do
+								printLog $ "Argument is " ++ (render.pretty) (args!!argnum) ++ " , ignoring."
+								return []
+							cmember@(CMember (CVar structident _) member_ident isptr _) -> do
+								 chaseFun [currentfunident] (fundef',cmember)
 							arg -> do
 								let msg = "STRANGE: Not in CVar form: " ++ showPositionAndPretty arg
 								printLog $ msg
