@@ -261,27 +261,10 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 					Just argnum -> do
 						printLog $ (render.pretty) structident ++ " is arg with index " ++ show argnum ++ " of function " ++ currentfunname
 						printLog $ "But you have to find out yourself"
-						liftIO $ appendFile strangeCalls $ (render.pretty) structident ++ " is arg with index " ++ show argnum ++ " of function " ++ currentfunname
-						liftIO $ appendFile strangeCalls $ "But you have to find out yourself"
+						liftIO $ appendFile strangeCalls $ (render.pretty) structident ++ " is arg with index " ++ show argnum ++ " of function " ++ currentfunname ++ "\n"
+						liftIO $ appendFile strangeCalls $ "But you have to find out yourself\n"
 						return []
-{-
-						args <- chaseformalparam argnum currentfunname structident currentfunident
-						concatForM args $ \ ident -> do
-							let defs = findDef (CVar ident undefNode) ctranslunits
-							forM defs $ \ defdexpr -> case defdexpr of
-								CVar ident 
--}
-{-
-						printLog $ (render.pretty) structident ++ " is arg with index " ++ show argnum ++ " of function " ++ currentfunname
-						printLog $ "Found these calls calling " ++ currentfunname ++ ":"
-						funss1 <- forM (funCallInFunDef ctranslunit) $ \ (fundef',call'@(CCall callexpr args _)) -> do
-							funidents <- chaseFun (currentfunident:occured_funs) (fundef',call')
-							forM (filter (==currentfunident) funidents) $ \ caller_ident -> do
-								let call_source_funident = getFunDefIdent fundef'
-								printLog $ "CALL: " ++ (render.pretty) call' ++ " in " ++ (render.pretty) call_source_funident
-								return caller_ident
-						return $ concat funss1
--}
+
 			expr -> strangecall expr
 
 		where
@@ -304,7 +287,7 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 								printLog $ "Argument is " ++ (render.pretty) (args!!argnum) ++ " , ignoring."
 								return []
 							cmember@(CMember (CVar structident _) member_ident isptr _) -> do
-								 chaseFun [currentfunident] (fundef',cmember)
+								chaseFun [currentfunident] (fundef',cmember)
 							arg -> do
 								let msg = "STRANGE: Not in CVar form: " ++ showPositionAndPretty arg
 								printLog $ msg

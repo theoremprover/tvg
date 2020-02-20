@@ -324,7 +324,7 @@ followTracesM _ _ ((cbi:_):_) = error $ "followTraceM " ++ (render.pretty) cbi +
 
 expandExprM :: CExpr -> CovVecM (CExpr,[CBlockItem])
 expandExprM expr = do
-	
+	error $ "TODO"
 
 exprToLValue (CVar ident _) = LIdent ident
 exprToLValue (CMember expr ident isptr _) = LMember expr ident isptr
@@ -379,10 +379,11 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 	eliminparamdecl (AbstractParamDecl (VarDecl varname declattrs ty) ni) =
 		AbstractParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
 
-{-
 -- Expand Calls and side effects in Expressions
 
-expandExprsM :: Env -> [Trace] -> CovVecM [([Int],Trace,Trace)]
+expandExprsM :: Env -> [Trace] -> CovVecM [([Int],Trace)]
+expandExprsM env traces = error "TODO"
+{-
 expandExprsM env traces = concatForM (zip (map (:[]) [1..]) traces) $ expandexprsM []
 	where
 	expandexprsM :: [Trace] -> ([Int],Trace) -> ([Int],Trace,Trace)
