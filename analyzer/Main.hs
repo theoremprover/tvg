@@ -96,9 +96,11 @@ main = do
 						show_solution mb_solution ]
 					where
 					show_solution Nothing = "No solution"
-					show_solution (Just (env,solution,mb_retval)) = unlines [ show solution,
+					show_solution (Just (env,solution,retident)) = unlines [ show solution,
 						funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )",
-						"    = " ++ maybe "<NO_RETURN>" (render.pretty) mb_retval ]
+						"    = " ++ ( case lookup retident solution of
+							Nothing -> "<NoReturnValue>"
+							Just retval -> (render.pretty) retval ) ]
 						where
 						showarg (oldident,(newident,_)) =
 							identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
@@ -117,7 +119,7 @@ covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
 	glob_env <- concatMapM (declaration2EnvItem False) globdecls
-	(newdecls,param_env,body) <- enterFunctionM funname
+	(retenvitem,newdecls,param_env,body) <- enterFunctionM funname
 	let
 		env = param_env ++ glob_env
 		enumdefs = concatMap enum2stmt globdecls
@@ -126,8 +128,8 @@ covVectorsM funname = do
 			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
 		enum2stmt _ = []
 
-	followTracesM [env] newdecls [enumdefs++[CBlockStmt body]] >>=
-		expandExprsM glob_env >>=
+	followTracesM retenvitem [env] newdecls [enumdefs++[CBlockStmt body]] >>=
+--		expandExprsM glob_env >>=
 		mapM elimAssignmentsM >>=
 		mapM (solveTraceM param_env)
 
@@ -200,16 +202,14 @@ instance Show LValue where
 data TraceElem =
 	Assignment LValue CAssignOp CExpr |
 	Condition CExpr |
-	NewDeclaration (Ident,Type) |
-	SideEffects CExpr |
-	Return CExpr
+	NewDeclaration (Ident,Type)
+--	Return CExpr
 deriving instance Data TraceElem
 instance Show TraceElem where
 	show (Assignment lvalue assignop expr)  = "ASSN " ++ show lvalue ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
 	show (Condition expr)            = "COND " ++ (render.pretty) expr
 	show (NewDeclaration (ident,ty)) = "DECL " ++ (render.pretty) ident ++ " :: " ++ (render.pretty) ty
-	show (SideEffects expr)          = "SIDE " ++ (render.pretty) expr
-	show (Return expr)               = "RET  " ++ (render.pretty) expr
+--	show (Return expr)               = "RET  " ++ (render.pretty) expr
 type Trace = [TraceElem]
 
 type TraceAnalysisResult = (String,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
@@ -244,41 +244,48 @@ prepareFollowTracesM include_glob_trace funname = do
 -}
 
 
-enterFunctionM :: String -> CovVecM ([TraceElem],Env,CStat)
+enterFunctionM :: String -> CovVecM (TraceElem,[TraceElem],Env,CStat)
 enterFunctionM funname = do
-	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
+	FunDef fundecl@(VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
 	param_env <- concatMapM (declaration2EnvItem True) paramdecls
 	let
 		envitem2newdecl :: EnvItem -> TraceElem
 		envitem2newdecl (_,(newident,ty)) = NewDeclaration (newident,ty)
 		newdecls = map envitem2newdecl $ param_env
-	return (newdecls,param_env,body)
+	retenvitem <- declaration2EnvItem True fundecl
+	return (envitem2newdecl retenvitem,newdecls,param_env,body)
 
 
 -- UNFOLD TRACES
 
-followTracesM :: [Env] -> Trace -> [[CBlockItem]] -> CovVecM [Trace]
+followTracesM :: TraceElem -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM [Trace]
 
-followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
-	CLabel _ cstat _ _ -> followTracesM envs trace ((CBlockStmt cstat:rest):rest2)
+followTracesM retdecl envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
+	CLabel _ cstat _ _ -> followTracesM retdecl envs trace ((CBlockStmt cstat:rest):rest2)
 
-	CCompound _ cbis _ -> followTracesM ([]:envs) trace (cbis : rest : rest2)
+	CCompound _ cbis _ -> followTracesM retdecl ([]:envs) trace (cbis : rest : rest2)
 
 	CIf cond then_stmt mb_else_stmt _ -> do
-		(cond',bis) <- expandExprM cond
-		then_traces <- followTracesM envs (translateteidents (Condition cond) : trace) ( (CBlockStmt then_stmt : rest) : rest2 )
-		let not_cond = translateteidents $ Condition (CUnary CNegOp cond' undefNode)
+		(cond',(pres,posts)) <- expandExprM envs cond
+		then_traces <- followTracesM retdecl envs ( posts ++ [Condition cond'] ++ pres ++ trace)
+			( (CBlockStmt then_stmt : rest) : rest2 )
+		let not_cond = Condition (CUnary CNegOp cond' undefNode)
 		else_traces <- case mb_else_stmt of
-			Nothing        -> followTracesM envs (not_cond : trace) ( rest : rest2 )
-			Just else_stmt -> followTracesM envs (not_cond : trace) ( (CBlockStmt else_stmt : rest) : rest2 )
+			Nothing        -> followTracesM retdecl envs (posts ++ [not_cond] ++ pres ++ trace) ( rest : rest2 )
+			Just else_stmt -> followTracesM retdecl envs (posts ++ [not_cond] ++ pres ++ trace) ( (CBlockStmt else_stmt : rest) : rest2 )
 		return $ then_traces ++ else_traces
 
 	CReturn Nothing _ -> return [ trace ]
-	CReturn (Just ret_expr) _ -> return [ translateteidents (Return ret_expr) : trace ]
+	CReturn (Just ret_expr) _ -> do
+		(ret_expr',(pres,posts)) <- expandExprM envs ret_expr
+		let NewDeclaration (retident,_) = retdecl
+		return [ posts ++ [ Assignment (LIdent retident) CAssignOp ret_expr', retdecl ] ++ pres ++ trace ]
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
-		let lval_assignment = Assignment (exprToLValue lexpr) assignop assigned_expr
-		followTracesM envs ( translateteidents lval_assignment : trace ) (rest:rest2)
+		(lexpr',(lpres,lposts)) <- expandExprM envs lexpr
+		(assigned_expr',(apres,aposts)) <- expandExprM envs assigned_expr
+		let lval_assignment = Assignment (exprToLValue lexpr') assignop assigned_expr'
+		followTracesM retdecl envs ( aposts ++ lposts ++ [lval_assignment] ++ lpres ++ apres ++ trace ) (rest:rest2)
 
 {-
 	CExpr (Just (CUnary unaryop expr _)) _ -> followTracesM envs trace ( (CBlockStmt stmt' : rest) : rest2 ) where
@@ -286,7 +293,8 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 		Just assignop = lookup unaryop [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
 -}
 
-	CWhile cond body False _ -> followTracesM envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
+	CWhile cond body False _ -> do
+		followTracesM retdecl envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
 		where
 		unroll_loop :: Int -> [CBlockItem]
 		unroll_loop 0 = []
@@ -301,9 +309,9 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 
 	translateteidents = translateTEidents envs
 
-followTracesM allenv@(env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
+followTracesM retdecl allenv@(env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	(env',trace') <- foldrM folddecls (env,trace) triples
-	followTracesM (env':envs) trace' (rest:rest2)
+	followTracesM retdecl (env':envs) trace' (rest:rest2)
 	where
 	-- folding right-to-left, hence env/trace order is correct when putting new elements as head
 	folddecls (Just (CDeclr (Just ident) derivdeclrs _ _ _),mb_init,Nothing) (envitems,traceelems) = do
@@ -315,23 +323,38 @@ followTracesM allenv@(env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] 
 		let declitems = map NewDeclaration (map snd envitems')
 		return (envitems' ++ envitems, assign_items ++ declitems ++ traceelems)
 
-followTracesM (_:restenvs) trace ([]:rest2) = followTracesM restenvs trace rest2
+followTracesM retdecl (_:restenvs) trace ([]:rest2) = followTracesM retdecl restenvs trace rest2
 
-followTracesM allenv trace [] = return [trace]
+followTracesM _ allenv trace [] = return [trace]
 
-followTracesM _ _ ((cbi:_):_) = error $ "followTraceM " ++ (render.pretty) cbi ++ " not implemented yet."
+followTracesM _ _ _ ((cbi:_):_) = error $ "followTraceM " ++ (render.pretty) cbi ++ " not implemented yet."
 
+expandExprM :: [Env] -> CExpr -> CovVecM [Trace]
+expandExprM trace = expandexprM trace []
+	where
+	expandexprsM :: Trace -> [Trace] -> [Trace]
+	expandexprsM [] result = result
+	expandexprsM (traceitem:trace) result = do
+		(traceelem',(pretrace,posttrace)) <- runStateT (everywhereM (mkM expandexpr) traceitem) ([],[])
 
-expandExprM :: CExpr -> CovVecM (CExpr,[CBlockItem])
-expandExprM expr = do
-	
+	expandexpr :: CExpr -> StateT [(Trace,Trace)] CovVecM CExpr
+	expandexpr (CUnary unop expr _) | unop ∈ [CPreIncOp,CPostIncOp,CPreDecOp,CPostDecOp] = do
+		modify $ \ (pres,posts) -> case unop of
+			CPreIncOp  -> ( ass CAddAssOp : pres , posts )
+			CPostIncOp -> ( pres                 , ass CAddAssOp : posts)
+			CPreDecOp  -> ( ass CSubAssOp : pres , posts)
+			CPostDecOp -> ( pres                 , ass CSubAssOp : posts)
+		return expr
+		where
+		ass op = Assignment (exprToLValue expr) op (CConst $ CIntConst (cInteger 1) undefNode)
+	expandexpr 
 
 exprToLValue (CVar ident _) = LIdent ident
 exprToLValue (CMember expr ident isptr _) = LMember expr ident isptr
 
 
 translateTEidents envs (Condition cond) = Condition $ translateIdents envs cond
-translateTEidents envs (Return ret_expr) = Return $ translateIdents envs ret_expr
+--translateTEidents envs (Return ret_expr) = Return $ translateIdents envs ret_expr
 translateTEidents envs (Assignment lval assop expr) = Assignment lval' assop (translateIdents envs expr) where
 	lval' = case lval of
 		LIdent ident -> let CVar ident' _ = translateIdents envs (CVar ident undefNode) in LIdent ident'
@@ -661,12 +684,8 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 
 traceelemToMZ _ = return []
 
-solveTraceM :: Env -> ([Int],Trace,Trace) -> CovVecM TraceAnalysisResult
-solveTraceM param_env (is,orig_trace,trace) = do
-	let mb_ret_val = case last trace of
-		Return ret_expr -> Just ret_expr
-		_               -> Nothing
-
+solveTraceM :: TraceElem -> Env -> ([Int],Trace,Trace) -> CovVecM TraceAnalysisResult
+solveTraceM (NewDeclaration (retident,_)) param_env (is,orig_trace,trace) = do
 	constraintsG <- concatMapM traceelemToMZ trace
 	
 	let tyenv = concatMap traceitem2tyenv trace where
@@ -706,6 +725,6 @@ solveTraceM param_env (is,orig_trace,trace) = do
 			printLog $ show err
 			return Nothing
 		Right [] -> return Nothing
-		Right (sol:_) -> return $ Just (param_env,sol,mb_ret_val)
+		Right (sol:_) -> return $ Just (param_env,sol,retdecl)
 
 	return (tracename,orig_trace,trace,model,mb_solution)
