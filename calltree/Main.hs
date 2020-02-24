@@ -229,23 +229,8 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 				printLog $ "Found CVar " ++ (render.pretty) ident
 				case isFormalParam fundef ident of
 				-- is formal param
-					Just argnum -> do
-						printLog $ (render.pretty) ident ++ " is arg with index " ++ show argnum ++ " of function " ++ currentfunname
-						concatForM (funCallInFunDef ctranslunits) $ \ (fundef',call'@(CCall callexpr args _)) -> do
-							case callexpr of
-								CVar src_fun_ident _ | currentfunident==src_fun_ident -> do
-									printLog $ "Resolved call to " ++ currentfunname ++ " at " ++ showPositionAndPretty call'
-									case args!!argnum of
-										CVar target_ident _ ->do
-											printLog $ "Returning call arg CVar: " ++ showPositionAndPretty target_ident
-											return [ target_ident ]
-										arg -> do
-											let msg = "STRANGE: Not in CVar form: " ++ showPositionAndPretty arg
-											printLog $ msg
-											liftIO $ appendFile strangeCalls $ msg ++ "\n"
-											return []
-								_ -> return []
-
+					Just argnum -> chaseformalparam argnum currentfunname ident currentfunident					
+					
 					-- is no param...
 					Nothing -> do
 						let ident_name = (render.pretty) ident
@@ -261,8 +246,6 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 			cmember@(CMember (CVar structident _) member_ident isptr _) -> do
 				let struct_ident_name = (render.pretty) structident
 				printLog $ "Found CMember(CVar) ptr=" ++ show isptr ++ " at " ++ showPositionAndPretty cmember
-				printLog $ "Returning member " ++ (render.pretty) member_ident
-				return [ member_ident ]
 				case isFormalParam fundef structident of
 					Nothing -> do
 						printLog $ struct_ident_name ++ " is no formal param of " ++ currentfunname ++ ","
@@ -272,39 +255,45 @@ searchFunCalls fundef0@(CFunDef _ (CDeclr (Just (Ident funname _ _)) _ _ _ _) _ 
 							CVar ident _ -> do
 								printLog $ "Found " ++ showPositionAndPretty defdexpr
 								return ident
+							CUnary CAdrOp (CVar ident _) _ -> return ident
 							_ -> error $ " defd of form " ++ (render.pretty) defdexpr ++ " not implemented yet!"
-{-
 
-						let ident_name = (render.pretty) structident
-						printLog $ ident_name ++ " is no formal parameter, searching for declaration"
-						case declName structident ctranslunit of
-							(found_ident@(Ident found_name _ _):_) -> do
-								printLog $ "Found declaration for " ++ struct_ident_name ++ ": " ++ showPositionAndPretty found_ident
-								case varAssignment (isCVarWithIdent structident) ctranslunit of
-									[] -> do
-										printLog $ "No assignment to " ++ found_name ++ " found, so it must have been defined externally. Returning the member " ++ (render.pretty) member_ident
-										return [ member_ident ]
-									_ -> myError "Found assignments, but not implemented yet." 
-							[] -> do
-								myError $ "No declaration of " ++ struct_ident_name ++ " found!"
--}
 					Just argnum -> do
-						printLog $ struct_ident_name ++ " is formal param of " ++ currentfunname ++ " not implemented yet!"
-						return []
-{-
 						printLog $ (render.pretty) structident ++ " is arg with index " ++ show argnum ++ " of function " ++ currentfunname
-						printLog $ "Found these calls calling " ++ currentfunname ++ ":"
-						funss1 <- forM (funCallInFunDef ctranslunit) $ \ (fundef',call'@(CCall callexpr args _)) -> do
-							funidents <- chaseFun (currentfunident:occured_funs) (fundef',call')
-							forM (filter (==currentfunident) funidents) $ \ caller_ident -> do
-								let call_source_funident = getFunDefIdent fundef'
-								printLog $ "CALL: " ++ (render.pretty) call' ++ " in " ++ (render.pretty) call_source_funident
-								return caller_ident
-						return $ concat funss1
--}
+						printLog $ "But you have to find out yourself"
+						liftIO $ appendFile strangeCalls $ (render.pretty) structident ++ " is arg with index " ++ show argnum ++ " of function " ++ currentfunname ++ "\n"
+						liftIO $ appendFile strangeCalls $ "But you have to find out yourself\n"
+						return []
+
 			expr -> strangecall expr
 
 		where
+
+		-- Returns the arguments with which the function <currentfunname> is called 
+		chaseformalparam argnum currentfunname ident currentfunident = do
+			printLog $ (render.pretty) ident ++ " is arg with index " ++ show argnum ++ " of function " ++ currentfunname
+			concatForM (funCallInFunDef ctranslunits) $ \ (fundef',call'@(CCall callexpr args _)) -> do
+				case callexpr of
+					CVar src_fun_ident _ | currentfunident==src_fun_ident -> do
+						printLog $ "Resolved call to " ++ currentfunname ++ " at " ++ showPositionAndPretty call'
+						case args!!argnum of
+							CVar target_ident _ ->do
+								printLog $ "Returning call arg CVar: " ++ showPositionAndPretty target_ident
+								return [ target_ident ]
+							CUnary CAdrOp (CVar target_ident _) _ -> do
+								printLog $ "Returning " ++ (render.pretty) target_ident ++ " from call arg : " ++ showPositionAndPretty (args!!argnum)
+								return [ target_ident ]							
+							CCast (CDecl [CTypeSpec (CVoidType _)] [(Just (CDeclr Nothing [CPtrDeclr _ _] Nothing [] _),Nothing,Nothing)] _) (CConst (CIntConst (CInteger 0 _ _ ) _)) _ -> do
+								printLog $ "Argument is " ++ (render.pretty) (args!!argnum) ++ " , ignoring."
+								return []
+							cmember@(CMember (CVar structident _) member_ident isptr _) -> do
+								chaseFun [currentfunident] (fundef',cmember)
+							arg -> do
+								let msg = "STRANGE: Not in CVar form: " ++ showPositionAndPretty arg
+								printLog $ msg
+								liftIO $ appendFile strangeCalls $ msg ++ "\n"
+								return []
+					_ -> return []
 
 		strangecall expr = do
 			printLog $ "Strange FunCall: " ++ (render.pretty) expr
