@@ -41,9 +41,10 @@ mergesort l = merge (mergesort left) (mergesort right)
 	left = take middle_index l
 	right = drop middle_index l
 	
-	merge (first1:rest1) (first2:rest2) = case first1 <= first2 of
-		True  -> first1 : merge rest1 (first2:rest2)
-		False -> first2 : merge (first1:rest1) rest2
+	merge (first1:rest1) (first2:rest2) | first1 <= first2 =
+		first1 : merge rest1 (first2:rest2)
+	merge (first1:rest1) (first2:rest2) =
+		first2 : merge (first1:rest1) rest2
 	merge [] l2 = l2
 	merge l1 [] = l1
 
