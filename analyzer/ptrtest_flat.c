@@ -20,21 +20,14 @@ STRUCT* f(STRUCT *p,int x)
         p->member1 = ZWEI;
     }
 
+    p = p+1;
+
     if(p->member2 > x)
     {
         p->member2 = p->member2 + 1;
     }
 
     return(p);
-}
-
-int e(STRUCT *q,int y)
-{
-    STRUCT *r;
-    r = f(q,y);
-    if(r->member1==EINS) return 0;
-    if(r->member2>0) return 1;
-    return 2;
 }
 
 int main(int argc, char* argv[])
@@ -45,7 +38,7 @@ int main(int argc, char* argv[])
     int y = atoi(argv[3]);
     STRUCT p = { m1, m2 };
 
-    printf("<fun>(p_m1=%i, p_m2=%i, y=%i) = %i\n",m1,m2,y,e(&p,y));
+    printf("<fun>(p_m1=%i, p_m2=%i, y=%i) = %i\n",m1,m2,y,f(&p,y));
 #endif
     return 0;
 }
