@@ -111,7 +111,108 @@ main = do
 isnotbuiltin (NewDeclaration (ident,_)) = not $ "__" `isPrefixOf` (identToString ident)
 isnotbuiltin _ = True
 
+data CovVecState = CovVecState {
+	globDeclsCVS    :: GlobalDecls,
+	newNameIndexCVS :: Int,
+	translUnitCVS   :: CTranslUnit
+	}
+type CovVecM = StateT CovVecState IO
 
+instance Eq CExpr where
+	(CVar id1 _) == (CVar id2 _) = id1==id2
+	(CMember ptrexpr1 ident1 isptr1 _) == (CMember ptrexpr2 ident2 isptr2 _) =
+		ident1==ident2 && isptr1==isptr2 && ptrexpr1 == ptrexpr2
+	_ == _ = False
+
+data LValue = LIdent Ident | LMember CExpr Ident Bool deriving Eq
+deriving instance Data LValue
+instance Show LValue where
+	show (LIdent ident) = (render.pretty) ident
+	show (LMember ptrexpr member isptr) = (render.pretty) $ CMember ptrexpr member isptr undefNode
+
+data TraceElem =
+	Assignment LValue CAssignOp CExpr |
+	Condition CExpr |
+	NewDeclaration (Ident,Type) |
+	Return CExpr
+deriving instance Data TraceElem
+instance Show TraceElem where
+	show (Assignment lvalue assignop expr)  = "ASSN " ++ show lvalue ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
+	show (Condition expr)            = "COND " ++ (render.pretty) expr
+	show (NewDeclaration (ident,ty)) = "DECL " ++ (render.pretty) ident ++ " :: " ++ (render.pretty) ty
+	show (Return expr)               = "RET  " ++ (render.pretty) expr
+type Trace = [TraceElem]
+
+type EnvItem = (Ident,(Ident,Type))
+instance Pretty EnvItem where
+	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> pretty idnew <+> text " :: " <+> pretty ty
+type Env = [EnvItem]
+
+type TraceAnalysisResult = (String,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
+
+lookupFunM :: Ident -> CovVecM FunDef
+lookupFunM ident = do
+	funs <- gets (gObjs.globDeclsCVS)
+	case Map.lookup ident funs of
+		Just (FunctionDef fundef) -> return fundef
+		Nothing -> error $ "Function " ++ (show ident) ++ " not found"
+
+
+covVectorsM :: String -> CovVecM [TraceAnalysisResult]
+covVectorsM funname = do
+	FunDef (VarDecl _ _ (FunctionType (FunType _ _ False) _)) body _ <- lookupFunM (builtinIdent funname)
+	traces <- unfoldTracesM [] [body]
+	return $ map ("",[],,[],Nothing) traces
+
+-- Just unfold the traces
+
+unfoldTracesM :: Trace -> [CStat] -> CovVecM [Trace]
+unfoldTracesM trace (stmt:rest) = case stmt of
+	CLabel _ cstat _ _ -> unfoldTracesM trace (CBlockStmt cstat : rest)
+
+	CCompound _ cbis _ -> followTracesM ([]:envs) trace (cbis : rest : rest2)
+
+	CIf cond then_stmt mb_else_stmt _ -> do
+ --		(cond',bis) <- expandExprM cond
+		then_traces <- followTracesM envs (translateteidents (Condition cond) : trace) ( (CBlockStmt then_stmt : rest) : rest2 )
+		let not_cond = translateteidents $ Condition (CUnary CNegOp cond undefNode)
+		else_traces <- case mb_else_stmt of
+			Nothing        -> followTracesM envs (not_cond : trace) ( rest : rest2 )
+			Just else_stmt -> followTracesM envs (not_cond : trace) ( (CBlockStmt else_stmt : rest) : rest2 )
+		return $ then_traces ++ else_traces
+ 
+	CReturn Nothing _ -> return [ trace ]
+	CReturn (Just ret_expr) _ -> return [ translateteidents (Return ret_expr) : trace ]
+ 
+	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
+		let env = concat envs
+		let ty = case lexpr of
+			CVar lident _ -> case lookup lident env of
+				Just (_,ty) -> ty
+				Nothing -> error $ "Could not find " ++ (render.pretty) lident ++ " in " ++
+					unlines (map (render.pretty) env)
+			CMember ptrexpr ident isptr _ -> let
+				ii = internalIdent $ createMemberVarName (translateIdents envs ptrexpr) ident
+				in case lookup ii env of
+					Just (_,ty) -> ty
+					Nothing -> error $ "Could not find " ++ (render.pretty) ii ++ " in " ++
+						unlines (map (render.pretty) env)
+		memberenvitems <- createMemberEnvItems ty assigned_expr
+		let lval_assignment = Assignment (exprToLValue lexpr) assignop assigned_expr
+		let envs' = (memberenvitems ++ head envs) : tail envs
+		let declitems = map NewDeclaration (map snd memberenvitems)
+		followTracesM envs' ( map translateteidents (lval_assignment : declitems) ++ trace ) (rest:rest2)
+ 
+ 	CWhile cond body False _ -> followTracesM envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
+		where
+		unroll_loop :: Int -> [CBlockItem]
+		unroll_loop 0 = []
+		unroll_loop i = [ CBlockStmt $ CIf cond (CCompound [] (CBlockStmt body : unroll_loop (i-1)) undefNode) Nothing undefNode ]
+ 
+	_ -> error $ "followTracesM " ++ (render.pretty) stmt ++ " not implemented yet" --followTracesM envs trace (rest:rest2)	
+
+
+{-
 -- Find input vectors that fully cover the given function
 
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
@@ -139,8 +240,6 @@ data CovVecState = CovVecState {
 	translUnitCVS   :: CTranslUnit
 	}
 
-type CovVecM = StateT CovVecState IO
-
 lookupTypeDefM :: Ident -> CovVecM Type
 lookupTypeDefM ident = do
 	typedefs <- gets (gTypeDefs.globDeclsCVS)
@@ -148,24 +247,12 @@ lookupTypeDefM ident = do
 		Just (TypeDef _ ty _ _) -> return ty
 		Nothing -> error $ "TypeDef " ++ (show ident) ++ " not found"
 
-lookupFunM :: Ident -> CovVecM FunDef
-lookupFunM ident = do
-	funs <- gets (gObjs.globDeclsCVS)
-	case Map.lookup ident funs of
-		Just (FunctionDef fundef) -> return fundef
-		Nothing -> error $ "Function " ++ (show ident) ++ " not found"
-
 lookupTagM :: SUERef -> CovVecM TagDef
 lookupTagM ident = do
 	tags <- gets (gTags.globDeclsCVS)
 	case Map.lookup ident tags of
 		Just tagdef -> return tagdef
 		Nothing -> error $ "Tag " ++ (show ident) ++ " not found"
-
-type EnvItem = (Ident,(Ident,Type))
-instance Pretty EnvItem where
-	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> pretty idnew <+> text " :: " <+> pretty ty
-type Env = [EnvItem]
 
 createNewIdent :: String -> CovVecM Ident
 createNewIdent name_prefix = do
@@ -189,33 +276,6 @@ declaration2EnvItem :: Declaration decl => Bool -> decl -> CovVecM [EnvItem]
 declaration2EnvItem createnewident decl = do
 	let VarDecl (VarName oldident _) _ ty = getVarDecl decl
 	oldident2EnvItem createnewident ty oldident
-
-instance Eq CExpr where
-	(CVar id1 _) == (CVar id2 _) = id1==id2
-	(CMember ptrexpr1 ident1 isptr1 _) == (CMember ptrexpr2 ident2 isptr2 _) =
-		ident1==ident2 && isptr1==isptr2 && ptrexpr1 == ptrexpr2
-	_ == _ = False
-deriving instance Data LValue
-
-data LValue = LIdent Ident | LMember CExpr Ident Bool deriving Eq
-instance Show LValue where
-	show (LIdent ident) = (render.pretty) ident
-	show (LMember ptrexpr member isptr) = (render.pretty) $ CMember ptrexpr member isptr undefNode
-
-data TraceElem =
-	Assignment LValue CAssignOp CExpr |
-	Condition CExpr |
-	NewDeclaration (Ident,Type) |
-	Return CExpr
-deriving instance Data TraceElem
-instance Show TraceElem where
-	show (Assignment lvalue assignop expr)  = "ASSN " ++ show lvalue ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
-	show (Condition expr)            = "COND " ++ (render.pretty) expr
-	show (NewDeclaration (ident,ty)) = "DECL " ++ (render.pretty) ident ++ " :: " ++ (render.pretty) ty
-	show (Return expr)               = "RET  " ++ (render.pretty) expr
-type Trace = [TraceElem]
-
-type TraceAnalysisResult = (String,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 
 
 enterFunctionM :: String -> CovVecM ([TraceElem],Env,CStat)
@@ -719,3 +779,4 @@ solveTraceM param_env (is,orig_trace,trace) = do
 		Right (sol:_) -> return $ Just (param_env,sol,mb_ret_val)
 
 	return (tracename,orig_trace,trace,model,mb_solution)
+-}
