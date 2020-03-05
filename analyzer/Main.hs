@@ -101,14 +101,15 @@ main = do
 						funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )",
 						"    = " ++ maybe "<NO_RETURN>" (render.pretty) mb_retval ]
 						where
+						showarg :: EnvItem -> String
 						showarg (oldident,(newident,_)) =
-							identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
+							identToString oldident ++ " = " ++ case lookup (tIdentToString newident) solution of
 								Nothing -> "DONT_CARE"
 								Just (MInt i) -> show i
 								Just (MFloat f) -> show f
 								val -> error $ "showarg " ++ show val ++ " not yet implemented"
 
-isnotbuiltin (NewDeclaration (ident,_)) = not $ "__" `isPrefixOf` (identToString ident)
+isnotbuiltin (NewDeclaration (tident,_)) = not $ "__" `isPrefixOf` (tIdentToString tident)
 isnotbuiltin _ = True
 
 data CovVecState = CovVecState {
@@ -130,20 +131,27 @@ instance Show LValue where
 	show (LIdent ident) = (render.pretty) ident
 	show (LMember ptrexpr member isptr) = (render.pretty) $ CMember ptrexpr member isptr undefNode
 
+newtype TIdent = TIdent Ident
+deriving instance Data TIdent
+
+tIdentToString (TIdent ident) = identToString ident
+instance Pretty TIdent where
+	pretty (TIdent ident) = pretty ident
+
 data TraceElem =
 	Assignment LValue CAssignOp CExpr |
 	Condition CExpr |
-	NewDeclaration (Ident,Type) |
+	NewDeclaration (TIdent,Type) |
 	Return CExpr
 deriving instance Data TraceElem
 instance Show TraceElem where
 	show (Assignment lvalue assignop expr)  = "ASSN " ++ show lvalue ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
-	show (Condition expr)            = "COND " ++ (render.pretty) expr
-	show (NewDeclaration (ident,ty)) = "DECL " ++ (render.pretty) ident ++ " :: " ++ (render.pretty) ty
-	show (Return expr)               = "RET  " ++ (render.pretty) expr
+	show (Condition expr)             = "COND " ++ (render.pretty) expr
+	show (NewDeclaration (tident,ty)) = "DECL " ++ (render.pretty) tident ++ " :: " ++ (render.pretty) ty
+	show (Return expr)                = "RET  " ++ (render.pretty) expr
 type Trace = [TraceElem]
 
-type EnvItem = (Ident,(Ident,Type))
+type EnvItem = (Ident,(TIdent,Type))
 instance Pretty EnvItem where
 	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> pretty idnew <+> text " :: " <+> pretty ty
 type Env = [EnvItem]
@@ -163,6 +171,47 @@ covVectorsM funname = do
 	FunDef (VarDecl _ _ (FunctionType (FunType _ _ False) _)) body _ <- lookupFunM (builtinIdent funname)
 	traces <- unfoldTracesM [] [body]
 	return $ map ("",[],,[],Nothing) traces
+
+lookupTypeDefM :: Ident -> CovVecM Type
+lookupTypeDefM ident = do
+	typedefs <- gets (gTypeDefs.globDeclsCVS)
+	case Map.lookup ident typedefs of
+		Just (TypeDef _ ty _ _) -> return ty
+		Nothing -> error $ "TypeDef " ++ (show ident) ++ " not found"
+
+elimTypeDefsM :: Type -> CovVecM Type
+elimTypeDefsM directtype@(DirectType _ _ _) = pure directtype
+elimTypeDefsM (TypeDefType (TypeDefRef ident _ _) tyquals attrs) = lookupTypeDefM ident >>= elimTypeDefsM
+elimTypeDefsM (PtrType ty tyquals attrs) = PtrType <$> elimTypeDefsM ty <*> pure tyquals <*> pure attrs
+elimTypeDefsM (ArrayType ty size tyquals attrs) = ArrayType <$> elimTypeDefsM ty <*> pure size <*> pure tyquals <*> pure attrs
+elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionType <$> (
+	FunType <$> elimTypeDefsM funty <*> mapM eliminparamdecl paramdecls <*> pure bool) <*> pure attrs
+	where
+	eliminparamdecl (ParamDecl (VarDecl varname declattrs ty) ni) =
+		ParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
+	eliminparamdecl (AbstractParamDecl (VarDecl varname declattrs ty) ni) =
+		AbstractParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
+
+createNewIdentM :: String -> CovVecM TIdent
+createNewIdentM name_prefix = do
+	new_var_num <- gets newNameIndexCVS
+	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
+	return $ TIdent $ internalIdent (name_prefix ++ "_" ++ show new_var_num)
+
+declaration2EnvItemM :: Declaration decl => decl -> CovVecM EnvItem
+declaration2EnvItemM decl = do
+	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
+	newident <- createNewIdentM $ identToString srcident
+	ty' <- elimTypeDefsM ty
+	return (srcident,(newident,ty'))
+
+enterFunctionM :: String -> CovVecM ([TraceElem],Env,CStat)
+enterFunctionM funname = do
+	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
+	param_env <- mapM declaration2EnvItemM paramdecls
+	let newdecls = map (NewDeclaration . snd) $ param_env
+	return (newdecls,param_env,body)
+
 
 -- Just unfold the traces
 
@@ -208,8 +257,8 @@ unfoldTracesM trace (stmt:rest) = case stmt of
 		unroll_loop :: Int -> [CBlockItem]
 		unroll_loop 0 = []
 		unroll_loop i = [ CBlockStmt $ CIf cond (CCompound [] (CBlockStmt body : unroll_loop (i-1)) undefNode) Nothing undefNode ]
- 
-	_ -> error $ "followTracesM " ++ (render.pretty) stmt ++ " not implemented yet" --followTracesM envs trace (rest:rest2)	
+
+	_ -> error $ "followTracesM " ++ (render.pretty) stmt ++ " not implemented yet" --followTracesM envs trace (rest:rest2)
 
 
 {-
@@ -240,25 +289,12 @@ data CovVecState = CovVecState {
 	translUnitCVS   :: CTranslUnit
 	}
 
-lookupTypeDefM :: Ident -> CovVecM Type
-lookupTypeDefM ident = do
-	typedefs <- gets (gTypeDefs.globDeclsCVS)
-	case Map.lookup ident typedefs of
-		Just (TypeDef _ ty _ _) -> return ty
-		Nothing -> error $ "TypeDef " ++ (show ident) ++ " not found"
-
 lookupTagM :: SUERef -> CovVecM TagDef
 lookupTagM ident = do
 	tags <- gets (gTags.globDeclsCVS)
 	case Map.lookup ident tags of
 		Just tagdef -> return tagdef
 		Nothing -> error $ "Tag " ++ (show ident) ++ " not found"
-
-createNewIdent :: String -> CovVecM Ident
-createNewIdent name_prefix = do
-	new_var_num <- gets newNameIndexCVS
-	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
-	return $ internalIdent (name_prefix ++ "_" ++ show new_var_num)
 
 createMemberEnvItems :: Type -> CExpr -> CovVecM [EnvItem]
 createMemberEnvItems ty expr = do
@@ -272,21 +308,7 @@ oldident2EnvItem createnewident ty oldident = do
 	memberenvitems <- createMemberEnvItems ty' (CVar newident undefNode)
 	return $ (oldident,(newident,ty')) : memberenvitems
 
-declaration2EnvItem :: Declaration decl => Bool -> decl -> CovVecM [EnvItem]
-declaration2EnvItem createnewident decl = do
-	let VarDecl (VarName oldident _) _ ty = getVarDecl decl
-	oldident2EnvItem createnewident ty oldident
 
-
-enterFunctionM :: String -> CovVecM ([TraceElem],Env,CStat)
-enterFunctionM funname = do
-	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
-	param_env <- concatMapM (declaration2EnvItem True) paramdecls
-	let
-		envitem2newdecl :: EnvItem -> TraceElem
-		envitem2newdecl (_,(newident,ty)) = NewDeclaration (newident,ty)
-		newdecls = map envitem2newdecl $ param_env
-	return (newdecls,param_env,body)
 
 
 -- UNFOLD TRACES
@@ -415,18 +437,6 @@ tyspec2TypeM typespec = case typespec of
 	CTypeDef ident _ -> lookupTypeDefM ident
 	_ -> error $ "typespec " ++ (render.pretty) typespec ++ " not implemented yet."
 
-elimTypeDefsM :: Type -> CovVecM Type
-elimTypeDefsM directtype@(DirectType _ _ _) = pure directtype
-elimTypeDefsM (TypeDefType (TypeDefRef ident _ _) tyquals attrs) = lookupTypeDefM ident >>= elimTypeDefsM
-elimTypeDefsM (PtrType ty tyquals attrs) = PtrType <$> elimTypeDefsM ty <*> pure tyquals <*> pure attrs
-elimTypeDefsM (ArrayType ty size tyquals attrs) = ArrayType <$> elimTypeDefsM ty <*> pure size <*> pure tyquals <*> pure attrs
-elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionType <$> (
-	FunType <$> elimTypeDefsM funty <*> mapM eliminparamdecl paramdecls <*> pure bool) <*> pure attrs
-	where
-	eliminparamdecl (ParamDecl (VarDecl varname declattrs ty) ni) =
-		ParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
-	eliminparamdecl (AbstractParamDecl (VarDecl varname declattrs ty) ni) =
-		AbstractParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
 
 -- Expand Calls and side effects in Expressions
 
