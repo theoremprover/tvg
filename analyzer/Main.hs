@@ -217,8 +217,9 @@ enterFunctionM funname = do
 
 unfoldTracesM :: Trace -> [CStat] -> CovVecM [Trace]
 unfoldTracesM trace (stmt:rest) = case stmt of
-	CLabel _ cstat _ _ -> unfoldTracesM trace (CBlockStmt cstat : rest)
+	CLabel _ cstat _ _ -> unfoldTracesM trace (cstat : rest)
 
+{-
 	CCompound _ cbis _ -> followTracesM ([]:envs) trace (cbis : rest : rest2)
 
 	CIf cond then_stmt mb_else_stmt _ -> do
@@ -257,6 +258,7 @@ unfoldTracesM trace (stmt:rest) = case stmt of
 		unroll_loop :: Int -> [CBlockItem]
 		unroll_loop 0 = []
 		unroll_loop i = [ CBlockStmt $ CIf cond (CCompound [] (CBlockStmt body : unroll_loop (i-1)) undefNode) Nothing undefNode ]
+-}
 
 	_ -> error $ "followTracesM " ++ (render.pretty) stmt ++ " not implemented yet" --followTracesM envs trace (rest:rest2)
 
