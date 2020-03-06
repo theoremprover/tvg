@@ -166,12 +166,6 @@ lookupFunM ident = do
 		Nothing -> error $ "Function " ++ (show ident) ++ " not found"
 
 
-covVectorsM :: String -> CovVecM [TraceAnalysisResult]
-covVectorsM funname = do
-	FunDef (VarDecl _ _ (FunctionType (FunType _ _ False) _)) body _ <- lookupFunM (builtinIdent funname)
-	traces <- unfoldTracesM [] [body]
-	return $ map ("",[],,[],Nothing) traces
-
 lookupTypeDefM :: Ident -> CovVecM Type
 lookupTypeDefM ident = do
 	typedefs <- gets (gTypeDefs.globDeclsCVS)
@@ -198,29 +192,48 @@ createNewIdentM name_prefix = do
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
 	return $ TIdent $ internalIdent (name_prefix ++ "_" ++ show new_var_num)
 
-declaration2EnvItemM :: Declaration decl => decl -> CovVecM EnvItem
-declaration2EnvItemM decl = do
+declaration2EnvItemM :: Declaration decl => Bool -> decl -> CovVecM EnvItem
+declaration2EnvItemM makenewidents decl = do
 	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
-	newident <- createNewIdentM $ identToString srcident
+	newident <- case makenewidents of
+		True -> createNewIdentM $ identToString srcident
+		False -> return $ TIdent srcident
 	ty' <- elimTypeDefsM ty
 	return (srcident,(newident,ty'))
 
 enterFunctionM :: String -> CovVecM ([TraceElem],Env,CStat)
 enterFunctionM funname = do
 	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
-	param_env <- mapM declaration2EnvItemM paramdecls
+	param_env <- mapM (declaration2EnvItemM True) paramdecls
 	let newdecls = map (NewDeclaration . snd) $ param_env
 	return (newdecls,param_env,body)
+
+covVectorsM :: String -> CovVecM [TraceAnalysisResult]
+covVectorsM funname = do
+	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
+	glob_env <- mapM (declaration2EnvItemM False) globdecls
+	(newdecls,param_env,body) <- enterFunctionM funname
+	
+	let
+		env = param_env ++ glob_env
+		enumdefs = concatMap enum2stmt globdecls
+		enum2stmt :: IdentDecl -> [CBlockItem]
+		enum2stmt (EnumeratorDef (Enumerator ident expr _ _)) =
+			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
+		enum2stmt _ = []
+		
+	traces <- unfoldTracesM [param_env] newdecls [[CBlockStmt body]]
+	return $ map ("",[],,[],Nothing) traces
 
 
 -- Just unfold the traces
 
-unfoldTracesM :: Trace -> [CStat] -> CovVecM [Trace]
-unfoldTracesM trace (stmt:rest) = case stmt of
-	CLabel _ cstat _ _ -> unfoldTracesM trace (cstat : rest)
+unfoldTracesM :: [Env] -> Trace -> [[CBlockItem]] -> CovVecM [Trace]
+unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
+	CLabel _ cstat _ _ -> unfoldTracesM envs trace ((cstat:rest) : rest2)
+	CCompound _ cbis _ -> unfoldTracesM ([]:envs) trace (compound_stmts : (rest : rest2))
 
 {-
-	CCompound _ cbis _ -> followTracesM ([]:envs) trace (cbis : rest : rest2)
 
 	CIf cond then_stmt mb_else_stmt _ -> do
  --		(cond',bis) <- expandExprM cond
