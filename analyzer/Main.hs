@@ -64,9 +64,9 @@ main = do
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
+--		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
@@ -195,6 +195,10 @@ createNewIdentM name_prefix = do
 declaration2EnvItemM :: Declaration decl => Bool -> decl -> CovVecM EnvItem
 declaration2EnvItemM makenewidents decl = do
 	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
+	identTy2EnvItemM makenewidents srcident ty
+
+identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM EnvItem
+identTy2EnvItemM makenewidents srcident ty = do
 	newident <- case makenewidents of
 		True -> createNewIdentM $ identToString srcident
 		False -> return $ TIdent srcident
@@ -215,14 +219,13 @@ covVectorsM funname = do
 	(newdecls,param_env,body) <- enterFunctionM funname
 	
 	let
-		env = param_env ++ glob_env
 		enumdefs = concatMap enum2stmt globdecls
 		enum2stmt :: IdentDecl -> [CBlockItem]
 		enum2stmt (EnumeratorDef (Enumerator ident expr _ _)) =
 			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
 		enum2stmt _ = []
-		
-	traces <- unfoldTracesM [param_env] newdecls [[CBlockStmt body]]
+
+	traces <- unfoldTracesM [ param_env ++ glob_env ] newdecls [ enumdefs ++ [CBlockStmt body] ]
 	return $ map ("",[],,[],Nothing) traces
 
 
@@ -230,22 +233,32 @@ covVectorsM funname = do
 
 unfoldTracesM :: [Env] -> Trace -> [[CBlockItem]] -> CovVecM [Trace]
 unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
-	CLabel _ cstat _ _ -> unfoldTracesM envs trace ((cstat:rest) : rest2)
-	CCompound _ cbis _ -> unfoldTracesM ([]:envs) trace (compound_stmts : (rest : rest2))
 
-{-
+	CLabel _ cstat _ _ -> unfoldTracesM envs trace ((CBlockStmt cstat : rest) : rest2)
+
+	CCompound _ cbis _ -> unfoldTracesM ([]:envs) trace (cbis : (rest : rest2))
 
 	CIf cond then_stmt mb_else_stmt _ -> do
- --		(cond',bis) <- expandExprM cond
-		then_traces <- followTracesM envs (translateteidents (Condition cond) : trace) ( (CBlockStmt then_stmt : rest) : rest2 )
-		let not_cond = translateteidents $ Condition (CUnary CNegOp cond undefNode)
+		then_traces <- unfoldTracesM envs (Condition (transids cond) : trace) ( (CBlockStmt then_stmt : rest) : rest2 )
+		let not_cond = Condition (CUnary CNegOp (transids cond) undefNode)
 		else_traces <- case mb_else_stmt of
-			Nothing        -> followTracesM envs (not_cond : trace) ( rest : rest2 )
-			Just else_stmt -> followTracesM envs (not_cond : trace) ( (CBlockStmt else_stmt : rest) : rest2 )
+			Nothing        -> unfoldTracesM envs (not_cond : trace) ( rest : rest2 )
+			Just else_stmt -> unfoldTracesM envs (not_cond : trace) ( (CBlockStmt else_stmt : rest) : rest2 )
 		return $ then_traces ++ else_traces
  
 	CReturn Nothing _ -> return [ trace ]
-	CReturn (Just ret_expr) _ -> return [ translateteidents (Return ret_expr) : trace ]
+	CReturn (Just ret_expr) _ -> return [ Return (transids ret_expr) : trace ]
+
+	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
+		let (ty,ass) = case lexpr of
+			CVar lident _ -> case lookup lident env of
+				Just (_,ty) -> (ty,Assignment (LIdent lident) assignop (transids assigned_expr))
+				Nothing -> error $ "unfoldTracesM: Could not find " ++ (render.pretty) lident ++ " in " ++ unlines (map (render.pretty) env)
+			CMember ptrexpr ident isptr _ -> error $ "unfoldTracesM: " ++ (render.pretty) lexpr ++ " not implemented yet"
+		unfoldTracesM envs (ass:trace) (rest:rest2)
+
+{-
+
  
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
 		let env = concat envs
@@ -266,14 +279,73 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 		let declitems = map NewDeclaration (map snd memberenvitems)
 		followTracesM envs' ( map translateteidents (lval_assignment : declitems) ++ trace ) (rest:rest2)
  
- 	CWhile cond body False _ -> followTracesM envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
+-}
+
+ 	CWhile cond body False _ -> unfoldTracesM envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
 		where
 		unroll_loop :: Int -> [CBlockItem]
 		unroll_loop 0 = []
 		unroll_loop i = [ CBlockStmt $ CIf cond (CCompound [] (CBlockStmt body : unroll_loop (i-1)) undefNode) Nothing undefNode ]
--}
 
 	_ -> error $ "followTracesM " ++ (render.pretty) stmt ++ " not implemented yet" --followTracesM envs trace (rest:rest2)
+
+	where
+	
+	env = concat envs
+	transids = translateIdents envs
+
+unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
+	ty <- tyspec2TypeM typespec
+	new_env_items <- forM triples $ \case
+		(Just (CDeclr (Just ident) []{-derivdeclrs-} _ _ _),mb_init,Nothing) -> do
+			-- TODO: consider the derivdeclrs
+			newenvitem <- identTy2EnvItemM True ident ty
+			let newdecl = NewDeclaration $ snd newenvitem
+			return (newenvitem,newdecl)
+		triple -> error $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
+	let (newenv,newitems) = unzip new_env_items
+	unfoldTracesM ((newenv++env) : envs) (newitems ++ trace) (rest:rest2)
+	
+{-
+	(env',trace') <- foldrM folddecls (env,trace) triples
+	unfoldTracesM (env':envs) trace' (rest:rest2)
+	where
+	-- folding right-to-left, hence env/trace order is correct when putting new elements as head
+	folddecls (Just (CDeclr (Just ident) derivdeclrs _ _ _),mb_init,Nothing) (envitems,traceelems) = do
+		ty <- tyspec2TypeM typespec >>= elimTypeDefsM   -- TODO: consider derivdeclrs
+		envitems' <- oldident2EnvItem True ty ident
+		let assign_items = case mb_init of
+			Nothing -> []
+			Just (CInitExpr expr _) -> [ translateTEidents ((envitems'++env):envs) $ Assignment (LIdent ident) CAssignOp expr ]
+		let declitems = map NewDeclaration (map snd envitems')
+		return (envitems' ++ envitems, assign_items ++ declitems ++ traceelems)
+-}
+
+unfoldTracesM (_:restenvs) trace ([]:rest2) = unfoldTracesM restenvs trace rest2
+
+unfoldTracesM _ trace [] = return [trace]
+
+unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
+
+
+translateIdents :: [Env] -> CExpr -> CExpr
+translateIdents envs expr = everywhere (mkT transexpr) expr where
+	transexpr :: CExpr -> CExpr
+	transexpr (CVar ident _) = CVar ident' undefNode where
+		ident' = case lookup ident (concat envs) of
+			Just (TIdent ident',_) -> ident'
+			Nothing -> error $ "translateIdents: Could not find " ++ (render.pretty) ident
+	transexpr expr = expr
+
+tyspec2TypeM :: CTypeSpec -> CovVecM Type
+tyspec2TypeM typespec = case typespec of
+	CVoidType _  -> return $ DirectType TyVoid noTypeQuals noAttributes
+	CIntType _   -> return $ DirectType (TyIntegral TyInt) noTypeQuals noAttributes
+	CCharType _  -> return $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes
+	CShortType _ -> return $ DirectType (TyIntegral TyShort) noTypeQuals noAttributes
+	CFloatType _ -> return $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
+	CTypeDef ident _ -> lookupTypeDefM ident
+	_ -> error $ "tyspec2TypeM: " ++ (render.pretty) typespec ++ " not implemented yet."
 
 
 {-
@@ -441,16 +513,6 @@ translateIdents envs expr = case expr of
 	transident ident = case lookup ident (concat envs) of
 		Just (ident',_) -> ident'
 		Nothing -> error $ "translateIdents: Could not find " ++ (render.pretty) ident
-
-tyspec2TypeM :: CTypeSpec -> CovVecM Type
-tyspec2TypeM typespec = case typespec of
-	CVoidType _  -> return $ DirectType TyVoid noTypeQuals noAttributes
-	CIntType _   -> return $ DirectType (TyIntegral TyInt) noTypeQuals noAttributes
-	CCharType _  -> return $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes
-	CShortType _ -> return $ DirectType (TyIntegral TyShort) noTypeQuals noAttributes
-	CFloatType _ -> return $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
-	CTypeDef ident _ -> lookupTypeDefM ident
-	_ -> error $ "typespec " ++ (render.pretty) typespec ++ " not implemented yet."
 
 
 -- Expand Calls and side effects in Expressions
