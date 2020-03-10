@@ -139,13 +139,13 @@ instance Pretty TIdent where
 	pretty (TIdent ident) = pretty ident
 
 data TraceElem =
-	Assignment LValue CAssignOp CExpr |
+	Assignment LValue CExpr |
 	Condition CExpr |
 	NewDeclaration (TIdent,Type) |
 	Return CExpr
 deriving instance Data TraceElem
 instance Show TraceElem where
-	show (Assignment lvalue assignop expr)  = "ASSN " ++ show lvalue ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
+	show (Assignment lvalue expr)  = "ASSN " ++ show lvalue ++ " = " ++ (render.pretty) expr
 	show (Condition expr)                   = "COND " ++ (render.pretty) expr
 	show (NewDeclaration (tident,ty))       = "DECL " ++ (render.pretty) tident ++ " :: " ++ (render.pretty) ty
 	show (Return expr)                      = "RET  " ++ (render.pretty) expr
@@ -249,12 +249,17 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 	CReturn (Just ret_expr) _ -> return [ Return (transids ret_expr) : trace ]
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
-		let (ty,ass) = case lexpr of
-			CVar lident _ -> case lookup lident env of
-				Just (_,ty) -> (ty,Assignment (LIdent lident) assignop (transids assigned_expr))
-				Nothing -> error $ "unfoldTracesM: Could not find " ++ (render.pretty) lident ++ " in " ++ unlines (map (render.pretty) env)
+		let ass = case transids lexpr of
+			CVar lident _ -> Assignment (LIdent lident) (transids assigned_expr')
 			CMember ptrexpr ident isptr _ -> error $ "unfoldTracesM: " ++ (render.pretty) lexpr ++ " not implemented yet"
 		unfoldTracesM envs (ass:trace) (rest:rest2)
+		where
+		mb_binop = lookup assignop [
+			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
+			(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
+		assigned_expr' = case mb_binop of
+			Nothing -> assigned_expr
+			Just binop -> CBinary binop lexpr assigned_expr undefNode
 
 	CExpr (Just (CUnary unaryop expr _)) _ | unaryop ∈ map fst unaryops -> do
 		unfoldTracesM envs trace ( (CBlockStmt stmt' : rest) : rest2 )

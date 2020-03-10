@@ -22,6 +22,8 @@ int f(int x)
         y++;
     }
 
+    y *= 2;
+
     return(y);
 }
 
