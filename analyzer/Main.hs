@@ -224,8 +224,10 @@ covVectorsM funname = do
 			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
 		enum2stmt _ = []
 
-	traces <- unfoldTracesM [ param_env ++ glob_env ] newdecls [ enumdefs ++ [CBlockStmt body] ]
-	return $ map ("",[],,[],Nothing) traces
+	unfoldTracesM [ param_env ++ glob_env ] newdecls [ enumdefs ++ [CBlockStmt body] ] >>=
+		return . (zip (map (:[]) [1..])) >>=
+		mapM elimAssignmentsM >>=
+		return . (map (\ (is,orig_trace,trace) -> (show is,orig_trace,trace,[],Nothing)))
 
 
 -- Just unfold the traces
@@ -318,6 +320,28 @@ tyspec2TypeM typespec = case typespec of
 	CFloatType _ -> return $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
 	CTypeDef ident _ -> lookupTypeDefM ident
 	_ -> error $ "tyspec2TypeM: " ++ (render.pretty) typespec ++ " not implemented yet."
+
+
+-- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
+
+elimAssignmentsM :: ([Int],Trace) -> CovVecM ([Int],Trace,Trace)
+elimAssignmentsM (is,trace) = foldtraceM [] trace >>= return . (is,trace,) where
+
+	foldtraceM :: Trace -> Trace -> CovVecM Trace
+	foldtraceM result [] = return result
+	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (subst lvalue expr result) rest
+		where
+		subst :: LValue -> CExpr -> Trace -> Trace
+		subst lvalue expr trace = everywhere (mkT (substlvalue lvalue expr)) trace
+			where
+			substlvalue :: LValue -> CExpr -> CExpr -> CExpr
+			substlvalue lvalue expr found_expr | lvalueToExpr lvalue == found_expr = expr
+			substlvalue _      _    found_expr                                     = found_expr
+	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
+
+	lvalueToExpr :: LValue -> CExpr
+	lvalueToExpr (LMember lexpr ident isptr) = CMember lexpr ident isptr undefNode
+	lvalueToExpr (LIdent ident) = CVar ident undefNode
 
 
 {-
@@ -642,34 +666,6 @@ normalizeExpr expr = case expr of
 		i = getCInteger cint
 	const2str x = error $ "const2str " ++ (render.pretty) x ++ " not implemented"
 
-
--- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
-
-elimAssignmentsM :: ([Int],Trace) -> CovVecM ([Int],Trace,Trace)
-elimAssignmentsM (is,trace) = do
-	foldedtrace <- foldtraceM [] trace
-	return (is,trace,foldedtrace)
-	where
-	foldtraceM :: Trace -> Trace -> CovVecM Trace
-	foldtraceM result [] = return result
-	foldtraceM result (Assignment lvalue assignop expr : rest) = do
-		foldtraceM (subst lvalue expr' result) rest
-		where
-		expr' = if assignop==CAssignOp then expr else CBinary assignop' (lvalueToExpr lvalue) expr undefNode where
-			Just assignop' = lookup assignop [
-				(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
-				(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
-
-		subst :: LValue -> CExpr -> Trace -> Trace
-		subst lvalue expr trace = everywhere (mkT (substlvalue lvalue expr)) trace where
-			substlvalue :: LValue -> CExpr -> CExpr -> CExpr
-			substlvalue lvalue expr found_expr = if (lvalueToExpr lvalue) == found_expr then expr else found_expr
-
-	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
-
-	lvalueToExpr :: LValue -> CExpr
-	lvalueToExpr (LMember lexpr ident isptr) = CMember lexpr ident isptr undefNode
-	lvalueToExpr (LIdent ident) = CVar ident undefNode
 
 
 -- MiniZinc Model Generation
