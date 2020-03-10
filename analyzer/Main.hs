@@ -64,10 +64,10 @@ main = do
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
---		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
 	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
@@ -91,7 +91,7 @@ main = do
 						map show (filter isnotbuiltin trace) ++
 						[ "",
 						"--- MODEL " ++ is ++ " -------------------------",
-						layout model,
+						if null model then "<empty>" else layout model,
 						"",
 						"--- SOLUTION " ++ is ++ " ----------------------",
 						show_solution mb_solution ]
@@ -146,9 +146,9 @@ data TraceElem =
 deriving instance Data TraceElem
 instance Show TraceElem where
 	show (Assignment lvalue assignop expr)  = "ASSN " ++ show lvalue ++ " " ++ (render.pretty) assignop ++ " " ++ (render.pretty) expr
-	show (Condition expr)             = "COND " ++ (render.pretty) expr
-	show (NewDeclaration (tident,ty)) = "DECL " ++ (render.pretty) tident ++ " :: " ++ (render.pretty) ty
-	show (Return expr)                = "RET  " ++ (render.pretty) expr
+	show (Condition expr)                   = "COND " ++ (render.pretty) expr
+	show (NewDeclaration (tident,ty))       = "DECL " ++ (render.pretty) tident ++ " :: " ++ (render.pretty) ty
+	show (Return expr)                      = "RET  " ++ (render.pretty) expr
 type Trace = [TraceElem]
 
 type EnvItem = (Ident,(TIdent,Type))
@@ -164,7 +164,6 @@ lookupFunM ident = do
 	case Map.lookup ident funs of
 		Just (FunctionDef fundef) -> return fundef
 		Nothing -> error $ "Function " ++ (show ident) ++ " not found"
-
 
 lookupTypeDefM :: Ident -> CovVecM Type
 lookupTypeDefM ident = do
@@ -257,29 +256,12 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 			CMember ptrexpr ident isptr _ -> error $ "unfoldTracesM: " ++ (render.pretty) lexpr ++ " not implemented yet"
 		unfoldTracesM envs (ass:trace) (rest:rest2)
 
-{-
-
- 
-	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
-		let env = concat envs
-		let ty = case lexpr of
-			CVar lident _ -> case lookup lident env of
-				Just (_,ty) -> ty
-				Nothing -> error $ "Could not find " ++ (render.pretty) lident ++ " in " ++
-					unlines (map (render.pretty) env)
-			CMember ptrexpr ident isptr _ -> let
-				ii = internalIdent $ createMemberVarName (translateIdents envs ptrexpr) ident
-				in case lookup ii env of
-					Just (_,ty) -> ty
-					Nothing -> error $ "Could not find " ++ (render.pretty) ii ++ " in " ++
-						unlines (map (render.pretty) env)
-		memberenvitems <- createMemberEnvItems ty assigned_expr
-		let lval_assignment = Assignment (exprToLValue lexpr) assignop assigned_expr
-		let envs' = (memberenvitems ++ head envs) : tail envs
-		let declitems = map NewDeclaration (map snd memberenvitems)
-		followTracesM envs' ( map translateteidents (lval_assignment : declitems) ++ trace ) (rest:rest2)
- 
--}
+	CExpr (Just (CUnary unaryop expr _)) _ | unaryop ∈ map fst unaryops -> do
+		unfoldTracesM envs trace ( (CBlockStmt stmt' : rest) : rest2 )
+		where
+		stmt' = CExpr (Just $ CAssign assignop expr (CConst $ CIntConst (cInteger 1) undefNode) undefNode) undefNode
+		Just assignop = lookup unaryop unaryops
+		unaryops = [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
 
  	CWhile cond body False _ -> unfoldTracesM envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
 		where
@@ -306,21 +288,6 @@ unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples
 	let (newenv,newitems) = unzip new_env_items
 	unfoldTracesM ((newenv++env) : envs) (newitems ++ trace) (rest:rest2)
 	
-{-
-	(env',trace') <- foldrM folddecls (env,trace) triples
-	unfoldTracesM (env':envs) trace' (rest:rest2)
-	where
-	-- folding right-to-left, hence env/trace order is correct when putting new elements as head
-	folddecls (Just (CDeclr (Just ident) derivdeclrs _ _ _),mb_init,Nothing) (envitems,traceelems) = do
-		ty <- tyspec2TypeM typespec >>= elimTypeDefsM   -- TODO: consider derivdeclrs
-		envitems' <- oldident2EnvItem True ty ident
-		let assign_items = case mb_init of
-			Nothing -> []
-			Just (CInitExpr expr _) -> [ translateTEidents ((envitems'++env):envs) $ Assignment (LIdent ident) CAssignOp expr ]
-		let declitems = map NewDeclaration (map snd envitems')
-		return (envitems' ++ envitems, assign_items ++ declitems ++ traceelems)
--}
-
 unfoldTracesM (_:restenvs) trace ([]:rest2) = unfoldTracesM restenvs trace rest2
 
 unfoldTracesM _ trace [] = return [trace]
@@ -369,12 +336,6 @@ covVectorsM funname = do
 		mapM elimAssignmentsM >>=
 		mapM (solveTraceM param_env)
 
-
-data CovVecState = CovVecState {
-	globDeclsCVS    :: GlobalDecls,
-	newNameIndexCVS :: Int,
-	translUnitCVS   :: CTranslUnit
-	}
 
 lookupTagM :: SUERef -> CovVecM TagDef
 lookupTagM ident = do
@@ -439,9 +400,6 @@ followTracesM envs trace ( (CBlockStmt stmt : rest) : rest2 ) = case stmt of
 		followTracesM envs' ( map translateteidents (lval_assignment : declitems) ++ trace ) (rest:rest2)
 
 {-
-	CExpr (Just (CUnary unaryop expr _)) _ -> followTracesM envs trace ( (CBlockStmt stmt' : rest) : rest2 ) where
-		stmt' = CExpr (Just $ CAssign assignop expr (CConst $ CIntConst (cInteger 1) undefNode) undefNode) undefNode
-		Just assignop = lookup unaryop [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
 -}
 
 	CWhile cond body False _ -> followTracesM envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
