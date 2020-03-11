@@ -13,10 +13,8 @@ typedef struct
     int member2;
 } STRUCT;
 
-int f(int x)
+int f(int x,int y)
 {
-    int y = 0;
-
     if(x == 0)
     {
         y++;
@@ -29,7 +27,7 @@ int f(int x)
 
 int g(int z)
 {
-    if(f(z)==1) return 1;
+    if(f(z,1)==1) return 1;
     else return 0;
 }
 

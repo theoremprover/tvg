@@ -132,7 +132,10 @@ instance Show LValue where
 	show (LMember ptrexpr member isptr) = (render.pretty) $ CMember ptrexpr member isptr undefNode
 
 newtype TIdent = TIdent Ident
+deriving instance Eq TIdent
 deriving instance Data TIdent
+instance Show TIdent where
+	show (TIdent ident) = (render.pretty) ident
 
 tIdentToString (TIdent ident) = identToString ident
 instance Pretty TIdent where
@@ -227,7 +230,7 @@ covVectorsM funname = do
 	unfoldTracesM [ param_env ++ glob_env ] newdecls [ enumdefs ++ [CBlockStmt body] ] >>=
 		return . (zip (map (:[]) [1..])) >>=
 		mapM elimAssignmentsM >>=
-		return . (map (\ (is,orig_trace,trace) -> (show is,orig_trace,trace,[],Nothing)))
+		mapM (solveTraceM param_env)
 
 
 -- Just unfold the traces
@@ -365,13 +368,6 @@ covVectorsM funname = do
 		mapM elimAssignmentsM >>=
 		mapM (solveTraceM param_env)
 
-
-lookupTagM :: SUERef -> CovVecM TagDef
-lookupTagM ident = do
-	tags <- gets (gTags.globDeclsCVS)
-	case Map.lookup ident tags of
-		Just tagdef -> return tagdef
-		Nothing -> error $ "Tag " ++ (show ident) ++ " not found"
 
 createMemberEnvItems :: Type -> CExpr -> CovVecM [EnvItem]
 createMemberEnvItems ty expr = do
@@ -667,19 +663,26 @@ normalizeExpr expr = case expr of
 	const2str x = error $ "const2str " ++ (render.pretty) x ++ " not implemented"
 -}
 
-{-
+
+lookupTagM :: SUERef -> CovVecM TagDef
+lookupTagM ident = do
+	tags <- gets (gTags.globDeclsCVS)
+	case Map.lookup ident tags of
+		Just tagdef -> return tagdef
+		Nothing -> error $ "Tag " ++ (show ident) ++ " not found"
+
 -- MiniZinc Model Generation
 
-type TyEnv = [(Ident,Type)]
+type TyEnv = [(TIdent,Type)]
 
-var2MZ :: TyEnv -> Ident -> CovVecM [MZAST.ModelData]
+var2MZ :: TyEnv -> TIdent -> CovVecM [MZAST.ModelData]
 var2MZ tyenv ident = do
 	let ty = case lookup ident tyenv of
 		Just ty -> ty
 		Nothing -> error $ "Could not find " ++ show ident ++ " in\n" ++
 			unlines (map (\ (ident,ty) -> (render.pretty) ident ++ " |-> " ++ (render.pretty) ty ) tyenv)
 --	mzmembervars <- createMemberVarNamesM (CVar ident undefNode) ty >>= mapM mkmzvarM
-	mzvar <- mkmzvarM (identToString ident,ty)
+	mzvar <- mkmzvarM (tIdentToString ident,ty)
 	return $ mzvar : [] --mzmembervars
 	where
 	mkmzvarM :: (String,Type) -> CovVecM MZAST.ModelData
@@ -760,7 +763,7 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 	expr2constr (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr expr) []]
 	expr2constr (CUnary CNegOp expr _) = error $ "expr2constr CUnaryOp CNegOp!"
 	expr2constr (CUnary unop expr _) = MZAST.U (MZAST.Op $ MZAST.stringToIdent $ (render.pretty) unop) (expr2constr expr)
-	expr2constr cmember@(CMember ptr_expr memberident _ _) = MZAST.Var $ MZAST.stringToIdent $ createMemberVarName ptr_expr memberident
+--	expr2constr cmember@(CMember ptr_expr memberident _ _) = MZAST.Var $ MZAST.stringToIdent $ createMemberVarName ptr_expr memberident
 	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
 	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
 	expr2constr (CConst (CFloatConst (CFloat s_float) _)) = MZAST.FConst $ read s_float
@@ -791,17 +794,17 @@ solveTraceM param_env (is,orig_trace,trace) = do
 	let
 		includesG = [ MZAST.include "include.mzn" ]
 		vars = nub $ everything (++) (mkQ [] searchvar) trace where
-        	searchvar :: CExpr -> [Ident]
-        	searchvar (CVar ident _) = [ ident ]
-        	searchvar (CMember expr ident _ _) = [ internalIdent $ createMemberVarName expr ident ]
+        	searchvar :: CExpr -> [TIdent]
+        	searchvar (CVar ident _) = [ TIdent ident ]
+--        	searchvar (CMember expr ident _ _) = [ internalIdent $ createMemberVarName expr ident ]
         	searchvar _ = []
 
 	varsG <- concatMapM (var2MZ tyenv) vars
 	let
 		solution_vars =
-			(map (\ (_,(argident,_)) -> identToString argident) param_env)
+			(map (\ (_,(argident,_)) -> tIdentToString argident) param_env)
 			`intersect`
-			(map identToString vars)
+			(map tIdentToString vars)
 		model = includesG ++ varsG ++ constraintsG ++
 			[ MZAST.solve $ MZAST.satisfy MZAST.|: MZAST.Annotation "int_search" [
 				MZAST.E (MZAST.ArrayLit $ map (MZAST.Var . MZAST.Simpl) solution_vars),
@@ -825,4 +828,3 @@ solveTraceM param_env (is,orig_trace,trace) = do
 		Right (sol:_) -> return $ Just (param_env,sol,mb_ret_val)
 
 	return (tracename,orig_trace,trace,model,mb_solution)
--}
