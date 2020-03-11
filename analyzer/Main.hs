@@ -665,9 +665,9 @@ normalizeExpr expr = case expr of
 		where
 		i = getCInteger cint
 	const2str x = error $ "const2str " ++ (render.pretty) x ++ " not implemented"
+-}
 
-
-
+{-
 -- MiniZinc Model Generation
 
 type TyEnv = [(Ident,Type)]
