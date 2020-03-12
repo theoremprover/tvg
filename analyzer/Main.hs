@@ -649,26 +649,6 @@ createMemberVarName expr ident = normalizeExpr expr ++ "_" ++ identToString iden
 
 -}
 
--- Normalizes an expression and creates a variable name for it
-
-normalizeExpr :: CExpr -> String
-normalizeExpr expr = case expr of
-	CVar varident _ -> identToString varident
-	CBinary binop (CVar varident _) (CConst const) _ ->
-		identToString varident ++ "_" ++ binop2str binop ++ "_" ++ const2str const
-	where
-	binop2str binop = case lookup binop [
-		(CMulOp,"mul"),(CDivOp,"div"),(CRmdOp,"rmd"),(CAddOp,"plus"),(CSubOp,"minus"),
-		(CShlOp,"shl"),(CShrOp,"shr"),(CAndOp,"and"),(CXorOp,"xor"),(COrOp,"or") ] of
-			Nothing -> error $ "binop2str " ++ (render.pretty) binop ++ " not implemented"
-			Just s -> s
-
-	const2str (CIntConst cint _) = (if i<0 then "m" else "") ++ show (abs i)
-		where
-		i = getCInteger cint
-	const2str x = error $ "const2str " ++ (render.pretty) x ++ " not implemented"
-
-
 lookupTagM :: SUERef -> CovVecM TagDef
 lookupTagM ident = do
 	tags <- gets (gTags.globDeclsCVS)
@@ -686,32 +666,37 @@ var2MZ tyenv ident = do
 		Just ty -> ty
 		Nothing -> error $ "Could not find " ++ show ident ++ " in\n" ++
 			unlines (map (\ (ident,ty) -> (render.pretty) ident ++ " |-> " ++ (render.pretty) ty ) tyenv)
---	mzmembervars <- createMemberVarNamesM (CVar ident undefNode) ty >>= mapM mkmzvarM
 	mzvar <- mkmzvarM (tIdentToString ident,ty)
 	return $ mzvar : [] --mzmembervars
+
 	where
+
 	mkmzvarM :: (String,Type) -> CovVecM MZAST.ModelData
 	mkmzvarM (mzident,ty) = do
-		mzty <- elimTypeDefsM ty >>= ty2mz
-		return $ MZAST.var mzty mzident
-	ty2mz ty@(DirectType tyname _ _) = case tyname of
-		TyVoid -> error "ty2mz DirectType TyVoid should not occur!"
-		TyIntegral intty -> case intty of
-			TyBool -> return MZAST.Bool
-			TyShort -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
-			TyInt -> return $ MZAST.Range (MZAST.IConst (-10)) (MZAST.IConst 10) --MZAST.Int
+		(mzty,mzident') <- elimTypeDefsM ty >>= ty2mz
+		return $ MZAST.var mzty mzident'
+		where
+		ty2mz ty@(DirectType tyname _ _) = case tyname of
+			TyVoid -> error "ty2mz DirectType TyVoid should not occur!"
+			TyIntegral intty -> case intty of
+				TyBool -> return (MZAST.Bool,mzident)
+				TyShort -> return (MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767),mzident)
+				TyInt -> return (MZAST.Range (MZAST.IConst (-10)) (MZAST.IConst 10),mzident) --MZAST.Int
+				_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
+			TyFloating floatty -> case floatty of
+				TyFloat -> return (MZAST.Float,mzident)
+				_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
+			TyEnum (EnumTypeRef sueref _) -> do
+				EnumDef (EnumType _ enums _ _) <- lookupTagM sueref
+				return (MZAST.CT $ MZAST.SetLit $
+					map (\ (Enumerator _ (CConst (CIntConst (CInteger i _ _) _)) _ _) ->
+						MZAST.IConst (fromIntegral i)) enums ,
+					mzident)
 			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
-		TyFloating floatty -> case floatty of
-			TyFloat -> return MZAST.Float
-			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
-		TyEnum (EnumTypeRef sueref _) -> do
-			EnumDef (EnumType _ enums _ _) <- lookupTagM sueref
-			return $ MZAST.CT $ MZAST.SetLit $
-				map (\ (Enumerator _ (CConst (CIntConst (CInteger i _ _) _)) _ _) ->
-					MZAST.IConst (fromIntegral i)) enums
-		_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
-	ty2mz (PtrType target_ty _ _) = return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 65535)
-	ty2mz ty = error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
+		ty2mz (PtrType target_ty _ _) = return (
+			MZAST.Range (MZAST.IConst 0) (MZAST.IConst 65535) ,
+			createIndVarName $ CVar (internalIdent mzident) undefNode )
+		ty2mz ty = error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 
 type Constraint = CExpr
 
@@ -767,9 +752,9 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 
 	expr2constr (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr expr) []]
 	expr2constr (CUnary CNegOp expr _) = error $ "expr2constr CUnaryOp CNegOp!"
-	expr2constr (CUnary CIndOp expr _) = MZAST.Var $ MZAST.stringToIdent $ "STAR_" ++ normalizeExpr expr
+	expr2constr (CUnary CIndOp expr _) = MZAST.Var $ MZAST.stringToIdent $ createIndVarName expr
 	expr2constr (CUnary unop expr _) = MZAST.U (MZAST.Op $ MZAST.stringToIdent $ (render.pretty) unop) (expr2constr expr)
-	expr2constr (CMember ptr_expr memberident _ _) = MZAST.Var $ MZAST.stringToIdent $ createMemberVarName ptr_expr memberident
+--	expr2constr (CMember ptr_expr memberident _ _) = MZAST.Var $ MZAST.stringToIdent $ createMemberVarName ptr_expr memberident
 	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
 	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
 	expr2constr (CConst (CFloatConst (CFloat s_float) _)) = MZAST.FConst $ read s_float
@@ -785,6 +770,28 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
 traceelemToMZ _ = return []
+
+-- Normalizes an expression and creates a variable name for it
+
+normalizeExpr :: CExpr -> String
+normalizeExpr expr = case expr of
+	CVar varident _ -> identToString varident
+	CBinary binop (CVar varident _) (CConst const) _ ->
+		identToString varident ++ "_" ++ binop2str binop ++ "_" ++ const2str const
+	where
+	binop2str binop = case lookup binop [
+		(CMulOp,"mul"),(CDivOp,"div"),(CRmdOp,"rmd"),(CAddOp,"plus"),(CSubOp,"minus"),
+		(CShlOp,"shl"),(CShrOp,"shr"),(CAndOp,"and"),(CXorOp,"xor"),(COrOp,"or") ] of
+			Nothing -> error $ "binop2str " ++ (render.pretty) binop ++ " not implemented"
+			Just s -> s
+
+	const2str (CIntConst cint _) = (if i<0 then "m" else "") ++ show (abs i)
+		where
+		i = getCInteger cint
+	const2str x = error $ "const2str " ++ (render.pretty) x ++ " not implemented"
+
+createIndVarName :: CExpr -> String
+createIndVarName expr = "PTR_" ++ normalizeExpr expr
 
 solveTraceM :: Env -> ([Int],Trace,Trace) -> CovVecM TraceAnalysisResult
 solveTraceM param_env (is,orig_trace,trace) = do
