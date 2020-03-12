@@ -103,13 +103,13 @@ main = do
 						where
 						showarg :: EnvItem -> String
 						showarg (oldident,(newident,_)) =
-							identToString oldident ++ " = " ++ case lookup (tIdentToString newident) solution of
+							identToString oldident ++ " = " ++ case lookup (lValueToVarName newident) solution of
 								Nothing -> "DONT_CARE"
 								Just (MInt i) -> show i
 								Just (MFloat f) -> show f
 								val -> error $ "showarg " ++ show val ++ " not yet implemented"
 
-isnotbuiltin (NewDeclaration (tident,_)) = not $ "__" `isPrefixOf` (tIdentToString tident)
+isnotbuiltin (NewDeclaration (tident,_)) = not $ "__" `isPrefixOf` (lValueToVarName tident)
 isnotbuiltin _ = True
 
 data CovVecState = CovVecState {
@@ -123,41 +123,59 @@ instance Eq CExpr where
 	(CVar id1 _) == (CVar id2 _) = id1==id2
 	(CMember ptrexpr1 ident1 isptr1 _) == (CMember ptrexpr2 ident2 isptr2 _) =
 		ident1==ident2 && isptr1==isptr2 && ptrexpr1 == ptrexpr2
+	(CUnary CIndOp expr1 _) ==  (CUnary CIndOp expr2 _) = expr1==expr2
 	_ == _ = False
 
+{-
 data LValue = LIdent Ident | LMember CExpr Ident Bool | LPtr CExpr deriving Eq
 deriving instance Data LValue
 instance Show LValue where
 	show (LIdent ident) = (render.pretty) ident
 	show (LMember ptrexpr member isptr) = (render.pretty) $ CMember ptrexpr member isptr undefNode
 	show (LPtr expr) = (render.pretty) $ CUnary CIndOp expr undefNode
+-}
 
-newtype TIdent = TIdent Ident
-deriving instance Eq TIdent
-deriving instance Data TIdent
-instance Show TIdent where
-	show (TIdent ident) = (render.pretty) ident
+-- Normalizes an expression and creates a variable name for it
 
-tIdentToString (TIdent ident) = identToString ident
-instance Pretty TIdent where
-	pretty (TIdent ident) = pretty ident
+normalizeExpr :: CExpr -> String
+normalizeExpr expr = case expr of
+	CVar varident _ -> identToString varident
+	CBinary binop (CVar varident _) (CConst const) _ ->
+		identToString varident ++ "_" ++ binop2str binop ++ "_" ++ const2str const
+	where
+	binop2str binop = case lookup binop [
+		(CMulOp,"mul"),(CDivOp,"div"),(CRmdOp,"rmd"),(CAddOp,"plus"),(CSubOp,"minus"),
+		(CShlOp,"shl"),(CShrOp,"shr"),(CAndOp,"and"),(CXorOp,"xor"),(COrOp,"or") ] of
+			Nothing -> error $ "binop2str " ++ (render.pretty) binop ++ " not implemented"
+			Just s -> s
+
+	const2str (CIntConst cint _) = (if i<0 then "m" else "") ++ show (abs i)
+		where
+		i = getCInteger cint
+	const2str x = error $ "const2str " ++ (render.pretty) x ++ " not implemented"
+
+lValueToVarName :: CExpr -> String
+lValueToVarName cvar@(CVar _ _) = normalizeExpr cvar
+lValueToVarName (CMember ptrexpr member isptr _) =
+	normalizeExpr ptrexpr ++ if isptr then "_ARROW_" else "_DOT_" ++ identToString member
+lValueToVarName (CUnary CIndOp expr _) = "PTR_" ++ normalizeExpr expr
 
 data TraceElem =
-	Assignment LValue CExpr |
+	Assignment CExpr CExpr |
 	Condition CExpr |
-	NewDeclaration (TIdent,Type) |
+	NewDeclaration (CExpr,Type) |
 	Return CExpr
 deriving instance Data TraceElem
 instance Show TraceElem where
-	show (Assignment lvalue expr)  = "ASSN " ++ show lvalue ++ " = " ++ (render.pretty) expr
-	show (Condition expr)                   = "COND " ++ (render.pretty) expr
-	show (NewDeclaration (tident,ty))       = "DECL " ++ (render.pretty) tident ++ " :: " ++ (render.pretty) ty
-	show (Return expr)                      = "RET  " ++ (render.pretty) expr
+	show (Assignment lval expr)     = "ASSN " ++ lValueToVarName lval ++ " = " ++ (render.pretty) expr
+	show (Condition expr)           = "COND " ++ (render.pretty) expr
+	show (NewDeclaration (lval,ty)) = "DECL " ++ lValueToVarName lval ++ " :: " ++ (render.pretty) ty
+	show (Return expr)              = "RET  " ++ (render.pretty) expr
 type Trace = [TraceElem]
 
-type EnvItem = (Ident,(TIdent,Type))
+type EnvItem = (Ident,(CExpr,Type))
 instance Pretty EnvItem where
-	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> pretty idnew <+> text " :: " <+> pretty ty
+	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> text (lValueToVarName idnew) <+> text " :: " <+> pretty ty
 type Env = [EnvItem]
 
 type TraceAnalysisResult = (String,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
@@ -189,11 +207,11 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 	eliminparamdecl (AbstractParamDecl (VarDecl varname declattrs ty) ni) =
 		AbstractParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
 
-createNewIdentM :: String -> CovVecM TIdent
+createNewIdentM :: String -> CovVecM CExpr
 createNewIdentM name_prefix = do
 	new_var_num <- gets newNameIndexCVS
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
-	return $ TIdent $ internalIdent (name_prefix ++ "_" ++ show new_var_num)
+	return $ CVar (internalIdent $ name_prefix ++ "_" ++ show new_var_num) undefNode
 
 declaration2EnvItemM :: Declaration decl => Bool -> decl -> CovVecM EnvItem
 declaration2EnvItemM makenewidents decl = do
@@ -202,11 +220,14 @@ declaration2EnvItemM makenewidents decl = do
 
 identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM EnvItem
 identTy2EnvItemM makenewidents srcident ty = do
-	newident <- case makenewidents of
-		True -> createNewIdentM $ identToString srcident
-		False -> return $ TIdent srcident
 	ty' <- elimTypeDefsM ty
-	return (srcident,(newident,ty'))
+	let srcident' = case ty' of
+		PtrType _ _ _ -> CUnary CIndOp (CVar srcident undefNode) undefNode
+		_ -> CVar srcident undefNode
+	newlval <- case makenewidents of
+		True -> createNewIdentM $ lValueToVarName srcident'
+		False -> return $ CVar (internalIdent $ lValueToVarName srcident') undefNode
+	return (srcident,(newlval,ty'))
 
 enterFunctionM :: String -> CovVecM ([TraceElem],Env,CStat)
 enterFunctionM funname = do
@@ -255,12 +276,7 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 	CReturn (Just ret_expr) _ -> return [ Return (transids ret_expr) : trace ]
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
-		let lval = case transids lexpr of
-			CVar lident _ -> LIdent lident
-			CUnary CIndOp expr _ -> LPtr (transids expr)
---			CMember ptrexpr ident isptr _ -> ...
-			expr -> error $ "unfoldTracesM: " ++ (render.pretty) expr ++ " not implemented yet"
-		unfoldTracesM envs (Assignment lval (transids assigned_expr') :trace) (rest:rest2)
+		unfoldTracesM envs (Assignment lexpr (transids assigned_expr') :trace) (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -311,10 +327,9 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 translateIdents :: [Env] -> CExpr -> CExpr
 translateIdents envs expr = everywhere (mkT transexpr) expr where
 	transexpr :: CExpr -> CExpr
-	transexpr (CVar ident _) = CVar ident' undefNode where
-		ident' = case lookup ident (concat envs) of
-			Just (TIdent ident',_) -> ident'
-			Nothing -> error $ "translateIdents: Could not find " ++ (render.pretty) ident
+	transexpr (CVar ident _) = case lookup ident (concat envs) of
+		Just (expr',_) -> expr'
+		Nothing -> error $ "translateIdents: Could not find " ++ (render.pretty) ident
 	transexpr expr = expr
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
@@ -337,19 +352,19 @@ elimAssignmentsM (is,trace) = foldtraceM [] trace >>= return . (is,trace,) where
 	foldtraceM result [] = return result
 	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (subst lvalue expr result) rest
 		where
-		subst :: LValue -> CExpr -> Trace -> Trace
+		subst :: CExpr -> CExpr -> Trace -> Trace
 		subst lvalue expr trace = everywhere (mkT (substlvalue lvalue expr)) trace
 			where
-			substlvalue :: LValue -> CExpr -> CExpr -> CExpr
-			substlvalue lvalue expr found_expr | lvalueToExpr lvalue == found_expr = expr
-			substlvalue _      _    found_expr                                     = found_expr
+			substlvalue :: CExpr -> CExpr -> CExpr -> CExpr
+			substlvalue lvalue expr found_expr | lvalue == found_expr = expr
+			substlvalue _      _    found_expr                        = found_expr
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
-
+{-
 	lvalueToExpr :: LValue -> CExpr
 	lvalueToExpr (LMember lexpr ident isptr) = CMember lexpr ident isptr undefNode
 	lvalueToExpr (LIdent ident) = CVar ident undefNode
 	lvalueToExpr (LPtr expr) = CUnary CIndOp expr undefNode
-
+-}
 
 {-
 -- Find input vectors that fully cover the given function
@@ -658,44 +673,42 @@ lookupTagM ident = do
 
 -- MiniZinc Model Generation
 
-type TyEnv = [(TIdent,Type)]
+type TyEnv = [(CExpr,Type)]
 
-var2MZ :: TyEnv -> TIdent -> CovVecM [MZAST.ModelData]
-var2MZ tyenv ident = do
-	let ty = case lookup ident tyenv of
+var2MZ :: TyEnv -> CExpr -> CovVecM [MZAST.ModelData]
+var2MZ tyenv lval = do
+	let ty = case lookup lval tyenv of
 		Just ty -> ty
-		Nothing -> error $ "Could not find " ++ show ident ++ " in\n" ++
+		Nothing -> error $ "Could not find " ++ (render.pretty) lval ++ " in\n" ++
 			unlines (map (\ (ident,ty) -> (render.pretty) ident ++ " |-> " ++ (render.pretty) ty ) tyenv)
-	mzvar <- mkmzvarM (tIdentToString ident,ty)
-	return $ mzvar : [] --mzmembervars
+	mzvar <- mkmzvarM (lValueToVarName lval,ty)
+	return $ mzvar : []
 
 	where
 
 	mkmzvarM :: (String,Type) -> CovVecM MZAST.ModelData
 	mkmzvarM (mzident,ty) = do
-		(mzty,mzident') <- elimTypeDefsM ty >>= ty2mz
-		return $ MZAST.var mzty mzident'
+		mzty <- elimTypeDefsM ty >>= ty2mz
+		return $ MZAST.var mzty mzident
 		where
 		ty2mz ty@(DirectType tyname _ _) = case tyname of
 			TyVoid -> error "ty2mz DirectType TyVoid should not occur!"
 			TyIntegral intty -> case intty of
-				TyBool -> return (MZAST.Bool,mzident)
-				TyShort -> return (MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767),mzident)
-				TyInt -> return (MZAST.Range (MZAST.IConst (-10)) (MZAST.IConst 10),mzident) --MZAST.Int
+				TyBool -> return MZAST.Bool
+				TyShort -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
+				TyInt -> return $ MZAST.Range (MZAST.IConst (-10)) (MZAST.IConst 10) --MZAST.Int
 				_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 			TyFloating floatty -> case floatty of
-				TyFloat -> return (MZAST.Float,mzident)
+				TyFloat -> return MZAST.Float
 				_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 			TyEnum (EnumTypeRef sueref _) -> do
 				EnumDef (EnumType _ enums _ _) <- lookupTagM sueref
-				return (MZAST.CT $ MZAST.SetLit $
+				return $ MZAST.CT $ MZAST.SetLit $
 					map (\ (Enumerator _ (CConst (CIntConst (CInteger i _ _) _)) _ _) ->
-						MZAST.IConst (fromIntegral i)) enums ,
-					mzident)
+						MZAST.IConst (fromIntegral i)) enums
 			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
-		ty2mz (PtrType target_ty _ _) = return (
-			MZAST.Range (MZAST.IConst 0) (MZAST.IConst 65535) ,
-			createIndVarName $ CVar (internalIdent mzident) undefNode )
+		ty2mz (PtrType target_ty _ _) = return $
+			MZAST.Range (MZAST.IConst 0) (MZAST.IConst 65535)
 		ty2mz ty = error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 
 type Constraint = CExpr
@@ -752,7 +765,7 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 
 	expr2constr (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr expr) []]
 	expr2constr (CUnary CNegOp expr _) = error $ "expr2constr CUnaryOp CNegOp!"
-	expr2constr (CUnary CIndOp expr _) = MZAST.Var $ MZAST.stringToIdent $ createIndVarName expr
+	expr2constr cind@(CUnary CIndOp expr _) = MZAST.Var $ MZAST.stringToIdent $ lValueToVarName cind
 	expr2constr (CUnary unop expr _) = MZAST.U (MZAST.Op $ MZAST.stringToIdent $ (render.pretty) unop) (expr2constr expr)
 --	expr2constr (CMember ptr_expr memberident _ _) = MZAST.Var $ MZAST.stringToIdent $ createMemberVarName ptr_expr memberident
 	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
@@ -771,28 +784,6 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 
 traceelemToMZ _ = return []
 
--- Normalizes an expression and creates a variable name for it
-
-normalizeExpr :: CExpr -> String
-normalizeExpr expr = case expr of
-	CVar varident _ -> identToString varident
-	CBinary binop (CVar varident _) (CConst const) _ ->
-		identToString varident ++ "_" ++ binop2str binop ++ "_" ++ const2str const
-	where
-	binop2str binop = case lookup binop [
-		(CMulOp,"mul"),(CDivOp,"div"),(CRmdOp,"rmd"),(CAddOp,"plus"),(CSubOp,"minus"),
-		(CShlOp,"shl"),(CShrOp,"shr"),(CAndOp,"and"),(CXorOp,"xor"),(COrOp,"or") ] of
-			Nothing -> error $ "binop2str " ++ (render.pretty) binop ++ " not implemented"
-			Just s -> s
-
-	const2str (CIntConst cint _) = (if i<0 then "m" else "") ++ show (abs i)
-		where
-		i = getCInteger cint
-	const2str x = error $ "const2str " ++ (render.pretty) x ++ " not implemented"
-
-createIndVarName :: CExpr -> String
-createIndVarName expr = "PTR_" ++ normalizeExpr expr
-
 solveTraceM :: Env -> ([Int],Trace,Trace) -> CovVecM TraceAnalysisResult
 solveTraceM param_env (is,orig_trace,trace) = do
 	let mb_ret_val = case last trace of
@@ -806,18 +797,19 @@ solveTraceM param_env (is,orig_trace,trace) = do
 		traceitem2tyenv _ = []
 	let
 		includesG = [ MZAST.include "include.mzn" ]
-		vars = nub $ everything (++) (mkQ [] searchvar) trace where
-        	searchvar :: CExpr -> [TIdent]
-        	searchvar (CVar ident _) = [ TIdent ident ]
---        	searchvar (CMember expr ident _ _) = [ internalIdent $ createMemberVarName expr ident ]
-        	searchvar _ = []
+		vars :: [CExpr] = nub $ everything (++) (mkQ [] searchvar) trace where
+			searchvar :: CExpr -> [CExpr]
+			searchvar cvar@(CVar _ _) = [ cvar ]
+			searchvar cmember@(CMember _ _ _ _) = [ cmember ]
+			searchvar cptr@(CUnary CIndOp _ _) = [ cptr ]
+			searchvar _ = []
 
 	varsG <- concatMapM (var2MZ tyenv) vars
 	let
 		solution_vars =
-			(map (\ (_,(argident,_)) -> tIdentToString argident) param_env)
+			(map (\ (_,(CVar ident _,_)) -> identToString ident) param_env)
 			`intersect`
-			(map tIdentToString vars)
+			(map lValueToVarName vars)
 		model = includesG ++ varsG ++ constraintsG ++
 			[ MZAST.solve $ MZAST.satisfy MZAST.|: MZAST.Annotation "int_search" [
 				MZAST.E (MZAST.ArrayLit $ map (MZAST.Var . MZAST.Simpl) solution_vars),
