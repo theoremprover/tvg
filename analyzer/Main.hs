@@ -125,11 +125,12 @@ instance Eq CExpr where
 		ident1==ident2 && isptr1==isptr2 && ptrexpr1 == ptrexpr2
 	_ == _ = False
 
-data LValue = LIdent Ident | LMember CExpr Ident Bool deriving Eq
+data LValue = LIdent Ident | LMember CExpr Ident Bool | LPtr CExpr deriving Eq
 deriving instance Data LValue
 instance Show LValue where
 	show (LIdent ident) = (render.pretty) ident
 	show (LMember ptrexpr member isptr) = (render.pretty) $ CMember ptrexpr member isptr undefNode
+	show (LPtr expr) = (render.pretty) $ CUnary CIndOp expr undefNode
 
 newtype TIdent = TIdent Ident
 deriving instance Eq TIdent
@@ -254,10 +255,12 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 	CReturn (Just ret_expr) _ -> return [ Return (transids ret_expr) : trace ]
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
-		let ass = case transids lexpr of
-			CVar lident _ -> Assignment (LIdent lident) (transids assigned_expr')
-			CMember ptrexpr ident isptr _ -> error $ "unfoldTracesM: " ++ (render.pretty) lexpr ++ " not implemented yet"
-		unfoldTracesM envs (ass:trace) (rest:rest2)
+		let lval = case transids lexpr of
+			CVar lident _ -> LIdent lident
+			CUnary CIndOp expr _ -> LPtr (transids expr)
+--			CMember ptrexpr ident isptr _ -> ...
+			expr -> error $ "unfoldTracesM: " ++ (render.pretty) expr ++ " not implemented yet"
+		unfoldTracesM envs (Assignment lval (transids assigned_expr') :trace) (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -345,6 +348,7 @@ elimAssignmentsM (is,trace) = foldtraceM [] trace >>= return . (is,trace,) where
 	lvalueToExpr :: LValue -> CExpr
 	lvalueToExpr (LMember lexpr ident isptr) = CMember lexpr ident isptr undefNode
 	lvalueToExpr (LIdent ident) = CVar ident undefNode
+	lvalueToExpr (LPtr expr) = CUnary CIndOp expr undefNode
 
 
 {-
@@ -643,6 +647,8 @@ createMemberVarName :: CExpr -> Ident -> String
 createMemberVarName expr ident = normalizeExpr expr ++ "_" ++ identToString ident
 
 
+-}
+
 -- Normalizes an expression and creates a variable name for it
 
 normalizeExpr :: CExpr -> String
@@ -661,7 +667,6 @@ normalizeExpr expr = case expr of
 		where
 		i = getCInteger cint
 	const2str x = error $ "const2str " ++ (render.pretty) x ++ " not implemented"
--}
 
 
 lookupTagM :: SUERef -> CovVecM TagDef
@@ -762,8 +767,9 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 
 	expr2constr (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr expr) []]
 	expr2constr (CUnary CNegOp expr _) = error $ "expr2constr CUnaryOp CNegOp!"
+	expr2constr (CUnary CIndOp expr _) = MZAST.Var $ MZAST.stringToIdent $ "STAR_" ++ normalizeExpr expr
 	expr2constr (CUnary unop expr _) = MZAST.U (MZAST.Op $ MZAST.stringToIdent $ (render.pretty) unop) (expr2constr expr)
---	expr2constr cmember@(CMember ptr_expr memberident _ _) = MZAST.Var $ MZAST.stringToIdent $ createMemberVarName ptr_expr memberident
+	expr2constr (CMember ptr_expr memberident _ _) = MZAST.Var $ MZAST.stringToIdent $ createMemberVarName ptr_expr memberident
 	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
 	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
 	expr2constr (CConst (CFloatConst (CFloat s_float) _)) = MZAST.FConst $ read s_float
