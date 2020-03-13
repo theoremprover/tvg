@@ -103,13 +103,13 @@ main = do
 						where
 						showarg :: EnvItem -> String
 						showarg (oldident,(newident,_)) =
-							identToString oldident ++ " = " ++ case lookup (lValueToVarName newident) solution of
+							identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
 								Nothing -> "DONT_CARE"
 								Just (MInt i) -> show i
 								Just (MFloat f) -> show f
 								val -> error $ "showarg " ++ show val ++ " not yet implemented"
 
-isnotbuiltin (NewDeclaration (tident,_)) = not $ "__" `isPrefixOf` (lValueToVarName tident)
+isnotbuiltin (NewDeclaration (tident,_)) = not $ "__" `isPrefixOf` (identToString tident)
 isnotbuiltin _ = True
 
 data CovVecState = CovVecState {
@@ -163,19 +163,19 @@ lValueToVarName (CUnary CIndOp expr _) = "PTR_" ++ normalizeExpr expr
 data TraceElem =
 	Assignment CExpr CExpr |
 	Condition CExpr |
-	NewDeclaration (CExpr,Type) |
+	NewDeclaration (Ident,Type) |
 	Return CExpr
 deriving instance Data TraceElem
 instance Show TraceElem where
-	show (Assignment lval expr)     = "ASSN " ++ (render.pretty) lval ++ " = " ++ (render.pretty) expr
+	show (Assignment lvalue expr)   = "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
 	show (Condition expr)           = "COND " ++ (render.pretty) expr
 	show (NewDeclaration (lval,ty)) = "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
 	show (Return expr)              = "RET  " ++ (render.pretty) expr
 type Trace = [TraceElem]
 
-type EnvItem = (Ident,(CExpr,Type))
+type EnvItem = (Ident,(Ident,Type))
 instance Pretty EnvItem where
-	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> text (lValueToVarName idnew) <+> text " :: " <+> pretty ty
+	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> pretty idnew <+> text " :: " <+> pretty ty
 type Env = [EnvItem]
 
 type TraceAnalysisResult = (String,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
@@ -213,33 +213,34 @@ createNewIdentM name_prefix = do
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
 	return $ internalIdent $ name_prefix ++ "_" ++ show new_var_num
 
-declaration2EnvItemM :: Declaration decl => Bool -> decl -> CovVecM EnvItem
+declaration2EnvItemM :: Declaration decl => Bool -> decl -> CovVecM [EnvItem]
 declaration2EnvItemM makenewidents decl = do
 	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
 	identTy2EnvItemM makenewidents srcident ty
 
-identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM EnvItem
+identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM [EnvItem]
 identTy2EnvItemM makenewidents srcident ty = do
 	ty' <- elimTypeDefsM ty
 	newident <- case makenewidents of
 		True -> createNewIdentM $ lValueToVarName (CVar srcident undefNode)
 		False -> return srcident
-	let id_expr = case ty' of
-		PtrType _ _ _ -> CUnary CIndOp (CVar newident undefNode) undefNode
-		_ -> CVar newident undefNode
-	return (srcident,(id_expr,ty'))
+	let newenvitems = case ty' of
+		PtrType target_ty _ _ -> [ (ptrident,(ptrident,target_ty)) ] where
+			ptrident = internalIdent $ lValueToVarName $ CUnary CIndOp (CVar newident undefNode) undefNode
+		_ -> []
+	return $ (srcident,(newident,ty')) : newenvitems
 
 enterFunctionM :: String -> CovVecM ([TraceElem],Env,CStat)
 enterFunctionM funname = do
 	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
-	param_env <- mapM (declaration2EnvItemM True) paramdecls
+	param_env <- concatMapM (declaration2EnvItemM True) paramdecls
 	let newdecls = map (NewDeclaration . snd) $ param_env
 	return (newdecls,param_env,body)
 
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
-	glob_env <- mapM (declaration2EnvItemM False) globdecls
+	glob_env <- concatMapM (declaration2EnvItemM False) globdecls
 	(newdecls,param_env,body) <- enterFunctionM funname
 	
 	let
@@ -276,7 +277,7 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 	CReturn (Just ret_expr) _ -> return [ Return (transids ret_expr) : trace ]
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
-		unfoldTracesM envs (Assignment lexpr (transids assigned_expr') :trace) (rest:rest2)
+		unfoldTracesM envs (Assignment (transids lexpr) (transids assigned_expr') : trace) (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -310,12 +311,12 @@ unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples
 	new_env_items <- forM triples $ \case
 		(Just (CDeclr (Just ident) []{-derivdeclrs-} _ _ _),mb_init,Nothing) -> do
 			-- TODO: consider the derivdeclrs
-			newenvitem <- identTy2EnvItemM True ident ty
-			let newdecl = NewDeclaration $ snd newenvitem
-			return (newenvitem,newdecl)
+			newenvitems <- identTy2EnvItemM True ident ty
+			let newdecls = map (NewDeclaration . snd) newenvitems
+			return (newenvitems,newdecls)
 		triple -> error $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
-	let (newenv,newitems) = unzip new_env_items
-	unfoldTracesM ((newenv++env) : envs) (newitems ++ trace) (rest:rest2)
+	let (newenvs,newitemss) = unzip new_env_items
+	unfoldTracesM ((concat newenvs ++ env) : envs) (concat newitemss ++ trace) (rest:rest2)
 	
 unfoldTracesM (_:restenvs) trace ([]:rest2) = unfoldTracesM restenvs trace rest2
 
@@ -328,7 +329,7 @@ translateIdents :: [Env] -> CExpr -> CExpr
 translateIdents envs expr = everywhere (mkT transexpr) expr where
 	transexpr :: CExpr -> CExpr
 	transexpr (CVar ident _) = case lookup ident (concat envs) of
-		Just (expr',_) -> expr'
+		Just (ident',_) -> CVar ident' undefNode
 		Nothing -> error $ "translateIdents: Could not find " ++ (render.pretty) ident
 	transexpr expr = expr
 
@@ -350,14 +351,14 @@ elimAssignmentsM (is,trace) = foldtraceM [] trace >>= return . (is,trace,) where
 
 	foldtraceM :: Trace -> Trace -> CovVecM Trace
 	foldtraceM result [] = return result
-	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (subst lvalue expr result) rest
+	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (subst result) rest
 		where
-		subst :: CExpr -> CExpr -> Trace -> Trace
-		subst lvalue expr trace = everywhere (mkT (substlvalue lvalue expr)) trace
+		subst :: Trace -> Trace
+		subst trace = everywhere (mkT substlvalue) trace
 			where
-			substlvalue :: CExpr -> CExpr -> CExpr -> CExpr
-			substlvalue lvalue expr found_expr | lvalue == found_expr = expr
-			substlvalue _      _    found_expr                        = found_expr
+			substlvalue :: CExpr -> CExpr
+			substlvalue found_expr | lvalue == found_expr = expr
+			substlvalue found_expr                        = found_expr
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
 
 lookupTagM :: SUERef -> CovVecM TagDef
@@ -369,15 +370,15 @@ lookupTagM ident = do
 
 -- MiniZinc Model Generation
 
-type TyEnv = [(CExpr,Type)]
+type TyEnv = [(Ident,Type)]
 
-var2MZ :: TyEnv -> CExpr -> CovVecM [MZAST.ModelData]
-var2MZ tyenv lval = do
-	let ty = case lookup lval tyenv of
+var2MZ :: TyEnv -> Ident -> CovVecM [MZAST.ModelData]
+var2MZ tyenv ident = do
+	let ty = case lookup ident tyenv of
 		Just ty -> ty
-		Nothing -> error $ "Could not find " ++ (render.pretty) lval ++ " in\n" ++
+		Nothing -> error $ "Could not find " ++ (render.pretty) ident ++ " in\n" ++
 			unlines (map (\ (ident,ty) -> (render.pretty) ident ++ " |-> " ++ (render.pretty) ty ) tyenv)
-	mzvar <- mkmzvarM (lValueToVarName lval,ty)
+	mzvar <- mkmzvarM (identToString ident,ty)
 	return $ mzvar : []
 
 	where
@@ -493,19 +494,19 @@ solveTraceM param_env (is,orig_trace,trace) = do
 		traceitem2tyenv _ = []
 	let
 		includesG = [ MZAST.include "include.mzn" ]
-		vars :: [CExpr] = nub $ everything (++) (mkQ [] searchvar) trace where
-			searchvar :: CExpr -> [CExpr]
-			searchvar cvar@(CVar _ _) = [ cvar ]
-			searchvar cmember@(CMember _ _ _ _) = [ cmember ]
-			searchvar cptr@(CUnary CIndOp _ _) = [ cptr ]
+		vars :: [Ident] = nub $ everything (++) (mkQ [] searchvar) trace where
+			searchvar :: CExpr -> [Ident]
+			searchvar cvar@(CVar ident _) = [ ident ]
+			searchvar cmember@(CMember _ _ _ _) = [ internalIdent $ lValueToVarName cmember ]
+			searchvar cptr@(CUnary CIndOp _ _) = [ internalIdent $ lValueToVarName cptr ]
 			searchvar _ = []
 
 	varsG <- concatMapM (var2MZ tyenv) vars
 	let
 		solution_vars =
-			(map (\ (_,(CVar ident _,_)) -> identToString ident) param_env)
+			(map (\ (_,(ident,_)) -> identToString ident) param_env)
 			`intersect`
-			(map lValueToVarName vars)
+			(map identToString vars)
 		model = includesG ++ varsG ++ constraintsG ++
 			[ MZAST.solve $ MZAST.satisfy MZAST.|: MZAST.Annotation "int_search" [
 				MZAST.E (MZAST.ArrayLit $ map (MZAST.Var . MZAST.Simpl) solution_vars),
