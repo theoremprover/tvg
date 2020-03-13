@@ -31,7 +31,7 @@ STRUCT* f(STRUCT *p,int x)
 }
 
 int main(int argc, char* argv[])
- {
+{
 #ifdef CALC
     int m1 = atoi(argv[1]);
     int m2 = atoi(argv[2]);
