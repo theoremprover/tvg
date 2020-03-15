@@ -351,6 +351,10 @@ replacePtrM trace = do
 	return $ trace'++decls
 -}
 
+
+-- Translates all identifiers in an expression to fresh ones,
+-- and replaces Ptr and member expressions with variables.
+
 translateIdents :: [Env] -> CExpr -> CovVecM (CExpr,[TraceElem])
 translateIdents envs expr = runStateT (everywhereM (mkM transexpr) expr) []
 	where
@@ -361,6 +365,14 @@ translateIdents envs expr = runStateT (everywhereM (mkM transexpr) expr) []
 		Just (ident',_) -> return $ CVar ident' undefNode
 		Nothing -> error $ "translateIdents: Could not find " ++ (render.pretty) ident
 	transexpr cptr@(CUnary CIndOp ptrexpr _) = do
+		ty <- lift $ inferTypeM ptrexpr
+		let ty' = case ty of
+			PtrType target_ty _ _ -> target_ty
+			_ -> error $ "translateIdents transexpr: inferTypeM of " ++ (render.pretty) ptrexpr ++
+				" gives no PtrType, but " ++ (render.pretty) ty'
+		substptr cptr ty'
+	transexpr cmember@(CMember ptrexpr member_ident True _) = do
+		-- CONTINUE HERE
 		ty <- lift $ inferTypeM ptrexpr
 		let ty' = case ty of
 			PtrType target_ty _ _ -> target_ty
@@ -514,9 +526,7 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 
 	expr2constr (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr expr) []]
 	expr2constr (CUnary CNegOp expr _) = error $ "expr2constr CUnaryOp CNegOp!"
---	expr2constr cind@(CUnary CIndOp expr _) = MZAST.Var $ MZAST.stringToIdent $ lValueToVarName cind
 	expr2constr (CUnary unop expr _) = MZAST.U (MZAST.Op $ MZAST.stringToIdent $ (render.pretty) unop) (expr2constr expr)
---	expr2constr (CMember ptr_expr memberident _ _) = MZAST.Var $ MZAST.stringToIdent $ createMemberVarName ptr_expr memberident
 	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
 	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
 	expr2constr (CConst (CFloatConst (CFloat s_float) _)) = MZAST.FConst $ read s_float
