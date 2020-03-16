@@ -372,13 +372,13 @@ translateIdents envs expr = runStateT (everywhereM (mkM transexpr) expr) []
 				" gives no PtrType, but " ++ (render.pretty) ty'
 		substptr cptr ty'
 	transexpr cmember@(CMember ptrexpr member_ident True _) = do
-		-- CONTINUE HERE
 		ty <- lift $ inferTypeM ptrexpr
-		let ty' = case ty of
-			PtrType target_ty _ _ -> target_ty
+		ty' <- case ty of
+			PtrType target_ty _ _ -> getMemberTypeM target_ty member_ident
 			_ -> error $ "translateIdents transexpr: inferTypeM of " ++ (render.pretty) ptrexpr ++
 				" gives no PtrType, but " ++ (render.pretty) ty'
-		substptr cptr ty'
+		substptr cmember ty'
+	transexpr cmember@(CMember ptrexpr member_ident False _) = error "ispre = FALSE!"
 	transexpr expr = return expr
 
 	substptr :: CExpr -> Type -> StateT [TraceElem] CovVecM CExpr
@@ -396,6 +396,12 @@ translateIdents envs expr = runStateT (everywhereM (mkM transexpr) expr) []
 	inferTypeM (CBinary _ expr1@(CVar _ _) _ _) = inferTypeM expr1
 	inferTypeM (CBinary _ _ expr2@(CVar _ _) _) = inferTypeM expr2
 	inferTypeM expr = error $ "inferTypeM " ++ (render.pretty) expr ++ " not implemented"
+
+	getMemberTypeM :: Type -> Ident -> CovVecM Type
+	getMemberTypeM (DirectType (TyComp (CompTypeRef sueref)) _ _) member_ident = do
+		CompDef (CompType _ _ [memberdecls] _ _) <- lookupTagM sueref
+		[ty] = concatMap (\ (MemberDecl (VarDecl (VarName ident _) _ ty) _ _) -> if ident==member_ident then [ty] else []
+		return ty
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
 tyspec2TypeM typespec = case typespec of
