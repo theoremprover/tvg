@@ -213,39 +213,30 @@ createNewIdentM name_prefix = do
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
 	return $ internalIdent $ name_prefix ++ "_" ++ show new_var_num
 
-declaration2EnvItemM :: Declaration decl => Bool -> decl -> CovVecM [EnvItem]
+declaration2EnvItemM :: Declaration decl => Bool -> decl -> CovVecM EnvItem
 declaration2EnvItemM makenewidents decl = do
 	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
 	identTy2EnvItemM makenewidents srcident ty
 
-identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM [EnvItem]
+identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM EnvItem
 identTy2EnvItemM makenewidents srcident ty = do
 	ty' <- elimTypeDefsM ty
 	newident <- case makenewidents of
 		True -> createNewIdentM $ lValueToVarName (CVar srcident undefNode)
 		False -> return srcident
-	
-	let newenvitems = []
-{-
-	let newenvitems = case ty' of
-		PtrType target_ty _ _ -> [ (ptrident,(ptrident,target_ty)) ] where
-			ptrident = internalIdent $ lValueToVarName $ CUnary CIndOp (CVar newident undefNode) undefNode
-		_ -> []
--}
-
-	return $ (srcident,(newident,ty')) : newenvitems
+	return $ (srcident,(newident,ty'))
 
 enterFunctionM :: String -> CovVecM ([TraceElem],Env,CStat)
 enterFunctionM funname = do
 	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
-	param_env <- concatMapM (declaration2EnvItemM True) paramdecls
+	param_env <- mapM (declaration2EnvItemM True) paramdecls
 	let newdecls = map (NewDeclaration . snd) $ param_env
 	return (newdecls,param_env,body)
 
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
-	glob_env <- concatMapM (declaration2EnvItemM False) globdecls
+	glob_env <- mapM (declaration2EnvItemM False) globdecls
 	(newdecls,param_env,body) <- enterFunctionM funname
 	
 	let
@@ -321,12 +312,12 @@ unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples
 	new_env_items <- forM triples $ \case
 		(Just (CDeclr (Just ident) []{-derivdeclrs-} _ _ _),mb_init,Nothing) -> do
 			-- TODO: consider the derivdeclrs
-			newenvitems <- identTy2EnvItemM True ident ty
-			let newdecls = map (NewDeclaration . snd) newenvitems
-			return (newenvitems,newdecls)
+			newenvitem <- identTy2EnvItemM True ident ty
+			let newdecl = NewDeclaration (snd newenvitem)
+			return (newenvitem,newdecl)
 		triple -> error $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
-	let (newenvs,newitemss) = unzip new_env_items
-	unfoldTracesM ((concat newenvs ++ env) : envs) (concat newitemss ++ trace) (rest:rest2)
+	let (newenvs,newitems) = unzip new_env_items
+	unfoldTracesM ((newenvs ++ env) : envs) (newitems ++ trace) (rest:rest2)
 	
 unfoldTracesM (_:restenvs) trace ([]:rest2) = unfoldTracesM restenvs trace rest2
 
