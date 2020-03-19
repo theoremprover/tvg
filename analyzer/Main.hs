@@ -135,7 +135,7 @@ instance Show LValue where
 	show (LPtr expr) = (render.pretty) $ CUnary CIndOp expr undefNode
 -}
 
--- Normalizes an expression and creates a variable name for it
+-- Normalizes an expression and creates a variable name for the result
 
 normalizeExpr :: CExpr -> String
 normalizeExpr expr = case expr of
@@ -325,23 +325,6 @@ unfoldTracesM _ trace [] = return [trace]
 
 unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
-{-
-replacePtrM :: Trace -> CovVecM Trace
-replacePtrM trace = do
-	let
-		searchptr :: CExpr -> StateT [TraceElem] CovVecM CExpr
-		searchptr cmember@(CMember ptrexpr memberident isptr _) = do
-			ty <- lift $ inferTypeM ptrexpr
-			substptr cmember ty
-		searchptr cptr@(CUnary CIndOp ptrexpr _) = do
-			ty <- lift $ inferTypeM ptrexpr
-			substptr cptr ty
-		searchptr expr = return expr
-
-	(trace',decls) <- runStateT (everywhereM (mkM searchptr) trace) []
-	return $ trace'++decls
--}
-
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and replaces Ptr and member expressions with variables.
@@ -391,7 +374,8 @@ translateIdents envs expr = runStateT (everywhereM (mkM transexpr) expr) []
 	getMemberTypeM :: Type -> Ident -> CovVecM Type
 	getMemberTypeM (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) member_ident = do
 		CompDef (CompType _ _ memberdecls _ _) <- lookupTagM sueref
-		let [ty] = concatMap (\ (MemberDecl (VarDecl (VarName ident _) _ ty) Nothing _) -> if ident==member_ident then [ty] else []) memberdecls
+		let [ty] = concatMap (\ (MemberDecl (VarDecl (VarName ident _) _ ty) Nothing _) ->
+			if ident==member_ident then [ty] else []) memberdecls
 		return ty
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
