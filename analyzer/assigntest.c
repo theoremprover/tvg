@@ -30,7 +30,6 @@ int f(STRUCT* x)
 
 int g(int z)
 {
-    int is[] = { 1,2 };
     STRUCT s = { EINS,10 };
     if(f(&s)>1) return 1;
     else return 0;

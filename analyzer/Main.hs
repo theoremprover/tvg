@@ -67,7 +67,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
-		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
 	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
@@ -226,18 +226,12 @@ identTy2EnvItemM makenewidents srcident ty = do
 		False -> return srcident
 	return $ (srcident,(newident,ty'))
 
-enterFunctionM :: String -> CovVecM ([TraceElem],Env,CStat)
-enterFunctionM funname = do
-	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
+functionTracesM :: [ParamDecl] -> Stmt -> CovVecM (Env,[Trace])
+functionTracesM paramdecls body = do
 	param_env <- mapM (declaration2EnvItemM True) paramdecls
 	let newdecls = map (NewDeclaration . snd) $ param_env
-	return (newdecls,param_env,body)
-
-covVectorsM :: String -> CovVecM [TraceAnalysisResult]
-covVectorsM funname = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
 	glob_env <- mapM (declaration2EnvItemM False) globdecls
-	(newdecls,param_env,body) <- enterFunctionM funname
 	
 	let
 		enumdefs = concatMap enum2stmt globdecls
@@ -246,8 +240,14 @@ covVectorsM funname = do
 			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
 		enum2stmt _ = []
 
-	unfoldTracesM [ param_env ++ glob_env ] newdecls [ enumdefs ++ [CBlockStmt body] ] >>=
-		return . (zip (map (:[]) [1..])) >>=
+	traces <- unfoldTracesM [ param_env ++ glob_env ] newdecls [ enumdefs ++ [CBlockStmt body] ]
+	return (param_env,traces)
+
+covVectorsM :: String -> CovVecM [TraceAnalysisResult]
+covVectorsM funname = do
+	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
+	(param_env,traces) <- functionTracesM paramdecls body
+	return (zip (map (:[]) [1..]) traces) >>=
 		mapM elimAssignmentsM >>=
 		mapM (solveTraceM param_env)
 
@@ -353,6 +353,9 @@ translateIdents envs expr = runStateT (everywhereM (mkM transexpr) expr) []
 				" gives no PtrType, but " ++ (render.pretty) ty
 		substptr cmember ty'
 	transexpr cmember@(CMember ptrexpr member_ident False _) = error "ispre = FALSE!"
+	transexpr (CCall funexpr args _) = case funexpr of
+		CVar funident _ -> reverseFunctionM funident args
+		other -> error $ "translateIdents: transexpr of Call " ++ (render.pretty) other ++ "not implemented yet"
 	transexpr expr = return expr
 
 	substptr :: CExpr -> Type -> StateT [TraceElem] CovVecM CExpr
@@ -377,6 +380,14 @@ translateIdents envs expr = runStateT (everywhereM (mkM transexpr) expr) []
 		let [ty] = concatMap (\ (MemberDecl (VarDecl (VarName ident _) _ ty) Nothing _) ->
 			if ident==member_ident then [ty] else []) memberdecls
 		return ty
+
+reverseFunctionM :: Ident -> [CExpr] -> StateT [TraceElem] CovVecM CExpr
+reverseFunctionM funident args = do
+	let funname = identToString funident
+	funident' <- lift $ createNewIdentM funname
+	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM (builtinIdent funname)
+	(param_env,traces) <- lift $ functionTracesM paramdecls body
+	return $ CVar funident' undefNode
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
 tyspec2TypeM typespec = case typespec of
