@@ -232,7 +232,7 @@ functionTracesM paramdecls body = do
 	let newdecls = map (NewDeclaration . snd) $ param_env
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
 	glob_env <- mapM (declaration2EnvItemM False) globdecls
-	
+
 	let
 		enumdefs = concatMap enum2stmt globdecls
 		enum2stmt :: IdentDecl -> [CBlockItem]
@@ -337,7 +337,7 @@ translateIdents envs expr = runStateT (everywhereM (mkM transexpr) expr) []
 	transexpr :: CExpr -> StateT [TraceElem] CovVecM CExpr
 	transexpr (CVar ident _) = case lookup ident env of
 		Just (ident',_) -> return $ CVar ident' undefNode
-		Nothing -> error $ "translateIdents: Could not find " ++ (render.pretty) ident
+		Nothing -> error $ "translateIdents " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident
 	transexpr cptr@(CUnary CIndOp ptrexpr _) = do
 		ty <- lift $ inferTypeM ptrexpr
 		let ty' = case ty of
@@ -354,7 +354,7 @@ translateIdents envs expr = runStateT (everywhereM (mkM transexpr) expr) []
 		substptr cmember ty'
 	transexpr cmember@(CMember ptrexpr member_ident False _) = error "ispre = FALSE!"
 	transexpr (CCall funexpr args _) = case funexpr of
-		CVar funident _ -> reverseFunctionM funident args
+		CVar funident _ -> reverseFunctionM envs funident args
 		other -> error $ "translateIdents: transexpr of Call " ++ (render.pretty) other ++ "not implemented yet"
 	transexpr expr = return expr
 
@@ -381,13 +381,26 @@ translateIdents envs expr = runStateT (everywhereM (mkM transexpr) expr) []
 			if ident==member_ident then [ty] else []) memberdecls
 		return ty
 
-reverseFunctionM :: Ident -> [CExpr] -> StateT [TraceElem] CovVecM CExpr
-reverseFunctionM funident args = do
+reverseFunctionM :: [Env] -> Ident -> [CExpr] -> StateT [TraceElem] CovVecM CExpr
+reverseFunctionM envs funident args = do
 	let funname = identToString funident
 	funident' <- lift $ createNewIdentM funname
 	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM (builtinIdent funname)
-	(param_env,traces) <- lift $ functionTracesM paramdecls body
+	let body' = replace_param_with_arg (zip paramdecls args) body
+	traces <- lift $ unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
+	-- create propositions HERE
 	return $ CVar funident' undefNode
+
+	where
+
+	replace_param_with_arg :: [(ParamDecl,CExpr)] -> CStat -> CStat
+	replace_param_with_arg [] body = body
+	replace_param_with_arg ((paramdecl,arg):rest) body = replace_param_with_arg rest body' where
+		VarDecl (VarName srcident _) _ _ = getVarDecl paramdecl
+		body' = everywhere (mkT substparamarg) body
+		substparamarg :: CExpr -> CExpr
+		substparamarg (CVar ident _) | ident==srcident = arg
+		substparamarg expr = expr
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
 tyspec2TypeM typespec = case typespec of
