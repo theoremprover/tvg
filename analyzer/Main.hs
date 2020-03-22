@@ -109,7 +109,9 @@ main = do
 								Just (MFloat f) -> show f
 								val -> error $ "showarg " ++ show val ++ " not yet implemented"
 
-isnotbuiltin (NewDeclaration (tident,_)) = not $ "__" `isPrefixOf` (identToString tident)
+isnotbuiltinIdent ident = not $ "__" `isPrefixOf` (identToString ident)
+
+isnotbuiltin (NewDeclaration (ident,_)) = isnotbuiltinIdent ident
 isnotbuiltin _ = True
 
 data CovVecState = CovVecState {
@@ -126,14 +128,6 @@ instance Eq CExpr where
 	(CUnary CIndOp expr1 _) ==  (CUnary CIndOp expr2 _) = expr1==expr2
 	_ == _ = False
 
-{-
-data LValue = LIdent Ident | LMember CExpr Ident Bool | LPtr CExpr deriving Eq
-deriving instance Data LValue
-instance Show LValue where
-	show (LIdent ident) = (render.pretty) ident
-	show (LMember ptrexpr member isptr) = (render.pretty) $ CMember ptrexpr member isptr undefNode
-	show (LPtr expr) = (render.pretty) $ CUnary CIndOp expr undefNode
--}
 
 -- Normalizes an expression and creates a variable name for the result
 
@@ -177,6 +171,8 @@ type EnvItem = (Ident,(Ident,Type))
 instance Pretty EnvItem where
 	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> pretty idnew <+> text " :: " <+> pretty ty
 type Env = [EnvItem]
+
+envToString env = unlines $ map (render.pretty) $ filter (isnotbuiltinIdent.fst) env
 
 type TraceAnalysisResult = (String,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 
@@ -330,14 +326,22 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 -- and replaces Ptr and member expressions with variables.
 
 translateIdents :: [Env] -> CExpr -> CovVecM (CExpr,[TraceElem])
-translateIdents envs expr = runStateT (everywhereM (mkM transexpr) expr) []
+translateIdents envs expr = do
+	expr' <- evalStateT (everywhereM (mkM expandcalls) expr) ()
+	runStateT (everywhereM (mkM transexpr) expr') []
 	where
 	env = concat envs
 	
+	expandcalls :: CExpr -> StateT () CovVecM CExpr
+	expandcalls (CCall funexpr args _) = case funexpr of
+		CVar funident _ -> reverseFunctionM envs funident args
+		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
+	expandcalls expr = return expr
+
 	transexpr :: CExpr -> StateT [TraceElem] CovVecM CExpr
 	transexpr (CVar ident _) = case lookup ident env of
 		Just (ident',_) -> return $ CVar ident' undefNode
-		Nothing -> error $ "translateIdents " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident
+		Nothing -> error $ "translateIdents transexpr: " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString env
 	transexpr cptr@(CUnary CIndOp ptrexpr _) = do
 		ty <- lift $ inferTypeM ptrexpr
 		let ty' = case ty of
@@ -353,9 +357,6 @@ translateIdents envs expr = runStateT (everywhereM (mkM transexpr) expr) []
 				" gives no PtrType, but " ++ (render.pretty) ty
 		substptr cmember ty'
 	transexpr cmember@(CMember ptrexpr member_ident False _) = error "ispre = FALSE!"
-	transexpr (CCall funexpr args _) = case funexpr of
-		CVar funident _ -> reverseFunctionM envs funident args
-		other -> error $ "translateIdents: transexpr of Call " ++ (render.pretty) other ++ "not implemented yet"
 	transexpr expr = return expr
 
 	substptr :: CExpr -> Type -> StateT [TraceElem] CovVecM CExpr
@@ -370,8 +371,11 @@ translateIdents envs expr = runStateT (everywhereM (mkM transexpr) expr) []
 		case lookup ident (map snd env) of
 			Nothing -> error $ "inferTypeM " ++ (render.pretty) ident ++ " : not found"
 			Just ty -> return ty
-	inferTypeM (CBinary _ expr1@(CVar _ _) _ _) = inferTypeM expr1
-	inferTypeM (CBinary _ _ expr2@(CVar _ _) _) = inferTypeM expr2
+	inferTypeM (CBinary _ expr1 (CConst _) _) = inferTypeM expr1
+	inferTypeM (CBinary _ (CConst _) expr2 _) = inferTypeM expr2
+	inferTypeM (CUnary CAdrOp expr _) = do
+		target_ty <- inferTypeM expr
+		return $ PtrType target_ty noTypeQuals noAttributes
 	inferTypeM expr = error $ "inferTypeM " ++ (render.pretty) expr ++ " not implemented"
 
 	getMemberTypeM :: Type -> Ident -> CovVecM Type
@@ -381,7 +385,7 @@ translateIdents envs expr = runStateT (everywhereM (mkM transexpr) expr) []
 			if ident==member_ident then [ty] else []) memberdecls
 		return ty
 
-reverseFunctionM :: [Env] -> Ident -> [CExpr] -> StateT [TraceElem] CovVecM CExpr
+reverseFunctionM :: [Env] -> Ident -> [CExpr] -> StateT () CovVecM CExpr
 reverseFunctionM envs funident args = do
 	let funname = identToString funident
 	funident' <- lift $ createNewIdentM funname
