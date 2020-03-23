@@ -47,7 +47,7 @@ stack build :analyzer-exe && stack exec analyzer-exe
 fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
-solveIt = True
+solveIt = False
 _UNROLLING_DEPTH = 3
 
 analyzerPath = "analyzer"
@@ -258,23 +258,23 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 	CCompound _ cbis _ -> unfoldTracesM ([]:envs) trace (cbis : (rest : rest2))
 
 	CIf cond then_stmt mb_else_stmt _ -> do
-		(cond',add_decls) <- transids cond
-		then_traces <- unfoldTracesM envs (Condition cond' : (add_decls ++ trace)) ( (CBlockStmt then_stmt : rest) : rest2 )
+		(cond',add_decls,envs') <- transids envs cond
+		then_traces <- unfoldTracesM envs' (Condition cond' : (add_decls ++ trace)) ( (CBlockStmt then_stmt : rest) : rest2 )
 		let not_cond = Condition (CUnary CNegOp cond' undefNode)
 		else_traces <- case mb_else_stmt of
-			Nothing        -> unfoldTracesM envs (not_cond : (add_decls ++ trace)) ( rest : rest2 )
-			Just else_stmt -> unfoldTracesM envs (not_cond : (add_decls ++ trace)) ( (CBlockStmt else_stmt : rest) : rest2 )
+			Nothing        -> unfoldTracesM envs' (not_cond : (add_decls ++ trace)) ( rest : rest2 )
+			Just else_stmt -> unfoldTracesM envs' (not_cond : (add_decls ++ trace)) ( (CBlockStmt else_stmt : rest) : rest2 )
 		return $ then_traces ++ else_traces
  
 	CReturn Nothing _ -> return [ trace ]
 	CReturn (Just ret_expr) _ -> do
-		(ret_expr',add_decls) <- transids ret_expr
+		(ret_expr',add_decls,_) <- transids envs ret_expr
 		return [ Return ret_expr' : (add_decls ++ trace) ]
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
-		(lexpr',add_decls_lexpr) <- transids lexpr
-		(assigned_expr'',add_decls_assexpr) <- transids assigned_expr'
-		unfoldTracesM envs (Assignment lexpr' assigned_expr'' : (add_decls_lexpr ++ add_decls_assexpr ++ trace)) (rest:rest2)
+		(lexpr',add_decls_lexpr,envs') <- transids envs lexpr
+		(assigned_expr'',add_decls_assexpr,envs'') <- transids envs' assigned_expr'
+		unfoldTracesM envs'' (Assignment lexpr' assigned_expr'' : (add_decls_lexpr ++ add_decls_assexpr ++ trace)) (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -301,7 +301,7 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 	where
 	
 	env = concat envs
-	transids = translateIdents envs
+	transids = translateIdents
 
 unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
@@ -325,39 +325,43 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 -- Translates all identifiers in an expression to fresh ones,
 -- and replaces Ptr and member expressions with variables.
 
-translateIdents :: [Env] -> CExpr -> CovVecM (CExpr,[TraceElem])
+translateIdents :: [Env] -> CExpr -> CovVecM (CExpr,[TraceElem],[Env])
 translateIdents envs expr = do
-	(expr',add_traceelems) <- runStateT (everywhereM (mkM expandcalls) expr) []
-	runStateT (everywhereM (mkM transexpr) expr') add_traceelems
+	(expr',(add_traceelems,envs')) <- runStateT (everywhereM (mkM expandcalls) expr) ([],envs)
+	(expr'',add_traceelems') <- runStateT (everywhereM (mkM (transexpr envs')) expr') add_traceelems
+	return (expr'',add_traceelems',envs')
+
 	where
-	env = concat envs
 	
-	expandcalls :: CExpr -> StateT [TraceElem] CovVecM CExpr
+	expandcalls :: CExpr -> StateT ([TraceElem],[Env]) CovVecM CExpr
 	expandcalls (CCall funexpr args _) = case funexpr of
-		CVar funident _ -> reverseFunctionM envs funident args
+		CVar funident _ -> do
+			(expr',envs') <- reverseFunctionM envs funident args
+			modify $ \ (tes,_) -> (tes,envs')
+			return expr'
 		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
 	expandcalls expr = return expr
 
-	transexpr :: CExpr -> StateT [TraceElem] CovVecM CExpr
-	transexpr (CVar ident _) = case lookup ident env of
+	transexpr :: [Env] -> CExpr -> StateT [TraceElem] CovVecM CExpr
+	transexpr envs (CVar ident _) = case lookup ident (concat envs) of
 		Just (ident',_) -> return $ CVar ident' undefNode
-		Nothing -> error $ "translateIdents " ++ (render.pretty) expr ++ " in transexpr : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString env
-	transexpr cptr@(CUnary CIndOp ptrexpr _) = do
+		Nothing -> error $ "translateIdents " ++ (render.pretty) expr ++ " in transexpr : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
+	transexpr _ cptr@(CUnary CIndOp ptrexpr _) = do
 		ty <- lift $ inferTypeM ptrexpr
 		let ty' = case ty of
 			PtrType target_ty _ _ -> target_ty
 			_ -> error $ "translateIdents transexpr: inferTypeM of " ++ (render.pretty) ptrexpr ++
 				" gives no PtrType, but " ++ (render.pretty) ty'
 		substptr cptr ty'
-	transexpr cmember@(CMember ptrexpr member_ident True _) = do
+	transexpr _ cmember@(CMember ptrexpr member_ident True _) = do
 		ty <- lift $ inferTypeM ptrexpr
 		ty' <- case ty of
 			PtrType target_ty _ _ -> lift $ getMemberTypeM target_ty member_ident
 			_ -> error $ "translateIdents transexpr: inferTypeM of " ++ (render.pretty) ptrexpr ++
 				" gives no PtrType, but " ++ (render.pretty) ty
 		substptr cmember ty'
-	transexpr cmember@(CMember ptrexpr member_ident False _) = error "ispre = FALSE!"
-	transexpr expr = return expr
+	transexpr _ cmember@(CMember ptrexpr member_ident False _) = error "ispre = FALSE!"
+	transexpr _ expr = return expr
 
 	substptr :: CExpr -> Type -> StateT [TraceElem] CovVecM CExpr
 	substptr expr ty = do
@@ -368,7 +372,7 @@ translateIdents envs expr = do
 
 	inferTypeM :: CExpr -> CovVecM Type
 	inferTypeM (CVar ident _) = do
-		case lookup ident (map snd env) of
+		case lookup ident (map snd $ concat envs) of
 			Nothing -> error $ "inferTypeM " ++ (render.pretty) ident ++ " : not found"
 			Just ty -> return ty
 	inferTypeM (CBinary _ expr1 (CConst _) _) = inferTypeM expr1
@@ -385,17 +389,18 @@ translateIdents envs expr = do
 			if ident==member_ident then [ty] else []) memberdecls
 		return ty
 
-reverseFunctionM :: [Env] -> Ident -> [CExpr] -> StateT [TraceElem] CovVecM CExpr
+reverseFunctionM :: [Env] -> Ident -> [CExpr] -> StateT [TraceElem] CovVecM (CExpr,[Env])
 reverseFunctionM (env:envs) funident args = do
-	let funname = identToString funident
 	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lift $ lookupFunM funident
 	let body' = replace_param_with_arg (zip paramdecls args) body
 	ret_ty' <- lift $ elimTypeDefsM ret_ty
-	newenvitem <- lift $ identTy2EnvItemM True funident ret_ty'
+	let newfunident = internalIdent $ identToString funident ++ "_ret"
+	newenvitem <- lift $ identTy2EnvItemM True newfunident ret_ty'
 	modify ((NewDeclaration (snd newenvitem)) : )
-	traces <- lift $ unfoldTracesM ((newenvitem:env):envs) [] [ [ CBlockStmt body' ] ]
+	let envs' = (newenvitem:env):envs
+	traces <- lift $ unfoldTracesM envs' [] [ [ CBlockStmt body' ] ]
 	-- create propositions HERE
-	return $ CVar funident undefNode
+	return $ (CVar newfunident undefNode,envs')
 
 	where
 
@@ -451,7 +456,7 @@ var2MZ :: TyEnv -> Ident -> CovVecM [MZAST.ModelData]
 var2MZ tyenv ident = do
 	let ty = case lookup ident tyenv of
 		Just ty -> ty
-		Nothing -> error $ "Could not find " ++ (render.pretty) ident ++ " in\n" ++
+		Nothing -> error $ "var2MZ: Could not find " ++ (render.pretty) ident ++ " in\n" ++
 			unlines (map (\ (ident,ty) -> (render.pretty) ident ++ " |-> " ++ (render.pretty) ty ) tyenv)
 	mzvar <- mkmzvarM (identToString ident,ty)
 	return $ mzvar : []
@@ -555,6 +560,7 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 traceelemToMZ _ = return []
 
 solveTraceM :: Env -> ([Int],Trace,Trace) -> CovVecM TraceAnalysisResult
+solveTraceM _ (is,orig_trace,trace) | not solveIt = return (intercalate "_" $ map show is,orig_trace,trace,[],Nothing)
 solveTraceM param_env (is,orig_trace,trace) = do
 	let mb_ret_val = case last trace of
 		Return ret_expr -> Just ret_expr
