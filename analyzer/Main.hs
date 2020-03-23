@@ -327,12 +327,12 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 
 translateIdents :: [Env] -> CExpr -> CovVecM (CExpr,[TraceElem])
 translateIdents envs expr = do
-	expr' <- evalStateT (everywhereM (mkM expandcalls) expr) ()
-	runStateT (everywhereM (mkM transexpr) expr') []
+	(expr',add_traceelems) <- runStateT (everywhereM (mkM expandcalls) expr) []
+	runStateT (everywhereM (mkM transexpr) expr') add_traceelems
 	where
 	env = concat envs
 	
-	expandcalls :: CExpr -> StateT () CovVecM CExpr
+	expandcalls :: CExpr -> StateT [TraceElem] CovVecM CExpr
 	expandcalls (CCall funexpr args _) = case funexpr of
 		CVar funident _ -> reverseFunctionM envs funident args
 		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
@@ -341,7 +341,7 @@ translateIdents envs expr = do
 	transexpr :: CExpr -> StateT [TraceElem] CovVecM CExpr
 	transexpr (CVar ident _) = case lookup ident env of
 		Just (ident',_) -> return $ CVar ident' undefNode
-		Nothing -> error $ "translateIdents transexpr: " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString env
+		Nothing -> error $ "translateIdents " ++ (render.pretty) expr ++ " in transexpr : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString env
 	transexpr cptr@(CUnary CIndOp ptrexpr _) = do
 		ty <- lift $ inferTypeM ptrexpr
 		let ty' = case ty of
@@ -385,15 +385,17 @@ translateIdents envs expr = do
 			if ident==member_ident then [ty] else []) memberdecls
 		return ty
 
-reverseFunctionM :: [Env] -> Ident -> [CExpr] -> StateT () CovVecM CExpr
-reverseFunctionM envs funident args = do
+reverseFunctionM :: [Env] -> Ident -> [CExpr] -> StateT [TraceElem] CovVecM CExpr
+reverseFunctionM (env:envs) funident args = do
 	let funname = identToString funident
-	funident' <- lift $ createNewIdentM funname
-	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lift $ lookupFunM (builtinIdent funname)
+	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lift $ lookupFunM funident
 	let body' = replace_param_with_arg (zip paramdecls args) body
-	traces <- lift $ unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
+	ret_ty' <- lift $ elimTypeDefsM ret_ty
+	newenvitem <- lift $ identTy2EnvItemM True funident ret_ty'
+	modify ((NewDeclaration (snd newenvitem)) : )
+	traces <- lift $ unfoldTracesM ((newenvitem:env):envs) [] [ [ CBlockStmt body' ] ]
 	-- create propositions HERE
-	return $ CVar funident' undefNode
+	return $ CVar funident undefNode
 
 	where
 
