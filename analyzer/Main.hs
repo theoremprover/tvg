@@ -328,8 +328,8 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 
 translateIdents :: [Env] -> CExpr -> CovVecM (CExpr,[TraceElem],[Env])
 translateIdents envs expr = do
-	(expr',add_traceelems) <- runStateT (everywhereM (mkM (transexpr envs)) expr) []
-	(expr'',(add_traceelems',envs')) <- runStateT (everywhereM (mkM expandcalls) expr') ([],envs)
+	(expr',(add_traceelems,envs')) <- runStateT (everywhereM (mkM expandcalls) expr) ([],envs)
+	(expr'',add_traceelems') <- runStateT (everywhereM (mkM (transexpr envs')) expr') []
 	return (expr'',add_traceelems'++add_traceelems,envs')
 
 	where
@@ -383,26 +383,23 @@ translateIdents envs expr = do
 
 	expandcalls :: CExpr -> StateT ([TraceElem],[Env]) CovVecM CExpr
 	expandcalls (CCall funexpr args _) = case funexpr of
-		CVar funident _ -> do
-			(expr',envs') <- reverseFunctionM envs funident args
-			modify $ \ (tes,_) -> (tes,envs')
-			return expr'
+		CVar funident _ -> reverseFunctionM funident args
 		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
 	expandcalls expr = return expr
 
 
-reverseFunctionM :: [Env] -> Ident -> [CExpr] -> StateT [TraceElem] CovVecM (CExpr,[Env])
-reverseFunctionM (env:envs) funident args = do
+reverseFunctionM :: Ident -> [CExpr] -> StateT ([TraceElem],[Env]) CovVecM CExpr
+reverseFunctionM funident args = do
 	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lift $ lookupFunM funident
 	let body' = replace_param_with_arg (zip paramdecls args) body
 	ret_ty' <- lift $ elimTypeDefsM ret_ty
-	let newfunident = internalIdent $ identToString funident ++ "_ret"
-	newenvitem <- lift $ identTy2EnvItemM True newfunident ret_ty'
-	modify ((NewDeclaration (snd newenvitem)) : )
-	let envs' = (newenvitem:env):envs
+	let oldfunident = internalIdent $ identToString funident ++ "_ret"
+	newenvitem@(_,(newfunident,_)) <- lift $ identTy2EnvItemM True oldfunident ret_ty'
+	modify $ \ (traceelems,env:envrest ) -> ( NewDeclaration (snd newenvitem) : traceelems , (newenvitem:env) : envrest )
+	envs' <- gets snd
 	traces <- lift $ unfoldTracesM envs' [] [ [ CBlockStmt body' ] ]
 	-- create propositions HERE
-	return $ (CVar newfunident undefNode,envs')
+	return $ CVar oldfunident undefNode
 
 	where
 
