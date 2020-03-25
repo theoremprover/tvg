@@ -323,25 +323,17 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 
 
 -- Translates all identifiers in an expression to fresh ones,
--- and replaces Ptr and member expressions with variables.
+-- replaces Ptr and member expressions with variables,
+-- and expands function calls.
 
 translateIdents :: [Env] -> CExpr -> CovVecM (CExpr,[TraceElem],[Env])
 translateIdents envs expr = do
-	(expr',(add_traceelems,envs')) <- runStateT (everywhereM (mkM expandcalls) expr) ([],envs)
-	(expr'',add_traceelems') <- runStateT (everywhereM (mkM (transexpr envs')) expr') add_traceelems
-	return (expr'',add_traceelems',envs')
+	(expr',add_traceelems) <- runStateT (everywhereM (mkM (transexpr envs)) expr) []
+	(expr'',(add_traceelems',envs')) <- runStateT (everywhereM (mkM expandcalls) expr') ([],envs)
+	return (expr'',add_traceelems'++add_traceelems,envs')
 
 	where
 	
-	expandcalls :: CExpr -> StateT ([TraceElem],[Env]) CovVecM CExpr
-	expandcalls (CCall funexpr args _) = case funexpr of
-		CVar funident _ -> do
-			(expr',envs') <- reverseFunctionM envs funident args
-			modify $ \ (tes,_) -> (tes,envs')
-			return expr'
-		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
-	expandcalls expr = return expr
-
 	transexpr :: [Env] -> CExpr -> StateT [TraceElem] CovVecM CExpr
 	transexpr envs (CVar ident _) = case lookup ident (concat envs) of
 		Just (ident',_) -> return $ CVar ident' undefNode
@@ -388,6 +380,16 @@ translateIdents envs expr = do
 		let [ty] = concatMap (\ (MemberDecl (VarDecl (VarName ident _) _ ty) Nothing _) ->
 			if ident==member_ident then [ty] else []) memberdecls
 		return ty
+
+	expandcalls :: CExpr -> StateT ([TraceElem],[Env]) CovVecM CExpr
+	expandcalls (CCall funexpr args _) = case funexpr of
+		CVar funident _ -> do
+			(expr',envs') <- reverseFunctionM envs funident args
+			modify $ \ (tes,_) -> (tes,envs')
+			return expr'
+		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
+	expandcalls expr = return expr
+
 
 reverseFunctionM :: [Env] -> Ident -> [CExpr] -> StateT [TraceElem] CovVecM (CExpr,[Env])
 reverseFunctionM (env:envs) funident args = do
