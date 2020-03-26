@@ -136,6 +136,7 @@ normalizeExpr expr = case expr of
 	CVar varident _ -> identToString varident
 	CBinary binop (CVar varident _) (CConst const) _ ->
 		identToString varident ++ "_" ++ binop2str binop ++ "_" ++ const2str const
+	other -> error $ "normalizeExpr " ++ (render.pretty) other ++ " not implemented yet."
 	where
 	binop2str binop = case lookup binop [
 		(CMulOp,"mul"),(CDivOp,"div"),(CRmdOp,"rmd"),(CAddOp,"plus"),(CSubOp,"minus"),
@@ -290,6 +291,9 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 		Just assignop = lookup unaryop unaryops
 		unaryops = [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
 
+	CExpr (Just expr) _ -> do
+		error $ "not implemented yet."
+
  	CWhile cond body False _ -> unfoldTracesM envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
 		where
 		unroll_loop :: Int -> [CBlockItem]
@@ -398,8 +402,14 @@ reverseFunctionM funident args = do
 	modify $ \ (traceelems,env:envrest ) -> ( NewDeclaration (snd newenvitem) : traceelems , (newenvitem:env) : envrest )
 	envs' <- gets snd
 	traces <- lift $ unfoldTracesM envs' [] [ [ CBlockStmt body' ] ]
-	-- create propositions HERE
-	return $ CVar oldfunident undefNode
+	let funvar = CVar oldfunident undefNode
+	forM_ traces $ \ trace -> do
+		case trace of
+			Return ret_expr : resttrace -> do
+				printLog $ unlines $ ("trace for " ++ (render.pretty) newfunident ++ ":") : map show (filter isnotbuiltin trace)
+			_ -> error $ unlines $ ("reverseFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
+				map show (filter isnotbuiltin trace)
+	return funvar
 
 	where
 
