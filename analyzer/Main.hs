@@ -332,7 +332,7 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 
 translateIdents :: [Env] -> CExpr -> CovVecM (CExpr,[TraceElem],[Env])
 translateIdents envs expr = do
-	(expr',(add_traceelems,envs')) <- runStateT (everywhereM (mkM expandcalls) expr) ([],envs)
+	(expr',(forked_traces,envs')) <- runStateT (everywhereM (mkM expandcalls) expr) ([],envs)
 	(expr'',add_traceelems') <- runStateT (everywhereM (mkM (transexpr envs')) expr') []
 	return (expr'',add_traceelems'++add_traceelems,envs')
 
@@ -385,14 +385,14 @@ translateIdents envs expr = do
 			if ident==member_ident then [ty] else []) memberdecls
 		return ty
 
-	expandcalls :: CExpr -> StateT ([TraceElem],[Env]) CovVecM CExpr
+	expandcalls :: CExpr -> StateT ([Trace],[Env]) CovVecM CExpr
 	expandcalls (CCall funexpr args _) = case funexpr of
 		CVar funident _ -> reverseFunctionM funident args
 		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
 	expandcalls expr = return expr
 
 
-reverseFunctionM :: Ident -> [CExpr] -> StateT ([TraceElem],[Env]) CovVecM CExpr
+reverseFunctionM :: Ident -> [CExpr] -> StateT ([TraceElem],[Env]) CovVecM (CExpr,[Trace])
 reverseFunctionM funident args = do
 	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lift $ lookupFunM funident
 	let body' = replace_param_with_arg (zip paramdecls args) body
@@ -403,10 +403,11 @@ reverseFunctionM funident args = do
 	envs' <- gets snd
 	traces <- lift $ unfoldTracesM envs' [] [ [ CBlockStmt body' ] ]
 	let funvar = CVar oldfunident undefNode
-	forM_ traces $ \ trace -> do
+	xored_exprss <- forM traces $ \ trace -> do
 		case trace of
 			Return ret_expr : resttrace -> do
-				printLog $ unlines $ ("trace for " ++ (render.pretty) newfunident ++ ":") : map show (filter isnotbuiltin trace)
+--				printLog $ unlines $ ("trace for " ++ (render.pretty) newfunident ++ ":") : map show (filter isnotbuiltin trace)
+				CBinary CEqOp funvar ret_expr : 
 			_ -> error $ unlines $ ("reverseFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
 				map show (filter isnotbuiltin trace)
 	return funvar
