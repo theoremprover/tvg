@@ -13,25 +13,26 @@ typedef struct
     int member2;
 } STRUCT;
 
-int f(STRUCT* x)
+int f(STRUCT* x,STRUCT* y)
 {
     if(x->member2 == 0)
     {
         (x->member2)++;
     }
 
-    (x+1)->member2 *= 2;
+    y->member2 *= 2;
 
-    if((x+1)->member1 == EINS)
-        (x+1)->member1 = ZWEI;
+    if(y->member1 == EINS)
+        y->member1 = ZWEI;
 
-    return((x+1)->member2);
+    return(y->member2);
 }
 
 int g(int z)
 {
-    STRUCT s = { EINS,10 };
-    if(f(&s)>1) return 1;
+    STRUCT s0 = { EINS,10 };
+    STRUCT s1 = { ZWEI,20 };
+    if(f(&s0,&s1)>1) return 1;
     else return 0;
 }
 
