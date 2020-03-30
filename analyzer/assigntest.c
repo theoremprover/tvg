@@ -22,7 +22,7 @@ int f(STRUCT* x,STRUCT* y)
 
     y->member2 *= 2;
 
-    if(y->member1 == EINS)
+    if(y->member2 > 3)
         y->member1 = ZWEI;
 
     return(y->member2);
@@ -30,10 +30,20 @@ int f(STRUCT* x,STRUCT* y)
 
 int g(int z)
 {
-    STRUCT s0 = { EINS,10 };
-    STRUCT s1 = { ZWEI,20 };
-    if(f(&s0,&s1)>1) return 1;
-    else return 0;
+    STRUCT s0;
+    s0.member1 = EINS;
+    s0.member2 = 2;
+    STRUCT s1 = { EINS, z };
+    if(f(&s0,&s1)>1)
+    {
+        if (s1.member1 == EINS) return 1;
+        else return 2;
+    }
+    else
+    {
+        if (s1.member1 == EINS) return 3;
+        else return 4;
+    }
 }
 
 int main(int argc, char* argv[])

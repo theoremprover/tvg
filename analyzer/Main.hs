@@ -48,7 +48,10 @@ stack build :analyzer-exe && stack exec analyzer-exe
 fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
-solveIt = False
+solveIt = True
+showOnlySolutions = True
+don'tShowTraces = True
+
 _UNROLLING_DEPTH = 3
 
 analyzerPath = "analyzer"
@@ -85,18 +88,21 @@ main = do
 					when ("-writeGlobalDecls" ∈ opts) $
 						writeFile (analyzerPath </> filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 					covvectors <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
-					forM_ covvectors $ \ (is,origtrace,trace,model,mb_solution) -> printLog $ unlines $
-						[ "","=== ORIG TRACE " ++ is ++ " ====================","<leaving out builtins...>" ] ++
-						map show (filter isnotbuiltin origtrace) ++
-						[ "","--- TRACE " ++ is ++ " -------------------------","<leaving out builtins...>" ] ++
-						map show (filter isnotbuiltin trace) ++
-						[ "",
-						"--- MODEL " ++ is ++ " -------------------------",
-						if null model then "<empty>" else layout model,
-						"",
-						"--- SOLUTION " ++ is ++ " ----------------------",
-						show_solution mb_solution ]
+					forM_ covvectors $ \ (is,origtrace,trace,model,mb_solution) -> case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
+						False -> return ()
+						True -> printLog $ unlines $ mbshowtraces (
+							[ "","=== ORIG TRACE " ++ is ++ " ====================","<leaving out builtins...>" ] ++
+							map show (filter isnotbuiltin origtrace) ++
+							[ "","--- TRACE " ++ is ++ " -------------------------","<leaving out builtins...>" ] ++
+							map show (filter isnotbuiltin trace) ++
+							[ "",
+							"--- MODEL " ++ is ++ " -------------------------",
+							if null model then "<empty>" else layout model,
+							"" ]) ++ [
+							"--- SOLUTION " ++ is ++ " ----------------------",
+							show_solution mb_solution ]
 					where
+					mbshowtraces ts = if don'tShowTraces then [] else ts
 					show_solution Nothing = "No solution"
 					show_solution (Just (env,solution,mb_retval)) = unlines [ show solution,
 						funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )",
@@ -191,6 +197,13 @@ lookupTypeDefM ident = do
 	case Map.lookup ident typedefs of
 		Just (TypeDef _ ty _ _) -> return ty
 		Nothing -> error $ "TypeDef " ++ (show ident) ++ " not found"
+
+getMemberIdentsAndTypesM :: Type -> CovVecM [(Ident,Type)]
+getMemberIdentsAndTypesM ty = case ty of
+	DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
+		CompDef (CompType _ _ memberdecls _ _) <- lookupTagM sueref
+		forM memberdecls $ \ (MemberDecl (VarDecl (VarName ident Nothing) _ member_ty) _ _) -> return (ident,member_ty)
+	_ -> error $ "getMemberTypesM " ++ (render.pretty) ty ++ " does not result in a direct SUT type!"
 
 elimTypeDefsM :: Type -> CovVecM Type
 elimTypeDefsM directtype@(DirectType _ _ _) = pure directtype
@@ -316,11 +329,25 @@ unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples
 			-- TODO: consider the derivdeclrs
 			newenvitem <- identTy2EnvItemM True ident ty
 			let newdecl = NewDeclaration (snd newenvitem)
-			return (newenvitem,newdecl)
+			initializers <- case mb_init of
+				Nothing -> return []
+				Just initializer -> cinitializer2blockitems (CVar ident undefNode) ty initializer
+					where
+					cinitializer2blockitems :: CExpr -> Type -> CInit -> CovVecM [CBlockItem]
+					cinitializer2blockitems lexpr lexpr_ty initializer = case initializer of
+						CInitExpr expr _ -> return [ CBlockStmt $ CExpr (
+							Just $ CAssign CAssignOp lexpr expr undefNode) undefNode ]
+						CInitList initlist _ -> do
+							memberidentstypes <- getMemberIdentsAndTypesM lexpr_ty
+							concatForM (zip initlist memberidentstypes) $ \case
+								(([],initializer),(memberident,memberty)) ->
+									cinitializer2blockitems (CMember lexpr memberident False undefNode) memberty initializer
+								_ -> error $ "unfoldTracesM initializers: CPartDesignators not implemented yet!"
+			return (newenvitem,newdecl,initializers)
 		triple -> error $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
-	let (newenvs,newitems) = unzip new_env_items
-	unfoldTracesM ((newenvs ++ env) : envs) (newitems ++ trace) (rest:rest2)
-	
+	let (newenvs,newitems,initializerss) = unzip3 new_env_items
+	unfoldTracesM ((newenvs ++ env) : envs) (newitems ++ trace) ((concat initializerss ++ rest):rest2)
+
 unfoldTracesM (_:restenvs) trace ([]:rest2) = unfoldTracesM restenvs trace rest2
 
 unfoldTracesM _ trace [] = return [trace]
@@ -367,7 +394,7 @@ translateIdents envs expr = do
 				Nothing -> error $ "transexpr " ++ (render.pretty) cmember ++ " : Could not find " ++
 					(render.pretty) objident ++ " in " ++ envToString (concat envs)
 			ty <- lift $ getMemberTypeM obj_ty member_ident
-			substptr objexpr ty
+			substptr cmember ty
 		other -> error $ "transexpr " ++ (render.pretty) other ++ " not implemented yet"
 	transexpr _ expr = return expr
 
@@ -414,16 +441,15 @@ reverseFunctionM funident args = do
 	newenvitem@(_,(newfunident,_)) <- lift $ identTy2EnvItemM True oldfunident ret_ty'
 	envs' <- gets snd
 	traces <- lift $ unfoldTracesM envs' [NewDeclaration (snd newenvitem)] [ [ CBlockStmt body' ] ]
-	let funvar = CVar oldfunident undefNode
 
 	traces' <- forM traces $ \case
 		Return ret_expr : resttrace -> do
-			return $ Condition (CBinary CEqOp funvar ret_expr undefNode) : resttrace
+			return $ Condition (CBinary CEqOp (CVar newfunident undefNode) ret_expr undefNode) : resttrace
 		other_trace -> error $ unlines $ ("reverseFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
 			map show (filter isnotbuiltin other_trace)
 
 	modify $ \ (_,env:envrest) -> ( traces' , (newenvitem:env) : envrest )
-	return funvar
+	return $ CVar oldfunident undefNode
 
 	where
 
@@ -496,7 +522,7 @@ var2MZ tyenv ident = do
 			TyIntegral intty -> case intty of
 				TyBool -> return MZAST.Bool
 				TyShort -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
-				TyInt -> return $ MZAST.Range (MZAST.IConst (-10)) (MZAST.IConst 10) --MZAST.Int
+				TyInt -> return $ MZAST.Range (MZAST.IConst (-30)) (MZAST.IConst 30) --MZAST.Int
 				_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 			TyFloating floatty -> case floatty of
 				TyFloat -> return MZAST.Float
@@ -506,6 +532,8 @@ var2MZ tyenv ident = do
 				return $ MZAST.CT $ MZAST.SetLit $
 					map (\ (Enumerator _ (CConst (CIntConst (CInteger i _ _) _)) _ _) ->
 						MZAST.IConst (fromIntegral i)) enums
+			TyComp (CompTypeRef sueref _ _) -> do
+				error "CompTypeRef not implemented yet"
 			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 		ty2mz (PtrType target_ty _ _) = return $
 			MZAST.Range (MZAST.IConst 0) (MZAST.IConst 65535)
