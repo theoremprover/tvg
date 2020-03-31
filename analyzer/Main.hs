@@ -184,6 +184,8 @@ envToString env = unlines $ map (render.pretty) $ filter (isnotbuiltinIdent.fst)
 
 type TraceAnalysisResult = (String,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 
+
+
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
 	funs <- gets (gObjs.globDeclsCVS)
@@ -393,7 +395,7 @@ translateIdents envs expr = do
 			let obj_ty = case lookup objident (map snd $ concat envs) of
 				Just obj_ty -> obj_ty
 				Nothing -> error $ "transexpr " ++ (render.pretty) cmember ++ " : Could not find " ++
-					(render.pretty) objident ++ " in " ++ envToString (concat envs)
+					(render.pretty) objident ++ " in\n" ++ envToString (concat envs)
 			ty <- lift $ getMemberTypeM obj_ty member_ident
 			substptr cmember ty
 		other -> error $ "transexpr " ++ (render.pretty) other ++ " not implemented yet"
@@ -427,6 +429,7 @@ translateIdents envs expr = do
 
 	expandcalls :: CExpr -> StateT ([Trace],[Env]) CovVecM CExpr
 	expandcalls (CCall funexpr args _) = case funexpr of
+		CVar (Ident "__builtin_expect" _ _) _ -> return $ head args 
 		CVar funident _ -> do
 			reverseFunctionM funident args
 		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
