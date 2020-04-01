@@ -50,7 +50,7 @@ fp-bit.i: Function _fpdiv_parts, Zeile 1039
 
 solveIt = True
 showOnlySolutions = True
-don'tShowTraces = True
+don'tShowTraces = False
 
 _UNROLLING_DEPTH = 3
 
@@ -227,22 +227,27 @@ createNewIdentM name_prefix = do
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
 	return $ internalIdent $ name_prefix ++ "_" ++ show new_var_num
 
-declaration2EnvItemM :: Declaration decl => Bool -> decl -> CovVecM EnvItem
+declaration2EnvItemM :: Declaration decl => Bool -> decl -> CovVecM [EnvItem]
 declaration2EnvItemM makenewidents decl = do
 	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
 	identTy2EnvItemM makenewidents srcident ty
 
-identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM EnvItem
+identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM [EnvItem]
 identTy2EnvItemM makenewidents srcident ty = do
 	ty' <- elimTypeDefsM ty
 	newident <- case makenewidents of
 		True -> createNewIdentM $ lValueToVarName (CVar srcident undefNode)
 		False -> return srcident
-	return $ (srcident,(newident,ty'))
+	other_envitems <- case ty' of
+		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> do
+			members <- getMembersM sueref
+			return -- CONTINUE HERE
+		_ -> return []
+	return $ (srcident,(newident,ty')) : other_envitems
 
 functionTracesM :: [ParamDecl] -> Stmt -> CovVecM (Env,[Trace])
 functionTracesM paramdecls body = do
-	param_env <- mapM (declaration2EnvItemM True) paramdecls
+	param_env <- concatMapM (declaration2EnvItemM True) paramdecls
 	let newdecls = map (NewDeclaration . snd) $ param_env
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
 	glob_env <- mapM (declaration2EnvItemM False) globdecls
@@ -422,9 +427,8 @@ translateIdents envs expr = do
 
 	getMemberTypeM :: Type -> Ident -> CovVecM Type
 	getMemberTypeM (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) member_ident = do
-		CompDef (CompType _ _ memberdecls _ _) <- lookupTagM sueref
-		let [ty] = concatMap (\ (MemberDecl (VarDecl (VarName ident _) _ ty) Nothing _) ->
-			if ident==member_ident then [ty] else []) memberdecls
+		members <- getMembersM sueref
+		let [ty] = concatMap (\ (ident,ty) -> if ident==member_ident then [ty] else []) memberdecls
 		return ty
 
 	expandcalls :: CExpr -> StateT ([Trace],[Env]) CovVecM CExpr
@@ -435,6 +439,10 @@ translateIdents envs expr = do
 		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
 	expandcalls expr = return expr
 
+getMembersM :: SUERef -> CovVecM [(Ident,Type)]
+getMembersM sueref = do
+	CompDef (CompType _ _ memberdecls _ _) <- lookupTagM sueref
+	return $ for memberdecls $ \ (MemberDecl (VarDecl (VarName ident _) _ ty) Nothing _) -> (ident,ty)
 
 reverseFunctionM :: Ident -> [CExpr] -> StateT ([Trace],[Env]) CovVecM CExpr
 reverseFunctionM funident args = do
