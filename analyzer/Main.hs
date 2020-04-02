@@ -201,11 +201,14 @@ lookupTypeDefM ident = do
 		Just (TypeDef _ ty _ _) -> return ty
 		Nothing -> error $ "TypeDef " ++ (show ident) ++ " not found"
 
+getMembersM :: SUERef -> CovVecM [(Ident,Type)]
+getMembersM sueref = do
+	CompDef (CompType _ _ memberdecls _ _) <- lookupTagM sueref
+	return $ for memberdecls $ \ (MemberDecl (VarDecl (VarName ident _) _ ty) Nothing _) -> (ident,ty)
+
 getMemberIdentsAndTypesM :: Type -> CovVecM [(Ident,Type)]
 getMemberIdentsAndTypesM ty = case ty of
-	DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
-		CompDef (CompType _ _ memberdecls _ _) <- lookupTagM sueref
-		forM memberdecls $ \ (MemberDecl (VarDecl (VarName ident Nothing) _ member_ty) _ _) -> return (ident,member_ty)
+	DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> getMembersM sueref
 	_ -> error $ "getMemberTypesM " ++ (render.pretty) ty ++ " does not result in a direct SUT type!"
 
 elimTypeDefsM :: Type -> CovVecM Type
@@ -239,9 +242,11 @@ identTy2EnvItemM makenewidents srcident ty = do
 		True -> createNewIdentM $ lValueToVarName (CVar srcident undefNode)
 		False -> return srcident
 	other_envitems <- case ty' of
+{-
 		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> do
 			members <- getMembersM sueref
 			return -- CONTINUE HERE
+-}
 		_ -> return []
 	return $ (srcident,(newident,ty')) : other_envitems
 
@@ -250,7 +255,7 @@ functionTracesM paramdecls body = do
 	param_env <- concatMapM (declaration2EnvItemM True) paramdecls
 	let newdecls = map (NewDeclaration . snd) $ param_env
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
-	glob_env <- mapM (declaration2EnvItemM False) globdecls
+	glob_env <- concatMapM (declaration2EnvItemM False) globdecls
 
 	let
 		enumdefs = concatMap enum2stmt globdecls
@@ -335,8 +340,8 @@ unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples
 	new_env_items <- forM triples $ \case
 		(Just (CDeclr (Just ident) []{-derivdeclrs-} _ _ _),mb_init,Nothing) -> do
 			-- TODO: consider the derivdeclrs
-			newenvitem <- identTy2EnvItemM True ident ty
-			let newdecl = NewDeclaration (snd newenvitem)
+			newenvitems <- identTy2EnvItemM True ident ty
+			let newdecls = map (NewDeclaration . snd) newenvitems
 			initializers <- case mb_init of
 				Nothing -> return []
 				Just initializer -> cinitializer2blockitems (CVar ident undefNode) ty initializer
@@ -351,10 +356,10 @@ unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples
 								(([],initializer),(memberident,memberty)) ->
 									cinitializer2blockitems (CMember lexpr memberident False undefNode) memberty initializer
 								_ -> error $ "unfoldTracesM initializers: CPartDesignators not implemented yet!"
-			return (newenvitem,newdecl,initializers)
+			return (newenvitems,newdecls,initializers)
 		triple -> error $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 	let (newenvs,newitems,initializerss) = unzip3 new_env_items
-	unfoldTracesM ((newenvs ++ env) : envs) (newitems ++ trace) ((concat initializerss ++ rest):rest2)
+	unfoldTracesM ((concat newenvs ++ env) : envs) (concat newitems ++ trace) ((concat initializerss ++ rest):rest2)
 
 unfoldTracesM (_:restenvs) trace ([]:rest2) = unfoldTracesM restenvs trace rest2
 
@@ -428,7 +433,7 @@ translateIdents envs expr = do
 	getMemberTypeM :: Type -> Ident -> CovVecM Type
 	getMemberTypeM (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) member_ident = do
 		members <- getMembersM sueref
-		let [ty] = concatMap (\ (ident,ty) -> if ident==member_ident then [ty] else []) memberdecls
+		let [ty] = concatMap (\ (ident,ty) -> if ident==member_ident then [ty] else []) members
 		return ty
 
 	expandcalls :: CExpr -> StateT ([Trace],[Env]) CovVecM CExpr
@@ -439,18 +444,13 @@ translateIdents envs expr = do
 		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
 	expandcalls expr = return expr
 
-getMembersM :: SUERef -> CovVecM [(Ident,Type)]
-getMembersM sueref = do
-	CompDef (CompType _ _ memberdecls _ _) <- lookupTagM sueref
-	return $ for memberdecls $ \ (MemberDecl (VarDecl (VarName ident _) _ ty) Nothing _) -> (ident,ty)
-
 reverseFunctionM :: Ident -> [CExpr] -> StateT ([Trace],[Env]) CovVecM CExpr
 reverseFunctionM funident args = do
 	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lift $ lookupFunM funident
 	let body' = replace_param_with_arg (zip paramdecls args) body
 	ret_ty' <- lift $ elimTypeDefsM ret_ty
 	let oldfunident = internalIdent $ identToString funident ++ "_ret"
-	newenvitem@(_,(newfunident,_)) <- lift $ identTy2EnvItemM True oldfunident ret_ty'
+	[newenvitem@(_,(newfunident,_))] <- lift $ identTy2EnvItemM True oldfunident ret_ty'
 	envs' <- gets snd
 	traces <- lift $ unfoldTracesM envs' [NewDeclaration (snd newenvitem)] [ [ CBlockStmt body' ] ]
 
