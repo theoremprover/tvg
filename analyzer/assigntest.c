@@ -41,7 +41,7 @@ int g(int z)
     }
     else
     {
-        if (s1.member1 == EINS) return 3;
+        if (s1.member1 == EINS) return (&s1)->member2;
         else return 4;
     }
 }

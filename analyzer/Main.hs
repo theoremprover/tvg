@@ -67,11 +67,12 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : ["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : ["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\ptrrettest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
 	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
@@ -180,6 +181,7 @@ instance Pretty EnvItem where
 	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> pretty idnew <+> text " :: " <+> pretty ty
 type Env = [EnvItem]
 
+envToString :: Env -> String
 envToString env = unlines $ map (render.pretty) $ filter (isnotbuiltinIdent.fst) env
 
 type TraceAnalysisResult = (String,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
@@ -206,10 +208,13 @@ getMembersM sueref = do
 	CompDef (CompType _ _ memberdecls _ _) <- lookupTagM sueref
 	return $ for memberdecls $ \ (MemberDecl (VarDecl (VarName ident _) _ ty) Nothing _) -> (ident,ty)
 
+{-
 getMemberIdentsAndTypesM :: Type -> CovVecM [(Ident,Type)]
 getMemberIdentsAndTypesM ty = case ty of
 	DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> getMembersM sueref
-	_ -> error $ "getMemberTypesM " ++ (render.pretty) ty ++ " does not result in a direct SUT type!"
+	_ -> return []
+--	_ -> error $ "getMemberTypesM " ++ (render.pretty) ty ++ " does not result in a direct SUT type!"
+-}
 
 elimTypeDefsM :: Type -> CovVecM Type
 elimTypeDefsM directtype@(DirectType _ _ _) = pure directtype
@@ -235,20 +240,38 @@ declaration2EnvItemM makenewidents decl = do
 	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
 	identTy2EnvItemM makenewidents srcident ty
 
-identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM [EnvItem]
-identTy2EnvItemM makenewidents srcident ty = do
+identTy2EnvItemExprsM :: Bool -> Ident -> Type -> CovVecM [(EnvItem,CExpr)]
+identTy2EnvItemExprsM makenewidents srcident ty = do
 	ty' <- elimTypeDefsM ty
 	newident <- case makenewidents of
 		True -> createNewIdentM $ lValueToVarName (CVar srcident undefNode)
 		False -> return srcident
-	other_envitems <- case ty' of
-{-
+
+	other_envitems_exprs <- case ty' of
+		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
+			members <- getMembersM sueref 
+			return $ for members $ \ (member_ident,member_ty) ->
+				let
+					lexpr = CMember (CVar newident undefNode) member_ident False undefNode
+					new_mem_ident_ptr = internalIdent $ lValueToVarName lexpr
+					in
+					((new_mem_ident_ptr,(new_mem_ident_ptr,member_ty)),lexpr)
 		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> do
-			members <- getMembersM sueref
-			return -- CONTINUE HERE
--}
+			members <- getMembersM sueref 
+			return $ for members $ \ (member_ident,member_ty) ->
+				let
+					lexpr = CMember (CVar newident undefNode) member_ident True undefNode
+					new_mem_ident_ptr = internalIdent $ lValueToVarName lexpr
+					in
+					((new_mem_ident_ptr,(new_mem_ident_ptr,member_ty)),lexpr)
 		_ -> return []
-	return $ (srcident,(newident,ty')) : other_envitems
+
+	return $ ((srcident,(newident,ty')),CVar newident undefNode) : other_envitems_exprs
+
+identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM [EnvItem]
+identTy2EnvItemM makenewidents srcident ty = do
+	res <- identTy2EnvItemExprsM makenewidents srcident ty
+	return $ map fst res
 
 functionTracesM :: [ParamDecl] -> Stmt -> CovVecM (Env,[Trace])
 functionTracesM paramdecls body = do
@@ -302,9 +325,9 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = {-(liftIO $ mapM_ 
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
 		(assigned_expr'',add_traces,envs') <- transids envs assigned_expr'
-		(lexpr',[add_decltraces],envs'') <- transids envs' lexpr
+		(lexpr',[add_decltrace],envs'') <- transids envs' lexpr
 		concatForM add_traces $ \ add_trace ->
-			unfoldTracesM envs'' (Assignment lexpr' assigned_expr'' : (add_trace ++ add_decltraces ++ trace)) (rest:rest2)
+			unfoldTracesM envs'' (Assignment lexpr' assigned_expr'' : (add_trace ++ add_decltrace ++ trace)) (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -338,24 +361,30 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = {-(liftIO $ mapM_ 
 unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
 	new_env_items <- forM triples $ \case
-		(Just (CDeclr (Just ident) []{-derivdeclrs-} _ _ _),mb_init,Nothing) -> do
+		(Just (CDeclr (Just ident) derivdeclrs _ _ _),mb_init,Nothing) -> do
 			-- TODO: consider the derivdeclrs
-			newenvitems <- identTy2EnvItemM True ident ty
+			let ty' = case derivdeclrs of
+				[] -> ty
+				[CPtrDeclr _ _] -> PtrType ty noTypeQuals noAttributes
+			newenvitems <- identTy2EnvItemM True ident ty'
 			let newdecls = map (NewDeclaration . snd) newenvitems
 			initializers <- case mb_init of
 				Nothing -> return []
-				Just initializer -> cinitializer2blockitems (CVar ident undefNode) ty initializer
+				Just initializer -> cinitializer2blockitems (CVar ident undefNode) ty' initializer
 					where
 					cinitializer2blockitems :: CExpr -> Type -> CInit -> CovVecM [CBlockItem]
-					cinitializer2blockitems lexpr lexpr_ty initializer = case initializer of
-						CInitExpr expr _ -> return [ CBlockStmt $ CExpr (
-							Just $ CAssign CAssignOp lexpr expr undefNode) undefNode ]
-						CInitList initlist _ -> do
-							memberidentstypes <- getMemberIdentsAndTypesM lexpr_ty
-							concatForM (zip initlist memberidentstypes) $ \case
-								(([],initializer),(memberident,memberty)) ->
-									cinitializer2blockitems (CMember lexpr memberident False undefNode) memberty initializer
-								_ -> error $ "unfoldTracesM initializers: CPartDesignators not implemented yet!"
+					cinitializer2blockitems lexpr ty initializer =
+						case initializer of
+							CInitExpr expr _ -> return [ CBlockStmt $ CExpr (
+								Just $ CAssign CAssignOp lexpr expr undefNode) undefNode ]
+							CInitList initlist _ -> case ty of
+								DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
+									memberidentstypes <- getMembersM sueref
+									concatForM (zip initlist memberidentstypes) $ \case
+										(([],initializer),(memberident,memberty)) ->
+											cinitializer2blockitems (CMember lexpr memberident False undefNode) memberty initializer
+										_ -> error $ "unfoldTracesM initializers: CPartDesignators not implemented yet!"
+								_ -> error $ "unfoldTracesM initializers: " ++ (render.pretty) ty ++ " is no composite type!"
 			return (newenvitems,newdecls,initializers)
 		triple -> error $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 	let (newenvs,newitems,initializerss) = unzip3 new_env_items
@@ -444,25 +473,48 @@ translateIdents envs expr = do
 		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
 	expandcalls expr = return expr
 
+{- The nan function reads:
+static fp_number_type * nan (void)
+{ return (fp_number_type *) (& __thenan_sf); }
+-}
 reverseFunctionM :: Ident -> [CExpr] -> StateT ([Trace],[Env]) CovVecM CExpr
 reverseFunctionM funident args = do
 	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lift $ lookupFunM funident
 	let body' = replace_param_with_arg (zip paramdecls args) body
 	ret_ty' <- lift $ elimTypeDefsM ret_ty
 	let oldfunident = internalIdent $ identToString funident ++ "_ret"
-	[newenvitem@(_,(newfunident,_))] <- lift $ identTy2EnvItemM True oldfunident ret_ty'
+	idtyenvitemsexprs <- lift $ identTy2EnvItemExprsM True oldfunident ret_ty'
+	let idtyenvitems = map fst idtyenvitemsexprs
 	envs' <- gets snd
-	traces <- lift $ unfoldTracesM envs' [NewDeclaration (snd newenvitem)] [ [ CBlockStmt body' ] ]
+	traces <- lift $ unfoldTracesM envs' (map (NewDeclaration . snd) idtyenvitems) [ [ CBlockStmt body' ] ]
 
-	traces' <- forM traces $ \case
-		Return ret_expr : resttrace -> do
-			return $ Condition (CBinary CEqOp (CVar newfunident undefNode) ret_expr undefNode) : resttrace
+	let traces' = for traces $ \case
+		Return ret_expr : resttrace -> ( for idtyenvitemsexprs $ \ ((_,(newident,_)),lexpr) ->
+			Condition (CBinary CEqOp (CVar newident undefNode) lexpr undefNode)
+				) ++ resttrace
 		other_trace -> error $ unlines $ ("reverseFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
 			map show (filter isnotbuiltin other_trace)
 
-	modify $ \ (_,env:envrest) -> ( traces' , (newenvitem:env) : envrest )
+	modify $ \ (_,env:envrest) -> ( traces' , (idtyenvitems++env) : envrest )
 	return $ CVar oldfunident undefNode
 
+
+{-
+	case idtyenvitems of
+		[newenvitem@(_,(newfunident,_))] -> do
+			envs' <- gets snd
+			traces <- lift $ unfoldTracesM envs' [NewDeclaration (snd newenvitem)] [ [ CBlockStmt body' ] ]
+		
+			traces' <- forM traces $ \case
+				Return ret_expr : resttrace -> do
+					return $ Condition (CBinary CEqOp (CVar newfunident undefNode) ret_expr undefNode) : resttrace
+				other_trace -> error $ unlines $ ("reverseFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
+					map show (filter isnotbuiltin other_trace)
+		
+			modify $ \ (_,env:envrest) -> ( traces' , (newenvitem:env) : envrest )
+			return $ CVar oldfunident undefNode
+		_ -> error $ "reverseFunctionM " ++ (render.pretty) funident ++ ": idtyenvitems = \n" ++ envToString idtyenvitems
+-}
 	where
 
 	replace_param_with_arg :: [(ParamDecl,CExpr)] -> CStat -> CStat
