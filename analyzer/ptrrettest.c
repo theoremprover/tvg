@@ -25,6 +25,13 @@ STRUCT* f(STRUCT* x,STRUCT* y)
     r.member2 = x->member2 + y->member2;
 
     return &r;
+/*
+    f_ret == &r
+    (&r)->member1 ~> r.member1 ~> r_DOT_member1
+    COND r_DOT_member1 == f_ret->member1
+    COND r_DOT_member2 == f_ret->member2
+    COND ADR_r == f_ret
+*/
 }
 
 int g(int y, int z)

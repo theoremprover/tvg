@@ -144,13 +144,17 @@ normalizeExpr expr = case expr of
 	CVar varident _ -> identToString varident
 	CBinary binop (CVar varident _) (CConst const) _ ->
 		identToString varident ++ "_" ++ binop2str binop ++ "_" ++ const2str const
+		where
+		binop2str binop = case lookup binop [
+			(CMulOp,"mul"),(CDivOp,"div"),(CRmdOp,"rmd"),(CAddOp,"plus"),(CSubOp,"minus"),
+			(CShlOp,"shl"),(CShrOp,"shr"),(CAndOp,"and"),(CXorOp,"xor"),(COrOp,"or") ] of
+				Nothing -> error $ "binop2str " ++ (render.pretty) binop ++ " not implemented"
+				Just s -> s
+	CMember (CUnary CAdrOp expr _) member True _ -> normalizeExpr $ CMember expr member False undefNode
+	CMember (CUnary CIndOp expr _) member False _ -> normalizeExpr $ CMember expr member True undefNode
 	other -> error $ "normalizeExpr " ++ (render.pretty) other ++ " not implemented yet."
+
 	where
-	binop2str binop = case lookup binop [
-		(CMulOp,"mul"),(CDivOp,"div"),(CRmdOp,"rmd"),(CAddOp,"plus"),(CSubOp,"minus"),
-		(CShlOp,"shl"),(CShrOp,"shr"),(CAndOp,"and"),(CXorOp,"xor"),(COrOp,"or") ] of
-			Nothing -> error $ "binop2str " ++ (render.pretty) binop ++ " not implemented"
-			Just s -> s
 
 	const2str (CIntConst cint _) = (if i<0 then "m" else "") ++ show (abs i)
 		where
@@ -208,14 +212,6 @@ getMembersM sueref = do
 	CompDef (CompType _ _ memberdecls _ _) <- lookupTagM sueref
 	return $ for memberdecls $ \ (MemberDecl (VarDecl (VarName ident _) _ ty) Nothing _) -> (ident,ty)
 
-{-
-getMemberIdentsAndTypesM :: Type -> CovVecM [(Ident,Type)]
-getMemberIdentsAndTypesM ty = case ty of
-	DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> getMembersM sueref
-	_ -> return []
---	_ -> error $ "getMemberTypesM " ++ (render.pretty) ty ++ " does not result in a direct SUT type!"
--}
-
 elimTypeDefsM :: Type -> CovVecM Type
 elimTypeDefsM directtype@(DirectType _ _ _) = pure directtype
 elimTypeDefsM (TypeDefType (TypeDefRef ident _ _) tyquals attrs) = lookupTypeDefM ident >>= elimTypeDefsM
@@ -240,38 +236,34 @@ declaration2EnvItemM makenewidents decl = do
 	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
 	identTy2EnvItemM makenewidents srcident ty
 
-identTy2EnvItemExprsM :: Bool -> Ident -> Type -> CovVecM [(EnvItem,CExpr)]
-identTy2EnvItemExprsM makenewidents srcident ty = do
+makeMemberExprsM :: Type -> CExpr -> CovVecM [EnvItem]
+makeMemberExprsM ty ptr_expr = case ty of
+	DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
+		members <- getMembersM sueref 
+		return $ for members $ \ (member_ident,member_ty) ->
+			let
+				lexpr = CMember ptr_expr member_ident False undefNode
+				new_mem_ident_ptr = internalIdent $ lValueToVarName lexpr
+				in
+				(new_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
+	PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> do
+		members <- getMembersM sueref 
+		return $ for members $ \ (member_ident,member_ty) ->
+			let
+				lexpr = CMember ptr_expr member_ident True undefNode
+				new_mem_ident_ptr = internalIdent $ lValueToVarName lexpr
+				in
+				(new_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
+	_ -> return []
+
+identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM [EnvItem]
+identTy2EnvItemM makenewidents srcident ty = do
 	ty' <- elimTypeDefsM ty
 	newident <- case makenewidents of
 		True -> createNewIdentM $ lValueToVarName (CVar srcident undefNode)
 		False -> return srcident
-
-	other_envitems_exprs <- case ty' of
-		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
-			members <- getMembersM sueref 
-			return $ for members $ \ (member_ident,member_ty) ->
-				let
-					lexpr = CMember (CVar newident undefNode) member_ident False undefNode
-					new_mem_ident_ptr = internalIdent $ lValueToVarName lexpr
-					in
-					((new_mem_ident_ptr,(new_mem_ident_ptr,member_ty)),lexpr)
-		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> do
-			members <- getMembersM sueref 
-			return $ for members $ \ (member_ident,member_ty) ->
-				let
-					lexpr = CMember (CVar newident undefNode) member_ident True undefNode
-					new_mem_ident_ptr = internalIdent $ lValueToVarName lexpr
-					in
-					((new_mem_ident_ptr,(new_mem_ident_ptr,member_ty)),lexpr)
-		_ -> return []
-
-	return $ ((srcident,(newident,ty')),CVar newident undefNode) : other_envitems_exprs
-
-identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM [EnvItem]
-identTy2EnvItemM makenewidents srcident ty = do
-	res <- identTy2EnvItemExprsM makenewidents srcident ty
-	return $ map fst res
+	other_envitems <- makeMemberExprsM ty' (CVar newident undefNode)
+	return $ (srcident,(newident,ty')) : other_envitems
 
 functionTracesM :: [ParamDecl] -> Stmt -> CovVecM (Env,[Trace])
 functionTracesM paramdecls body = do
@@ -479,15 +471,17 @@ reverseFunctionM funident args = do
 	let body' = replace_param_with_arg (zip paramdecls args) body
 	ret_ty' <- lift $ elimTypeDefsM ret_ty
 	let oldfunident = internalIdent $ identToString funident ++ "_ret"
-	idtyenvitemsexprs <- lift $ identTy2EnvItemExprsM True oldfunident ret_ty'
-	let idtyenvitems = map fst idtyenvitemsexprs
+	idtyenvitems_fun <- lift $ identTy2EnvItemM True oldfunident ret_ty'
 	envs' <- gets snd
 	traces <- lift $ unfoldTracesM envs' (map (NewDeclaration . snd) idtyenvitems) [ [ CBlockStmt body' ] ]
 
-	let traces' = for traces $ \case
-		Return ret_expr : resttrace -> ( for idtyenvitemsexprs $ \ ((_,(newident,_)),lexpr) ->
-			Condition (CBinary CEqOp (CVar newident undefNode) lexpr undefNode)
-				) ++ resttrace
+	traces' <- forM traces $ \case
+		Return ret_expr : resttrace -> do
+			idtyenvitems_ret <- lift $ makeMemberExprsM ret_ty' ret_expr
+			newtrace <- forM ( zip idtyenvitems_fun idtyenvitems_ret) $ \ ((_,(newident,_)),(_,(ret_memberexpr,_))) -> do
+				let ret_memberexpr' = CVar (normalizeExpr ret_memberexpr) undefNode
+				return $ Condition (CBinary CEqOp (CVar newident undefNode) ret_memberexpr' undefNode)
+			return $ newtrace ++ resttrace
 		other_trace -> error $ unlines $ ("reverseFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
 			map show (filter isnotbuiltin other_trace)
 
