@@ -473,10 +473,6 @@ translateIdents envs expr = do
 		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
 	expandcalls expr = return expr
 
-{- The nan function reads:
-static fp_number_type * nan (void)
-{ return (fp_number_type *) (& __thenan_sf); }
--}
 reverseFunctionM :: Ident -> [CExpr] -> StateT ([Trace],[Env]) CovVecM CExpr
 reverseFunctionM funident args = do
 	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lift $ lookupFunM funident
@@ -497,7 +493,6 @@ reverseFunctionM funident args = do
 
 	modify $ \ (_,env:envrest) -> ( traces' , (idtyenvitems++env) : envrest )
 	return $ CVar oldfunident undefNode
-
 
 {-
 	case idtyenvitems of
@@ -606,7 +601,9 @@ var2MZ tyenv ident = do
 type Constraint = CExpr
 
 traceelemToMZ :: TraceElem -> CovVecM [MZAST.ModelData]
-traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (flatten_not False) . (insert_eq0 True) $ constr) ]
+traceelemToMZ (Condition constr) = do
+	liftIO $ putStrLn $ (render.pretty) constr
+	return [ MZAST.constraint (expr2constr . (flatten_not False) . (insert_eq0 True) $ constr) ]
 	where
 	eq0 :: Constraint -> Constraint
 	eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
@@ -670,6 +667,7 @@ traceelemToMZ (Condition constr) = return [ MZAST.constraint (expr2constr . (fla
 		expr2' = expr2constr expr2
 		-- Leaving out brackets: Hopefully, the minzinc operators have the same precedences as in C
 		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"="),(CLndOp,"/\\"),(CLorOp,"\\/")]
+--	expr2constr (CMember (CVar ptrident _) member _ _) = expr2constr ()
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
 traceelemToMZ _ = return []
@@ -692,8 +690,9 @@ solveTraceM param_env (is,orig_trace,trace) = do
 	let
 		includesG = [ MZAST.include "include.mzn" ]
 		vars :: [Ident] = nub $ everything (++) (mkQ [] searchvar) constr_trace where
-			searchvar :: Ident -> [Ident]
-			searchvar ident = [ ident ]
+			searchvar :: CExpr -> [Ident]
+			searchvar (CVar ident _) = [ ident ]
+			searchvar _ = []
 
 	varsG <- concatMapM (var2MZ tyenv) vars
 	let
