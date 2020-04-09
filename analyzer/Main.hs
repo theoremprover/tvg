@@ -400,7 +400,7 @@ translateIdents envs expr = do
 	return (expr'',map (++add_decls) forked_traces,envs')
 
 	where
-	
+
 	transexpr :: [Env] -> CExpr -> StateT [TraceElem] CovVecM CExpr
 	transexpr envs (CVar ident _) = case lookup ident (concat envs) of
 		Just (ident',_) -> return $ CVar ident' undefNode
@@ -473,7 +473,7 @@ reverseFunctionM funident args = do
 	let oldfunident = internalIdent $ identToString funident ++ "_ret"
 	idtyenvitems_fun <- lift $ identTy2EnvItemM True oldfunident ret_ty'
 	envs' <- gets snd
-	traces <- lift $ unfoldTracesM envs' (map (NewDeclaration . snd) idtyenvitems) [ [ CBlockStmt body' ] ]
+	traces <- lift $ unfoldTracesM envs' [] [ [ CBlockStmt body' ] ]
 
 	traces' <- forM traces $ \case
 		Return ret_expr : resttrace -> do
