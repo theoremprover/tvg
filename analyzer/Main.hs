@@ -395,12 +395,13 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 
 translateIdents :: [Env] -> CExpr -> CovVecM (CExpr,[Trace],[Env])
 translateIdents envs expr = do
-	(expr',(forked_traces,envs')) <- runStateT (everywhereM (mkM expandcalls) expr) ([[]],envs)
-	(expr'',add_decls) <- runStateT (everywhereM (mkM (transexpr envs')) expr') []
+	(expr',forked_traces) <- runStateT (everywhereM (mkM expandcalls) expr) [[]]
+	(expr'',add_decls) <- runStateT (everywhereM (mkM (transexpr envs)) expr') []
 	return (expr'',map (++add_decls) forked_traces,envs')
 
 	where
 
+	-- TODO: [Env] argument unnecessary
 	transexpr :: [Env] -> CExpr -> StateT [TraceElem] CovVecM CExpr
 	transexpr envs (CVar ident _) = case lookup ident (concat envs) of
 		Just (ident',_) -> return $ CVar ident' undefNode
@@ -457,7 +458,7 @@ translateIdents envs expr = do
 		let [ty] = concatMap (\ (ident,ty) -> if ident==member_ident then [ty] else []) members
 		return ty
 
-	expandcalls :: CExpr -> StateT ([Trace],[Env]) CovVecM CExpr
+	expandcalls :: CExpr -> StateT [Trace] CovVecM CExpr
 	expandcalls (CCall funexpr args _) = case funexpr of
 		CVar (Ident "__builtin_expect" _ _) _ -> return $ head args 
 		CVar funident _ -> do
@@ -465,7 +466,7 @@ translateIdents envs expr = do
 		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
 	expandcalls expr = return expr
 
-reverseFunctionM :: Ident -> [CExpr] -> StateT ([Trace],[Env]) CovVecM CExpr
+reverseFunctionM :: Ident -> [CExpr] -> StateT [Trace] CovVecM CExpr
 reverseFunctionM funident args = do
 	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lift $ lookupFunM funident
 	let body' = replace_param_with_arg (zip paramdecls args) body
