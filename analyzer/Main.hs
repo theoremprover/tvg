@@ -396,16 +396,34 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 translateIdents :: [Env] -> CExpr -> CovVecM (CExpr,[Trace],[Env])
 translateIdents envs expr = do
 	(expr',forked_traces) <- runStateT (everywhereM (mkM expandcalls) expr) [[]]
-	(expr'',add_decls) <- runStateT (everywhereM (mkM (transexpr envs)) expr') []
-	return (expr'',map (++add_decls) forked_traces,envs')
+
+--	(expr'',add_decls) <- runStateT (everywhereM (mkM (transexpr envs)) expr') []
+	
+--	return (expr'',map (++add_decls) forked_traces,envs')
 
 	where
 
-	-- TODO: [Env] argument unnecessary
+	expandcalls :: CExpr -> StateT [Trace] CovVecM CExpr
+	-- substitutes function calls with their return values and inserts the body in the trace
+	-- eliminates builtin_expect function calls
+
+	expandcalls (CCall funexpr args _) = case funexpr of
+		CVar (Ident "__builtin_expect" _ _) _ -> return $ head args 
+		CVar funident _ -> expandFunctionM envs funident args
+		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
+	expandcalls expr = return expr
+
+
+{-
 	transexpr :: [Env] -> CExpr -> StateT [TraceElem] CovVecM CExpr
+	-- translates variable names to fresh names from the env
+	-- converts (&obj)->mem to obj.mem
+	-- converts (*ptr).mem to ptr->mem
+
 	transexpr envs (CVar ident _) = case lookup ident (concat envs) of
 		Just (ident',_) -> return $ CVar ident' undefNode
 		Nothing -> error $ "translateIdents " ++ (render.pretty) expr ++ " in transexpr : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
+
 	transexpr _ cptr@(CUnary CIndOp ptrexpr _) = do
 		ty <- lift $ inferTypeM ptrexpr
 		let ty' = case ty of
@@ -413,8 +431,10 @@ translateIdents envs expr = do
 			_ -> error $ "translateIdents transexpr: inferTypeM of " ++ (render.pretty) ptrexpr ++
 				" gives no PtrType, but " ++ (render.pretty) ty'
 		substptr cptr ty'
+
 	transexpr envs (CMember (CUnary CAdrOp expr _) member_ident True _) = do
 		transexpr envs (CMember expr member_ident False undefNode) 
+
 	transexpr _ cmember@(CMember ptrexpr member_ident True _) = do
 		ty <- lift $ inferTypeM ptrexpr
 		ty' <- case ty of
@@ -422,6 +442,7 @@ translateIdents envs expr = do
 			_ -> error $ "translateIdents transexpr: inferTypeM of " ++ (render.pretty) ptrexpr ++
 				" gives no PtrType, but " ++ (render.pretty) ty
 		substptr cmember ty'
+
 	transexpr _ cmember@(CMember objexpr member_ident False _) = case objexpr of
 		CVar objident _ -> do
 			let obj_ty = case lookup objident (map snd $ concat envs) of
@@ -431,14 +452,17 @@ translateIdents envs expr = do
 			ty <- lift $ getMemberTypeM obj_ty member_ident
 			substptr cmember ty
 		other -> error $ "transexpr " ++ (render.pretty) other ++ " not implemented yet"
+
 	transexpr _ expr = return expr
 
+-- TODO: can TraceElem creation be skipped?
 	substptr :: CExpr -> Type -> StateT [TraceElem] CovVecM CExpr
 	substptr expr ty = do
 		let ident' = internalIdent $ lValueToVarName expr
-		ty' <- lift $ elimTypeDefsM ty
-		modify (NewDeclaration (ident',ty') :)
+--		ty' <- lift $ elimTypeDefsM ty
+--		modify (NewDeclaration (ident',ty') :)
 		return $ CVar ident' undefNode
+
 
 	inferTypeM :: CExpr -> CovVecM Type
 	inferTypeM (CVar ident _) = do
@@ -457,19 +481,18 @@ translateIdents envs expr = do
 		members <- getMembersM sueref
 		let [ty] = concatMap (\ (ident,ty) -> if ident==member_ident then [ty] else []) members
 		return ty
+-}
 
-	expandcalls :: CExpr -> StateT [Trace] CovVecM CExpr
-	expandcalls (CCall funexpr args _) = case funexpr of
-		CVar (Ident "__builtin_expect" _ _) _ -> return $ head args 
-		CVar funident _ -> do
-			reverseFunctionM funident args
-		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
-	expandcalls expr = return expr
-
-reverseFunctionM :: Ident -> [CExpr] -> StateT [Trace] CovVecM CExpr
-reverseFunctionM funident args = do
+expandFunctionM :: [Env] -> Ident -> [CExpr] -> StateT [Trace] CovVecM CExpr
+expandFunctionM envs funident args = do
 	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lift $ lookupFunM funident
 	let body' = replace_param_with_arg (zip paramdecls args) body
+	traces <- lift $ unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
+	forM traces $ \case
+		Return ret_expr : resttrace -> return 
+		other_trace -> error $ unlines $ ("expandFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
+			map show (filter isnotbuiltin other_trace)
+{-	
 	ret_ty' <- lift $ elimTypeDefsM ret_ty
 	let oldfunident = internalIdent $ identToString funident ++ "_ret"
 	idtyenvitems_fun <- lift $ identTy2EnvItemM True oldfunident ret_ty'
@@ -488,7 +511,7 @@ reverseFunctionM funident args = do
 
 	modify $ \ (_,env:envrest) -> ( traces' , (idtyenvitems++env) : envrest )
 	return $ CVar oldfunident undefNode
-
+-}
 {-
 	case idtyenvitems of
 		[newenvitem@(_,(newfunident,_))] -> do
