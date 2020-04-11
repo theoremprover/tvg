@@ -294,7 +294,7 @@ covVectorsM funname = do
 -- Just unfold the traces
 
 unfoldTracesM :: [Env] -> Trace -> [[CBlockItem]] -> CovVecM [Trace]
-unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = {-(liftIO $ mapM_ (putStrLn.(render.pretty)) rest) >>-} case stmt of
+unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 
 	CLabel _ cstat _ _ -> unfoldTracesM envs trace ((CBlockStmt cstat : rest) : rest2)
 
@@ -398,7 +398,7 @@ translateIdents envs expr = do
 	(expr',forked_traces) <- runStateT (everywhereM (mkM expandcalls) expr) [[]]
 
 --	(expr'',add_decls) <- runStateT (everywhereM (mkM (transexpr envs)) expr') []
-	
+
 --	return (expr'',map (++add_decls) forked_traces,envs')
 
 	where
@@ -411,18 +411,23 @@ translateIdents envs expr = do
 		CVar (Ident "__builtin_expect" _ _) _ -> return $ head args 
 		CVar funident _ -> expandFunctionM envs funident args
 		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
+
 	expandcalls expr = return expr
 
 
-{-
 	transexpr :: [Env] -> CExpr -> StateT [TraceElem] CovVecM CExpr
 	-- translates variable names to fresh names from the env
+	-- translates ptr constructs to special variables
 	-- converts (&obj)->mem to obj.mem
 	-- converts (*ptr).mem to ptr->mem
+	-- converts *ptr to variable PTR_ptr_2
 
 	transexpr envs (CVar ident _) = case lookup ident (concat envs) of
 		Just (ident',_) -> return $ CVar ident' undefNode
 		Nothing -> error $ "translateIdents " ++ (render.pretty) expr ++ " in transexpr : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
+
+	transexpr envs (CMember (CUnary CAdrOp expr _) member_ident True _) = do
+		transexpr envs (CMember expr member_ident False undefNode) 
 
 	transexpr _ cptr@(CUnary CIndOp ptrexpr _) = do
 		ty <- lift $ inferTypeM ptrexpr
@@ -432,9 +437,6 @@ translateIdents envs expr = do
 				" gives no PtrType, but " ++ (render.pretty) ty'
 		substptr cptr ty'
 
-	transexpr envs (CMember (CUnary CAdrOp expr _) member_ident True _) = do
-		transexpr envs (CMember expr member_ident False undefNode) 
-
 	transexpr _ cmember@(CMember ptrexpr member_ident True _) = do
 		ty <- lift $ inferTypeM ptrexpr
 		ty' <- case ty of
@@ -443,6 +445,7 @@ translateIdents envs expr = do
 				" gives no PtrType, but " ++ (render.pretty) ty
 		substptr cmember ty'
 
+{-
 	transexpr _ cmember@(CMember objexpr member_ident False _) = case objexpr of
 		CVar objident _ -> do
 			let obj_ty = case lookup objident (map snd $ concat envs) of
@@ -462,7 +465,6 @@ translateIdents envs expr = do
 --		ty' <- lift $ elimTypeDefsM ty
 --		modify (NewDeclaration (ident',ty') :)
 		return $ CVar ident' undefNode
-
 
 	inferTypeM :: CExpr -> CovVecM Type
 	inferTypeM (CVar ident _) = do
