@@ -408,6 +408,7 @@ translateIdents envs expr = do
 	-- eliminates builtin_expect function calls
 
 	expandcalls (CCall funexpr args _) = case funexpr of
+		CBinary op expr1 expr2 ni -> CBinary <$> pure op <*> expandcalls expr1 <*> expandcalls expr2 <*> pure ni
 		CVar (Ident "__builtin_expect" _ _) _ -> return $ head args 
 		CVar funident _ -> expandFunctionM envs funident args
 		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
