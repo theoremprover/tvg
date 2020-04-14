@@ -403,7 +403,7 @@ translateIdents envs expr = do
 
 	where
 
-	expandcalls :: CExpr -> StateT [Trace] CovVecM CExpr
+	expandcalls :: CExpr -> StateT [([Trace],())] CovVecM CExpr
 	-- substitutes function calls with their return values and inserts the body in the trace
 	-- eliminates builtin_expect function calls
 
