@@ -395,6 +395,7 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 
 translateIdents :: [Env] -> CExpr -> CovVecM (CExpr,[Trace],[Env])
 translateIdents envs expr = do
+	(expr',forked_traces) <- runStateT $ foldlM fold_expand 
 	(expr',forked_traces) <- runStateT (everywhereM (mkM expandcalls) expr) [[]]
 
 --	(expr'',add_decls) <- runStateT (everywhereM (mkM (transexpr envs)) expr') []
@@ -403,17 +404,76 @@ translateIdents envs expr = do
 
 	where
 
-	expandcalls :: CExpr -> StateT [([Trace],())] CovVecM CExpr
 	-- substitutes function calls with their return values and inserts the body in the trace
 	-- eliminates builtin_expect function calls
+	expandcalls :: CExpr -> StateT [([Trace],())] CovVecM CExpr
+	
+	expandcalls expr = case expr of
+		CCall funexpr args _ -> case funexpr of
+			CVar (Ident "__builtin_expect" _ _) _ -> pure $ head args 
+			CVar funident _ -> expandFunctionM envs funident args
+			other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
+		CUnary op expr ni -> CUnary <$> pure op <*> expandcalls expr <*> ni
+		CBinary op expr1 expr2 ni -> CBinary <$> pure op <*> expandcalls expr1 <*> expandcalls expr2 <*> pure ni
+		CMember expr ident isptr ni -> CMember <$> expandcalls expr <*> pure ident <*> pure isptr <*> pure ni
+		CConst c -> CConst <$> pure c
+		expr -> error $ "expandcalls " ++ (render.pretty) expr ++ " not implemented"
 
-	expandcalls (CCall funexpr args _) = case funexpr of
-		CVar (Ident "__builtin_expect" _ _) _ -> return $ head args 
-		CVar funident _ -> expandFunctionM envs funident args
-		other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
+expandFunctionM :: [Env] -> Ident -> [CExpr] -> StateT [Trace] CovVecM CExpr
+expandFunctionM envs funident args = do
+	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lift $ lookupFunM funident
+	let body' = replace_param_with_arg (zip paramdecls args) body
+	traces <- lift $ unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
+	forM traces $ \case
+		Return ret_expr : resttrace -> return 
+		other_trace -> error $ unlines $ ("expandFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
+			map show (filter isnotbuiltin other_trace)
+{-	
+	ret_ty' <- lift $ elimTypeDefsM ret_ty
+	let oldfunident = internalIdent $ identToString funident ++ "_ret"
+	idtyenvitems_fun <- lift $ identTy2EnvItemM True oldfunident ret_ty'
+	envs' <- gets snd
+	traces <- lift $ unfoldTracesM envs' [] [ [ CBlockStmt body' ] ]
 
-	expandcalls expr = return expr
+	traces' <- forM traces $ \case
+		Return ret_expr : resttrace -> do
+			idtyenvitems_ret <- lift $ makeMemberExprsM ret_ty' ret_expr
+			newtrace <- forM ( zip idtyenvitems_fun idtyenvitems_ret) $ \ ((_,(newident,_)),(_,(ret_memberexpr,_))) -> do
+				let ret_memberexpr' = CVar (normalizeExpr ret_memberexpr) undefNode
+				return $ Condition (CBinary CEqOp (CVar newident undefNode) ret_memberexpr' undefNode)
+			return $ newtrace ++ resttrace
+		other_trace -> error $ unlines $ ("reverseFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
+			map show (filter isnotbuiltin other_trace)
 
+	modify $ \ (_,env:envrest) -> ( traces' , (idtyenvitems++env) : envrest )
+	return $ CVar oldfunident undefNode
+-}
+{-
+	case idtyenvitems of
+		[newenvitem@(_,(newfunident,_))] -> do
+			envs' <- gets snd
+			traces <- lift $ unfoldTracesM envs' [NewDeclaration (snd newenvitem)] [ [ CBlockStmt body' ] ]
+		
+			traces' <- forM traces $ \case
+				Return ret_expr : resttrace -> do
+					return $ Condition (CBinary CEqOp (CVar newfunident undefNode) ret_expr undefNode) : resttrace
+				other_trace -> error $ unlines $ ("reverseFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
+					map show (filter isnotbuiltin other_trace)
+		
+			modify $ \ (_,env:envrest) -> ( traces' , (newenvitem:env) : envrest )
+			return $ CVar oldfunident undefNode
+		_ -> error $ "reverseFunctionM " ++ (render.pretty) funident ++ ": idtyenvitems = \n" ++ envToString idtyenvitems
+-}
+	where
+
+	replace_param_with_arg :: [(ParamDecl,CExpr)] -> CStat -> CStat
+	replace_param_with_arg [] body = body
+	replace_param_with_arg ((paramdecl,arg):rest) body = replace_param_with_arg rest body' where
+		VarDecl (VarName srcident _) _ _ = getVarDecl paramdecl
+		body' = everywhere (mkT substparamarg) body
+		substparamarg :: CExpr -> CExpr
+		substparamarg (CVar ident _) | ident==srcident = arg
+		substparamarg expr = expr
 
 {-
 	transexpr :: [Env] -> CExpr -> StateT [TraceElem] CovVecM CExpr
@@ -485,61 +545,6 @@ translateIdents envs expr = do
 		return ty
 -}
 
-expandFunctionM :: [Env] -> Ident -> [CExpr] -> StateT [Trace] CovVecM CExpr
-expandFunctionM envs funident args = do
-	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lift $ lookupFunM funident
-	let body' = replace_param_with_arg (zip paramdecls args) body
-	traces <- lift $ unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
-	forM traces $ \case
-		Return ret_expr : resttrace -> return 
-		other_trace -> error $ unlines $ ("expandFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
-			map show (filter isnotbuiltin other_trace)
-{-	
-	ret_ty' <- lift $ elimTypeDefsM ret_ty
-	let oldfunident = internalIdent $ identToString funident ++ "_ret"
-	idtyenvitems_fun <- lift $ identTy2EnvItemM True oldfunident ret_ty'
-	envs' <- gets snd
-	traces <- lift $ unfoldTracesM envs' [] [ [ CBlockStmt body' ] ]
-
-	traces' <- forM traces $ \case
-		Return ret_expr : resttrace -> do
-			idtyenvitems_ret <- lift $ makeMemberExprsM ret_ty' ret_expr
-			newtrace <- forM ( zip idtyenvitems_fun idtyenvitems_ret) $ \ ((_,(newident,_)),(_,(ret_memberexpr,_))) -> do
-				let ret_memberexpr' = CVar (normalizeExpr ret_memberexpr) undefNode
-				return $ Condition (CBinary CEqOp (CVar newident undefNode) ret_memberexpr' undefNode)
-			return $ newtrace ++ resttrace
-		other_trace -> error $ unlines $ ("reverseFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
-			map show (filter isnotbuiltin other_trace)
-
-	modify $ \ (_,env:envrest) -> ( traces' , (idtyenvitems++env) : envrest )
-	return $ CVar oldfunident undefNode
--}
-{-
-	case idtyenvitems of
-		[newenvitem@(_,(newfunident,_))] -> do
-			envs' <- gets snd
-			traces <- lift $ unfoldTracesM envs' [NewDeclaration (snd newenvitem)] [ [ CBlockStmt body' ] ]
-		
-			traces' <- forM traces $ \case
-				Return ret_expr : resttrace -> do
-					return $ Condition (CBinary CEqOp (CVar newfunident undefNode) ret_expr undefNode) : resttrace
-				other_trace -> error $ unlines $ ("reverseFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
-					map show (filter isnotbuiltin other_trace)
-		
-			modify $ \ (_,env:envrest) -> ( traces' , (newenvitem:env) : envrest )
-			return $ CVar oldfunident undefNode
-		_ -> error $ "reverseFunctionM " ++ (render.pretty) funident ++ ": idtyenvitems = \n" ++ envToString idtyenvitems
--}
-	where
-
-	replace_param_with_arg :: [(ParamDecl,CExpr)] -> CStat -> CStat
-	replace_param_with_arg [] body = body
-	replace_param_with_arg ((paramdecl,arg):rest) body = replace_param_with_arg rest body' where
-		VarDecl (VarName srcident _) _ _ = getVarDecl paramdecl
-		body' = everywhere (mkT substparamarg) body
-		substparamarg :: CExpr -> CExpr
-		substparamarg (CVar ident _) | ident==srcident = arg
-		substparamarg expr = expr
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
 tyspec2TypeM typespec = case typespec of
