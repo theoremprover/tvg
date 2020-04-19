@@ -395,7 +395,7 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 
 translateIdents :: [Env] -> CExpr -> CovVecM (CExpr,[Trace],[Env])
 translateIdents envs expr = do
-	(expr',forked_traces) <- runStateT $ foldlM fold_expand 
+	(expr',forked_traces) <- runStateT expandcalls 
 	(expr',forked_traces) <- runStateT (everywhereM (mkM expandcalls) expr) [[]]
 
 --	(expr'',add_decls) <- runStateT (everywhereM (mkM (transexpr envs)) expr') []
