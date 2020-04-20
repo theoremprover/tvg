@@ -316,6 +316,8 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 		return $ (map ( \ add_trace -> Return ret_expr' : (add_trace ++ trace) ) add_traces)
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
+		transids envs assigned_expr' $ \ assigned_expr'' -> do
+			transids envs 
 		(assigned_expr'',add_traces,envs') <- transids envs assigned_expr'
 		(lexpr',[add_decltrace],envs'') <- transids envs' lexpr
 		concatForM add_traces $ \ add_trace ->
@@ -393,18 +395,26 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 -- replaces Ptr and member expressions with variables,
 -- and expands function calls.
 
-translateIdents :: [Env] -> CExpr -> CovVecM (CExpr,[Trace],[Env])
+-- [Env] in return type only provisionary in case of envs changes
+translateIdents :: [Env] -> CExpr -> CovVecM [(CExpr,[Trace],[Env])]
 translateIdents envs expr = do
-	(expr',forked_traces) <- runStateT (everywhereM (mkM searchcalls) expr) [[]] where
-		searchcalls :: CExpr -> 
-	
+	let calls :: [CExpr] = listify is_call expr where
+		is_call (CCall funexpr _ _) = case funexpr of
+			CVar _ _ -> True
+			_ -> error $ "is_call: found call " ++ (render.pretty) funexpr
+		is_call _ = False
 
-	(expr',forked_traces) <- runStateT expandcalls 
+	ccalls_ forM calls $ \ (CCall funexpr args _) -> do
+		return
+		
+	let expr' = everywhere (mkT transcall
+	return (expr,[],envs)
 
 --	(expr'',add_decls) <- runStateT (everywhereM (mkM (transexpr envs)) expr') []
 
 --	return (expr'',map (++add_decls) forked_traces,envs')
 
+{-
 	where
 
 	-- substitutes function calls with their return values and inserts the body in the trace
@@ -421,7 +431,9 @@ translateIdents envs expr = do
 		CMember expr ident isptr ni -> CMember <$> expandcalls expr <*> pure ident <*> pure isptr <*> pure ni
 		CConst c -> CConst <$> pure c
 		expr -> error $ "expandcalls " ++ (render.pretty) expr ++ " not implemented"
+-}
 
+{-	
 expandFunctionM :: [Env] -> Ident -> [CExpr] -> StateT [Trace] CovVecM CExpr
 expandFunctionM envs funident args = do
 	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lift $ lookupFunM funident
@@ -431,6 +443,7 @@ expandFunctionM envs funident args = do
 		Return ret_expr : resttrace -> return 
 		other_trace -> error $ unlines $ ("expandFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
 			map show (filter isnotbuiltin other_trace)
+-}
 {-	
 	ret_ty' <- lift $ elimTypeDefsM ret_ty
 	let oldfunident = internalIdent $ identToString funident ++ "_ret"
