@@ -301,8 +301,7 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 	CCompound _ cbis _ -> unfoldTracesM ([]:envs) trace (cbis : (rest : rest2))
 
 	CIf cond then_stmt mb_else_stmt _ -> do
-		(cond',add_traces,envs') <- transids envs cond
-		concatForM add_traces $ \ add_trace -> do
+		transids cond trace $ \ cond' add_trace -> do
 			then_traces <- unfoldTracesM envs' (Condition cond' : (add_trace ++ trace)) ( (CBlockStmt then_stmt : rest) : rest2 )
 			let not_cond = Condition (CUnary CNegOp cond' undefNode)
 			else_traces <- case mb_else_stmt of
@@ -312,16 +311,13 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 
 	CReturn Nothing _ -> return [ trace ]
 	CReturn (Just ret_expr) _ -> do
-		(ret_expr',add_traces,_) <- transids envs ret_expr
-		return $ (map ( \ add_trace -> Return ret_expr' : (add_trace ++ trace) ) add_traces)
+		transids ret_expr trace $ \ ret_expr' trace' -> do
+			return $ Return ret_expr' : trace'
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
-		transids envs assigned_expr' $ \ assigned_expr'' -> do
-			transids envs 
-		(assigned_expr'',add_traces,envs') <- transids envs assigned_expr'
-		(lexpr',[add_decltrace],envs'') <- transids envs' lexpr
-		concatForM add_traces $ \ add_trace ->
-			unfoldTracesM envs'' (Assignment lexpr' assigned_expr'' : (add_trace ++ add_decltrace ++ trace)) (rest:rest2)
+		transids assigned_expr' trace $ \ assigned_expr'' trace' -> do
+			transids lexpr trace' $ \ lexpr' trace'' -> do
+				unfoldTracesM envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -350,7 +346,11 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 
 	where
 	
-	transids = translateIdents
+	transids :: CExpr -> Trace -> (CExpr -> Trace -> CovVecM [Trace]) -> CovVecM [Trace]
+	transids expr trace cont = do
+		expr_traces <- translateIdents envs expr
+		concatForM expr_traces $ \ (expr',traces') -> do
+			cont expr' traces'
 
 unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
@@ -395,8 +395,7 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 -- replaces Ptr and member expressions with variables,
 -- and expands function calls.
 
--- [Env] in return type only provisionary in case of envs changes
-translateIdents :: [Env] -> CExpr -> CovVecM [(CExpr,[Trace],[Env])]
+translateIdents :: [Env] -> CExpr -> CovVecM [(CExpr,[Trace])]
 translateIdents envs expr = do
 	let calls :: [CExpr] = listify is_call expr where
 		is_call (CCall funexpr _ _) = case funexpr of
@@ -404,11 +403,11 @@ translateIdents envs expr = do
 			_ -> error $ "is_call: found call " ++ (render.pretty) funexpr
 		is_call _ = False
 
-	ccalls_ forM calls $ \ (CCall funexpr args _) -> do
-		return
+	ccalls_ forM calls $ \ ccall@(CCall (CVar funident _) args _) -> do
+		retexpr_trace_s <- expandFunctionM envs funident args
 		
 	let expr' = everywhere (mkT transcall
-	return (expr,[],envs)
+	return (expr,[])
 
 --	(expr'',add_decls) <- runStateT (everywhereM (mkM (transexpr envs)) expr') []
 
