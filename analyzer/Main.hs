@@ -301,22 +301,22 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 	CCompound _ cbis _ -> unfoldTracesM ([]:envs) trace (cbis : (rest : rest2))
 
 	CIf cond then_stmt mb_else_stmt _ -> do
-		transids cond trace $ \ cond' add_trace -> do
-			then_traces <- unfoldTracesM envs' (Condition cond' : (add_trace ++ trace)) ( (CBlockStmt then_stmt : rest) : rest2 )
+		transids cond trace $ \ (cond',add_trace) -> do
+			then_traces <- unfoldTracesM envs (Condition cond' : (add_trace ++ trace)) ( (CBlockStmt then_stmt : rest) : rest2 )
 			let not_cond = Condition (CUnary CNegOp cond' undefNode)
 			else_traces <- case mb_else_stmt of
-				Nothing        -> unfoldTracesM envs' (not_cond : (add_trace ++ trace)) ( rest : rest2 )
-				Just else_stmt -> unfoldTracesM envs' (not_cond : (add_trace ++ trace)) ( (CBlockStmt else_stmt : rest) : rest2 )
+				Nothing        -> unfoldTracesM envs (not_cond : (add_trace ++ trace)) ( rest : rest2 )
+				Just else_stmt -> unfoldTracesM envs (not_cond : (add_trace ++ trace)) ( (CBlockStmt else_stmt : rest) : rest2 )
 			return $ then_traces ++ else_traces
 
 	CReturn Nothing _ -> return [ trace ]
 	CReturn (Just ret_expr) _ -> do
-		transids ret_expr trace $ \ ret_expr' trace' -> do
-			return $ Return ret_expr' : trace'
+		transids ret_expr trace $ \ (ret_expr',trace') -> do
+			return [ Return ret_expr' : trace' ]
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
-		transids assigned_expr' trace $ \ assigned_expr'' trace' -> do
-			transids lexpr trace' $ \ lexpr' trace'' -> do
+		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
+			transids lexpr trace' $ \ (lexpr',trace'') -> do
 				unfoldTracesM envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
@@ -346,11 +346,11 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 
 	where
 	
-	transids :: CExpr -> Trace -> (CExpr -> Trace -> CovVecM [Trace]) -> CovVecM [Trace]
+	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM [Trace]) -> CovVecM [Trace]
 	transids expr trace cont = do
 		expr_traces <- translateIdents envs expr
 		concatForM expr_traces $ \ (expr',traces') -> do
-			cont expr' traces'
+			cont (expr',traces')
 
 unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
@@ -395,7 +395,7 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 -- replaces Ptr and member expressions with variables,
 -- and expands function calls.
 
-translateIdents :: [Env] -> CExpr -> CovVecM [(CExpr,[Trace])]
+translateIdents :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
 translateIdents envs expr = do
 	let calls :: [CExpr] = listify is_call expr where
 		is_call (CCall funexpr _ _) = case funexpr of
@@ -403,11 +403,12 @@ translateIdents envs expr = do
 			_ -> error $ "is_call: found call " ++ (render.pretty) funexpr
 		is_call _ = False
 
-	ccalls_ forM calls $ \ ccall@(CCall (CVar funident _) args _) -> do
-		retexpr_trace_s <- expandFunctionM envs funident args
-		
-	let expr' = everywhere (mkT transcall
-	return (expr,[])
+	forM calls $ \ ccall@(CCall (CVar funident _) args _) -> do
+		expanded_traces <- expandFunctionM envs funident args
+		forM expanded_traces $ \case
+			Return ret_expr : rest_trace -> return (ccall,rest_trace,ret_expr)
+			_ -> error $ "call_trace has no return: " ++ (render.pretty) ccall
+
 
 --	(expr'',add_decls) <- runStateT (everywhereM (mkM (transexpr envs)) expr') []
 
@@ -432,9 +433,10 @@ translateIdents envs expr = do
 		expr -> error $ "expandcalls " ++ (render.pretty) expr ++ " not implemented"
 -}
 
-{-	
-expandFunctionM :: [Env] -> Ident -> [CExpr] -> StateT [Trace] CovVecM CExpr
+expandFunctionM :: [Env] -> Ident -> [CExpr] -> CovVecM [Trace]
 expandFunctionM envs funident args = do
+	error ""
+{-	
 	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lift $ lookupFunM funident
 	let body' = replace_param_with_arg (zip paramdecls args) body
 	traces <- lift $ unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
