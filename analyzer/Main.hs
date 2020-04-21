@@ -435,11 +435,10 @@ translateIdents envs expr = do
 
 expandFunctionM :: [Env] -> Ident -> [CExpr] -> CovVecM [Trace]
 expandFunctionM envs funident args = do
-	error ""
-{-	
-	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lift $ lookupFunM funident
+	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
 	let body' = replace_param_with_arg (zip paramdecls args) body
-	traces <- lift $ unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
+	unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
+{-
 	forM traces $ \case
 		Return ret_expr : resttrace -> return 
 		other_trace -> error $ unlines $ ("expandFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
