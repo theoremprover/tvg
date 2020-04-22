@@ -48,7 +48,7 @@ stack build :analyzer-exe && stack exec analyzer-exe
 fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
-solveIt = True
+solveIt = False
 showOnlySolutions = True
 don'tShowTraces = False
 
@@ -72,7 +72,8 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\ptrrettest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\ptrrettest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
 	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
@@ -403,18 +404,24 @@ translateIdents envs expr = do
 			_ -> error $ "is_call: found call " ++ (render.pretty) funexpr
 		is_call _ = False
 
-	calls_traces <- forM calls $ \ ccall@(CCall (CVar funident _) args _) -> do
+	calls_traces :: [[(CExpr,Trace,CExpr)]] <- forM calls $ \ ccall@(CCall (CVar funident _) args _) -> do
 		expanded_traces <- expandFunctionM envs funident args
-		calls_traces <- forM expanded_traces $ \case
-			Return ret_expr : rest_trace -> return (rest_trace,ret_expr)
+		forM expanded_traces $ \case
+			Return ret_expr : rest_trace -> return (ccall,rest_trace,ret_expr)
 			_ -> error $ "call_trace has no return: " ++ (render.pretty) ccall
-		return (ccall,calls_traces)
 		
-	let combinations = comb calls_traces where
-		comb :: [(CExpr,[(Trace,CExpr)])] -> [(CExpr,(Trace,CExpr))]
-		comb [] = []
-		comb ((call,l):ls) = map (: comb ls) (map (call,) l)
+	liftIO $ print $ length $ calls_traces
 	
+	let combinationss = comb calls_traces where
+		comb :: [[(CExpr,Trace,CExpr)]] -> [[(CExpr,Trace,CExpr)]]
+		comb (l:[]) = [l]
+		comb (l:ls) = concatMap (\ e -> map (e:) (comb ls)) l
+	
+	liftIO $ forM_ combinationss $ \ combinations -> do
+		forM_ combinations $ \ (ccall,trace,retexpr) -> do
+			putStr $ "(" ++ (render.pretty) ccall ++ ",[TRACE]," ++ (render.pretty) retexpr ++ "),  "
+		liftIO $ putStrLn ""
+
 	return []
 	
 --	(expr'',add_decls) <- runStateT (everywhereM (mkM (transexpr envs)) expr') []
@@ -442,7 +449,11 @@ translateIdents envs expr = do
 
 expandFunctionM :: [Env] -> Ident -> [CExpr] -> CovVecM [Trace]
 expandFunctionM envs funident args = do
-	FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
+	(paramdecls,body) <- case funident of
+		Ident "__builtin_expect" _ _ -> return ([],CReturn (Just $ head args) undefNode)
+		_ -> do
+			FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
+			return (paramdecls,body)
 	let body' = replace_param_with_arg (zip paramdecls args) body
 	unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
 {-
