@@ -403,13 +403,20 @@ translateIdents envs expr = do
 			_ -> error $ "is_call: found call " ++ (render.pretty) funexpr
 		is_call _ = False
 
-	forM calls $ \ ccall@(CCall (CVar funident _) args _) -> do
+	calls_traces <- forM calls $ \ ccall@(CCall (CVar funident _) args _) -> do
 		expanded_traces <- expandFunctionM envs funident args
-		forM expanded_traces $ \case
-			Return ret_expr : rest_trace -> return (ccall,rest_trace,ret_expr)
+		calls_traces <- forM expanded_traces $ \case
+			Return ret_expr : rest_trace -> return (rest_trace,ret_expr)
 			_ -> error $ "call_trace has no return: " ++ (render.pretty) ccall
-
-
+		return (ccall,calls_traces)
+		
+	let combinations = comb calls_traces where
+		comb :: [(CExpr,[(Trace,CExpr)])] -> [(CExpr,(Trace,CExpr))]
+		comb [] = []
+		comb ((call,l):ls) = map (: comb ls) (map (call,) l)
+	
+	return []
+	
 --	(expr'',add_decls) <- runStateT (everywhereM (mkM (transexpr envs)) expr') []
 
 --	return (expr'',map (++add_decls) forked_traces,envs')
