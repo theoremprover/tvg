@@ -404,13 +404,16 @@ translateIdents envs expr = do
 			_ -> error $ "is_call: found call " ++ (render.pretty) funexpr
 		is_call _ = False
 
+	liftIO $ putStrLn $ "|calls|=" ++ show (length calls)
+	
 	calls_traces :: [[(CExpr,Trace,CExpr)]] <- forM calls $ \ ccall@(CCall (CVar funident _) args _) -> do
 		expanded_traces <- expandFunctionM envs funident args
+		liftIO $ putStrLn $ "|expanded_traces| for " ++ (render.pretty) funident ++ " = " ++ show (length expanded_traces)
 		forM expanded_traces $ \case
 			Return ret_expr : rest_trace -> return (ccall,rest_trace,ret_expr)
 			_ -> error $ "call_trace has no return: " ++ (render.pretty) ccall
 		
-	liftIO $ print $ length $ calls_traces
+	liftIO $ putStrLn $ "|calls_traces|=" ++ show (length calls_traces)
 	
 	let combinationss = comb calls_traces where
 		comb :: [[(CExpr,Trace,CExpr)]] -> [[(CExpr,Trace,CExpr)]]
