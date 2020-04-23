@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
-{-# LANGUAGE UnicodeSyntax,LambdaCase,ScopedTypeVariables,TupleSections,TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,DeriveDataTypeable #-}
+{-# LANGUAGE UnicodeSyntax,LambdaCase,ScopedTypeVariables,TupleSections,TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,DeriveDataTypeable,DeriveGeneric #-}
 
 module Main where
 
@@ -24,6 +24,7 @@ import qualified Interfaces.MZBuiltIns as MZB
 
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
+import qualified GHC.Generics as GHCG
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
 import Data.Time.LocalTime
@@ -48,9 +49,11 @@ stack build :analyzer-exe && stack exec analyzer-exe
 fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
+{-
 solveIt = False
 showOnlySolutions = True
 don'tShowTraces = False
+-}
 
 _UNROLLING_DEPTH = 3
 
@@ -73,7 +76,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrrettest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : ["-writeTraceTree"] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
 	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
@@ -89,6 +92,7 @@ main = do
 					when (not $ null soft_errors) $ putStrLn "Soft errors:" >> forM_ soft_errors print
 					when ("-writeGlobalDecls" ∈ opts) $
 						writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
+
 					covvectors <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
 					forM_ covvectors $ \ (is,origtrace,trace,model,mb_solution) -> case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
 						False -> return ()
@@ -103,7 +107,9 @@ main = do
 							"" ]) ++ [
 							"--- SOLUTION " ++ is ++ " ----------------------",
 							show_solution mb_solution ]
+
 					where
+
 					mbshowtraces ts = if don'tShowTraces then [] else ts
 					show_solution Nothing = "No solution"
 					show_solution (Just (env,solution,mb_retval)) = unlines [ show solution,
@@ -123,6 +129,7 @@ isnotbuiltinIdent ident = not $ "__" `isPrefixOf` (identToString ident)
 isnotbuiltin (NewDeclaration (ident,_)) = isnotbuiltinIdent ident
 isnotbuiltin _ = True
 
+{-
 data CovVecState = CovVecState {
 	globDeclsCVS    :: GlobalDecls,
 	newNameIndexCVS :: Int,
@@ -291,6 +298,13 @@ covVectorsM funname = do
 		mapM elimAssignmentsM >>=
 		mapM (solveTraceM param_env)
 
+data TraceTree = TracesAnd [TraceTree] | TracesOr [TraceTree] | TracesElem TraceElem TraceTree
+deriving instance GHCG.Generic TraceTree
+
+forkTracesM :: ([TraceTree] -> TraceTree) -> [Trace] -> (Trace -> CovVecM TraceTree) -> CovVecM TraceTree
+forkTracesM constr traces contM = do
+	traces' <- forM traces contM
+	return $ constr traces'
 
 -- Just unfold the traces
 
@@ -785,3 +799,4 @@ solveTraceM param_env (is,orig_trace,trace) = do
 		Right (sol:_) -> return $ Just (param_env,sol,mb_ret_val)
 
 	return (tracename,orig_trace,trace,model,mb_solution)
+-}
