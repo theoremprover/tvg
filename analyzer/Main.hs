@@ -37,8 +37,12 @@ import Data.Either
 import DataTree
 import GlobDecls
 
+for :: [a] -> (a -> b) -> [b]
 for = flip map
+{-
+concatForM :: 
 concatForM = flip concatMapM
+-}
 
 {--
 stack build :analyzer-exe
@@ -94,6 +98,9 @@ main = do
 						writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 
 					covvectors <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
+
+					return ()
+{-
 					forM_ covvectors $ \ (is,origtrace,trace,model,mb_solution) -> case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
 						False -> return ()
 						True -> printLog $ unlines $ mbshowtraces (
@@ -107,7 +114,6 @@ main = do
 							"" ]) ++ [
 							"--- SOLUTION " ++ is ++ " ----------------------",
 							show_solution mb_solution ]
-
 					where
 
 					mbshowtraces ts = if don'tShowTraces then [] else ts
@@ -123,19 +129,39 @@ main = do
 								Just (MInt i) -> show i
 								Just (MFloat f) -> show f
 								val -> error $ "showarg " ++ show val ++ " not yet implemented"
+-}
 
-isnotbuiltinIdent ident = not $ "__" `isPrefixOf` (identToString ident)
-
-isnotbuiltin (NewDeclaration (ident,_)) = isnotbuiltinIdent ident
-isnotbuiltin _ = True
-
-{-
 data CovVecState = CovVecState {
 	globDeclsCVS    :: GlobalDecls,
 	newNameIndexCVS :: Int,
 	translUnitCVS   :: CTranslUnit
 	}
 type CovVecM = StateT CovVecState IO
+
+covVectorsM :: String -> CovVecM [TraceAnalysisResult]
+covVectorsM funname = do
+	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
+	(param_env,traces) <- functionTracesM paramdecls body
+	return (zip (map (:[]) [1..]) traces) >>=
+		mapM elimAssignmentsM >>=
+		mapM (solveTraceM param_env)
+
+type TraceAnalysisResult = (String,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
+
+lookupFunM :: Ident -> CovVecM FunDef
+lookupFunM ident = do
+	funs <- gets (gObjs.globDeclsCVS)
+	case Map.lookup ident funs of
+		Just (FunctionDef fundef) -> return fundef
+		Just other -> error $ "lookupFunM " ++ (render.pretty) ident ++ " yielded " ++ (render.pretty) other
+		Nothing -> error $ "Function " ++ (show ident) ++ " not found"
+
+
+{-
+isnotbuiltinIdent ident = not $ "__" `isPrefixOf` (identToString ident)
+
+isnotbuiltin (NewDeclaration (ident,_)) = isnotbuiltinIdent ident
+isnotbuiltin _ = True
 
 instance Eq CExpr where
 	(CVar id1 _) == (CVar id2 _) = id1==id2
@@ -195,18 +221,6 @@ type Env = [EnvItem]
 
 envToString :: Env -> String
 envToString env = unlines $ map (render.pretty) $ filter (isnotbuiltinIdent.fst) env
-
-type TraceAnalysisResult = (String,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
-
-
-
-lookupFunM :: Ident -> CovVecM FunDef
-lookupFunM ident = do
-	funs <- gets (gObjs.globDeclsCVS)
-	case Map.lookup ident funs of
-		Just (FunctionDef fundef) -> return fundef
-		Just other -> error $ "lookupFunM " ++ (render.pretty) ident ++ " yielded " ++ (render.pretty) other
-		Nothing -> error $ "Function " ++ (show ident) ++ " not found"
 
 lookupTypeDefM :: Ident -> CovVecM Type
 lookupTypeDefM ident = do
@@ -289,14 +303,6 @@ functionTracesM paramdecls body = do
 
 	traces <- unfoldTracesM [ param_env ++ glob_env ] newdecls [ enumdefs ++ [CBlockStmt body] ]
 	return (param_env,traces)
-
-covVectorsM :: String -> CovVecM [TraceAnalysisResult]
-covVectorsM funname = do
-	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
-	(param_env,traces) <- functionTracesM paramdecls body
-	return (zip (map (:[]) [1..]) traces) >>=
-		mapM elimAssignmentsM >>=
-		mapM (solveTraceM param_env)
 
 data TraceTree = TracesAnd [TraceTree] | TracesOr [TraceTree] | TracesElem TraceElem TraceTree
 deriving instance GHCG.Generic TraceTree
