@@ -138,6 +138,25 @@ data CovVecState = CovVecState {
 	}
 type CovVecM = StateT CovVecState IO
 
+data TraceElem =
+	Assignment CExpr CExpr |
+	Condition CExpr |
+	NewDeclaration (Ident,Type) |
+	Return CExpr
+deriving instance Data TraceElem
+instance Show TraceElem where
+	show (Assignment lvalue expr)   = "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
+	show (Condition expr)           = "COND " ++ (render.pretty) expr
+	show (NewDeclaration (lval,ty)) = "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
+	show (Return expr)              = "RET  " ++ (render.pretty) expr
+
+data TraceTree = TracesOr [TraceTree] | TracesElem TraceElem TraceTree
+--deriving instance GHCG.Generic TraceTree
+deriving instance Data TraceTree
+
+forkTracesM :: [TraceTree] -> (TraceTree -> CovVecM TraceTree) -> CovVecM TraceTree
+forkTracesM = forM >>= return . TracesOr
+
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
 	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
@@ -155,6 +174,7 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		Just other -> error $ "lookupFunM " ++ (render.pretty) ident ++ " yielded " ++ (render.pretty) other
 		Nothing -> error $ "Function " ++ (show ident) ++ " not found"
+
 
 
 {-
@@ -201,18 +221,6 @@ lValueToVarName (CMember ptrexpr member isptr _) =
 	normalizeExpr ptrexpr ++ (if isptr then "_ARROW_" else "_DOT_") ++ identToString member
 lValueToVarName (CUnary CIndOp expr _) = "PTR_" ++ normalizeExpr expr
 
-data TraceElem =
-	Assignment CExpr CExpr |
-	Condition CExpr |
-	NewDeclaration (Ident,Type) |
-	Return CExpr
-deriving instance Data TraceElem
-instance Show TraceElem where
-	show (Assignment lvalue expr)   = "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
-	show (Condition expr)           = "COND " ++ (render.pretty) expr
-	show (NewDeclaration (lval,ty)) = "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
-	show (Return expr)              = "RET  " ++ (render.pretty) expr
-type Trace = [TraceElem]
 
 type EnvItem = (Ident,(Ident,Type))
 instance Pretty EnvItem where
@@ -303,14 +311,6 @@ functionTracesM paramdecls body = do
 
 	traces <- unfoldTracesM [ param_env ++ glob_env ] newdecls [ enumdefs ++ [CBlockStmt body] ]
 	return (param_env,traces)
-
-data TraceTree = TracesAnd [TraceTree] | TracesOr [TraceTree] | TracesElem TraceElem TraceTree
-deriving instance GHCG.Generic TraceTree
-
-forkTracesM :: ([TraceTree] -> TraceTree) -> [Trace] -> (Trace -> CovVecM TraceTree) -> CovVecM TraceTree
-forkTracesM constr traces contM = do
-	traces' <- forM traces contM
-	return $ constr traces'
 
 -- Just unfold the traces
 
