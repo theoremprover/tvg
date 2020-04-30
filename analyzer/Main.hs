@@ -154,8 +154,8 @@ data TraceTree = TracesOr [TraceTree] | TracesElem TraceElem TraceTree
 --deriving instance GHCG.Generic TraceTree
 deriving instance Data TraceTree
 
-forkTracesM :: [TraceTree] -> (TraceTree -> CovVecM TraceTree) -> CovVecM TraceTree
-forkTracesM = forM >>= return . TracesOr
+forkTracesOrM :: [TraceTree] -> (TraceTree -> CovVecM TraceTree) -> CovVecM TraceTree
+forkTracesOrM = forM >>= return . TracesOr
 
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
