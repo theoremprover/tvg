@@ -39,10 +39,8 @@ import GlobDecls
 
 for :: [a] -> (a -> b) -> [b]
 for = flip map
-{-
-concatForM :: 
+
 concatForM = flip concatMapM
--}
 
 {--
 stack build :analyzer-exe
@@ -75,12 +73,12 @@ main = do
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : ["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrrettest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : ["-writeTraceTree"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : ["-writeTraceTree"] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
 	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
@@ -97,9 +95,12 @@ main = do
 					when ("-writeGlobalDecls" ∈ opts) $
 						writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 
-					covvectors <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
+					traceanalysisresults <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
 
-					return ()
+					forM_ traceanalysisresults $ \ (i,trace) -> do
+						printLog $ unlines $
+							[ "","--- TRACE " ++ show i ++ " -------------------------","<leaving out builtins...>" ] ++
+							map show (filter isnotbuiltin trace)
 {-
 					forM_ covvectors $ \ (is,origtrace,trace,model,mb_solution) -> case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
 						False -> return ()
@@ -150,22 +151,33 @@ instance Show TraceElem where
 	show (NewDeclaration (lval,ty)) = "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
 	show (Return expr)              = "RET  " ++ (render.pretty) expr
 
-data TraceTree = TracesOr [TraceTree] | TracesElem TraceElem TraceTree
---deriving instance GHCG.Generic TraceTree
-deriving instance Data TraceTree
+type Trace = [TraceElem]
 
-forkTracesOrM :: [TraceTree] -> (TraceTree -> CovVecM TraceTree) -> CovVecM TraceTree
-forkTracesOrM = forM >>= return . TracesOr
+-- it is a conjunctive normal form
+type TraceCNF = [[Trace]]
+
+{-
+forkTracesAndM :: Trace -> (TraceCNF -> CovVecM TraceCNF) -> CovVecM TraceCNF
+forkTracesAndM cur_trace = concatForM
+-}
 
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
-	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
-	(param_env,traces) <- functionTracesM paramdecls body
-	return (zip (map (:[]) [1..]) traces) >>=
-		mapM elimAssignmentsM >>=
-		mapM (solveTraceM param_env)
+	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
+	glob_env <- concatMapM (declaration2EnvItemM False) globdecls
+	let
+		-- creates the assignment statements defining all enumeration elements
+		enumdefs = concatMap enum2stmt globdecls
+		enum2stmt :: IdentDecl -> [CBlockItem]
+		enum2stmt (EnumeratorDef (Enumerator ident expr _ _)) =
+			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
+		enum2stmt _ = []
 
-type TraceAnalysisResult = (String,Trace,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
+	traces <- functionTracesM [glob_env] [] enumdefs funname
+	return $ zip [1..] traces
+
+--type TraceAnalysisResult = ([Trace],[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
+type TraceAnalysisResult = (Int,Trace)
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
@@ -175,9 +187,13 @@ lookupFunM ident = do
 		Just other -> error $ "lookupFunM " ++ (render.pretty) ident ++ " yielded " ++ (render.pretty) other
 		Nothing -> error $ "Function " ++ (show ident) ++ " not found"
 
+functionTracesM :: [Env] -> Trace -> [CBlockItem] -> String -> CovVecM [Trace]
+functionTracesM envs trace enumdef_stmts funname = do
+	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
+	param_env <- concatMapM (declaration2EnvItemM True) paramdecls
+	let newdecls = map (NewDeclaration . snd) $ param_env
+	unfoldTracesM (param_env:envs) (newdecls++trace) [ enumdef_stmts ++ [ CBlockStmt body ] ]
 
-
-{-
 isnotbuiltinIdent ident = not $ "__" `isPrefixOf` (identToString ident)
 
 isnotbuiltin (NewDeclaration (ident,_)) = isnotbuiltinIdent ident
@@ -189,7 +205,6 @@ instance Eq CExpr where
 		ident1==ident2 && isptr1==isptr2 && ptrexpr1 == ptrexpr2
 	(CUnary CIndOp expr1 _) ==  (CUnary CIndOp expr2 _) = expr1==expr2
 	_ == _ = False
-
 
 -- Normalizes an expression and creates a variable name for the result
 
@@ -236,6 +251,13 @@ lookupTypeDefM ident = do
 	case Map.lookup ident typedefs of
 		Just (TypeDef _ ty _ _) -> return ty
 		Nothing -> error $ "TypeDef " ++ (show ident) ++ " not found"
+
+lookupTagM :: SUERef -> CovVecM TagDef
+lookupTagM ident = do
+	tags <- gets (gTags.globDeclsCVS)
+	case Map.lookup ident tags of
+		Just tagdef -> return tagdef
+		Nothing -> error $ "Tag " ++ (show ident) ++ " not found"
 
 getMembersM :: SUERef -> CovVecM [(Ident,Type)]
 getMembersM sueref = do
@@ -294,23 +316,6 @@ identTy2EnvItemM makenewidents srcident ty = do
 		False -> return srcident
 	other_envitems <- makeMemberExprsM ty' (CVar newident undefNode)
 	return $ (srcident,(newident,ty')) : other_envitems
-
-functionTracesM :: [ParamDecl] -> Stmt -> CovVecM (Env,[Trace])
-functionTracesM paramdecls body = do
-	param_env <- concatMapM (declaration2EnvItemM True) paramdecls
-	let newdecls = map (NewDeclaration . snd) $ param_env
-	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
-	glob_env <- concatMapM (declaration2EnvItemM False) globdecls
-
-	let
-		enumdefs = concatMap enum2stmt globdecls
-		enum2stmt :: IdentDecl -> [CBlockItem]
-		enum2stmt (EnumeratorDef (Enumerator ident expr _ _)) =
-			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
-		enum2stmt _ = []
-
-	traces <- unfoldTracesM [ param_env ++ glob_env ] newdecls [ enumdefs ++ [CBlockStmt body] ]
-	return (param_env,traces)
 
 -- Just unfold the traces
 
@@ -418,6 +423,7 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 
 translateIdents :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
 translateIdents envs expr = do
+{-
 	let calls :: [CExpr] = listify is_call expr where
 		is_call (CCall funexpr _ _) = case funexpr of
 			CVar _ _ -> True
@@ -450,7 +456,7 @@ translateIdents envs expr = do
 --	(expr'',add_decls) <- runStateT (everywhereM (mkM (transexpr envs)) expr') []
 
 --	return (expr'',map (++add_decls) forked_traces,envs')
-
+-}
 {-
 	where
 
@@ -470,6 +476,7 @@ translateIdents envs expr = do
 		expr -> error $ "expandcalls " ++ (render.pretty) expr ++ " not implemented"
 -}
 
+{-
 expandFunctionM :: [Env] -> Ident -> [CExpr] -> CovVecM [Trace]
 expandFunctionM envs funident args = do
 	(paramdecls,body) <- case funident of
@@ -479,7 +486,7 @@ expandFunctionM envs funident args = do
 			return (paramdecls,body)
 	let body' = replace_param_with_arg (zip paramdecls args) body
 	unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
-{-
+
 	forM traces $ \case
 		Return ret_expr : resttrace -> return 
 		other_trace -> error $ unlines $ ("expandFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
@@ -602,7 +609,6 @@ expandFunctionM envs funident args = do
 		return ty
 -}
 
-
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
 tyspec2TypeM typespec = case typespec of
 	CVoidType _  -> return $ DirectType TyVoid noTypeQuals noAttributes
@@ -614,6 +620,7 @@ tyspec2TypeM typespec = case typespec of
 	_ -> error $ "tyspec2TypeM: " ++ (render.pretty) typespec ++ " not implemented yet."
 
 
+{-
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
 
 elimAssignmentsM :: ([Int],Trace) -> CovVecM ([Int],Trace,Trace)
@@ -630,13 +637,6 @@ elimAssignmentsM (is,trace) = foldtraceM [] trace >>= return . (is,trace,) where
 			substlvalue found_expr | lvalue == found_expr = expr
 			substlvalue found_expr                        = found_expr
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
-
-lookupTagM :: SUERef -> CovVecM TagDef
-lookupTagM ident = do
-	tags <- gets (gTags.globDeclsCVS)
-	case Map.lookup ident tags of
-		Just tagdef -> return tagdef
-		Nothing -> error $ "Tag " ++ (show ident) ++ " not found"
 
 -- MiniZinc Model Generation
 
