@@ -191,8 +191,8 @@ functionTracesM :: [Env] -> Trace -> [CBlockItem] -> String -> CovVecM [Trace]
 functionTracesM envs trace enumdef_stmts funname = do
 	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
 	param_env <- concatMapM (declaration2EnvItemM True) paramdecls
-	let newdecls = map (NewDeclaration . snd) $ param_env
-	unfoldTracesM (param_env:envs) (newdecls++trace) [ enumdef_stmts ++ [ CBlockStmt body ] ]
+--	let newdecls = map (NewDeclaration . snd) $ param_env
+	unfoldTracesM (param_env:envs) trace [ enumdef_stmts ++ [ CBlockStmt body ] ]
 
 isnotbuiltinIdent ident = not $ "__" `isPrefixOf` (identToString ident)
 
@@ -327,12 +327,12 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 	CCompound _ cbis _ -> unfoldTracesM ([]:envs) trace (cbis : (rest : rest2))
 
 	CIf cond then_stmt mb_else_stmt _ -> do
-		transids cond trace $ \ (cond',add_trace) -> do
-			then_traces <- unfoldTracesM envs (Condition cond' : (add_trace ++ trace)) ( (CBlockStmt then_stmt : rest) : rest2 )
+		transids cond trace $ \ (cond',trace') -> do
+			then_traces <- unfoldTracesM envs (Condition cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
 			let not_cond = Condition (CUnary CNegOp cond' undefNode)
 			else_traces <- case mb_else_stmt of
-				Nothing        -> unfoldTracesM envs (not_cond : (add_trace ++ trace)) ( rest : rest2 )
-				Just else_stmt -> unfoldTracesM envs (not_cond : (add_trace ++ trace)) ( (CBlockStmt else_stmt : rest) : rest2 )
+				Nothing        -> unfoldTracesM envs (not_cond : trace') ( rest : rest2 )
+				Just else_stmt -> unfoldTracesM envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 			return $ then_traces ++ else_traces
 
 	CReturn Nothing _ -> return [ trace ]
@@ -374,9 +374,9 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 	
 	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM [Trace]) -> CovVecM [Trace]
 	transids expr trace cont = do
-		expr_traces <- translateIdents envs expr
-		concatForM expr_traces $ \ (expr',traces') -> do
-			cont (expr',traces')
+		additional_expr_traces <- translateIdents envs expr
+		concatForM additional_expr_traces $ \ (expr',traces') -> do
+			cont (expr',traces'++trace)
 
 unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
@@ -423,6 +423,28 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 
 translateIdents :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
 translateIdents envs expr = do
+	let expr' = everywhere (mkT transexpr) expr
+	return [(expr',[])]
+
+	where
+
+	transexpr :: CExpr -> CExpr
+	transexpr (CVar ident _) = case lookup ident (concat envs) of
+		Just (ident',_) -> CVar ident' undefNode
+		Nothing -> error $ "translateIdents " ++ (render.pretty) expr ++ " in transexpr : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
+	transexpr expr = expr
+
+	replace_param_with_arg :: [(ParamDecl,CExpr)] -> CStat -> CStat
+	replace_param_with_arg [] body = body
+	replace_param_with_arg ((paramdecl,arg):rest) body = replace_param_with_arg rest body' where
+		VarDecl (VarName srcident _) _ _ = getVarDecl paramdecl
+		body' = everywhere (mkT substparamarg) body
+		substparamarg :: CExpr -> CExpr
+		substparamarg (CVar ident _) | ident==srcident = arg
+		substparamarg expr = expr
+
+
+--	return (expr'',map (++add_decls) forked_traces,envs')
 {-
 	let calls :: [CExpr] = listify is_call expr where
 		is_call (CCall funexpr _ _) = case funexpr of
@@ -453,9 +475,6 @@ translateIdents envs expr = do
 
 	return []
 	
---	(expr'',add_decls) <- runStateT (everywhereM (mkM (transexpr envs)) expr') []
-
---	return (expr'',map (++add_decls) forked_traces,envs')
 -}
 {-
 	where
@@ -528,17 +547,6 @@ expandFunctionM envs funident args = do
 			return $ CVar oldfunident undefNode
 		_ -> error $ "reverseFunctionM " ++ (render.pretty) funident ++ ": idtyenvitems = \n" ++ envToString idtyenvitems
 -}
-	where
-
-	replace_param_with_arg :: [(ParamDecl,CExpr)] -> CStat -> CStat
-	replace_param_with_arg [] body = body
-	replace_param_with_arg ((paramdecl,arg):rest) body = replace_param_with_arg rest body' where
-		VarDecl (VarName srcident _) _ _ = getVarDecl paramdecl
-		body' = everywhere (mkT substparamarg) body
-		substparamarg :: CExpr -> CExpr
-		substparamarg (CVar ident _) | ident==srcident = arg
-		substparamarg expr = expr
-
 {-
 	transexpr :: [Env] -> CExpr -> StateT [TraceElem] CovVecM CExpr
 	-- translates variable names to fresh names from the env
