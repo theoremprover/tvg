@@ -191,7 +191,6 @@ functionTracesM :: [Env] -> Trace -> [CBlockItem] -> String -> CovVecM [Trace]
 functionTracesM envs trace enumdef_stmts funname = do
 	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
 	param_env <- concatMapM (declaration2EnvItemM True) paramdecls
---	let newdecls = map (NewDeclaration . snd) $ param_env
 	unfoldTracesM (param_env:envs) trace [ enumdef_stmts ++ [ CBlockStmt body ] ]
 
 isnotbuiltinIdent ident = not $ "__" `isPrefixOf` (identToString ident)
@@ -374,7 +373,7 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 	
 	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM [Trace]) -> CovVecM [Trace]
 	transids expr trace cont = do
-		additional_expr_traces <- translateIdents envs expr
+		additional_expr_traces <- translateExprM envs expr
 		concatForM additional_expr_traces $ \ (expr',traces') -> do
 			cont (expr',traces'++trace)
 
@@ -418,14 +417,15 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 
 
 -- Translates all identifiers in an expression to fresh ones,
--- replaces Ptr and member expressions with variables,
 -- and expands function calls.
 
-translateIdents :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
-translateIdents envs expr = do
+translateExprM :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
+translateExprM envs expr = do
+	
 	let expr' = everywhere (mkT transexpr) expr
 	return [(expr',[])]
 
+-- functionTracesM envs trace enumdef_stmts funname
 	where
 
 	transexpr :: CExpr -> CExpr
