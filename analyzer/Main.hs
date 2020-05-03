@@ -435,7 +435,7 @@ translateExprM envs expr = do
 		funtraces <- unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
 		forM funtraces $ \case
 			Return retexpr ->
-			_ -> error $ "trace of no return"
+			trace -> error $ "trace of no return"
 		
 	create_combinations
 	error ""
