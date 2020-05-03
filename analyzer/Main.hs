@@ -24,7 +24,7 @@ import qualified Interfaces.MZBuiltIns as MZB
 
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
-import qualified GHC.Generics as GHCG
+--import qualified GHC.Generics as GHCG
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
 import Data.Time.LocalTime
@@ -421,9 +421,24 @@ unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi 
 
 translateExprM :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
 translateExprM envs expr = do
-	
-	let expr' = everywhere (mkT transexpr) expr
-	return [(expr',[])]
+	let
+		calls = everything (++) (mkQ [] to_call) expr
+		to_call :: CExpr -> [(Ident,[CExpr])]
+		to_call (CCall funexpr args _) = case funexpr of
+			CVar funname _ -> [(funname,args)]
+			_              -> error $ "is_call: found call " ++ (render.pretty) funexpr
+		to_call _ = []
+
+	funcalls_traces <- forM calls $ \ (funident,args) -> do
+		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
+		let body' = replace_param_with_arg (zip paramdecls args) body
+		funtraces <- unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
+		forM funtraces $ \case
+			Return retexpr ->
+			_ -> error $ "trace of no return"
+		
+	create_combinations
+	error ""
 
 -- functionTracesM envs trace enumdef_stmts funname
 	where
