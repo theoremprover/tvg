@@ -423,21 +423,22 @@ translateExprM :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
 translateExprM envs expr = do
 	let
 		calls = everything (++) (mkQ [] to_call) expr
-		to_call :: CExpr -> [(Ident,[CExpr])]
-		to_call (CCall funexpr args _) = case funexpr of
-			CVar funname _ -> [(funname,args)]
+		to_call :: CExpr -> [(Ident,[CExpr],NodeInfo)]
+		to_call (CCall funexpr args ni) = case funexpr of
+			CVar funident _ -> [(funident,args,ni)]
 			_              -> error $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call _ = []
 
-	funcalls_traces <- forM calls $ \ (funident,args) -> do
+	funcalls_traces :: [(NodeInfo,[(Trace,CExpr)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
 		let body' = replace_param_with_arg (zip paramdecls args) body
 		funtraces <- unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
-		forM funtraces $ \case
-			Return retexpr ->
+		let rest_ret_s = for funtraces $ \case
+			Return retexpr : rest_trace -> (rest_trace,retexpr)
 			trace -> error $ "trace of no return"
-		
-	create_combinations
+		return (ni,rest_ret_s)
+
+--	create_combinations
 	error ""
 
 -- functionTracesM envs trace enumdef_stmts funname
