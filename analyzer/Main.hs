@@ -97,11 +97,12 @@ main = do
 
 					traceanalysisresults <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
 
-					forM_ traceanalysisresults $ \ (i,trace) -> do
-						printLog $ unlines $
-							[ "","--- TRACE " ++ show i ++ " -------------------------","<leaving out builtins...>" ] ++
-							map show (filter isnotbuiltin trace)
-{-
+					forM_ traceanalysisresults $ \ (i,its) -> do
+						forM_ its $ \ (j,trace) -> do
+							printLog $ unlines $
+								[ "","--- TRACE " ++ show (i,j) ++ " -------------------------","<leaving out builtins...>" ] ++
+								map show (filter isnotbuiltin trace)
+	{-
 					forM_ covvectors $ \ (is,origtrace,trace,model,mb_solution) -> case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
 						False -> return ()
 						True -> printLog $ unlines $ mbshowtraces (
@@ -173,11 +174,11 @@ covVectorsM funname = do
 			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
 		enum2stmt _ = []
 
-	traces <- functionTracesM [glob_env] [] enumdefs funname
-	return $ zip [1..] traces
+	tracess <- functionTracesM [glob_env] [] enumdefs funname
+	return $ zip [1..] $ map (zip [1..]) tracess
 
 --type TraceAnalysisResult = ([Trace],[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
-type TraceAnalysisResult = (Int,Trace)
+type TraceAnalysisResult = (Int,[(Int,Trace)])
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
@@ -187,7 +188,7 @@ lookupFunM ident = do
 		Just other -> error $ "lookupFunM " ++ (render.pretty) ident ++ " yielded " ++ (render.pretty) other
 		Nothing -> error $ "Function " ++ (show ident) ++ " not found"
 
-functionTracesM :: [Env] -> Trace -> [CBlockItem] -> String -> CovVecM [Trace]
+functionTracesM :: [Env] -> Trace -> [CBlockItem] -> String -> CovVecM [[Trace]]
 functionTracesM envs trace enumdef_stmts funname = do
 	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
 	param_env <- concatMapM (declaration2EnvItemM True) paramdecls
@@ -318,7 +319,7 @@ identTy2EnvItemM makenewidents srcident ty = do
 
 -- Just unfold the traces
 
-unfoldTracesM :: [Env] -> Trace -> [[CBlockItem]] -> CovVecM [Trace]
+unfoldTracesM :: [Env] -> Trace -> [[CBlockItem]] -> CovVecM [[Trace]]
 unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 
 	CLabel _ cstat _ _ -> unfoldTracesM envs trace ((CBlockStmt cstat : rest) : rest2)
@@ -371,11 +372,11 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 
 	where
 	
-	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM [Trace]) -> CovVecM [Trace]
+	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM [[Trace]]) -> CovVecM [[Trace]]
 	transids expr trace cont = do
-		additional_expr_traces <- translateExprM envs expr
-		concatForM additional_expr_traces $ \ (expr',traces') -> do
-			cont (expr',traces'++trace)
+		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM envs expr
+		concatForM additional_expr_traces $ \ (expr',trace') -> do
+			cont (expr',trace'++trace)
 
 unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
@@ -438,17 +439,21 @@ translateExprM envs expr = do
 			trace -> error $ "trace of no return"
 		return (ni,rest_ret_s)
 
---	create_combinations
-	error ""
+	create_combinations expr [] rest_ret_s
 
--- functionTracesM envs trace enumdef_stmts funname
 	where
 
+	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExpr)])] -> CovVecM [(CExpr,Trace)]
+	create_combinations expr trace [] = return [(expr,trace)]
+	create_combinations expr trace ((ni,tes):rest) = do
+		error ""
+{-
 	transexpr :: CExpr -> CExpr
 	transexpr (CVar ident _) = case lookup ident (concat envs) of
 		Just (ident',_) -> CVar ident' undefNode
 		Nothing -> error $ "translateIdents " ++ (render.pretty) expr ++ " in transexpr : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
 	transexpr expr = expr
+-}
 
 	replace_param_with_arg :: [(ParamDecl,CExpr)] -> CStat -> CStat
 	replace_param_with_arg [] body = body
