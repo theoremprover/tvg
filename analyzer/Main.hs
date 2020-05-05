@@ -188,7 +188,7 @@ lookupFunM ident = do
 		Just other -> error $ "lookupFunM " ++ (render.pretty) ident ++ " yielded " ++ (render.pretty) other
 		Nothing -> error $ "Function " ++ (show ident) ++ " not found"
 
-functionTracesM :: [Env] -> Trace -> [CBlockItem] -> String -> CovVecM [[Trace]]
+functionTracesM :: [Env] -> Trace -> [CBlockItem] -> String -> CovVecM TraceCNF
 functionTracesM envs trace enumdef_stmts funname = do
 	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
 	param_env <- concatMapM (declaration2EnvItemM True) paramdecls
@@ -319,7 +319,7 @@ identTy2EnvItemM makenewidents srcident ty = do
 
 -- Just unfold the traces
 
-unfoldTracesM :: [Env] -> Trace -> [[CBlockItem]] -> CovVecM [[Trace]]
+unfoldTracesM :: [Env] -> Trace -> [[CBlockItem]] -> CovVecM TraceCNF
 unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 
 	CLabel _ cstat _ _ -> unfoldTracesM envs trace ((CBlockStmt cstat : rest) : rest2)
@@ -335,10 +335,10 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 				Just else_stmt -> unfoldTracesM envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 			return $ then_traces ++ else_traces
 
-	CReturn Nothing _ -> return [ trace ]
+	CReturn Nothing _ -> return [[ trace ]]
 	CReturn (Just ret_expr) _ -> do
 		transids ret_expr trace $ \ (ret_expr',trace') -> do
-			return [ Return ret_expr' : trace' ]
+			return [[ Return ret_expr' : trace' ]]
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
@@ -412,7 +412,7 @@ unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples
 
 unfoldTracesM (_:restenvs) trace ([]:rest2) = unfoldTracesM restenvs trace rest2
 
-unfoldTracesM _ trace [] = return [trace]
+unfoldTracesM _ trace [] = return [[trace]]
 
 unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
@@ -433,20 +433,26 @@ translateExprM envs expr = do
 	funcalls_traces :: [(NodeInfo,[(Trace,CExpr)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
 		let body' = replace_param_with_arg (zip paramdecls args) body
-		funtraces <- unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
-		let rest_ret_s = for funtraces $ \case
+		funtracess <- unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
+		let rest_ret_s = for (concat funtracess) $ \case
 			Return retexpr : rest_trace -> (rest_trace,retexpr)
 			trace -> error $ "trace of no return"
 		return (ni,rest_ret_s)
 
-	create_combinations expr [] rest_ret_s
+	return $ create_combinations expr [] funcalls_traces
 
 	where
 
-	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExpr)])] -> CovVecM [(CExpr,Trace)]
-	create_combinations expr trace [] = return [(expr,trace)]
-	create_combinations expr trace ((ni,tes):rest) = do
-		error ""
+	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExpr)])] -> [(CExpr,Trace)]
+	create_combinations expr trace [] = [(expr,trace)]
+	create_combinations expr trace ((ni,tes):rest) =
+		for tes $ \ (trace1,ret_expr) ->
+			let  -- substitute the function call by the return expression
+				expr' = everywhere (mkT subst_ret_expr) expr
+				subst_ret_expr :: CExpr -> CExpr
+				subst_ret_expr expr = if nodeInfo expr == ni then ret_expr else expr
+			let combs = create_combinations expr' trace' rest
+		
 {-
 	transexpr :: CExpr -> CExpr
 	transexpr (CVar ident _) = case lookup ident (concat envs) of
