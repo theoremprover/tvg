@@ -362,6 +362,7 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 	CExpr (Just expr) _ -> do
 		error $ "not implemented yet."
 
+	-- I'd like to create an algorithm that infers the invariant from the loop's body, so I don't have to unroll...
  	CWhile cond body False _ -> unfoldTracesM envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
 		where
 		unroll_loop :: Int -> [CBlockItem]
@@ -375,8 +376,12 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM [[Trace]]) -> CovVecM [[Trace]]
 	transids expr trace cont = do
 		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM envs expr
-		concatForM additional_expr_traces $ \ (expr',trace') -> do
+		-- additional_expr_traces = [ (a,t1), (b,t2) ]
+		trs <- concatForM additional_expr_traces $ \ (expr',trace') -> do
 			cont (expr',trace'++trace)
+			-- cont( (a,t1) ) = [ [ 1a | 1b ] & [ 2a | 2b | 2c ] ]   |
+			-- cont( (b,t2) ) = [ [ 3a ] & [ 4a | 4b ] ]
+		return [ concat trs ]
 
 unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
@@ -427,7 +432,7 @@ translateExprM envs expr = do
 		to_call :: CExpr -> [(Ident,[CExpr],NodeInfo)]
 		to_call (CCall funexpr args ni) = case funexpr of
 			CVar funident _ -> [(funident,args,ni)]
-			_              -> error $ "is_call: found call " ++ (render.pretty) funexpr
+			_               -> error $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call _ = []
 
 	funcalls_traces :: [(NodeInfo,[(Trace,CExpr)])] <- forM calls $ \ (funident,args,ni) -> do
@@ -443,23 +448,22 @@ translateExprM envs expr = do
 
 	where
 
-	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExpr)])] -> [(CExpr,Trace)]
-	create_combinations expr trace [] = [(expr,trace)]
-	create_combinations expr trace ((ni,tes):rest) =
-		for tes $ \ (trace1,ret_expr) ->
-			let  -- substitute the function call by the return expression
-				expr' = everywhere (mkT subst_ret_expr) expr
-				subst_ret_expr :: CExpr -> CExpr
-				subst_ret_expr expr = if nodeInfo expr == ni then ret_expr else expr
-			let combs = create_combinations expr' trace' rest
-		
-{-
-	transexpr :: CExpr -> CExpr
-	transexpr (CVar ident _) = case lookup ident (concat envs) of
+	subst_var :: CExpr -> CExpr
+	subst_var (CVar ident _) = case lookup ident (concat envs) of
 		Just (ident',_) -> CVar ident' undefNode
-		Nothing -> error $ "translateIdents " ++ (render.pretty) expr ++ " in transexpr : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
-	transexpr expr = expr
--}
+		Nothing -> error $ "translateExprM " ++ (render.pretty) expr ++ " in subst_var : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
+	subst_var expr = expr
+
+	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExpr)])] -> [(CExpr,Trace)]
+	create_combinations expr trace [] = [(everywhere (mkT subst_var) expr,trace)]
+	create_combinations expr trace ((ni,tes):rest) =
+		concat $ for tes $ \ (fun_trace,ret_expr) -> let
+			-- substitute the function call by the return expression
+			expr' = everywhere (mkT subst_ret_expr) expr
+			subst_ret_expr :: CExpr -> CExpr
+			subst_ret_expr expr = if nodeInfo expr == ni then ret_expr else expr
+			in
+			create_combinations expr' (fun_trace++trace) rest
 
 	replace_param_with_arg :: [(ParamDecl,CExpr)] -> CStat -> CStat
 	replace_param_with_arg [] body = body
