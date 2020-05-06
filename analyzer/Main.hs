@@ -100,41 +100,42 @@ main = do
 								map show (filter isnotbuiltin trace)
 -}
 --type TraceAnalysisResult = (Int,[(Int,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))])
-					traceanalysisresults <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
+					traceanalysisresults <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit []
 
-					forM_ traceanalysisresults $ \ (is,trace,model,mb_solution) -> case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
-						False -> return ()
-						True -> printLog $ unlines $ mbshowtraces (
-							[ "","=== ORIG TRACE " ++ is ++ " ====================","<leaving out builtins...>" ] ++
-							map show (filter isnotbuiltin origtrace) ++
-							[ "","--- TRACE " ++ is ++ " -------------------------","<leaving out builtins...>" ] ++
-							map show (filter isnotbuiltin trace) ++
-							[ "",
-							"--- MODEL " ++ is ++ " -------------------------",
-							if null model then "<empty>" else layout model,
-							"" ]) ++ [
-							"--- SOLUTION " ++ is ++ " ----------------------",
-							show_solution mb_solution ]
-					where
-
-					mbshowtraces ts = if don'tShowTraces then [] else ts
-					show_solution Nothing = "No solution"
-					show_solution (Just (env,solution,mb_retval)) = unlines [ show solution,
-						funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )",
-						"    = " ++ maybe "<NO_RETURN>" (render.pretty) mb_retval ]
-						where
-						showarg :: EnvItem -> String
-						showarg (oldident,(newident,_)) =
-							identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
-								Nothing -> "DONT_CARE"
-								Just (MInt i) -> show i
-								Just (MFloat f) -> show f
-								val -> error $ "showarg " ++ show val ++ " not yet implemented"
+					forM_ traceanalysisresults $ \ (is,tis) -> do
+						forM_ tis $ \ (js,(trace,model,mb_solution)) -> do
+							case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
+								False -> return ()
+								True -> printLog $ unlines $ mbshowtraces (
+									[ "","=== TRACE " ++ show (is,js) ++ " ========================","<leaving out builtins...>" ] ++
+									map show (filter isnotbuiltin trace) ++
+									[ "",
+									"--- MODEL " ++ show (is,js) ++ " -------------------------",
+									if null model then "<empty>" else layout model,
+									"" ]) ++ [
+									"--- SOLUTION " ++ show (is,js) ++ " ----------------------",
+									show_solution mb_solution ]
+								where
+			
+								mbshowtraces ts = if don'tShowTraces then [] else ts
+								show_solution Nothing = "No solution"
+								show_solution (Just (env,solution,mb_retval)) = unlines [ show solution,
+									funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )",
+									"    = " ++ maybe "<NO_RETURN>" (render.pretty) mb_retval ]
+									where
+									showarg :: EnvItem -> String
+									showarg (oldident,(newident,_)) =
+										identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
+											Nothing -> "DONT_CARE"
+											Just (MInt i) -> show i
+											Just (MFloat f) -> show f
+											val -> error $ "showarg " ++ show val ++ " not yet implemented"
 
 data CovVecState = CovVecState {
 	globDeclsCVS    :: GlobalDecls,
 	newNameIndexCVS :: Int,
-	translUnitCVS   :: CTranslUnit
+	translUnitCVS   :: CTranslUnit,
+	paramEnvCVS     :: Env
 	}
 type CovVecM = StateT CovVecState IO
 
@@ -167,11 +168,27 @@ covVectorsM funname = do
 			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
 		enum2stmt _ = []
 
-	tracess <- functionTracesM [glob_env] [] enumdefs funname
-	return $ zip [1..] $ map (zip [1..]) tracess
+	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
+	param_env <- concatMapM (declaration2EnvItemM True) paramdecls
+	modify $ \ s -> s { paramEnvCVS = param_env }
 
---type TraceAnalysisResult = ([Trace],[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
-type TraceAnalysisResult = (Int,[(Int,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))])
+	unfoldTracesM (param_env:[glob_env]) [] [ enumdefs ++ [ CBlockStmt body ] ]
+	>>=
+	return . (zip [1..] $ map (zip [1..]))
+	>>=
+	foreachTraceM elimAssignmentsM
+	>>=
+	foreachTraceM (solveTraceM param_env)
+	
+	where
+	
+	foreachTraceM :: (a -> CovVecM b) -> [(Int,[(Int,a)])] -> CovVecM [(Int,[(Int,b)])]
+	foreachTraceM fM l = forM l $ \ (i,l2) -> do
+		l2' <- forM l2 $ \ (j,a) -> do
+			fM a >>= return (j,)
+		return (i,l2')
+
+type TraceAnalysisResult = (Int,[(Int,(Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr)))])
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
@@ -180,12 +197,6 @@ lookupFunM ident = do
 		Just (FunctionDef fundef) -> return fundef
 		Just other -> error $ "lookupFunM " ++ (render.pretty) ident ++ " yielded " ++ (render.pretty) other
 		Nothing -> error $ "Function " ++ (show ident) ++ " not found"
-
-functionTracesM :: [Env] -> Trace -> [CBlockItem] -> String -> CovVecM TraceCNF
-functionTracesM envs trace enumdef_stmts funname = do
-	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
-	param_env <- concatMapM (declaration2EnvItemM True) paramdecls
-	unfoldTracesM (param_env:envs) trace [ enumdef_stmts ++ [ CBlockStmt body ] ]
 
 isnotbuiltinIdent ident = not $ "__" `isPrefixOf` (identToString ident)
 
@@ -550,9 +561,9 @@ tyspec2TypeM typespec = case typespec of
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
 
-elimAssignmentsM :: ([Int],Trace) -> CovVecM ([Int],Trace,Trace)
-elimAssignmentsM (is,trace) = foldtraceM [] trace >>= return . (is,trace,) where
-
+elimAssignmentsM :: Trace -> CovVecM Trace
+elimAssignmentsM trace = foldtraceM [] trace
+	where
 	foldtraceM :: Trace -> Trace -> CovVecM Trace
 	foldtraceM result [] = return result
 	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (subst result) rest
@@ -564,6 +575,7 @@ elimAssignmentsM (is,trace) = foldtraceM [] trace >>= return . (is,trace,) where
 			substlvalue found_expr | lvalue == found_expr = expr
 			substlvalue found_expr                        = found_expr
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
+
 
 -- MiniZinc Model Generation
 
@@ -681,9 +693,12 @@ traceelemToMZ (Condition constr) = do
 
 traceelemToMZ _ = return []
 
-solveTraceM :: Env -> ([Int],Trace) -> CovVecM TraceAnalysisResult
-solveTraceM _ (is,trace) | not solveIt = return (intercalate "_" $ map show is,orig_trace,trace,[],Nothing)
-solveTraceM param_env (is,trace) = do
+--type TraceAnalysisResult = (Int,[(Int,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))])
+solveTraceM :: Trace -> CovVecM TraceAnalysisResult
+solveTraceM trace | not solveIt = return (intercalate "_" $ map show is,trace,[],Nothing)
+solveTraceM trace = do
+	param_env <- gets paramEnvCVS
+
 	let mb_ret_val = case last trace of
 		Return ret_expr -> Just ret_expr
 		_               -> Nothing
