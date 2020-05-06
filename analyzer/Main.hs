@@ -24,7 +24,6 @@ import qualified Interfaces.MZBuiltIns as MZB
 
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
---import qualified GHC.Generics as GHCG
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
 import Data.Time.LocalTime
@@ -51,11 +50,9 @@ stack build :analyzer-exe && stack exec analyzer-exe
 fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
-{-
 solveIt = False
 showOnlySolutions = True
 don'tShowTraces = False
--}
 
 _UNROLLING_DEPTH = 3
 
@@ -95,15 +92,17 @@ main = do
 					when ("-writeGlobalDecls" ∈ opts) $
 						writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 
-					traceanalysisresults <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
-
+{-
 					forM_ traceanalysisresults $ \ (i,its) -> do
 						forM_ its $ \ (j,trace) -> do
 							printLog $ unlines $
 								[ "","--- TRACE " ++ show (i,j) ++ " -------------------------","<leaving out builtins...>" ] ++
 								map show (filter isnotbuiltin trace)
-	{-
-					forM_ covvectors $ \ (is,origtrace,trace,model,mb_solution) -> case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
+-}
+--type TraceAnalysisResult = (Int,[(Int,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))])
+					traceanalysisresults <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit
+
+					forM_ traceanalysisresults $ \ (is,trace,model,mb_solution) -> case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
 						False -> return ()
 						True -> printLog $ unlines $ mbshowtraces (
 							[ "","=== ORIG TRACE " ++ is ++ " ====================","<leaving out builtins...>" ] ++
@@ -131,7 +130,6 @@ main = do
 								Just (MInt i) -> show i
 								Just (MFloat f) -> show f
 								val -> error $ "showarg " ++ show val ++ " not yet implemented"
--}
 
 data CovVecState = CovVecState {
 	globDeclsCVS    :: GlobalDecls,
@@ -157,11 +155,6 @@ type Trace = [TraceElem]
 -- it is a conjunctive normal form
 type TraceCNF = [[Trace]]
 
-{-
-forkTracesAndM :: Trace -> (TraceCNF -> CovVecM TraceCNF) -> CovVecM TraceCNF
-forkTracesAndM cur_trace = concatForM
--}
-
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
@@ -178,7 +171,7 @@ covVectorsM funname = do
 	return $ zip [1..] $ map (zip [1..]) tracess
 
 --type TraceAnalysisResult = ([Trace],[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
-type TraceAnalysisResult = (Int,[(Int,Trace)])
+type TraceAnalysisResult = (Int,[(Int,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))])
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
@@ -474,110 +467,6 @@ translateExprM envs expr = do
 		substparamarg (CVar ident _) | ident==srcident = arg
 		substparamarg expr = expr
 
-
---	return (expr'',map (++add_decls) forked_traces,envs')
-{-
-	let calls :: [CExpr] = listify is_call expr where
-		is_call (CCall funexpr _ _) = case funexpr of
-			CVar _ _ -> True
-			_ -> error $ "is_call: found call " ++ (render.pretty) funexpr
-		is_call _ = False
-
-	liftIO $ putStrLn $ "|calls|=" ++ show (length calls)
-	
-	calls_traces :: [[(CExpr,Trace,CExpr)]] <- forM calls $ \ ccall@(CCall (CVar funident _) args _) -> do
-		expanded_traces <- expandFunctionM envs funident args
-		liftIO $ putStrLn $ "|expanded_traces| for " ++ (render.pretty) funident ++ " = " ++ show (length expanded_traces)
-		forM expanded_traces $ \case
-			Return ret_expr : rest_trace -> return (ccall,rest_trace,ret_expr)
-			_ -> error $ "call_trace has no return: " ++ (render.pretty) ccall
-		
-	liftIO $ putStrLn $ "|calls_traces|=" ++ show (length calls_traces)
-	
-	let combinationss = comb calls_traces where
-		comb :: [[(CExpr,Trace,CExpr)]] -> [[(CExpr,Trace,CExpr)]]
-		comb (l:[]) = [l]
-		comb (l:ls) = concatMap (\ e -> map (e:) (comb ls)) l
-	
-	liftIO $ forM_ combinationss $ \ combinations -> do
-		forM_ combinations $ \ (ccall,trace,retexpr) -> do
-			putStr $ "(" ++ (render.pretty) ccall ++ ",[TRACE]," ++ (render.pretty) retexpr ++ "),  "
-		liftIO $ putStrLn ""
-
-	return []
-	
--}
-{-
-	where
-
-	-- substitutes function calls with their return values and inserts the body in the trace
-	-- eliminates builtin_expect function calls
-	expandcalls :: CExpr -> StateT [([Trace],())] CovVecM CExpr
-	
-	expandcalls expr = case expr of
-		CCall funexpr args _ -> case funexpr of
-			CVar (Ident "__builtin_expect" _ _) _ -> pure $ head args 
-			CVar funident _ -> expandFunctionM envs funident args
-			other -> error $ "translateIdents: expandcalls of Call " ++ (render.pretty) other ++ "not implemented yet"
-		CUnary op expr ni -> CUnary <$> pure op <*> expandcalls expr <*> ni
-		CBinary op expr1 expr2 ni -> CBinary <$> pure op <*> expandcalls expr1 <*> expandcalls expr2 <*> pure ni
-		CMember expr ident isptr ni -> CMember <$> expandcalls expr <*> pure ident <*> pure isptr <*> pure ni
-		CConst c -> CConst <$> pure c
-		expr -> error $ "expandcalls " ++ (render.pretty) expr ++ " not implemented"
--}
-
-{-
-expandFunctionM :: [Env] -> Ident -> [CExpr] -> CovVecM [Trace]
-expandFunctionM envs funident args = do
-	(paramdecls,body) <- case funident of
-		Ident "__builtin_expect" _ _ -> return ([],CReturn (Just $ head args) undefNode)
-		_ -> do
-			FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
-			return (paramdecls,body)
-	let body' = replace_param_with_arg (zip paramdecls args) body
-	unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
-
-	forM traces $ \case
-		Return ret_expr : resttrace -> return 
-		other_trace -> error $ unlines $ ("expandFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
-			map show (filter isnotbuiltin other_trace)
--}
-{-	
-	ret_ty' <- lift $ elimTypeDefsM ret_ty
-	let oldfunident = internalIdent $ identToString funident ++ "_ret"
-	idtyenvitems_fun <- lift $ identTy2EnvItemM True oldfunident ret_ty'
-	envs' <- gets snd
-	traces <- lift $ unfoldTracesM envs' [] [ [ CBlockStmt body' ] ]
-
-	traces' <- forM traces $ \case
-		Return ret_expr : resttrace -> do
-			idtyenvitems_ret <- lift $ makeMemberExprsM ret_ty' ret_expr
-			newtrace <- forM ( zip idtyenvitems_fun idtyenvitems_ret) $ \ ((_,(newident,_)),(_,(ret_memberexpr,_))) -> do
-				let ret_memberexpr' = CVar (normalizeExpr ret_memberexpr) undefNode
-				return $ Condition (CBinary CEqOp (CVar newident undefNode) ret_memberexpr' undefNode)
-			return $ newtrace ++ resttrace
-		other_trace -> error $ unlines $ ("reverseFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
-			map show (filter isnotbuiltin other_trace)
-
-	modify $ \ (_,env:envrest) -> ( traces' , (idtyenvitems++env) : envrest )
-	return $ CVar oldfunident undefNode
--}
-{-
-	case idtyenvitems of
-		[newenvitem@(_,(newfunident,_))] -> do
-			envs' <- gets snd
-			traces <- lift $ unfoldTracesM envs' [NewDeclaration (snd newenvitem)] [ [ CBlockStmt body' ] ]
-		
-			traces' <- forM traces $ \case
-				Return ret_expr : resttrace -> do
-					return $ Condition (CBinary CEqOp (CVar newfunident undefNode) ret_expr undefNode) : resttrace
-				other_trace -> error $ unlines $ ("reverseFunctionM: trace for " ++ (render.pretty) funident ++ " does not contain a return:") :
-					map show (filter isnotbuiltin other_trace)
-		
-			modify $ \ (_,env:envrest) -> ( traces' , (newenvitem:env) : envrest )
-			return $ CVar oldfunident undefNode
-		_ -> error $ "reverseFunctionM " ++ (render.pretty) funident ++ ": idtyenvitems = \n" ++ envToString idtyenvitems
--}
 {-
 	transexpr :: [Env] -> CExpr -> StateT [TraceElem] CovVecM CExpr
 	-- translates variable names to fresh names from the env
@@ -659,7 +548,6 @@ tyspec2TypeM typespec = case typespec of
 	_ -> error $ "tyspec2TypeM: " ++ (render.pretty) typespec ++ " not implemented yet."
 
 
-{-
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
 
 elimAssignmentsM :: ([Int],Trace) -> CovVecM ([Int],Trace,Trace)
@@ -793,9 +681,9 @@ traceelemToMZ (Condition constr) = do
 
 traceelemToMZ _ = return []
 
-solveTraceM :: Env -> ([Int],Trace,Trace) -> CovVecM TraceAnalysisResult
-solveTraceM _ (is,orig_trace,trace) | not solveIt = return (intercalate "_" $ map show is,orig_trace,trace,[],Nothing)
-solveTraceM param_env (is,orig_trace,trace) = do
+solveTraceM :: Env -> ([Int],Trace) -> CovVecM TraceAnalysisResult
+solveTraceM _ (is,trace) | not solveIt = return (intercalate "_" $ map show is,orig_trace,trace,[],Nothing)
+solveTraceM param_env (is,trace) = do
 	let mb_ret_val = case last trace of
 		Return ret_expr -> Just ret_expr
 		_               -> Nothing
@@ -843,5 +731,4 @@ solveTraceM param_env (is,orig_trace,trace) = do
 		Right [] -> return Nothing
 		Right (sol:_) -> return $ Just (param_env,sol,mb_ret_val)
 
-	return (tracename,orig_trace,trace,model,mb_solution)
--}
+	return (tracename,trace,model,mb_solution)
