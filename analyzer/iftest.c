@@ -48,11 +48,12 @@ int f(int x, enum Zahl z)
     return -1;
 }
 
-void main(int argc, char* argv[])
-{
 #ifdef CALC
+int main(int argc, char* argv[])
+{
     int x = atoi(argv[1]);
     int z = atoi(argv[2]);
-    printf("f(x=%i,z=%i) = %i\n",x,z,f(x,z));
-#endif
+    printf("f(x=%i,z=%i) =\n%i\n",x,z,f(x,z));
+    return 0;
 }
+#endif

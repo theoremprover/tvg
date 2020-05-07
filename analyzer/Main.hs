@@ -5,6 +5,9 @@ module Main where
 
 import System.Environment
 import System.FilePath
+import System.Process
+import System.Directory
+import System.Exit
 import Language.C
 import Language.C.Data.Ident
 import Language.C.Analysis.AstAnalysis
@@ -53,6 +56,9 @@ fp-bit.i: Function _fpdiv_parts, Zeile 1039
 solveIt = True
 showOnlySolutions = False
 don'tShowTraces = False
+checkSolutions = True
+
+returnval_var_name = "return_val"
 
 _UNROLLING_DEPTH = 3
 
@@ -92,15 +98,21 @@ main = do
 					when ("-writeGlobalDecls" ∈ opts) $
 						writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 
-{-
-					forM_ traceanalysisresults $ \ (i,its) -> do
-						forM_ its $ \ (j,trace) -> do
-							printLog $ unlines $
-								[ "","--- TRACE " ++ show (i,j) ++ " -------------------------","<leaving out builtins...>" ] ++
-								map show (filter isnotbuiltin trace)
--}
---type TraceAnalysisResult = (Int,[(Int,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))])
-					traceanalysisresults <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit []
+					mb_checkexename <- case checkSolutions of
+						False -> return Nothing
+						True  -> do
+							let
+								srcfilename = takeFileName filename
+								chkexefilename = replaceExtension srcfilename "exe"
+							absolute_filename <- makeAbsolute filename
+							withCurrentDirectory (takeDirectory absolute_filename) $ do
+								(exitcode,stdout,stderr) <- readProcessWithExitCode gcc ["-o",chkexefilename,"-DCALC",srcfilename] ""
+								case exitcode of
+									ExitFailure _ -> error $ "Compilation failed:\n" ++ stderr
+									ExitSuccess -> return $ Just chkexefilename 
+
+					traceanalysisresults <- evalStateT (covVectorsM funname) $
+						CovVecState globdecls 1 translunit filename mb_checkexename
 
 					forM_ traceanalysisresults $ \ (is,tis) -> do
 						forM_ tis $ \ (js,(trace,(model,mb_solution))) -> do
@@ -119,6 +131,7 @@ main = do
 			
 								mbshowtraces ts = if don'tShowTraces then [] else ts
 								show_solution Nothing = "No solution"
+								show_solution (Just (_,[],_)) = "Empty solution"
 								show_solution (Just (env,solution,mb_retval)) = unlines [ show solution,
 									funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )",
 									"    = " ++ maybe "<NO_RETURN>" (render.pretty) mb_retval ]
@@ -135,7 +148,8 @@ data CovVecState = CovVecState {
 	globDeclsCVS    :: GlobalDecls,
 	newNameIndexCVS :: Int,
 	translUnitCVS   :: CTranslUnit,
-	paramEnvCVS     :: Env
+	srcFilenameCVS  :: String,
+	checkExeNameCVS :: Maybe String
 	}
 type CovVecM = StateT CovVecState IO
 
@@ -156,31 +170,36 @@ type Trace = [TraceElem]
 -- it is a conjunctive normal form
 type TraceCNF = [[Trace]]
 
-type TraceAnalysisResult = (Int,[(Int,(Trace,([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))))])
+type ResultData = (Trace,([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr)))
+type TraceAnalysisResult = (Int,[(Int,ResultData)])
 
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
 	glob_env <- concatMapM (declaration2EnvItemM False) globdecls
 	let
-		-- creates the assignment statements defining all enumeration elements
-		enumdefs = concatMap enum2stmt globdecls
-		enum2stmt :: IdentDecl -> [CBlockItem]
-		enum2stmt (EnumeratorDef (Enumerator ident expr _ _)) =
-			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ]
-		enum2stmt _ = []
+		-- creates the assignment statements from the global context
+		defs = concatMap def2stmt globdecls
+		def2stmt :: IdentDecl -> [CBlockItem]
+		def2stmt (EnumeratorDef (Enumerator ident expr _ _)) = assnstmt ident expr
+		def2stmt (ObjectDef (ObjDef (VarDecl (VarName ident _) _ _) (Just (CInitExpr expr _)) _)) = assnstmt ident expr
+		def2stmt _ = []
+		assnstmt ident expr = [ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ] 
 
-	FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
-	param_env <- concatMapM (declaration2EnvItemM True) paramdecls
-	modify $ \ s -> s { paramEnvCVS = param_env }
+	FunDef (VarDecl _ _ (FunctionType (FunType ret_type funparamdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
+	param_env <- concatMapM (declaration2EnvItemM True) funparamdecls
+	
+	let decls = map (NewDeclaration . snd) (param_env++glob_env)
 
-	unfoldTracesM (param_env:[glob_env]) [] [ enumdefs ++ [ CBlockStmt body ] ]
+	unfoldTracesM (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 		>>=
 		return . zip [1..] . (map (zip [1..]))
 		>>=
 		foreachTraceM elimAssignmentsM
 		>>=
-		foreachTraceM (solveTraceM param_env)
+		foreachTraceM (solveTraceM ret_type param_env)
+		>>=
+		foreachTraceM checkSolutionM
 	
 	where
 	
@@ -622,7 +641,7 @@ type Constraint = CExpr
 
 traceelemToMZ :: TraceElem -> CovVecM [MZAST.ModelData]
 traceelemToMZ (Condition constr) = do
-	liftIO $ putStrLn $ (render.pretty) constr
+--	liftIO $ putStrLn $ (render.pretty) constr
 	return [ MZAST.constraint (expr2constr . (flatten_not False) . (insert_eq0 True) $ constr) ]
 	where
 	eq0 :: Constraint -> Constraint
@@ -692,21 +711,30 @@ traceelemToMZ (Condition constr) = do
 
 traceelemToMZ _ = return []
 
-solveTraceM :: Env -> (Int,Int) -> Trace -> CovVecM (Trace,([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr)))
-solveTraceM _ _ trace | not solveIt = return (trace,([],Nothing))
-solveTraceM param_env traceid trace = do
-	let tracename = show traceid
+solveTraceM :: Type -> Env -> (Int,Int) -> Trace -> CovVecM (Trace,([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr)))
+solveTraceM _ _ _ trace | not solveIt = return (trace,([],Nothing))
+solveTraceM ret_type param_env traceid trace = do
+	let
+		tracename = show traceid
 
 	let mb_ret_val = case last trace of
 		Return ret_expr -> Just ret_expr
 		_               -> Nothing
 
-	constraintsG <- concatMapM traceelemToMZ trace
+	let
+		returnval_ident = internalIdent returnval_var_name
+		trace' = trace ++ case mb_ret_val of
+			Nothing -> []
+			Just ret_expr -> [
+				Condition $ CBinary CEqOp (CVar returnval_ident undefNode) ret_expr undefNode,
+				NewDeclaration (returnval_ident,ret_type) ]
+
+	constraintsG <- concatMapM traceelemToMZ trace'
 	
-	let tyenv = concatMap traceitem2tyenv trace where
+	let tyenv = concatMap traceitem2tyenv trace' where
 		traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
 		traceitem2tyenv _ = []
-	let constr_trace = concatMap traceitem2constr trace where
+	let constr_trace = concatMap traceitem2constr trace' where
 		traceitem2constr (Condition expr) = [expr]
 		traceitem2constr _ = []
 	let
@@ -718,11 +746,11 @@ solveTraceM param_env traceid trace = do
 
 	varsG <- concatMapM (var2MZ tyenv) vars
 	let
-		solution_vars =
+		solution_vars = returnval_var_name : (
 			(map (\ (_,(ident,_)) -> identToString ident) param_env)
 			`intersect`
-			(map identToString vars)
-		model = includesG ++ varsG ++ constraintsG ++
+			(map identToString vars) )
+		model = includesG ++ varsG ++ [] ++ constraintsG ++ [] ++
 			[ MZAST.solve $ MZAST.satisfy MZAST.|: MZAST.Annotation "int_search" [
 				MZAST.E (MZAST.ArrayLit $ map (MZAST.Var . MZAST.Simpl) solution_vars),
 				MZAST.E (MZAST.Var $ MZAST.Simpl "input_order"),
@@ -744,3 +772,34 @@ solveTraceM param_env traceid trace = do
 		Right (sol:_) -> return $ Just (param_env,sol,mb_ret_val)
 
 	return (trace,(model,mb_solution))
+
+--type ResultData = (Trace,([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr)))
+checkSolutionM :: (Int,Int) -> ResultData -> CovVecM ResultData
+checkSolutionM _ resultdata | not checkSolutions = return resultdata
+checkSolutionM traceid resultdata@(trace,(_,Nothing)) = do
+	printLog $ "No solution to check for " ++ show traceid
+	return resultdata
+checkSolutionM traceid resultdata@(trace,(_,Just (_,[],_))) = do
+	printLog $ "Empty solution cannot be checked for " ++ show traceid
+	return resultdata
+checkSolutionM traceid resultdata@(trace,(_,Just (env,solution,Just res_expr))) = do
+	srcfilename <- gets srcFilenameCVS
+	Just filename <- gets checkExeNameCVS
+	absolute_filename <- liftIO $ makeAbsolute srcfilename
+	let
+		args = for env $ \ (_,(newident,_)) -> case lookup (identToString newident) solution of
+			Nothing -> "99"
+			Just (MInt i) -> show i
+			Just (MFloat f) -> show f
+			val -> error $ "checkSolutionM: " ++ show val ++ " not yet implemented"
+	(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
+		readProcessWithExitCode (takeFileName filename) args ""
+	case exitcode of
+		ExitFailure _ -> error $ "Execution of " ++ filename ++ " failed:\n" ++ stdout ++ stderr
+		ExitSuccess -> do
+			let exec_result = (read $ last $ lines stdout) :: Int
+			let Just (MInt predicted_result) = lookup returnval_var_name solution
+			case exec_result == predicted_result of
+				False -> printLog $ "ERROR in " ++ show traceid ++ " exec_result=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result
+				True  -> printLog $ "checkSolutionM " ++ show traceid ++ " OK."
+			return resultdata
