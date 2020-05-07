@@ -50,8 +50,8 @@ stack build :analyzer-exe && stack exec analyzer-exe
 fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
-solveIt = False
-showOnlySolutions = True
+solveIt = True
+showOnlySolutions = False
 don'tShowTraces = False
 
 _UNROLLING_DEPTH = 3
@@ -103,7 +103,7 @@ main = do
 					traceanalysisresults <- evalStateT (covVectorsM funname) $ CovVecState globdecls 1 translunit []
 
 					forM_ traceanalysisresults $ \ (is,tis) -> do
-						forM_ tis $ \ (js,(trace,model,mb_solution)) -> do
+						forM_ tis $ \ (js,(trace,(model,mb_solution))) -> do
 							case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
 								False -> return ()
 								True -> printLog $ unlines $ mbshowtraces (
@@ -156,6 +156,8 @@ type Trace = [TraceElem]
 -- it is a conjunctive normal form
 type TraceCNF = [[Trace]]
 
+type TraceAnalysisResult = (Int,[(Int,(Trace,([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))))])
+
 covVectorsM :: String -> CovVecM [TraceAnalysisResult]
 covVectorsM funname = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
@@ -173,22 +175,19 @@ covVectorsM funname = do
 	modify $ \ s -> s { paramEnvCVS = param_env }
 
 	unfoldTracesM (param_env:[glob_env]) [] [ enumdefs ++ [ CBlockStmt body ] ]
-	>>=
-	return . (zip [1..] $ map (zip [1..]))
-	>>=
-	foreachTraceM elimAssignmentsM
-	>>=
-	foreachTraceM (solveTraceM param_env)
+		>>=
+		return . zip [1..] . (map (zip [1..]))
+		>>=
+		foreachTraceM elimAssignmentsM
+		>>=
+		foreachTraceM (solveTraceM param_env)
 	
 	where
 	
-	foreachTraceM :: (a -> CovVecM b) -> [(Int,[(Int,a)])] -> CovVecM [(Int,[(Int,b)])]
+	foreachTraceM :: ((Int,Int) -> a -> CovVecM b) -> [(Int,[(Int,a)])] -> CovVecM [(Int,[(Int,b)])]
 	foreachTraceM fM l = forM l $ \ (i,l2) -> do
-		l2' <- forM l2 $ \ (j,a) -> do
-			fM a >>= return (j,)
+		l2' <- forM l2 $ \ (j,a) -> fM (i,j) a >>= return . (j,)
 		return (i,l2')
-
-type TraceAnalysisResult = (Int,[(Int,(Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr)))])
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
@@ -561,8 +560,8 @@ tyspec2TypeM typespec = case typespec of
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
 
-elimAssignmentsM :: Trace -> CovVecM Trace
-elimAssignmentsM trace = foldtraceM [] trace
+elimAssignmentsM :: (Int,Int) -> Trace -> CovVecM Trace
+elimAssignmentsM (i,j) trace = foldtraceM [] trace
 	where
 	foldtraceM :: Trace -> Trace -> CovVecM Trace
 	foldtraceM result [] = return result
@@ -693,11 +692,10 @@ traceelemToMZ (Condition constr) = do
 
 traceelemToMZ _ = return []
 
---type TraceAnalysisResult = (Int,[(Int,Trace,[MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))])
-solveTraceM :: Trace -> CovVecM TraceAnalysisResult
-solveTraceM trace | not solveIt = return (intercalate "_" $ map show is,trace,[],Nothing)
-solveTraceM trace = do
-	param_env <- gets paramEnvCVS
+solveTraceM :: Env -> (Int,Int) -> Trace -> CovVecM (Trace,([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr)))
+solveTraceM _ _ trace | not solveIt = return (trace,([],Nothing))
+solveTraceM param_env traceid trace = do
+	let tracename = show traceid
 
 	let mb_ret_val = case last trace of
 		Return ret_expr -> Just ret_expr
@@ -731,7 +729,6 @@ solveTraceM trace = do
 				MZAST.E (MZAST.Var $ MZAST.Simpl "indomain_min"),
 				MZAST.E (MZAST.Var $ MZAST.Simpl "complete") ] ]
 
-	let tracename = intercalate "_" $ map show is
 	let modelpath = analyzerPath </> "model_" ++ tracename
 	liftIO $ writeFile (modelpath ++ ".mzn") $ layout model
 	printLog "Running model..."
@@ -746,4 +743,4 @@ solveTraceM trace = do
 		Right [] -> return Nothing
 		Right (sol:_) -> return $ Just (param_env,sol,mb_ret_val)
 
-	return (tracename,trace,model,mb_solution)
+	return (trace,(model,mb_solution))
