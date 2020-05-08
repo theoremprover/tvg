@@ -191,7 +191,9 @@ covVectorsM funname = do
 	
 	let decls = map (NewDeclaration . snd) (param_env++glob_env)
 
-	unfoldTracesM (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
+	unfoldTracesM True (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
+		>>=
+		\ res -> (printLog ("res=" ++ show (map length res))) >> return res
 		>>=
 		return . zip [1..] . (map (zip [1..]))
 		>>=
@@ -341,21 +343,27 @@ identTy2EnvItemM makenewidents srcident ty = do
 
 -- Just unfold the traces
 
-unfoldTracesM :: [Env] -> Trace -> [[CBlockItem]] -> CovVecM TraceCNF
-unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
+unfoldTracesM :: Bool -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM TraceCNF
+unfoldTracesM toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 
-	CLabel _ cstat _ _ -> unfoldTracesM envs trace ((CBlockStmt cstat : rest) : rest2)
+	CLabel _ cstat _ _ -> unfoldTracesM toplevel envs trace ((CBlockStmt cstat : rest) : rest2)
 
-	CCompound _ cbis _ -> unfoldTracesM ([]:envs) trace (cbis : (rest : rest2))
+	CCompound _ cbis _ -> unfoldTracesM toplevel ([]:envs) trace (cbis : (rest : rest2))
 
 	CIf cond then_stmt mb_else_stmt _ -> do
 		transids cond trace $ \ (cond',trace') -> do
-			then_traces <- unfoldTracesM envs (Condition cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
+			then_traces <- unfoldTracesM toplevel envs (Condition cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
 			let not_cond = Condition (CUnary CNegOp cond' undefNode)
 			else_traces <- case mb_else_stmt of
-				Nothing        -> unfoldTracesM envs (not_cond : trace') ( rest : rest2 )
-				Just else_stmt -> unfoldTracesM envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
-			return $ then_traces ++ else_traces
+				Nothing        -> unfoldTracesM toplevel envs (not_cond : trace') ( rest : rest2 )
+				Just else_stmt -> unfoldTracesM toplevel envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
+			case toplevel of
+				True -> do
+					printLog $ "toplevel=True, " ++ (render.pretty) cond ++ " : thens=" ++ show (map length then_traces) ++ ", elses=" ++ show (map length else_traces)
+					return $ then_traces ++ else_traces
+				False -> do
+					printLog $ "toplevel=False, " ++ (render.pretty) cond ++ " : thens=" ++ show (map length then_traces) ++ ", elses=" ++ show (map length else_traces)
+					return [ concat $ then_traces ++ else_traces ]
 
 	CReturn Nothing _ -> return [[ trace ]]
 	CReturn (Just ret_expr) _ -> do
@@ -364,8 +372,8 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
-			transids lexpr trace' $ \ (lexpr',trace'') -> do
-				unfoldTracesM envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
+			let lexpr' = subst_var envs lexpr
+			unfoldTracesM toplevel envs (Assignment lexpr' assigned_expr'' : trace') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -375,7 +383,7 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 			Just binop -> CBinary binop lexpr assigned_expr undefNode
 
 	CExpr (Just (CUnary unaryop expr _)) _ | unaryop ∈ map fst unaryops -> do
-		unfoldTracesM envs trace ( (CBlockStmt stmt' : rest) : rest2 )
+		unfoldTracesM toplevel envs trace ( (CBlockStmt stmt' : rest) : rest2 )
 		where
 		stmt' = CExpr (Just $ CAssign assignop expr (CConst $ CIntConst (cInteger 1) undefNode) undefNode) undefNode
 		Just assignop = lookup unaryop unaryops
@@ -385,7 +393,7 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 		error $ "not implemented yet."
 
 	-- I'd like to create an algorithm that infers the invariant from the loop's body, so I don't have to unroll...
- 	CWhile cond body False _ -> unfoldTracesM envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
+ 	CWhile cond body False _ -> unfoldTracesM toplevel envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
 		where
 		unroll_loop :: Int -> [CBlockItem]
 		unroll_loop 0 = []
@@ -397,15 +405,14 @@ unfoldTracesM envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 	
 	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM [[Trace]]) -> CovVecM [[Trace]]
 	transids expr trace cont = do
-		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM envs expr
-		-- additional_expr_traces = [ (a,t1), (b,t2) ]
-		trs <- concatForM additional_expr_traces $ \ (expr',trace') -> do
+		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM toplevel envs expr
+		contss <- forM additional_expr_traces $ \ (expr',trace') -> do
 			cont (expr',trace'++trace)
-			-- cont( (a,t1) ) = [ [ 1a | 1b ] & [ 2a | 2b | 2c ] ]   |
-			-- cont( (b,t2) ) = [ [ 3a ] & [ 4a | 4b ] ]
-		return [ concat trs ]
+		return $ case toplevel of
+			True -> concat contss
+			False -> [ concat $ concat contss ]
 
-unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
+unfoldTracesM toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
 	new_env_items <- forM triples $ \case
 		(Just (CDeclr (Just ident) derivdeclrs _ _ _),mb_init,Nothing) -> do
@@ -435,20 +442,20 @@ unfoldTracesM (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples
 			return (newenvitems,newdecls,initializers)
 		triple -> error $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 	let (newenvs,newitems,initializerss) = unzip3 new_env_items
-	unfoldTracesM ((concat newenvs ++ env) : envs) (concat newitems ++ trace) ((concat initializerss ++ rest):rest2)
+	unfoldTracesM toplevel ((concat newenvs ++ env) : envs) (concat newitems ++ trace) ((concat initializerss ++ rest):rest2)
 
-unfoldTracesM (_:restenvs) trace ([]:rest2) = unfoldTracesM restenvs trace rest2
+unfoldTracesM toplevel (_:restenvs) trace ([]:rest2) = unfoldTracesM toplevel restenvs trace rest2
 
-unfoldTracesM _ trace [] = return [[trace]]
+unfoldTracesM _ _ trace [] = return [[trace]]
 
-unfoldTracesM _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
+unfoldTracesM _ _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
 
-translateExprM :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
-translateExprM envs expr = do
+translateExprM :: Bool -> [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
+translateExprM toplevel envs expr = do
 	let
 		calls = everything (++) (mkQ [] to_call) expr
 		to_call :: CExpr -> [(Ident,[CExpr],NodeInfo)]
@@ -460,7 +467,7 @@ translateExprM envs expr = do
 	funcalls_traces :: [(NodeInfo,[(Trace,CExpr)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
 		let body' = replace_param_with_arg (zip paramdecls args) body
-		funtracess <- unfoldTracesM envs [] [ [ CBlockStmt body' ] ]
+		funtracess <- unfoldTracesM False envs [] [ [ CBlockStmt body' ] ]
 		let rest_ret_s = for (concat funtracess) $ \case
 			Return retexpr : rest_trace -> (rest_trace,retexpr)
 			trace -> error $ "trace of no return"
@@ -470,14 +477,8 @@ translateExprM envs expr = do
 
 	where
 
-	subst_var :: CExpr -> CExpr
-	subst_var (CVar ident _) = case lookup ident (concat envs) of
-		Just (ident',_) -> CVar ident' undefNode
-		Nothing -> error $ "translateExprM " ++ (render.pretty) expr ++ " in subst_var : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
-	subst_var expr = expr
-
 	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExpr)])] -> [(CExpr,Trace)]
-	create_combinations expr trace [] = [(everywhere (mkT subst_var) expr,trace)]
+	create_combinations expr trace [] = [(everywhere (mkT (subst_var envs)) expr,trace)]
 	create_combinations expr trace ((ni,tes):rest) =
 		concat $ for tes $ \ (fun_trace,ret_expr) -> let
 			-- substitute the function call by the return expression
@@ -565,6 +566,12 @@ translateExprM envs expr = do
 		let [ty] = concatMap (\ (ident,ty) -> if ident==member_ident then [ty] else []) members
 		return ty
 -}
+
+subst_var :: [Env] -> CExpr -> CExpr
+subst_var envs (CVar ident _) = case lookup ident (concat envs) of
+	Just (ident',_) -> CVar ident' undefNode
+	Nothing -> error $ " in subst_var : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
+subst_var _ expr = expr
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
 tyspec2TypeM typespec = case typespec of
