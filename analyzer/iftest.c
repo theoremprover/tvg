@@ -36,8 +36,8 @@ int f(int x, enum Zahl z)
             return 2;
         else
         {
-            int y = z+g(x); //+2*h(x+1);
-            if(side>0)
+            int y = z+g(x)+2*h(x+1);
+            if(y+side>1)
             {
                 x = x - 1;
                 y = y * 2;

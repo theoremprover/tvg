@@ -133,8 +133,8 @@ main = do
 								show_solution Nothing = "No solution"
 								show_solution (Just (_,[],_)) = "Empty solution"
 								show_solution (Just (env,solution,mb_retval)) = unlines [ show solution,
-									funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )",
-									"    = " ++ maybe "<NO_RETURN>" (render.pretty) mb_retval ]
+									funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ++
+									"    = " ++ maybe "<NO_RETURN>" (const $ show $ getPredictedResult solution) mb_retval ]
 									where
 									showarg :: EnvItem -> String
 									showarg (oldident,(newident,_)) =
@@ -735,8 +735,12 @@ checkSolutionM traceid resultdata@(trace,(_,Just (env,solution,Just res_expr))) 
 		ExitFailure _ -> error $ "Execution of " ++ filename ++ " failed:\n" ++ stdout ++ stderr
 		ExitSuccess -> do
 			let exec_result = (read $ last $ lines stdout) :: Int
-			let Just (MInt predicted_result) = lookup returnval_var_name solution
+			let (MInt predicted_result) = getPredictedResult solution
 			case exec_result == predicted_result of
 				False -> printLog $ "ERROR in " ++ show traceid ++ " exec_result=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result
 				True  -> printLog $ "checkSolutionM " ++ show traceid ++ " OK."
 			return resultdata
+
+getPredictedResult solution = predicted_result
+	where
+	Just predicted_result = lookup returnval_var_name solution
