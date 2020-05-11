@@ -342,11 +342,19 @@ identTy2EnvItemM makenewidents srcident ty = do
 	return $ (srcident,(newident,ty')) : other_envitems
 
 -- Just unfold the traces
-unfoldTracesWrapperM toplevel envs trace cbss = do
-	case cbss of
-		((CBlockStmt stmt : rest) : rest2) ->
 unfoldTracesM :: Bool -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM TraceCNF
-unfoldTracesM toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
+unfoldTracesM toplevel envs trace cbss = do
+	cbss_txt <- case cbss of
+		[] -> return "[]"
+		(l : _) -> return $ "[ " ++ (intercalate " , " (map (render.pretty) l)) ++ " ] : _"
+	res <- unfoldTraces1M toplevel envs trace cbss
+	printLog $ "============================================================================="
+	printLog $ "unfoldTracesM " ++ show toplevel ++ " envs trace " ++ cbss_txt
+	printLog $ unlines $ [ "  = [ " ] ++ map (("      "++) . show) res ++ [ "    ]" ]
+	return res
+
+unfoldTraces1M :: Bool -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM TraceCNF
+unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 
 	CLabel _ cstat _ _ -> unfoldTracesM toplevel envs trace ((CBlockStmt cstat : rest) : rest2)
 
@@ -414,7 +422,7 @@ unfoldTracesM toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt
 			True -> concat contss
 			False -> [ concat $ concat contss ]
 
-unfoldTracesM toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
+unfoldTraces1M toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
 	new_env_items <- forM triples $ \case
 		(Just (CDeclr (Just ident) derivdeclrs _ _ _),mb_init,Nothing) -> do
@@ -446,11 +454,11 @@ unfoldTracesM toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec
 	let (newenvs,newitems,initializerss) = unzip3 new_env_items
 	unfoldTracesM toplevel ((concat newenvs ++ env) : envs) (concat newitems ++ trace) ((concat initializerss ++ rest):rest2)
 
-unfoldTracesM toplevel (_:restenvs) trace ([]:rest2) = unfoldTracesM toplevel restenvs trace rest2
+unfoldTraces1M toplevel (_:restenvs) trace ([]:rest2) = unfoldTracesM toplevel restenvs trace rest2
 
-unfoldTracesM _ _ trace [] = return [[trace]]
+unfoldTraces1M _ _ trace [] = return [[trace]]
 
-unfoldTracesM _ _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
+unfoldTraces1M _ _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
 
 -- Translates all identifiers in an expression to fresh ones,
