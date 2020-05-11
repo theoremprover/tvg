@@ -467,13 +467,27 @@ unfoldTraces1M _ _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) c
 
 translateExprM :: Bool -> [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
 translateExprM toplevel envs expr = do
-	let
-		calls = everything (++) (mkQ [] to_call) expr
+{-
+		expr' = everywhere (mkT (subst_var envs)) expr
+
+		calls = everything (++) (mkQ [] to_call) expr'
 		to_call :: CExpr -> [(Ident,[CExpr],NodeInfo)]
 		to_call (CCall funexpr args ni) = case funexpr of
 			CVar funident _ -> [(funident,args,ni)]
 			_               -> error $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call _ = []
+-}
+	let
+		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
+		to_call (CCall funexpr args ni) = case funexpr of
+			CVar funident _ -> do
+				modify ( (funident,args,ni): )
+				return $ CConst $ CStrConst undefined ni
+			_  -> error $ "is_call: found call " ++ (render.pretty) funexpr
+		to_call expr = return expr
+	(expr',calls) <- runStateT (everywhereM (mkM to_call) expr) []
+
+	let expr'' = everywhere (mkT (subst_var envs)) expr'
 
 	funcalls_traces :: [(NodeInfo,[(Trace,CExpr)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
@@ -484,12 +498,12 @@ translateExprM toplevel envs expr = do
 			trace -> error $ "trace of no return"
 		return (ni,rest_ret_s)
 
-	return $ create_combinations expr [] funcalls_traces
+	return $ create_combinations expr'' [] funcalls_traces
 
 	where
 
 	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExpr)])] -> [(CExpr,Trace)]
-	create_combinations expr trace [] = [(everywhere (mkT (subst_var envs)) expr,trace)]
+	create_combinations expr trace [] = [(expr,trace)] --[(everywhere (mkT (subst_var envs)) expr,trace)]
 	create_combinations expr trace ((ni,tes):rest) =
 		concat $ for tes $ \ (fun_trace,ret_expr) -> let
 			-- substitute the function call by the return expression

@@ -11,7 +11,7 @@ int g(int x)
 
 int f(int x,int y)
 {
-    int z = g(x);
+    int z = y+g(x);
     if(z>=0)
     {
         return 1;
