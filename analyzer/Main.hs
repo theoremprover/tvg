@@ -167,7 +167,7 @@ instance Show TraceElem where
 
 type Trace = [TraceElem]
 
--- it is a conjunctive normal form
+-- it is a conjunctive normal form: A conjunction of disjunctions
 type TraceCNF = [[Trace]]
 
 type ResultData = (Trace,([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr)))
@@ -342,7 +342,9 @@ identTy2EnvItemM makenewidents srcident ty = do
 	return $ (srcident,(newident,ty')) : other_envitems
 
 -- Just unfold the traces
-
+unfoldTracesWrapperM toplevel envs trace cbss = do
+	case cbss of
+		((CBlockStmt stmt : rest) : rest2) ->
 unfoldTracesM :: Bool -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM TraceCNF
 unfoldTracesM toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
 
