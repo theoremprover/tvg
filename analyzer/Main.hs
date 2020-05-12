@@ -77,8 +77,8 @@ main = do
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : ["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
@@ -642,7 +642,6 @@ type Constraint = CExpr
 
 traceelemToMZ :: TraceElem -> CovVecM [MZAST.ModelData]
 traceelemToMZ (Condition constr) = do
---	liftIO $ putStrLn $ (render.pretty) constr
 	return [ MZAST.constraint (expr2constr . (flatten_not False) . (insert_eq0 True) $ constr) ]
 	where
 	eq0 :: Constraint -> Constraint
@@ -712,10 +711,6 @@ traceelemToMZ (Condition constr) = do
 
 traceelemToMZ _ = return []
 
-{-
-type ResultData = (Trace,([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr)))
-type TraceAnalysisResult = (Int,[(Int,ResultData)])
--}
 solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
 solveTraceM _ _ _ trace | not solveIt = return ([],Nothing)
 solveTraceM ret_type param_env traceid trace = do
@@ -759,7 +754,7 @@ solveTraceM ret_type param_env traceid trace = do
 			[ MZAST.solve $ MZAST.satisfy MZAST.|: MZAST.Annotation "int_search" [
 				MZAST.E (MZAST.ArrayLit $ map (MZAST.Var . MZAST.Simpl) solution_vars),
 				MZAST.E (MZAST.Var $ MZAST.Simpl "input_order"),
-				MZAST.E (MZAST.Var $ MZAST.Simpl "indomain_min"),
+				MZAST.E (MZAST.Var $ MZAST.Simpl "indomain_median"),
 				MZAST.E (MZAST.Var $ MZAST.Simpl "complete") ] ]
 
 	let modelpath = analyzerPath </> "model_" ++ tracename
@@ -804,7 +799,10 @@ checkSolutionM traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
 			let exec_result = (read $ last $ lines stdout) :: Int
 			let (MInt predicted_result) = getPredictedResult solution
 			case exec_result == predicted_result of
-				False -> printLog $ "ERROR in " ++ show traceid ++ " exec_result=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result
+				False -> do
+					let txt = "ERROR in " ++ show traceid ++ " exec_result=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result
+					printLog txt
+--					error txt
 				True  -> printLog $ "checkSolutionM " ++ show traceid ++ " OK."
 			return resultdata
 
