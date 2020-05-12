@@ -427,23 +427,17 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 			else_trace <- case mb_else_stmt of
 				Nothing        -> unfoldTracesM toplevel envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM toplevel envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
-			let junction = if toplevel then TraceAnd else TraceOr
-			return $ case 
-				(if null then_trace then [] else [ then_trace ]) ++
-				(if null else_trace then [] else [ else_trace ]) of
-					[] -> []
-					[e] -> [e]
-					l -> junction l
+			return $ [ (if toplevel then TraceAnd else TraceOr) [ then_trace, else_trace ] ]
 
 	CReturn Nothing _ -> return trace
 	CReturn (Just ret_expr) _ -> do
 		transids ret_expr trace $ \ (ret_expr',trace') -> do
-			return $ Return ret_expr' : trace'
+			return $ trace' ++ [ Return ret_expr' ]
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
 			let lexpr' = subst_var envs lexpr
-			unfoldTracesM toplevel envs (Assignment lexpr' assigned_expr'' : trace') (rest:rest2)
+			unfoldTracesM toplevel envs (trace' ++ [Assignment lexpr' assigned_expr'']) (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -476,11 +470,13 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM Trace) -> CovVecM Trace
 	transids expr trace cont = do
 		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM toplevel envs expr
-		conts <- forM additional_expr_traces $ \ (expr',trace') -> do
-			cont (expr',trace'++trace)
-		return $ case toplevel of
-			True -> [ TraceAnd conts ]
-			False -> [ TraceOr conts ]
+		conts :: [Trace] <- forM additional_expr_traces $ \ (expr',trace') -> do
+			cont (expr',trace++trace')
+		let junction = if toplevel then TraceAnd else TraceOr
+		case conts of
+			[] -> error $ "transids Strange: conts empty!"
+			[e] -> return e
+			conts -> return [ junction conts ]
 
 unfoldTraces1M toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
@@ -512,7 +508,7 @@ unfoldTraces1M toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespe
 			return (newenvitems,newdecls,initializers)
 		triple -> error $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 	let (newenvs,newitems,initializerss) = unzip3 new_env_items
-	unfoldTracesM toplevel ((concat newenvs ++ env) : envs) (concat newitems ++ trace) ((concat initializerss ++ rest):rest2)
+	unfoldTracesM toplevel ((concat newenvs ++ env) : envs) (trace ++ concat newitems) ((concat initializerss ++ rest):rest2)
 
 unfoldTraces1M toplevel (_:restenvs) trace ([]:rest2) = unfoldTracesM toplevel restenvs trace rest2
 
@@ -560,7 +556,7 @@ translateExprM toplevel envs expr = do
 	extract_traces_rets traceelems (te : rest) = extract_traces_rets (te:traceelems) rest
 
 	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExpr)])] -> [(CExpr,Trace)]
-	create_combinations expr trace [] = [(expr,trace)] --[(everywhere (mkT (subst_var envs)) expr,trace)]
+	create_combinations expr trace [] = [(expr,trace)]
 	create_combinations expr trace ((ni,tes):rest) =
 		concat $ for tes $ \ (fun_trace,ret_expr) -> let
 			-- substitute the function call by the return expression
