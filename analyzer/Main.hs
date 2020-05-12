@@ -195,10 +195,11 @@ type Trace = [TraceElem]
 
 showTrace :: Int -> Trace -> String
 showTrace _ [] = ""
+showTrace ind (te:trace) | not (isnotbuiltin te) = showTrace ind trace
 showTrace ind (te:trace) = indent ind ++ case te of
 	TraceOr traces  -> "OR\n" ++ concatMap (showTrace (ind+1)) traces
 	TraceAnd traces -> "AND\n" ++ concatMap (showTrace (ind+1)) traces
-	te              -> show te ++ "\n"
+	te              -> show te ++ "\n" ++ showTrace ind trace
 	where
 	indent i = concat $ replicate i "|   "
 
@@ -224,18 +225,17 @@ covVectorsM filename opts funname = do
 	let decls = map (NewDeclaration . snd) (param_env++glob_env)
 
 	trace <- unfoldTracesM True (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
-	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ genericToHTMLString trace
+	let
+		filterOutBuiltins :: Trace -> Trace
+		filterOutBuiltins [] = []
+		filterOutBuiltins (TraceOr traces : _) = [ TraceOr $ map filterOutBuiltins traces ]
+		filterOutBuiltins (TraceAnd traces : _) = [ TraceAnd $ map filterOutBuiltins traces ]
+		filterOutBuiltins (te:rest) = if isnotbuiltin te then te : filterOutBuiltins rest else filterOutBuiltins rest
+	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ genericToHTMLString (filterOutBuiltins trace)
 
 	analyzeTreeM opts ret_type param_env [1] [] trace
 
 {-	
-	where
-	
-	foreachTraceM :: ((Int,Int) -> a -> CovVecM b) -> [(Int,[(Int,a)])] -> CovVecM [(Int,[(Int,b)])]
-	foreachTraceM fM l = forM l $ \ (i,l2) -> do
-		l2' <- forM l2 $ \ (j,a) -> fM (i,j) a >>= return . (j,)
-		return (i,l2')
-
 type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
 solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
@@ -427,9 +427,13 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 			else_trace <- case mb_else_stmt of
 				Nothing        -> unfoldTracesM toplevel envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM toplevel envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
-			case toplevel of
-				True -> return [ TraceAnd [ then_trace,else_trace ] ]
-				False -> return [ TraceOr [ then_trace,else_trace ] ]
+			let junction = if toplevel then TraceAnd else TraceOr
+			return $ case 
+				(if null then_trace then [] else [ then_trace ]) ++
+				(if null else_trace then [] else [ else_trace ]) of
+					[] -> []
+					[e] -> [e]
+					l -> junction l
 
 	CReturn Nothing _ -> return trace
 	CReturn (Just ret_expr) _ -> do
