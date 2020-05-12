@@ -1,7 +1,7 @@
 {-# LANGUAGE TypeOperators,FlexibleInstances,FlexibleContexts,ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
-module DataTree (genericToHTMLString) where
+module DataTree (genericToHTMLString,dataTreeToHTMLString,DataTree(..)) where
 
 import GHC.Generics
 import Language.C
@@ -70,8 +70,12 @@ dataTreeToHtml (DataTree s subtrees) = (li ! [identifier "myUL"]) ((thespan ! [m
 	myclass = theclass $ case subtrees of
 		[] -> "leaf"
 		_  -> "caret"
+
 genericToHTMLString :: (Generic a,DataTreeNode (Rep a)) => a -> String
-genericToHTMLString x = renderHtml $ pageframe $ map dataTreeToHtml $ toDataTree x
+genericToHTMLString x = dataTreeToHTMLString $ toDataTree x
+
+dataTreeToHTMLString :: [DataTree] -> String
+dataTreeToHTMLString datatrees = renderHtml $ pageframe $ map dataTreeToHtml datatrees
 	where
 	chkbox = primHtml "<input type=CHECKBOX id=cbtoggleexpand onclick=toggleexpand()>Expand all</input>"
 	pageframe tree_htmls =

@@ -161,27 +161,18 @@ data TraceElem =
 	Return CExpr |
 	TraceOr [Trace] |
 	TraceAnd [Trace]
-	deriving (GHCG.Generic,Data)
-deriving instance GHCG.Generic Type
-deriving instance GHCG.Generic TypeName
-deriving instance GHCG.Generic IntType
-deriving instance GHCG.Generic FloatType
-deriving instance GHCG.Generic CompTypeRef
-deriving instance GHCG.Generic CompTyKind
-deriving instance GHCG.Generic EnumTypeRef
-deriving instance GHCG.Generic BuiltinType
-deriving instance GHCG.Generic TypeQuals
-deriving instance GHCG.Generic Attr
-deriving instance GHCG.Generic ArraySize
-deriving instance GHCG.Generic FunType
-deriving instance GHCG.Generic ParamDecl
-deriving instance GHCG.Generic VarDecl
-deriving instance GHCG.Generic VarName
-deriving instance GHCG.Generic DeclAttrs
-deriving instance GHCG.Generic FunctionAttrs
-deriving instance GHCG.Generic Storage
-deriving instance GHCG.Generic Linkage
-deriving instance GHCG.Generic TypeDefRef
+	deriving Data
+
+--data DataTree = DataTree String [DataTree] | Leaf String deriving (Show)
+traceToHTMLString :: Trace -> String
+traceToHTMLString trace = dataTreeToHTMLString [ trace2datatree trace ]
+	where
+	trace2datatree :: Trace -> DataTree
+	trace2datatree trace = DataTree "list" $ map conv (filter isnotbuiltin trace)
+	conv :: TraceElem -> DataTree
+	conv (TraceOr traces) = DataTree "OR" $ map trace2datatree traces 
+	conv (TraceAnd traces) = DataTree "AND" $ map trace2datatree traces 
+	conv other = Leaf $ show other
 
 --deriving instance Data TraceElem
 instance Show TraceElem where
@@ -197,11 +188,13 @@ showTrace :: Int -> Trace -> String
 showTrace _ [] = ""
 showTrace ind (te:trace) | not (isnotbuiltin te) = showTrace ind trace
 showTrace ind (te:trace) = indent ind ++ case te of
-	TraceOr traces  -> "OR\n" ++ concatMap (showTrace (ind+1)) traces
-	TraceAnd traces -> "AND\n" ++ concatMap (showTrace (ind+1)) traces
+	TraceOr traces  -> "OR\n" ++ showlist traces
+	TraceAnd traces -> "AND\n" ++ showlist traces
 	te              -> show te ++ "\n" ++ showTrace ind trace
 	where
-	indent i = concat $ replicate i "|   "
+	indent i = concat $ replicate i ":   "
+	showlist traces = indent (ind+1) ++ "[\n" ++ showitems traces ++ indent (ind+1) ++ "]\n"
+	showitems traces = intercalate (indent (ind+1) ++ ",\n") (map (showTrace (ind+2)) traces)
 
 type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
@@ -225,15 +218,9 @@ covVectorsM filename opts funname = do
 	let decls = map (NewDeclaration . snd) (param_env++glob_env)
 
 	trace <- unfoldTracesM True (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
-	let
-		filterOutBuiltins :: Trace -> Trace
-		filterOutBuiltins [] = []
-		filterOutBuiltins (TraceOr traces : _) = [ TraceOr $ map filterOutBuiltins traces ]
-		filterOutBuiltins (TraceAnd traces : _) = [ TraceAnd $ map filterOutBuiltins traces ]
-		filterOutBuiltins (te:rest) = if isnotbuiltin te then te : filterOutBuiltins rest else filterOutBuiltins rest
-	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ genericToHTMLString (filterOutBuiltins trace)
+	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
 
-	analyzeTreeM opts ret_type param_env [1] [] trace
+	analyzeTreeM opts ret_type param_env [] [] trace
 
 {-	
 type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
@@ -250,7 +237,7 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceOr traces : rest) = case rest of
 	[] -> do
-		results <- forM traces (analyzeTreeM opts ret_type param_env traceid res_line)
+		results <- forM (zip [1..] traces) (\ (i,trace) -> analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace)
 		when (not $ any is_solution (concat results)) $ do
 			printLog $ "DEAD CODE: Did not find any solutions for trace " ++ showTrace 0 res_line
 		return $ concat results
@@ -258,7 +245,7 @@ analyzeTreeM opts ret_type param_env traceid res_line (TraceOr traces : rest) = 
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceAnd traces : rest) = case rest of
 	[] -> do
-		results <- forM traces (analyzeTreeM opts ret_type param_env traceid res_line)
+		results <- forM (zip [1..] traces) (\ (i,trace) -> analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace)
 		when (any (not.is_solution) (concat results)) $ do
 			printLog $ "DEAD CODE: Did not find any solutions for trace " ++ showTrace 0 res_line
 		return $ concat results
@@ -425,8 +412,8 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 			then_trace <- unfoldTracesM toplevel envs (Condition cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
 			let not_cond = Condition (CUnary CNegOp cond' undefNode)
 			else_trace <- case mb_else_stmt of
-				Nothing        -> unfoldTracesM toplevel envs (not_cond : trace') ( rest : rest2 )
-				Just else_stmt -> unfoldTracesM toplevel envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
+				Nothing        -> unfoldTracesM toplevel envs (trace' ++ [not_cond]) ( rest : rest2 )
+				Just else_stmt -> unfoldTracesM toplevel envs (trace' ++ [not_cond]) ( (CBlockStmt else_stmt : rest) : rest2 )
 			return $ [ (if toplevel then TraceAnd else TraceOr) [ then_trace, else_trace ] ]
 
 	CReturn Nothing _ -> return trace
