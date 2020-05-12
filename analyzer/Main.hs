@@ -461,7 +461,6 @@ unfoldTraces1M _ _ trace [] = return [[trace]]
 
 unfoldTraces1M _ _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
-
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
 
