@@ -170,8 +170,8 @@ traceToHTMLString trace = dataTreeToHTMLString [ trace2datatree trace ]
 	trace2datatree :: Trace -> DataTree
 	trace2datatree trace = DataTree "list" $ map conv (filter isnotbuiltin trace)
 	conv :: TraceElem -> DataTree
-	conv (TraceOr traces) = DataTree "OR" $ map trace2datatree traces 
-	conv (TraceAnd traces) = DataTree "AND" $ map trace2datatree traces 
+	conv (TraceOr traces) = DataTree "OR" $ map trace2datatree traces
+	conv (TraceAnd traces) = DataTree "AND" $ map trace2datatree traces
 	conv other = Leaf $ show other
 
 --deriving instance Data TraceElem
@@ -215,7 +215,7 @@ covVectorsM filename opts funname = do
 	FunDef (VarDecl _ _ (FunctionType (FunType ret_type funparamdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
 	param_env <- concatMapM (declaration2EnvItemM True) funparamdecls
 	
-	let decls = map (NewDeclaration . snd) (param_env++glob_env)
+	let decls = map (NewDeclaration . snd) (reverse param_env ++ glob_env)
 
 	trace <- unfoldTracesM True (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
@@ -412,19 +412,19 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 			then_trace <- unfoldTracesM toplevel envs (Condition cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
 			let not_cond = Condition (CUnary CNegOp cond' undefNode)
 			else_trace <- case mb_else_stmt of
-				Nothing        -> unfoldTracesM toplevel envs (trace' ++ [not_cond]) ( rest : rest2 )
-				Just else_stmt -> unfoldTracesM toplevel envs (trace' ++ [not_cond]) ( (CBlockStmt else_stmt : rest) : rest2 )
+				Nothing        -> unfoldTracesM toplevel envs (not_cond : trace') ( rest : rest2 )
+				Just else_stmt -> unfoldTracesM toplevel envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 			return $ [ (if toplevel then TraceAnd else TraceOr) [ then_trace, else_trace ] ]
 
 	CReturn Nothing _ -> return trace
 	CReturn (Just ret_expr) _ -> do
 		transids ret_expr trace $ \ (ret_expr',trace') -> do
-			return $ trace' ++ [ Return ret_expr' ]
+			return $ Return ret_expr' : trace'
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
 			let lexpr' = subst_var envs lexpr
-			unfoldTracesM toplevel envs (trace' ++ [Assignment lexpr' assigned_expr'']) (rest:rest2)
+			unfoldTracesM toplevel envs (Assignment lexpr' assigned_expr'' : trace') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -458,12 +458,11 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 	transids expr trace cont = do
 		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM toplevel envs expr
 		conts :: [Trace] <- forM additional_expr_traces $ \ (expr',trace') -> do
-			cont (expr',trace++trace')
-		let junction = if toplevel then TraceAnd else TraceOr
+			cont (expr',trace'++trace)
 		case conts of
 			[] -> error $ "transids Strange: conts empty!"
 			[e] -> return e
-			conts -> return [ junction conts ]
+			conts -> return [ TraceOr conts ]
 
 unfoldTraces1M toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
@@ -494,8 +493,8 @@ unfoldTraces1M toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespe
 								_ -> error $ "unfoldTracesM initializers: " ++ (render.pretty) ty ++ " is no composite type!"
 			return (newenvitems,newdecls,initializers)
 		triple -> error $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
-	let (newenvs,newitems,initializerss) = unzip3 new_env_items
-	unfoldTracesM toplevel ((concat newenvs ++ env) : envs) (trace ++ concat newitems) ((concat initializerss ++ rest):rest2)
+	let (newenvs,newitems,initializerss) = unzip3 $ reverse new_env_items
+	unfoldTracesM toplevel ((concat newenvs ++ env) : envs) (concat newitems ++ trace) ((concat initializerss ++ rest):rest2)
 
 unfoldTraces1M toplevel (_:restenvs) trace ([]:rest2) = unfoldTracesM toplevel restenvs trace rest2
 
@@ -582,7 +581,7 @@ tyspec2TypeM typespec = case typespec of
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
 
 elimAssignmentsM :: Trace -> CovVecM Trace
-elimAssignmentsM trace = foldtraceM [] trace
+elimAssignmentsM trace = foldtraceM [] $ reverse trace
 	where
 	foldtraceM :: Trace -> Trace -> CovVecM Trace
 	foldtraceM result [] = return result
