@@ -29,8 +29,11 @@ int f(int x,int y)
     else
     {
         if(z>10)
+        {
             // DEAD!
+            z++;
             return -10;
+        }
         else
             return -1;
     }
