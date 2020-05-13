@@ -114,10 +114,13 @@ main = do
 									ExitFailure _ -> error $ "Compilation failed:\n" ++ stderr
 									ExitSuccess -> return $ Just chkexefilename 
 
-					(traceanalysisresults,msgs) <- evalStateT (covVectorsM filename opts) $
+					(full_coverage,testvectors,deaths) <- evalStateT (covVectorsM filename opts) $
 						CovVecState globdecls 1 translunit filename mb_checkexename funname
 
-					forM_ traceanalysisresults $ \ (traceid,trace,(model,mb_solution)) -> do
+					when (full_coverage && not (null deaths)) $ error "full coverage but deaths!"
+					when (not full_coverage && null deaths) $ error "coverage gaps but no deaths!"
+
+					forM_ testvectors $ \ (traceid,trace,(model,mb_solution)) -> do
 						case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
 							False -> return ()
 							True -> printLog $ unlines $ mbshowtraces (
@@ -137,8 +140,18 @@ main = do
 								show_solution (Just (_,[],_)) = "Empty solution"
 								show_solution (Just v@(_,solution,_)) = unlines [ show solution, showTestVector funname v ]
 
-					printLog "\n======= SUMMARY ========\n"
-					forM_ msgs printLog
+					printLog $ "\n===== SUMMARY =====\n"
+
+					forM_ testvectors $ \ (traceid,trace,(model,Just v)) -> do
+						printLog $ "Test Vector covering " ++ show traceid ++ " : "
+						printLog $ "    " ++ showTestVector funname v
+					forM_ deaths $ \ ni -> do
+						printLog $ "DEAD CODE at " ++ show (render.pretty) ni
+
+					case full_coverage of
+						False -> printLog $ "FAIL, there are coverage gaps!"
+						True  -> printLog "OK, we have full coverage."
+					
 					printLog "\nEnd."
 
 {-	
@@ -217,7 +230,7 @@ showTrace ind (te:trace) = indent ind ++ case te of
 type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
 
-covVectorsM :: String -> [String] -> CovVecM ([TraceAnalysisResult],[String])
+covVectorsM :: String -> [String] -> CovVecM ([TraceAnalysisResult],[NodeInfo])
 covVectorsM filename opts = do
 	funname <- gets funNameCVS
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
@@ -239,7 +252,7 @@ covVectorsM filename opts = do
 	trace <- unfoldTracesM True (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
 
-	runStateT (analyzeTreeM opts ret_type param_env [] [] trace) []
+	analyzeTreeM opts ret_type param_env [] [] trace
 {-	
 type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
@@ -247,23 +260,24 @@ solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
 -}
 
-analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> StateT [String] CovVecM [TraceAnalysisResult]
+analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> CovVecM (Bool,[TraceAnalysisResult],[NodeInfo])
 
 analyzeTreeM opts ret_type param_env traceid res_line [] = do
-	res_trace <- lift $ elimAssignmentsM res_line
-	resultdata@(_,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace
-	deaths' <- case mb_solution of
-		Just v@(_,sol,_) | not (null sol) -> do
-			funname <- lift $ gets funNameCVS
-			addMsgM $ "Found test vector:  " ++ showTestVector funname v
+	res_trace <- elimAssignmentsM res_line
+	resultdata@(_,mb_solution) <- solveTraceM ret_type param_env traceid res_trace
+	let traceanalysisresult :: TraceAnalysisResult = (traceid,res_trace,resultdata)
+	case is_solution traceanalysisresult of
+		False -> 
+			funname <- gets funNameCVS
 			return []
 		_ -> return []
-	lift $ checkSolutionM traceid resultdata
-	return [(traceid,res_trace,resultdata)]
+	checkSolutionM traceid resultdata
+	return ([],
 
 analyzeTreeM opts ret_type param_env traceid res_line tr@(TraceOr ni traces : rest) = case rest of
 	[] -> do
-		resultss :: [[TraceAnalysisResult]] <- forM (zip [1..] traces) (\ (i,trace) -> analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace)
+		resultss :: [[TraceAnalysisResult]] <- forM (zip [1..] traces) (\ (i,trace) ->
+			analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace)
 		case filter (all is_solution) resultss of
 			[] -> do
 				addMsgM $ "DEAD CODE: Did not find any solutions for trace " ++ show traceid ++ " : " ++ (render.pretty) ni
@@ -284,11 +298,6 @@ analyzeTreeM opts ret_type param_env traceid res_line tr@(TraceAnd ni traces : r
 
 analyzeTreeM opts ret_type param_env traceid res_line (te:rest) =
 	analyzeTreeM opts ret_type param_env traceid (te:res_line) rest
-
-addMsgM :: (MonadIO m) => String -> StateT [String] m ()
-addMsgM msg = do
-	modify (++[msg])
-	printLog msg
 
 {-	
 type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
