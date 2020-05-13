@@ -769,8 +769,8 @@ solveTraceM ret_type param_env traceid trace = do
 			printLog $ show err
 			return Nothing
 		Right [] -> return Nothing
-		Right (sol:_) -> return $ Just (param_env,sol,mb_ret_val)
-
+		Right [sol] -> return $ Just (param_env,sol,mb_ret_val)
+		Right _ -> error $ "Found more than one solution for " ++ show traceid ++ " !"
 	return (model,mb_solution)
 
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
