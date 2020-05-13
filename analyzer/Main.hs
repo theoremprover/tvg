@@ -113,8 +113,8 @@ main = do
 									ExitFailure _ -> error $ "Compilation failed:\n" ++ stderr
 									ExitSuccess -> return $ Just chkexefilename 
 
-					traceanalysisresults <- evalStateT (covVectorsM filename opts funname) $
-						CovVecState globdecls 1 translunit filename mb_checkexename
+					(traceanalysisresults,msgs) <- evalStateT (covVectorsM filename opts) $
+						CovVecState globdecls 1 translunit filename mb_checkexename funname
 
 					forM_ traceanalysisresults $ \ (traceid,trace,(model,mb_solution)) -> do
 						case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
@@ -128,29 +128,40 @@ main = do
 								"" ]) ++ [
 								"--- SOLUTION " ++ show traceid ++ " ----------------------",
 								show_solution mb_solution ]
-							where
-		
-							mbshowtraces ts = if don'tShowTraces then [] else ts
-							show_solution Nothing = "No solution"
-							show_solution (Just (_,[],_)) = "Empty solution"
-							show_solution (Just (env,solution,mb_retval)) = unlines [ show solution,
-								funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ++
-								"    = " ++ maybe "<NO_RETURN>" (const $ show $ getPredictedResult solution) mb_retval ]
+
 								where
-								showarg :: EnvItem -> String
-								showarg (oldident,(newident,_)) =
-									identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
-										Nothing -> "DONT_CARE"
-										Just (MInt i) -> show i
-										Just (MFloat f) -> show f
-										val -> error $ "showarg " ++ show val ++ " not yet implemented"
+		
+								mbshowtraces ts = if don'tShowTraces then [] else ts
+								show_solution Nothing = "No solution"
+								show_solution (Just (_,[],_)) = "Empty solution"
+								show_solution (Just v@(_,solution,_)) = unlines [ show solution, showTestVector funname v ]
+
+					printLog "\n======= SUMMARY ========\n"
+					forM_ msgs printLog
+					printLog "\nEnd."
+
+{-	
+type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
+-}
+showTestVector :: String -> (Env,Solution,Maybe CExpr) -> String
+showTestVector funname (env,solution,mb_retval) = funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ++
+	" = " ++ maybe "<NO_RETURN>" (const $ show $ getPredictedResult solution) mb_retval
+	where
+	showarg :: EnvItem -> String
+	showarg (oldident,(newident,_)) =
+		identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
+			Nothing -> "DONT_CARE"
+			Just (MInt i) -> show i
+			Just (MFloat f) -> show f
+			val -> error $ "showarg " ++ show val ++ " not yet implemented"
 
 data CovVecState = CovVecState {
 	globDeclsCVS    :: GlobalDecls,
 	newNameIndexCVS :: Int,
 	translUnitCVS   :: CTranslUnit,
 	srcFilenameCVS  :: String,
-	checkExeNameCVS :: Maybe String
+	checkExeNameCVS :: Maybe String,
+	funNameCVS      :: String
 	}
 type CovVecM = StateT CovVecState IO
 
@@ -199,8 +210,9 @@ showTrace ind (te:trace) = indent ind ++ case te of
 type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
 
-covVectorsM :: String -> [String] -> String -> CovVecM [TraceAnalysisResult]
-covVectorsM filename opts funname = do
+covVectorsM :: String -> [String] -> CovVecM ([TraceAnalysisResult],[String])
+covVectorsM filename opts = do
+	funname <- gets funNameCVS
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
 	glob_env <- concatMapM (declaration2EnvItemM False) globdecls
 	let
@@ -220,8 +232,7 @@ covVectorsM filename opts funname = do
 	trace <- unfoldTracesM True (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
 
-	analyzeTreeM opts ret_type param_env [] [] trace
-
+	runStateT (analyzeTreeM opts ret_type param_env [] [] trace) []
 {-	
 type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
@@ -229,30 +240,42 @@ solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
 -}
 
-analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> CovVecM [TraceAnalysisResult]
+analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> StateT [String] CovVecM [TraceAnalysisResult]
 
 analyzeTreeM opts ret_type param_env traceid res_line [] = do
-	res_trace <- elimAssignmentsM res_line
-	solveTraceM ret_type param_env traceid res_trace >>= checkSolutionM traceid >>= return . (:[]) . (traceid,res_trace,)
+	res_trace <- lift $ elimAssignmentsM res_line
+	resultdata@(_,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace
+	case mb_solution of
+		Just v@(_,sol,_) | not (null sol) -> do
+			funname <- lift $ gets funNameCVS
+			addMsgM $ "Found test vector:  " ++ showTestVector funname v
+		_ -> return ()
+	lift $ checkSolutionM traceid resultdata
+	return [(traceid,res_trace,resultdata)]
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceOr traces : rest) = case rest of
 	[] -> do
 		results <- forM (zip [1..] traces) (\ (i,trace) -> analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace)
 		when (not $ any is_solution (concat results)) $ do
-			printLog $ "DEAD CODE: Did not find any solutions for trace " ++ showTrace 0 res_line
+			addMsgM $ "DEAD CODE: Did not find any solutions for trace OR\n" ++ showTrace 0 res_line
 		return $ concat results
-	_ -> error $ "analyzeTreeM: TraceOr not last element in " ++ showTrace 0 res_line
+	_ -> error $ "analyzeTreeM: TraceOr not last element in " ++ showTrace 1 res_line
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceAnd traces : rest) = case rest of
 	[] -> do
 		results <- forM (zip [1..] traces) (\ (i,trace) -> analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace)
 		when (any (not.is_solution) (concat results)) $ do
-			printLog $ "DEAD CODE: Did not find any solutions for trace " ++ showTrace 0 res_line
+			addMsgM $ "DEAD CODE: Did not find all solutions for trace AND\n" ++ showTrace 1 res_line
 		return $ concat results
 	_ -> error $ "analyzeTreeM: TraceAnd not last element in " ++ showTrace 0 res_line
 
 analyzeTreeM opts ret_type param_env traceid res_line (te:rest) =
 	analyzeTreeM opts ret_type param_env traceid (te:res_line) rest
+
+addMsgM :: (MonadIO m) => String -> StateT [String] m ()
+addMsgM msg = do
+	modify (++[msg])
+	printLog msg
 
 is_solution :: TraceAnalysisResult -> Bool
 is_solution (_,_,(_,mb_solution)) = isJust mb_solution
