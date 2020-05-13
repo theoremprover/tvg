@@ -5,8 +5,12 @@
 
 int g(int x)
 {
-    if(x>=0) return x;
-    else return (-x);
+    if(x>=0)
+    {
+        return x;
+    }
+    else
+        return (-x);
 }
 
 int f(int x,int y)

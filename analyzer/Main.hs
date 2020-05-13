@@ -507,11 +507,13 @@ unfoldTraces1M _ _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) c
 
 translateExprM :: Bool -> [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
 translateExprM toplevel envs expr = do
+	printLog $ "===== translateExpr " ++ (render.pretty) expr ++ " ==============================="
 	let
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
 			CVar funident _ -> do
 				modify ( (funident,args,ni): )
+				printLog $ "call=" ++ show (funident,args,ni)
 				return $ CConst $ CStrConst undefined ni
 			_  -> error $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call expr = return expr
@@ -523,33 +525,43 @@ translateExprM toplevel envs expr = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
 		let body' = replace_param_with_arg (zip paramdecls args) body
 		funtrace <- unfoldTracesM False envs [] [ [ CBlockStmt body' ] ]
-		let funtraces = extract_traces_rets [] funtrace
+		printLog $ "##### extract_traces_rets " ++ showTrace 0 (reverse funtrace) ++ "\n"
+		let funtraces = extract_traces_rets [] (reverse funtrace)
+		printLog $ "#### = " ++ show (map (\(tr,cex) -> (tr,(render.pretty) cex)) funtraces) ++ "\n"
 		return (ni,funtraces) 
 
-	return $ create_combinations expr'' [] funcalls_traces
+	printLog $ "funcalls_traces=" ++ show ( map (\ (ni,tes) -> ("ni",concatMap (\(tr,cex) -> show (tr,(render.pretty) cex)) tes)) funcalls_traces) ++ "\n"
 
+	combs <- create_combinations expr'' [] funcalls_traces
+	printLog $ "combs=" ++ show (map (\ (cex,tr) -> ((render.pretty) cex, show tr)) combs) ++ "\n"
+
+	printLog $ "===== END OF translateExpr " ++ (render.pretty) expr ++ " ===============================\n"
+
+	return combs
+	
 	where
 
 	extract_traces_rets :: [TraceElem] -> Trace -> [(Trace,CExpr)]
 	extract_traces_rets traceelems (Return retexpr : _) = [(traceelems,retexpr)]
 	extract_traces_rets traceelems (TraceOr traces : rest) = case rest of
-		[] -> concat $ for traces (extract_traces_rets traceelems)
+		[] -> concat $ for (map reverse traces) (extract_traces_rets traceelems)
 		_ -> error $ "extract_traces_rets: TraceOr not last element " ++ showTrace 0 traceelems
 	extract_traces_rets traceelems (TraceAnd traces : rest) = case rest of
-		[] -> concat $ for traces (extract_traces_rets traceelems)
+		[] -> concat $ for (map reverse traces) (extract_traces_rets traceelems)
 		_ -> error $ "extract_traces_rets: TraceAnd not last element in trace " ++ showTrace 0 traceelems
 	extract_traces_rets traceelems [] = error $ "trace of no return : " ++ showTrace 0 traceelems
 	extract_traces_rets traceelems (te : rest) = extract_traces_rets (te:traceelems) rest
 
-	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExpr)])] -> [(CExpr,Trace)]
-	create_combinations expr trace [] = [(expr,trace)]
-	create_combinations expr trace ((ni,tes):rest) =
-		concat $ for tes $ \ (fun_trace,ret_expr) -> let
-			-- substitute the function call by the return expression
-			expr' = everywhere (mkT subst_ret_expr) expr
-			subst_ret_expr :: CExpr -> CExpr
-			subst_ret_expr expr = if nodeInfo expr == ni then ret_expr else expr
-			in
+	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExpr)])] -> CovVecM [(CExpr,Trace)]
+	create_combinations expr trace [] = return [(expr,trace)]
+	create_combinations expr trace ((ni,tes):rest) = do
+		concatForM tes $ \ (fun_trace,ret_expr) -> do
+			let
+				-- substitute the function call by the return expression
+				expr' = everywhere (mkT subst_ret_expr) expr
+				subst_ret_expr :: CExpr -> CExpr
+				subst_ret_expr expr = if nodeInfo expr == ni then ret_expr else expr
+			printLog $ "fun_trace=" ++ show fun_trace
 			create_combinations expr' (fun_trace++trace) rest
 
 	replace_param_with_arg :: [(ParamDecl,CExpr)] -> CStat -> CStat
