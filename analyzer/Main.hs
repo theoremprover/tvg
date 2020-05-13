@@ -78,7 +78,8 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : ["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
@@ -170,9 +171,15 @@ data TraceElem =
 	Condition CExpr |
 	NewDeclaration (Ident,Type) |
 	Return CExpr |
-	TraceOr [Trace] |
-	TraceAnd [Trace]
+	TraceOr NodeInfo [Trace] |
+	TraceAnd NodeInfo [Trace]
 	deriving Data
+
+instance Pretty NodeInfo where
+	pretty ni = text $ "line " ++ show line ++ ", col " ++ show col
+		where
+		pos = posOfNode ni
+		(line,col) = (posRow pos,posColumn pos)
 
 --data DataTree = DataTree String [DataTree] | Leaf String deriving (Show)
 traceToHTMLString :: Trace -> String
@@ -181,8 +188,8 @@ traceToHTMLString trace = dataTreeToHTMLString [ trace2datatree trace ]
 	trace2datatree :: Trace -> DataTree
 	trace2datatree trace = DataTree "list" $ map conv (filter isnotbuiltin trace)
 	conv :: TraceElem -> DataTree
-	conv (TraceOr traces) = DataTree "OR" $ map trace2datatree traces
-	conv (TraceAnd traces) = DataTree "AND" $ map trace2datatree traces
+	conv (TraceOr ni traces) = DataTree ("OR" ++ (render.pretty) ni) $ map trace2datatree traces
+	conv (TraceAnd ni traces) = DataTree ("AND" ++ (render.pretty) ni) $ map trace2datatree traces
 	conv other = Leaf $ show other
 
 --deriving instance Data TraceElem
@@ -191,17 +198,17 @@ instance Show TraceElem where
 	show (Condition expr)           = "COND " ++ (render.pretty) expr
 	show (NewDeclaration (lval,ty)) = "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
 	show (Return expr)              = "RET  " ++ (render.pretty) expr
-	show (TraceOr traces)           = "OR   " ++ show traces
-	show (TraceAnd traces)          = "AND  " ++ show traces
+	show (TraceOr _ traces)           = "OR   " ++ show traces
+	show (TraceAnd _ traces)          = "AND  " ++ show traces
 type Trace = [TraceElem]
 
 showTrace :: Int -> Trace -> String
 showTrace _ [] = ""
 showTrace ind (te:trace) | not (isnotbuiltin te) = showTrace ind trace
 showTrace ind (te:trace) = indent ind ++ case te of
-	TraceOr traces  -> "OR\n" ++ showlist traces
-	TraceAnd traces -> "AND\n" ++ showlist traces
-	te              -> show te ++ "\n" ++ showTrace ind trace
+	TraceOr _ traces  -> "OR\n" ++ showlist traces
+	TraceAnd _ traces -> "AND\n" ++ showlist traces
+	te                -> show te ++ "\n" ++ showTrace ind trace
 	where
 	indent i = concat $ replicate i ":   "
 	showlist traces = indent (ind+1) ++ "[\n" ++ showitems traces ++ indent (ind+1) ++ "]\n"
@@ -245,28 +252,34 @@ analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> Stat
 analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	res_trace <- lift $ elimAssignmentsM res_line
 	resultdata@(_,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace
-	case mb_solution of
+	deaths' <- case mb_solution of
 		Just v@(_,sol,_) | not (null sol) -> do
 			funname <- lift $ gets funNameCVS
 			addMsgM $ "Found test vector:  " ++ showTestVector funname v
-		_ -> return ()
+			return []
+		_ -> return []
 	lift $ checkSolutionM traceid resultdata
 	return [(traceid,res_trace,resultdata)]
 
-analyzeTreeM opts ret_type param_env traceid res_line (TraceOr traces : rest) = case rest of
+analyzeTreeM opts ret_type param_env traceid res_line tr@(TraceOr ni traces : rest) = case rest of
 	[] -> do
-		results <- forM (zip [1..] traces) (\ (i,trace) -> analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace)
-		when (not $ any is_solution (concat results)) $ do
-			addMsgM $ "DEAD CODE: Did not find any solutions for trace OR\n" ++ showTrace 0 res_line
-		return $ concat results
+		resultss :: [[TraceAnalysisResult]] <- forM (zip [1..] traces) (\ (i,trace) -> analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace)
+		case filter (all is_solution) resultss of
+			[] -> do
+				addMsgM $ "DEAD CODE: Did not find any solutions for trace " ++ show traceid ++ " : " ++ (render.pretty) ni
+				return []
+			tas : _ -> return tas
 	_ -> error $ "analyzeTreeM: TraceOr not last element in " ++ showTrace 1 res_line
 
-analyzeTreeM opts ret_type param_env traceid res_line (TraceAnd traces : rest) = case rest of
+analyzeTreeM opts ret_type param_env traceid res_line tr@(TraceAnd ni traces : rest) = case rest of
 	[] -> do
-		results <- forM (zip [1..] traces) (\ (i,trace) -> analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace)
-		when (any (not.is_solution) (concat results)) $ do
-			addMsgM $ "DEAD CODE: Did not find all solutions for trace AND\n" ++ showTrace 1 res_line
-		return $ concat results
+		resultss :: [[TraceAnalysisResult]] <- forM (zip [1..] traces) (\ (i,trace) -> analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace)
+		case all (all is_solution) resultss of
+			False -> do
+				addMsgM $ "DEAD CODE: Did not find all solutions for trace " ++ show traceid ++ " : " ++ (render.pretty) ni
+				return $ concat $ filter (all is_solution) resultss
+			True -> do
+				return $ concat resultss
 	_ -> error $ "analyzeTreeM: TraceAnd not last element in " ++ showTrace 0 res_line
 
 analyzeTreeM opts ret_type param_env traceid res_line (te:rest) =
@@ -277,8 +290,15 @@ addMsgM msg = do
 	modify (++[msg])
 	printLog msg
 
+{-	
+type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
+type TraceAnalysisResult = ([Int],Trace,ResultData)
+solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
+checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
+-}
 is_solution :: TraceAnalysisResult -> Bool
-is_solution (_,_,(_,mb_solution)) = isJust mb_solution
+is_solution (_,_,(_,Just (_,solution,_))) = not $ null solution
+is_solution _ = False
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
@@ -430,14 +450,14 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 
 	CCompound _ cbis _ -> unfoldTracesM toplevel ([]:envs) trace (cbis : (rest : rest2))
 
-	CIf cond then_stmt mb_else_stmt _ -> do
+	CIf cond then_stmt mb_else_stmt ni -> do
 		transids cond trace $ \ (cond',trace') -> do
 			then_trace <- unfoldTracesM toplevel envs (Condition cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
 			let not_cond = Condition (CUnary CNegOp cond' undefNode)
 			else_trace <- case mb_else_stmt of
 				Nothing        -> unfoldTracesM toplevel envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM toplevel envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
-			return $ [ (if toplevel then TraceAnd else TraceOr) [ then_trace, else_trace ] ]
+			return $ [ ((if toplevel then TraceAnd else TraceOr) ni) [ then_trace, else_trace ] ]
 
 	CReturn Nothing _ -> return trace
 	CReturn (Just ret_expr) _ -> do
@@ -485,7 +505,7 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 		case conts of
 			[] -> error $ "transids Strange: conts empty!"
 			[e] -> return e
-			conts -> return [ TraceOr conts ]
+			conts -> return [ TraceOr undefNode conts ]
 
 unfoldTraces1M toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
@@ -566,10 +586,10 @@ translateExprM toplevel envs expr = do
 
 	extract_traces_rets :: [TraceElem] -> Trace -> [(Trace,CExpr)]
 	extract_traces_rets traceelems (Return retexpr : _) = [(traceelems,retexpr)]
-	extract_traces_rets traceelems (TraceOr traces : rest) = case rest of
+	extract_traces_rets traceelems (TraceOr _ traces : rest) = case rest of
 		[] -> concat $ for (map reverse traces) (extract_traces_rets traceelems)
 		_ -> error $ "extract_traces_rets: TraceOr not last element " ++ showTrace 0 traceelems
-	extract_traces_rets traceelems (TraceAnd traces : rest) = case rest of
+	extract_traces_rets traceelems (TraceAnd _ traces : rest) = case rest of
 		[] -> concat $ for (map reverse traces) (extract_traces_rets traceelems)
 		_ -> error $ "extract_traces_rets: TraceAnd not last element in trace " ++ showTrace 0 traceelems
 	extract_traces_rets traceelems [] = error $ "trace of no return : " ++ showTrace 0 traceelems
