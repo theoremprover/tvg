@@ -19,6 +19,7 @@ import Control.Monad
 import Prelude.Unicode
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
+import qualified Data.Set as Set
 
 import Interfaces.FZSolutionParser
 import qualified Interfaces.MZAST as MZAST
@@ -155,9 +156,6 @@ main = do
 					
 					printLog "\nEnd."
 
-{-	
-type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
--}
 showTestVector :: String -> (Env,Solution,Maybe CExpr) -> String
 showTestVector funname (env,solution,mb_retval) = funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ++
 	" = " ++ maybe "<NO_RETURN>" (const $ show $ getPredictedResult solution) mb_retval
@@ -198,13 +196,10 @@ instance CNode TraceElem where
 	nodeInfo (TraceAnd _)               = undefNode
 	
 instance Pretty NodeInfo where
-	pretty ni = text $ show ni
-{-
 	pretty ni = text $ "line " ++ show line ++ ", col " ++ show col
 		where
 		pos = posOfNode ni
 		(line,col) = (posRow pos,posColumn pos)
--}
 
 --data DataTree = DataTree String [DataTree] | Leaf String deriving (Show)
 traceToHTMLString :: Trace -> String
@@ -219,12 +214,15 @@ traceToHTMLString trace = dataTreeToHTMLString [ trace2datatree trace ]
 
 --deriving instance Data TraceElem
 instance Show TraceElem where
-	show (Assignment lvalue expr)   = "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
-	show (Condition expr)           = "COND " ++ (render.pretty) expr
-	show (NewDeclaration (lval,ty)) = "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
-	show (Return expr)              = "RET  " ++ (render.pretty) expr
-	show (TraceOr traces)           = "OR   " ++ show traces
-	show (TraceAnd traces)          = "AND  " ++ show traces
+	show te = ( case te of
+		(Assignment lvalue expr)   -> "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
+		(Condition expr)           -> "COND " ++ (render.pretty) expr
+		(NewDeclaration (lval,ty)) -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
+		(Return expr)              -> "RET  " ++ (render.pretty) expr
+		(TraceOr traces)           -> "OR   " ++ show traces
+		(TraceAnd traces)          -> "AND  " ++ show traces
+		) ++ "  (" ++ (render.pretty) (nodeInfo te) ++ ")"
+
 type Trace = [TraceElem]
 
 showTrace :: Int -> Trace -> String
@@ -265,53 +263,43 @@ covVectorsM filename opts = do
 	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
 
 	analyzeTreeM opts ret_type param_env [] [] trace
-{-	
-type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
-type TraceAnalysisResult = ([Int],Trace,ResultData)
-solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
-checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
-(traceid,trace,(model,mb_solution))
--}
 
-analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> CovVecM (Bool,[TraceAnalysisResult],[NodeInfo])
+-- Unfolds the tree to all execution paths, collecting the solutions and promoting them upwards.
+
+analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> CovVecM (Bool,[TraceAnalysisResult],Set.Set NodeInfo)
 
 analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	res_trace <- elimAssignmentsM res_line
 	resultdata@(_,mb_solution) <- solveTraceM ret_type param_env traceid res_trace
 	let traceanalysisresult :: TraceAnalysisResult = (traceid,res_trace,resultdata)
 	case is_solution traceanalysisresult of
-		False -> return (False,[],[nodeInfo $ head res_line])
+		False -> do
+			return (False,[],Set.empty)
 		True -> do
 			checkSolutionM traceid resultdata
-			return (True,[traceanalysisresult],[])
+			return (True,[traceanalysisresult],Set.fromList $ map nodeInfo res_line)
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceOr traces : rest) = case rest of
 	[] -> do
-		results :: [(Bool,[TraceAnalysisResult],[NodeInfo])] <- forM (zip [1..] traces) $ \ (i,trace) ->
+		results :: [(Bool,[TraceAnalysisResult],Set.Set NodeInfo)] <- forM (zip [1..] traces) $ \ (i,trace) ->
 			analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
-		let (successes,fails) = partition (\(b,_,_) -> b) results
+		let successes = map (\(b,_,_) -> b) results
 		case successes of
-			[] -> return (False,[],concatMap (\(_,_,nis)->nis) fails)
+			[] -> return (False,[],nub $ concatMap (\(_,_,nis)->nis) results)
 			tas : _ -> return tas
 	_ -> error $ "analyzeTreeM: TraceOr not last element in " ++ showTrace 1 res_line
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceAnd traces : rest) = case rest of
 	[] -> do
-		results :: [(Bool,[TraceAnalysisResult],[NodeInfo])] <- forM (zip [1..] traces) $ \ (i,trace) ->
+		results :: [(Bool,[TraceAnalysisResult],Set.Set NodeInfo)] <- forM (zip [1..] traces) $ \ (i,trace) ->
 			analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
 		let (successes,fails) = partition (\(b,_,_) -> b) results
-		return (null fails,concatMap (\(_,s,_)->s) successes,concatMap (\(_,_,nis)->nis) fails)
+		return (null fails,concatMap (\(_,s,_)->s) successes,nub $ concatMap (\(_,_,nis)->nis) fails)
 	_ -> error $ "analyzeTreeM: TraceAnd not last element in " ++ showTrace 1 res_line
 
 analyzeTreeM opts ret_type param_env traceid res_line (te:rest) =
 	analyzeTreeM opts ret_type param_env traceid (te:res_line) rest
 
-{-	
-type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
-type TraceAnalysisResult = ([Int],Trace,ResultData)
-solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
-checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
--}
 is_solution :: TraceAnalysisResult -> Bool
 is_solution (_,_,(_,Just (_,solution,_))) = not $ null solution
 is_solution _ = False
@@ -407,11 +395,11 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 	eliminparamdecl (AbstractParamDecl (VarDecl varname declattrs ty) ni) =
 		AbstractParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
 
-createNewIdentM :: String -> CovVecM Ident
-createNewIdentM name_prefix = do
+createNewIdentM :: Ident -> String -> CovVecM Ident
+createNewIdentM (Ident _ i ni) name_prefix = do
 	new_var_num <- gets newNameIndexCVS
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
-	return $ internalIdent $ name_prefix ++ "_" ++ show new_var_num
+	return $ Ident (name_prefix ++ "_" ++ show new_var_num) i ni
 
 declaration2EnvItemM :: Declaration decl => Bool -> decl -> CovVecM [EnvItem]
 declaration2EnvItemM makenewidents decl = do
@@ -442,7 +430,7 @@ identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM [EnvItem]
 identTy2EnvItemM makenewidents srcident ty = do
 	ty' <- elimTypeDefsM ty
 	newident <- case makenewidents of
-		True -> createNewIdentM $ lValueToVarName (CVar srcident undefNode)
+		True -> createNewIdentM srcident $ lValueToVarName (CVar srcident undefNode)
 		False -> return srcident
 	other_envitems <- makeMemberExprsM ty' (CVar newident undefNode)
 	return $ (srcident,(newident,ty')) : other_envitems
@@ -469,7 +457,7 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 	CIf cond then_stmt mb_else_stmt ni -> do
 		transids cond trace $ \ (cond',trace') -> do
 			then_trace <- unfoldTracesM toplevel envs (Condition cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
-			let not_cond = Condition (CUnary CNegOp cond' undefNode)
+			let not_cond = Condition (CUnary CNegOp cond' (nodeInfo cond'))
 			else_trace <- case mb_else_stmt of
 				Nothing        -> unfoldTracesM toplevel envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM toplevel envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
@@ -492,10 +480,10 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 			Nothing -> assigned_expr
 			Just binop -> CBinary binop lexpr assigned_expr undefNode
 
-	CExpr (Just (CUnary unaryop expr _)) _ | unaryop ∈ map fst unaryops -> do
+	CExpr (Just (CUnary unaryop expr ni_op)) ni | unaryop ∈ map fst unaryops -> do
 		unfoldTracesM toplevel envs trace ( (CBlockStmt stmt' : rest) : rest2 )
 		where
-		stmt' = CExpr (Just $ CAssign assignop expr (CConst $ CIntConst (cInteger 1) undefNode) undefNode) undefNode
+		stmt' = CExpr (Just $ CAssign assignop expr (CConst $ CIntConst (cInteger 1) ni_op) ni) ni
 		Just assignop = lookup unaryop unaryops
 		unaryops = [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
 
@@ -526,7 +514,7 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 unfoldTraces1M toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
 	new_env_items <- forM triples $ \case
-		(Just (CDeclr (Just ident) derivdeclrs _ _ _),mb_init,Nothing) -> do
+		(Just (CDeclr (Just ident) derivdeclrs _ _ ni),mb_init,Nothing) -> do
 			-- TODO: consider the derivdeclrs
 			let ty' = case derivdeclrs of
 				[] -> ty
@@ -535,19 +523,19 @@ unfoldTraces1M toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespe
 			let newdecls = map (NewDeclaration . snd) newenvitems
 			initializers <- case mb_init of
 				Nothing -> return []
-				Just initializer -> cinitializer2blockitems (CVar ident undefNode) ty' initializer
+				Just initializer -> cinitializer2blockitems (CVar ident ni) ty' initializer
 					where
 					cinitializer2blockitems :: CExpr -> Type -> CInit -> CovVecM [CBlockItem]
 					cinitializer2blockitems lexpr ty initializer =
 						case initializer of
-							CInitExpr expr _ -> return [ CBlockStmt $ CExpr (
-								Just $ CAssign CAssignOp lexpr expr undefNode) undefNode ]
+							CInitExpr expr ni_init -> return [ CBlockStmt $ CExpr (
+								Just $ CAssign CAssignOp lexpr expr ni_init) ni_init ]
 							CInitList initlist _ -> case ty of
 								DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 									memberidentstypes <- getMembersM sueref
 									concatForM (zip initlist memberidentstypes) $ \case
 										(([],initializer),(memberident,memberty)) ->
-											cinitializer2blockitems (CMember lexpr memberident False undefNode) memberty initializer
+											cinitializer2blockitems (CMember lexpr memberident False (nodeInfo memberident)) memberty initializer
 										_ -> error $ "unfoldTracesM initializers: CPartDesignators not implemented yet!"
 								_ -> error $ "unfoldTracesM initializers: " ++ (render.pretty) ty ++ " is no composite type!"
 			return (newenvitems,newdecls,initializers)
@@ -633,8 +621,8 @@ translateExprM toplevel envs expr = do
 		substparamarg expr = expr
 
 subst_var :: [Env] -> CExpr -> CExpr
-subst_var envs (CVar ident _) = case lookup ident (concat envs) of
-	Just (ident',_) -> CVar ident' undefNode
+subst_var envs (CVar ident ni) = case lookup ident (concat envs) of
+	Just (ident',_) -> CVar ident' ni
 	Nothing -> error $ " in subst_var : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
 subst_var _ expr = expr
 
