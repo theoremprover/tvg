@@ -10,7 +10,8 @@ import System.Directory
 import System.Exit
 import Language.C
 import Language.C.Data.Ident
---import Language.C.Data.Position (isNoPos)
+import Language.C.Data.Node
+import Language.C.Data.Position
 import Language.C.Analysis.AstAnalysis
 import Language.C.Analysis.TravMonad
 import Language.C.Analysis.SemRep
@@ -116,9 +117,10 @@ main = do
 									ExitFailure _ -> error $ "Compilation failed:\n" ++ stderr
 									ExitSuccess -> return $ Just chkexefilename 
 
-					(full_coverage,testvectors::[TraceAnalysisResult],deaths) <- evalStateT (covVectorsM filename opts) $
-						CovVecState globdecls 1 translunit filename mb_checkexename funname
+					(full_coverage,testvectors::[TraceAnalysisResult],(covered,alls)) <- evalStateT (covVectorsM filename opts) $
+						CovVecState globdecls 1 translunit filename mb_checkexename funname undefined
 
+					let deaths = Set.toList $ Set.difference alls covered
 					when (full_coverage && not (null deaths)) $ error "full coverage but deaths!"
 					when (not full_coverage && null deaths) $ error "coverage gaps but no deaths!"
 
@@ -174,7 +176,8 @@ data CovVecState = CovVecState {
 	translUnitCVS   :: CTranslUnit,
 	srcFilenameCVS  :: String,
 	checkExeNameCVS :: Maybe String,
-	funNameCVS      :: String
+	funNameCVS      :: String,
+	funStartEndCVS  :: ((Int,Int),(Int,Int))
 	}
 type CovVecM = StateT CovVecState IO
 
@@ -201,7 +204,6 @@ instance Pretty NodeInfo where
 		pos = posOfNode ni
 		(line,col) = (posRow pos,posColumn pos)
 
---data DataTree = DataTree String [DataTree] | Leaf String deriving (Show)
 traceToHTMLString :: Trace -> String
 traceToHTMLString trace = dataTreeToHTMLString [ trace2datatree trace ]
 	where
@@ -212,7 +214,6 @@ traceToHTMLString trace = dataTreeToHTMLString [ trace2datatree trace ]
 	conv (TraceAnd traces) = DataTree "AND" $ map trace2datatree traces
 	conv other             = Leaf $ show other
 
---deriving instance Data TraceElem
 instance Show TraceElem where
 	show te = ( case te of
 		(Assignment lvalue expr)   -> "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
@@ -240,7 +241,7 @@ showTrace ind (te:trace) = indent ind ++ case te of
 type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
 
-covVectorsM :: String -> [String] -> CovVecM (Bool,[TraceAnalysisResult],[NodeInfo])
+covVectorsM :: String -> [String] -> CovVecM (Bool,[TraceAnalysisResult],(Set.Set NodeInfo,Set.Set NodeInfo))
 covVectorsM filename opts = do
 	funname <- gets funNameCVS
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
@@ -254,7 +255,17 @@ covVectorsM filename opts = do
 		def2stmt _ = []
 		assnstmt ident expr = [ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ] 
 
-	FunDef (VarDecl _ _ (FunctionType (FunType ret_type funparamdecls False) _)) body _ <- lookupFunM (builtinIdent funname)
+	FunDef (VarDecl _ _ (FunctionType (FunType ret_type funparamdecls False) _)) body fundef_ni <-
+		lookupFunM (builtinIdent funname)
+	
+	let
+		fun_lc = lineColNodeInfo fundef_ni
+		next_lc = case sort $ filter (> lineColNodeInfo fundef_ni) $ map lineColNodeInfo globdecls of
+			[] -> (9999999999,9999999999)
+			next : _ -> next
+	printLog $ "function to cover ranges from " ++ show fun_lc ++ " to " ++ show next_lc
+	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
+
 	param_env <- concatMapM (declaration2EnvItemM True) funparamdecls
 	
 	let decls = map (NewDeclaration .snd) (reverse param_env ++ glob_env)
@@ -264,45 +275,64 @@ covVectorsM filename opts = do
 
 	analyzeTreeM opts ret_type param_env [] [] trace
 
+
+type AnalyzeTreeResult = (Bool,[TraceAnalysisResult],(Set.Set NodeInfo,Set.Set NodeInfo))
 -- Unfolds the tree to all execution paths, collecting the solutions and promoting them upwards.
 
-analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> CovVecM (Bool,[TraceAnalysisResult],Set.Set NodeInfo)
+analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> CovVecM AnalyzeTreeResult
 
 analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	res_trace <- elimAssignmentsM res_line
 	resultdata@(_,mb_solution) <- solveTraceM ret_type param_env traceid res_trace
+
+	startend <- gets funStartEndCVS
+	let visible_trace = Set.fromList $ map nodeInfo $ filter (is_visible_traceelem startend) res_line
+
 	let traceanalysisresult :: TraceAnalysisResult = (traceid,res_trace,resultdata)
 	case is_solution traceanalysisresult of
-		False -> do
-			return (False,[],Set.empty)
-		True -> do
+		False -> return (False,[],(Set.empty,visible_trace))
+		True  -> do
 			checkSolutionM traceid resultdata
-			return (True,[traceanalysisresult],Set.fromList $ map nodeInfo res_line)
+			return (True,[traceanalysisresult],(visible_trace,visible_trace))
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceOr traces : rest) = case rest of
 	[] -> do
-		results :: [(Bool,[TraceAnalysisResult],Set.Set NodeInfo)] <- forM (zip [1..] traces) $ \ (i,trace) ->
+		results :: [AnalyzeTreeResult] <- forM (zip [1..] traces) $ \ (i,trace) ->
 			analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
-		let successes = map (\(b,_,_) -> b) results
-		case successes of
-			[] -> return (False,[],nub $ concatMap (\(_,_,nis)->nis) results)
-			tas : _ -> return tas
+		let successes = filter (\(b,_,_) -> b) results
+		return $ case successes of
+			[]      -> (False,[],(Set.empty, resultUnionCoverage snd results))
+			tas : _ -> tas
 	_ -> error $ "analyzeTreeM: TraceOr not last element in " ++ showTrace 1 res_line
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceAnd traces : rest) = case rest of
 	[] -> do
-		results :: [(Bool,[TraceAnalysisResult],Set.Set NodeInfo)] <- forM (zip [1..] traces) $ \ (i,trace) ->
+		results :: [AnalyzeTreeResult] <- forM (zip [1..] traces) $ \ (i,trace) ->
 			analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
 		let (successes,fails) = partition (\(b,_,_) -> b) results
-		return (null fails,concatMap (\(_,s,_)->s) successes,nub $ concatMap (\(_,_,nis)->nis) fails)
+		return ( null fails, concatMap (\(_,s,_)->s) successes,
+			(resultUnionCoverage fst successes, resultUnionCoverage snd results) )
 	_ -> error $ "analyzeTreeM: TraceAnd not last element in " ++ showTrace 1 res_line
 
-analyzeTreeM opts ret_type param_env traceid res_line (te:rest) =
-	analyzeTreeM opts ret_type param_env traceid (te:res_line) rest
+analyzeTreeM opts ret_type param_env traceid res_line (te:rest) = do
+	(b,tars,(covered,alls)) <- analyzeTreeM opts ret_type param_env traceid (te:res_line) rest
+	return (b,tars,(Set.insert (nodeInfo te) covered,Set.insert (nodeInfo te) alls))
+
+resultUnionCoverage :: ((Set.Set NodeInfo,Set.Set NodeInfo) -> Set.Set NodeInfo) -> [AnalyzeTreeResult] -> Set.Set NodeInfo
+resultUnionCoverage proj atrs = Set.unions $ map (proj.(\(_,_,c)->c)) atrs
 
 is_solution :: TraceAnalysisResult -> Bool
 is_solution (_,_,(_,Just (_,solution,_))) = not $ null solution
 is_solution _ = False
+
+is_visible_traceelem :: (CNode a) => ((Int,Int),(Int,Int)) -> a -> Bool
+is_visible_traceelem (start,end) cnode = start <= lc && lc < end where
+	lc = lineColNodeInfo cnode
+
+lineColNodeInfo :: (CNode a) => a -> (Int,Int)
+lineColNodeInfo cnode = if isSourcePos pos_te then (posRow pos_te,posColumn pos_te) else (-1,-1)
+	where
+	pos_te = posOfNode $ nodeInfo cnode
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
