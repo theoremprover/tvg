@@ -120,6 +120,9 @@ main = do
 					(full_coverage,testvectors::[TraceAnalysisResult],(covered,alls)) <- evalStateT (covVectorsM filename opts) $
 						CovVecState globdecls 1 translunit filename mb_checkexename funname undefined
 
+					printLog $ "covered=" ++ show (map lineColNodeInfo $ Set.toList covered)
+					printLog $ "alls=" ++ show (map lineColNodeInfo $ Set.toList alls)
+
 					let deaths = Set.toList $ Set.difference alls covered
 					when (full_coverage && not (null deaths)) $ error "full coverage but deaths!"
 					when (not full_coverage && null deaths) $ error "coverage gaps but no deaths!"
@@ -195,14 +198,13 @@ instance CNode TraceElem where
 	nodeInfo (Condition expr)           = nodeInfo expr
 	nodeInfo (NewDeclaration (ident,_)) = nodeInfo ident
 	nodeInfo (Return expr)              = nodeInfo expr
-	nodeInfo (TraceOr _)                = undefNode
-	nodeInfo (TraceAnd _)               = undefNode
-	
+	nodeInfo (TraceOr (tr:_))           = nodeInfo $ head tr
+	nodeInfo (TraceAnd (tr:_))          = nodeInfo $ head tr
+
 instance Pretty NodeInfo where
 	pretty ni = text $ "line " ++ show line ++ ", col " ++ show col
 		where
-		pos = posOfNode ni
-		(line,col) = (posRow pos,posColumn pos)
+		(line,col) = lineColNodeInfo ni
 
 traceToHTMLString :: Trace -> String
 traceToHTMLString trace = dataTreeToHTMLString [ trace2datatree trace ]
@@ -250,10 +252,10 @@ covVectorsM filename opts = do
 		-- creates the assignment statements from the global context
 		defs = concatMap def2stmt globdecls
 		def2stmt :: IdentDecl -> [CBlockItem]
-		def2stmt (EnumeratorDef (Enumerator ident expr _ _)) = assnstmt ident expr
-		def2stmt (ObjectDef (ObjDef (VarDecl (VarName ident _) _ _) (Just (CInitExpr expr _)) _)) = assnstmt ident expr
+		def2stmt ed@(EnumeratorDef (Enumerator ident expr _ _)) = assnstmt ident expr (nodeInfo ed)
+		def2stmt od@(ObjectDef (ObjDef (VarDecl (VarName ident _) _ _) (Just (CInitExpr expr _)) _)) = assnstmt ident expr (nodeInfo od)
 		def2stmt _ = []
-		assnstmt ident expr = [ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident undefNode) expr undefNode) undefNode) ] 
+		assnstmt ident expr ni = [ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident (nodeInfo ident)) expr ni) ni) ] 
 
 	FunDef (VarDecl _ _ (FunctionType (FunType ret_type funparamdecls False) _)) body fundef_ni <-
 		lookupFunM (builtinIdent funname)
@@ -310,7 +312,7 @@ analyzeTreeM opts ret_type param_env traceid res_line (TraceAnd traces : rest) =
 		results :: [AnalyzeTreeResult] <- forM (zip [1..] traces) $ \ (i,trace) ->
 			analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
 		let (successes,fails) = partition (\(b,_,_) -> b) results
-		return ( null fails, concatMap (\(_,s,_)->s) successes,
+		return ( null fails, concatMap (\(_,s,_)->s) results,
 			(resultUnionCoverage fst successes, resultUnionCoverage snd results) )
 	_ -> error $ "analyzeTreeM: TraceAnd not last element in " ++ showTrace 1 res_line
 
@@ -367,8 +369,8 @@ normalizeExpr expr = case expr of
 			(CShlOp,"shl"),(CShrOp,"shr"),(CAndOp,"and"),(CXorOp,"xor"),(COrOp,"or") ] of
 				Nothing -> error $ "binop2str " ++ (render.pretty) binop ++ " not implemented"
 				Just s -> s
-	CMember (CUnary CAdrOp expr _) member True _ -> normalizeExpr $ CMember expr member False undefNode
-	CMember (CUnary CIndOp expr _) member False _ -> normalizeExpr $ CMember expr member True undefNode
+	CMember (CUnary CAdrOp expr _) member True ni -> normalizeExpr $ CMember expr member False ni
+	CMember (CUnary CIndOp expr _) member False ni -> normalizeExpr $ CMember expr member True ni
 	other -> error $ "normalizeExpr " ++ (render.pretty) other ++ " not implemented yet."
 
 	where
@@ -442,27 +444,30 @@ makeMemberExprsM ty ptr_expr = case ty of
 		members <- getMembersM sueref 
 		return $ for members $ \ (member_ident,member_ty) ->
 			let
-				lexpr = CMember ptr_expr member_ident False undefNode
-				new_mem_ident_ptr = internalIdent $ lValueToVarName lexpr
+				lexpr = CMember ptr_expr member_ident False (nodeInfo ptr_expr)
+				new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
 				in
 				(new_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
 	PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> do
 		members <- getMembersM sueref 
 		return $ for members $ \ (member_ident,member_ty) ->
 			let
-				lexpr = CMember ptr_expr member_ident True undefNode
-				new_mem_ident_ptr = internalIdent $ lValueToVarName lexpr
+				lexpr = CMember ptr_expr member_ident True (nodeInfo ptr_expr)
+				new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
 				in
 				(new_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
 	_ -> return []
+
+mkIdentWithCNodePos :: (CNode cnode) => cnode -> String -> Ident
+mkIdentWithCNodePos cnode name = mkIdent (posOfNode $ nodeInfo cnode) name (Name 99999)
 
 identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM [EnvItem]
 identTy2EnvItemM makenewidents srcident ty = do
 	ty' <- elimTypeDefsM ty
 	newident <- case makenewidents of
-		True -> createNewIdentM srcident $ lValueToVarName (CVar srcident undefNode)
+		True -> createNewIdentM srcident $ lValueToVarName (CVar srcident (nodeInfo srcident))
 		False -> return srcident
-	other_envitems <- makeMemberExprsM ty' (CVar newident undefNode)
+	other_envitems <- makeMemberExprsM ty' (CVar newident (nodeInfo srcident))
 	return $ (srcident,(newident,ty')) : other_envitems
 
 -- Just unfold the traces
@@ -498,7 +503,7 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 		transids ret_expr trace $ \ (ret_expr',trace') -> do
 			return $ Return ret_expr' : trace'
 
-	CExpr (Just cass@(CAssign assignop lexpr assigned_expr _)) _ -> do
+	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
 			let lexpr' = subst_var envs lexpr
 			unfoldTracesM toplevel envs (Assignment lexpr' assigned_expr'' : trace') (rest:rest2)
@@ -508,7 +513,7 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 			(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
 		assigned_expr' = case mb_binop of
 			Nothing -> assigned_expr
-			Just binop -> CBinary binop lexpr assigned_expr undefNode
+			Just binop -> CBinary binop lexpr assigned_expr ni
 
 	CExpr (Just (CUnary unaryop expr ni_op)) ni | unaryop ∈ map fst unaryops -> do
 		unfoldTracesM toplevel envs trace ( (CBlockStmt stmt' : rest) : rest2 )
@@ -521,11 +526,11 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 		error $ "not implemented yet."
 
 	-- I'd like to create an algorithm that infers the invariant from the loop's body, so I don't have to unroll...
- 	CWhile cond body False _ -> unfoldTracesM toplevel envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
+ 	CWhile cond body False ni -> unfoldTracesM toplevel envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
 		where
 		unroll_loop :: Int -> [CBlockItem]
 		unroll_loop 0 = []
-		unroll_loop i = [ CBlockStmt $ CIf cond (CCompound [] (CBlockStmt body : unroll_loop (i-1)) undefNode) Nothing (nodeInfo body) ]
+		unroll_loop i = [ CBlockStmt $ CIf cond (CCompound [] (CBlockStmt body : unroll_loop (i-1)) ni) Nothing (nodeInfo body) ]
 
 	_ -> error $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 
@@ -815,7 +820,7 @@ solveTraceM ret_type param_env traceid trace = do
 		trace' = trace ++ case mb_ret_val of
 			Nothing -> []
 			Just ret_expr -> [
-				Condition $ CBinary CEqOp (CVar returnval_ident undefNode) ret_expr undefNode,
+				Condition $ CBinary CEqOp (CVar returnval_ident (nodeInfo returnval_ident)) ret_expr (nodeInfo ret_expr),
 				NewDeclaration (returnval_ident,ret_type) ]
 
 	constraintsG <- concatMapM traceelemToMZ trace'
