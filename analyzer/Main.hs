@@ -117,7 +117,7 @@ main = do
 									ExitFailure _ -> error $ "Compilation failed:\n" ++ stderr
 									ExitSuccess -> return $ Just chkexefilename 
 
-					(full_coverage,testvectors::[TraceAnalysisResult],(covered,alls)) <- evalStateT (covVectorsM filename opts) $
+					(full_coverage,(testvectors,covered,alls)) <- evalStateT (covVectorsM filename opts) $
 						CovVecState globdecls 1 translunit filename mb_checkexename funname undefined
 
 					printLog $ "covered=" ++ show (map lineColNodeInfo $ Set.toList covered)
@@ -151,9 +151,9 @@ main = do
 
 					forM_ testvectors $ \ (traceid,trace,(model,Just v)) -> do
 						printLog $ "Test Vector covering " ++ show traceid ++ " : "
-						printLog $ "    " ++ showTestVector funname v
+						printLog $ "    " ++ showTestVector funname v ++ "\n"
 					forM_ deaths $ \ ni -> do
-						printLog $ "DEAD CODE at " ++ (render.pretty) ni
+						printLog $ "DEAD CODE at " ++ (render.pretty) ni ++ "\n"
 
 					printLog $ "\n" ++ case full_coverage of
 						False -> "FAIL, there are coverage gaps!"
@@ -243,7 +243,7 @@ showTrace ind (te:trace) = indent ind ++ case te of
 type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
 
-covVectorsM :: String -> [String] -> CovVecM (Bool,[TraceAnalysisResult],(Set.Set NodeInfo,Set.Set NodeInfo))
+covVectorsM :: String -> [String] -> CovVecM (Bool,([TraceAnalysisResult],Set.Set NodeInfo,Set.Set NodeInfo))
 covVectorsM filename opts = do
 	funname <- gets funNameCVS
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
@@ -275,53 +275,59 @@ covVectorsM filename opts = do
 	trace <- unfoldTracesM True (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
 
-	analyzeTreeM opts ret_type param_env [] [] trace
+	runStateT (analyzeTreeM opts ret_type param_env [] [] trace) ([],Set.empty,Set.empty)
 
 
-type AnalyzeTreeResult = (Bool,[TraceAnalysisResult],(Set.Set NodeInfo,Set.Set NodeInfo))
+type AnalyzeTreeM a = StateT ([TraceAnalysisResult],Set.Set NodeInfo,Set.Set NodeInfo) CovVecM a
 -- Unfolds the tree to all execution paths, collecting the solutions and promoting them upwards.
 
-analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> CovVecM AnalyzeTreeResult
+analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> AnalyzeTreeM Bool
 
 analyzeTreeM opts ret_type param_env traceid res_line [] = do
-	res_trace <- elimAssignmentsM res_line
-	resultdata@(_,mb_solution) <- solveTraceM ret_type param_env traceid res_trace
+	res_trace <- lift $ elimAssignmentsM res_line
+	resultdata@(_,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace
 
-	startend <- gets funStartEndCVS
+	startend <- lift $ gets funStartEndCVS
 	let visible_trace = Set.fromList $ map nodeInfo $ filter (is_visible_traceelem startend) res_trace
 
 	let traceanalysisresult :: TraceAnalysisResult = (traceid,res_trace,resultdata)
 	case is_solution traceanalysisresult of
-		False -> return (False,[],(Set.empty,visible_trace))
+		False -> do
+			modify $ \ (tas,covered,alls) -> (tas,covered,Set.union visible_trace alls)
+			return False
 		True  -> do
-			checkSolutionM traceid resultdata
-			return (True,[traceanalysisresult],(visible_trace,visible_trace))
+			lift $ checkSolutionM traceid resultdata
+			modify $ \ (tas,covered,alls) -> case visible_trace `Set.isSubsetOf` covered of
+				False -> (traceanalysisresult:tas,Set.union visible_trace covered,Set.union visible_trace alls)
+				True  -> (tas,covered,alls)
+			return True
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceOr traces : rest) = case rest of
-	[] -> do
-		results :: [AnalyzeTreeResult] <- forM (zip [1..] traces) $ \ (i,trace) ->
-			analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
-		let successes = filter (\(b,_,_) -> b) results
-		return $ case successes of
-			[]      -> (False,[],(Set.empty, resultUnionCoverage snd results))
-			tas : _ -> tas
+	[] -> try_traces (zip [1..] traces)
+		where
+		try_traces :: [(Int,Trace)] -> AnalyzeTreeM Bool
+		try_traces [] = return False
+		try_traces ((i,trace):rest) = do
+			success <- analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
+			case success of
+				True -> return True
+				False -> try_traces rest
 	_ -> error $ "analyzeTreeM: TraceOr not last element in " ++ showTrace 1 res_line
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceAnd traces : rest) = case rest of
 	[] -> do
-		results :: [AnalyzeTreeResult] <- forM (zip [1..] traces) $ \ (i,trace) ->
+		results <- forM (zip [1..] traces) $ \ (i,trace) ->
 			analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
-		let (successes,fails) = partition (\(b,_,_) -> b) results
-		return ( null fails, concatMap (\(_,s,_)->s) results,
-			(resultUnionCoverage fst successes, resultUnionCoverage snd results) )
+		return $ all (==True) results
 	_ -> error $ "analyzeTreeM: TraceAnd not last element in " ++ showTrace 1 res_line
 
 analyzeTreeM opts ret_type param_env traceid res_line (te:rest) = do
-	(b,tars,(covered,alls)) <- analyzeTreeM opts ret_type param_env traceid (te:res_line) rest
-	return (b,tars,(Set.insert (nodeInfo te) covered,Set.insert (nodeInfo te) alls))
+	analyzeTreeM opts ret_type param_env traceid (te:res_line) rest
 
-resultUnionCoverage :: ((Set.Set NodeInfo,Set.Set NodeInfo) -> Set.Set NodeInfo) -> [AnalyzeTreeResult] -> Set.Set NodeInfo
-resultUnionCoverage proj atrs = Set.unions $ map (proj.(\(_,_,c)->c)) atrs
+{-
+showCoverage :: Set.Set NodeInfo -> String
+showCoverage nis = show (map lineColNodeInfo $ Set.toList $ nis)
+-}
 
 is_solution :: TraceAnalysisResult -> Bool
 is_solution (_,_,(_,Just (_,solution,_))) = not $ null solution
