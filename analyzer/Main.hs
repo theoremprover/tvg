@@ -58,8 +58,8 @@ fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
 solveIt = True
-showOnlySolutions = False
-don'tShowTraces = False
+showOnlySolutions = True
+don'tShowTraces = True
 checkSolutions = True
 
 returnval_var_name = "return_val"
@@ -81,8 +81,8 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : ["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
@@ -120,10 +120,10 @@ main = do
 					(full_coverage,(testvectors,covered,alls)) <- evalStateT (covVectorsM filename opts) $
 						CovVecState globdecls 1 translunit filename mb_checkexename funname undefined
 
-					printLog $ "covered=" ++ show (map lineColNodeInfo $ Set.toList covered)
-					printLog $ "alls=" ++ show (map lineColNodeInfo $ Set.toList alls)
+					printLog ""
 
 					let deaths = Set.toList $ Set.difference alls covered
+
 					when (full_coverage && not (null deaths)) $ error "full coverage but deaths!"
 					when (not full_coverage && null deaths) $ error "coverage gaps but no deaths!"
 
@@ -152,14 +152,12 @@ main = do
 					forM_ testvectors $ \ (traceid,trace,(model,Just v)) -> do
 						printLog $ "Test Vector covering " ++ show traceid ++ " : "
 						printLog $ "    " ++ showTestVector funname v ++ "\n"
-					forM_ deaths $ \ ni -> do
-						printLog $ "DEAD CODE at " ++ (render.pretty) ni ++ "\n"
+					forM_ deaths $ \ branch -> do
+						printLog $ "DEAD " ++ show branch ++ "\n"
 
-					printLog $ "\n" ++ case full_coverage of
+					printLog $ case full_coverage of
 						False -> "FAIL, there are coverage gaps!"
-						True  -> "OK, we have full coverage."
-					
-					printLog "\nEnd."
+						True  -> "OK, we have full branch coverage."
 
 showTestVector :: String -> (Env,Solution,Maybe CExpr) -> String
 showTestVector funname (env,solution,mb_retval) = funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ++
@@ -186,16 +184,22 @@ type CovVecM = StateT CovVecState IO
 
 data TraceElem =
 	Assignment CExpr CExpr |
-	Condition CExpr |
+	Condition Bool CExpr |
 	NewDeclaration (Ident,Type) |
 	Return CExpr |
 	TraceOr [Trace] |
 	TraceAnd [Trace]
 	deriving Data
 
+data Branch = Then Location | Else Location
+	deriving (Eq,Ord)
+instance Show Branch where
+	show (Then loc) = "Then branch in " ++ showLocation loc
+	show (Else loc) = "Else branch in " ++ showLocation loc
+
 instance CNode TraceElem where
 	nodeInfo (Assignment lexpr _)       = nodeInfo lexpr
-	nodeInfo (Condition expr)           = nodeInfo expr
+	nodeInfo (Condition _ expr)         = nodeInfo expr
 	nodeInfo (NewDeclaration (ident,_)) = nodeInfo ident
 	nodeInfo (Return expr)              = nodeInfo expr
 	nodeInfo (TraceOr (tr:_))           = nodeInfo $ head tr
@@ -219,7 +223,7 @@ traceToHTMLString trace = dataTreeToHTMLString [ trace2datatree trace ]
 instance Show TraceElem where
 	show te = ( case te of
 		(Assignment lvalue expr)   -> "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
-		(Condition expr)           -> "COND " ++ (render.pretty) expr
+		(Condition b expr)         -> "COND " ++ (if b then "(THEN) " else "(ELSE) ") ++ (render.pretty) expr
 		(NewDeclaration (lval,ty)) -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
 		(Return expr)              -> "RET  " ++ (render.pretty) expr
 		(TraceOr traces)           -> "OR   " ++ show traces
@@ -243,7 +247,7 @@ showTrace ind (te:trace) = indent ind ++ case te of
 type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
 
-covVectorsM :: String -> [String] -> CovVecM (Bool,([TraceAnalysisResult],Set.Set NodeInfo,Set.Set NodeInfo))
+covVectorsM :: String -> [String] -> CovVecM (Bool,([TraceAnalysisResult],Set.Set Branch,Set.Set Branch))
 covVectorsM filename opts = do
 	funname <- gets funNameCVS
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
@@ -265,7 +269,6 @@ covVectorsM filename opts = do
 		next_lc = case sort $ filter (> lineColNodeInfo fundef_ni) $ map lineColNodeInfo globdecls of
 			[] -> (9999999999,9999999999)
 			next : _ -> next
-	printLog $ "function to cover ranges from " ++ show fun_lc ++ " to " ++ show next_lc
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
 	param_env <- concatMapM (declaration2EnvItemM True) funparamdecls
@@ -277,8 +280,12 @@ covVectorsM filename opts = do
 
 	runStateT (analyzeTreeM opts ret_type param_env [] [] trace) ([],Set.empty,Set.empty)
 
+type Location = (Int,Int)
 
-type AnalyzeTreeM a = StateT ([TraceAnalysisResult],Set.Set NodeInfo,Set.Set NodeInfo) CovVecM a
+showLocation :: Location -> String
+showLocation (l,c) = "line " ++ show l ++ ", col " ++ show c
+
+type AnalyzeTreeM a = StateT ([TraceAnalysisResult],Set.Set Branch,Set.Set Branch) CovVecM a
 -- Unfolds the tree to all execution paths, collecting the solutions and promoting them upwards.
 
 analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> AnalyzeTreeM Bool
@@ -288,9 +295,13 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	resultdata@(_,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace
 
 	startend <- lift $ gets funStartEndCVS
-	let visible_trace = Set.fromList $ map nodeInfo $ filter (is_visible_traceelem startend) res_trace
+	let visible_trace = Set.fromList $ concatMap to_branch res_line
+		where
+		to_branch cond@(Condition b _) | is_visible_traceelem startend cond =
+			[ (if b then Then else Else) (lineColNodeInfo cond) ]
+		to_branch _ = []
 
-	let traceanalysisresult :: TraceAnalysisResult = (traceid,res_trace,resultdata)
+	let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,resultdata)
 	case is_solution traceanalysisresult of
 		False -> do
 			modify $ \ (tas,covered,alls) -> (tas,covered,Set.union visible_trace alls)
@@ -324,11 +335,6 @@ analyzeTreeM opts ret_type param_env traceid res_line (TraceAnd traces : rest) =
 analyzeTreeM opts ret_type param_env traceid res_line (te:rest) = do
 	analyzeTreeM opts ret_type param_env traceid (te:res_line) rest
 
-{-
-showCoverage :: Set.Set NodeInfo -> String
-showCoverage nis = show (map lineColNodeInfo $ Set.toList $ nis)
--}
-
 is_solution :: TraceAnalysisResult -> Bool
 is_solution (_,_,(_,Just (_,solution,_))) = not $ null solution
 is_solution _ = False
@@ -337,7 +343,7 @@ is_visible_traceelem :: (CNode a) => ((Int,Int),(Int,Int)) -> a -> Bool
 is_visible_traceelem (start,end) cnode = start <= lc && lc < end where
 	lc = lineColNodeInfo cnode
 
-lineColNodeInfo :: (CNode a) => a -> (Int,Int)
+lineColNodeInfo :: (CNode a) => a -> Location
 lineColNodeInfo cnode = if isSourcePos pos_te then (posRow pos_te,posColumn pos_te) else (-1,-1)
 	where
 	pos_te = posOfNode $ nodeInfo cnode
@@ -483,9 +489,9 @@ unfoldTracesM toplevel envs trace cbss = do
 		[] -> return "[]"
 		(l : _) -> return $ "[ " ++ (intercalate " , " (map (render.pretty) l)) ++ " ] : _"
 	res <- unfoldTraces1M toplevel envs trace cbss
-	printLog $ "============================================================================="
-	printLog $ "unfoldTracesM " ++ show toplevel ++ " envs trace " ++ cbss_txt
-	printLog $ showTrace 0 res
+--	printLog $ "============================================================================="
+--	printLog $ "unfoldTracesM " ++ show toplevel ++ " envs trace " ++ cbss_txt
+--	printLog $ showTrace 0 res
 	return res
 
 unfoldTraces1M :: Bool -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM Trace
@@ -497,8 +503,8 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 
 	CIf cond then_stmt mb_else_stmt ni -> do
 		transids cond trace $ \ (cond',trace') -> do
-			then_trace <- unfoldTracesM toplevel envs (Condition cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
-			let not_cond = Condition (CUnary CNegOp cond' (nodeInfo cond'))
+			then_trace <- unfoldTracesM toplevel envs (Condition True cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
+			let not_cond = Condition False (CUnary CNegOp cond' (nodeInfo cond'))
 			else_trace <- case mb_else_stmt of
 				Nothing        -> unfoldTracesM toplevel envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM toplevel envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
@@ -595,13 +601,12 @@ unfoldTraces1M _ _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) c
 
 translateExprM :: Bool -> [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
 translateExprM toplevel envs expr = do
-	printLog $ "===== translateExpr " ++ (render.pretty) expr ++ " ==============================="
+--	printLog $ "===== translateExpr " ++ (render.pretty) expr ++ " ==============================="
 	let
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
 			CVar funident _ -> do
 				modify ( (funident,args,ni): )
-				printLog $ "call=" ++ show (funident,args,ni)
 				return $ CConst $ CStrConst undefined ni
 			_  -> error $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call expr = return expr
@@ -613,17 +618,14 @@ translateExprM toplevel envs expr = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
 		let body' = replace_param_with_arg (zip paramdecls args) body
 		funtrace <- unfoldTracesM False envs [] [ [ CBlockStmt body' ] ]
-		printLog $ "##### extract_traces_rets " ++ showTrace 0 (reverse funtrace) ++ "\n"
+--		printLog $ "##### extract_traces_rets " ++ showTrace 0 (reverse funtrace) ++ "\n"
 		let funtraces = extract_traces_rets [] (reverse funtrace)
-		printLog $ "#### = " ++ show (map (\(tr,cex) -> (tr,(render.pretty) cex)) funtraces) ++ "\n"
+--		printLog $ "#### = " ++ show (map (\(tr,cex) -> (tr,(render.pretty) cex)) funtraces) ++ "\n"
 		return (ni,funtraces) 
 
-	printLog $ "funcalls_traces=" ++ show ( map (\ (ni,tes) -> ("ni",concatMap (\(tr,cex) -> show (tr,(render.pretty) cex)) tes)) funcalls_traces) ++ "\n"
-
 	combs <- create_combinations expr'' [] funcalls_traces
-	printLog $ "combs=" ++ show (map (\ (cex,tr) -> ((render.pretty) cex, show tr)) combs) ++ "\n"
 
-	printLog $ "===== END OF translateExpr " ++ (render.pretty) expr ++ " ===============================\n"
+--	printLog $ "===== END OF translateExpr " ++ (render.pretty) expr ++ " ===============================\n"
 
 	return combs
 	
@@ -649,7 +651,7 @@ translateExprM toplevel envs expr = do
 				expr' = everywhere (mkT subst_ret_expr) expr
 				subst_ret_expr :: CExpr -> CExpr
 				subst_ret_expr expr = if nodeInfo expr == ni then ret_expr else expr
-			printLog $ "fun_trace=" ++ show fun_trace
+--			printLog $ "fun_trace=" ++ show fun_trace
 			create_combinations expr' (fun_trace++trace) rest
 
 	replace_param_with_arg :: [(ParamDecl,CExpr)] -> CStat -> CStat
@@ -741,7 +743,7 @@ var2MZ tyenv ident = do
 type Constraint = CExpr
 
 traceelemToMZ :: TraceElem -> CovVecM [MZAST.ModelData]
-traceelemToMZ (Condition constr) = do
+traceelemToMZ (Condition _ constr) = do
 	return [ MZAST.constraint (expr2constr . (flatten_not False) . (insert_eq0 True) $ constr) ]
 	where
 	eq0 :: Constraint -> Constraint
@@ -826,7 +828,7 @@ solveTraceM ret_type param_env traceid trace = do
 		trace' = trace ++ case mb_ret_val of
 			Nothing -> []
 			Just ret_expr -> [
-				Condition $ CBinary CEqOp (CVar returnval_ident (nodeInfo returnval_ident)) ret_expr (nodeInfo ret_expr),
+				Condition undefined $ CBinary CEqOp (CVar returnval_ident (nodeInfo returnval_ident)) ret_expr (nodeInfo ret_expr),
 				NewDeclaration (returnval_ident,ret_type) ]
 
 	constraintsG <- concatMapM traceelemToMZ trace'
@@ -835,7 +837,7 @@ solveTraceM ret_type param_env traceid trace = do
 		traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
 		traceitem2tyenv _ = []
 	let constr_trace = concatMap traceitem2constr trace' where
-		traceitem2constr (Condition expr) = [expr]
+		traceitem2constr (Condition _ expr) = [expr]
 		traceitem2constr _ = []
 	let
 		includesG = [ MZAST.include "include.mzn" ]

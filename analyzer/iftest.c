@@ -5,7 +5,7 @@
 
 enum Zahl { EINS, ZWEI };
 
-int side = 0;
+int side = -1;
 
 int h(int x)
 {
@@ -15,7 +15,6 @@ int h(int x)
 
 int g(int x)
 {
-//    if(x>5)
     {
         if(x>1)
             return 2;
@@ -25,7 +24,6 @@ int g(int x)
             return 1;
         }
     }
-//    return 0;
 }
 
 int f(int x, enum Zahl z)
@@ -36,7 +34,7 @@ int f(int x, enum Zahl z)
             return 2;
         else
         {
-            int y = z+g(x)+2*h(x+1);
+            int y = z+g(x); //+2*h(x+1);
             if(y+side>1)
             {
                 x = x - 1;
