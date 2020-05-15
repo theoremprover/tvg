@@ -288,7 +288,7 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	resultdata@(_,mb_solution) <- solveTraceM ret_type param_env traceid res_trace
 
 	startend <- gets funStartEndCVS
-	let visible_trace = Set.fromList $ map nodeInfo $ filter (is_visible_traceelem startend) res_line
+	let visible_trace = Set.fromList $ map nodeInfo $ filter (is_visible_traceelem startend) res_trace
 
 	let traceanalysisresult :: TraceAnalysisResult = (traceid,res_trace,resultdata)
 	case is_solution traceanalysisresult of
