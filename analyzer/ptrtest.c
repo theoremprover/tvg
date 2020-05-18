@@ -13,7 +13,7 @@ typedef struct
     int member2;
 } STRUCT;
 
-STRUCT* f(STRUCT *p,int x)
+STRUCT* g(STRUCT *p,int x)
 {
     if(p->member1 == EINS)
     {
@@ -28,7 +28,7 @@ STRUCT* f(STRUCT *p,int x)
     return(p);
 }
 
-int e(STRUCT *q,int y)
+int f(STRUCT *q,int y)
 {
     STRUCT *r;
     r = f(q,y);
@@ -37,15 +37,15 @@ int e(STRUCT *q,int y)
     return 2;
 }
 
-int main(int argc, char* argv[])
- {
 #ifdef CALC
+int main(int argc, char* argv[])
+{
     int m1 = atoi(argv[1]);
     int m2 = atoi(argv[2]);
     int y = atoi(argv[3]);
     STRUCT p = { m1, m2 };
 
-    printf("<fun>(p_m1=%i, p_m2=%i, y=%i) = %i\n",m1,m2,y,e(&p,y));
-#endif
+    printf("<fun>(p_m1=%i, p_m2=%i, y=%i) =\n%i\n",m1,m2,y,f(&p,y));
     return 0;
 }
+#endif
