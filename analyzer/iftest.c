@@ -5,7 +5,7 @@
 
 enum Zahl { EINS, ZWEI };
 
-int side = -1;
+int side = 0;
 
 int h(int x)
 {
