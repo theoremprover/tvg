@@ -81,11 +81,11 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : ["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
---		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : ["-writeAST"]
+		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrrettest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : ["-writeTraceTree"] --["-writeAST","-writeGlobalDecls"]
@@ -809,7 +809,7 @@ traceelemToMZ (Condition _ constr) = do
 		expr2' = expr2constr expr2
 		-- Leaving out brackets: Hopefully, the minzinc operators have the same precedences as in C
 		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"="),(CLndOp,"/\\"),(CLorOp,"\\/")]
---	expr2constr (CMember (CVar ptrident _) member _ _) = expr2constr ()
+	expr2constr (CMember (CVar ptrident _) member _ _) = expr2constr 
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
 traceelemToMZ _ = return []
@@ -889,13 +889,14 @@ checkSolutionM traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
 	Just filename <- gets checkExeNameCVS
 	absolute_filename <- liftIO $ makeAbsolute srcfilename
 	let
-		args = for (zip [0..] env) $ \ (i,(_,(newident,ty))) -> case ty of
+		args = concat $ for env $ \ (_,(newident,ty)) -> case ty of
 			DirectType _ _ _ -> case lookup (identToString newident) solution of
-				Nothing -> "99"
-				Just (MInt i) -> show i
-				Just (MFloat f) -> show f
+				Nothing -> ["99"]
+				Just (MInt i) -> [show i]
+				Just (MFloat f) -> [show f]
 				val -> error $ "checkSolutionM: " ++ show val ++ " not yet implemented"
-			PtrType target_ty _ _ -> show i
+			PtrType target_ty _ _ -> []
+	printLog $ " checkSolution args = " ++ show args
 	(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
 		readProcessWithExitCode (takeFileName filename) args ""
 	case exitcode of

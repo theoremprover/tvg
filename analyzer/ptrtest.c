@@ -28,11 +28,15 @@ STRUCT* g(STRUCT *p,int x)
     return(p);
 }
 
-void f(STRUCT *q,int y)
+int f(STRUCT *q,int y)
 {
-    q->member1 = ZWEI;
-    q->member2 = y;
-    return;
+    if(q->member1==EINS)
+        q->member1 = ZWEI;
+    if (q->member2 < y)
+    {
+        q->member2++;
+    }
+    return 1;
 }
 
 #ifdef CALC
