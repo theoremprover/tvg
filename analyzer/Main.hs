@@ -889,13 +889,13 @@ checkSolutionM traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
 	Just filename <- gets checkExeNameCVS
 	absolute_filename <- liftIO $ makeAbsolute srcfilename
 	let
-		show_args = concat $ for env $ \ (_,(newident,ty)) -> case ty of
+		args = for (zip [0..] env) $ \ (i,(_,(newident,ty))) -> case ty of
 			DirectType _ _ _ -> case lookup (identToString newident) solution of
-				Nothing -> ["99"]
-				Just (MInt i) -> [show i]
-				Just (MFloat f) -> [show f]
+				Nothing -> "99"
+				Just (MInt i) -> show i
+				Just (MFloat f) -> show f
 				val -> error $ "checkSolutionM: " ++ show val ++ " not yet implemented"
-			PtrType target_ty _ _ -> show_args target
+			PtrType target_ty _ _ -> show i
 	(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
 		readProcessWithExitCode (takeFileName filename) args ""
 	case exitcode of
