@@ -617,7 +617,8 @@ translateExprM toplevel envs expr = do
 
 	funcalls_traces :: [(NodeInfo,[(Trace,CExpr)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
-		let body' = replace_param_with_arg (zip paramdecls args) body
+		expanded_params_args <- expand_params_argsM paramdecls args
+		let body' = replace_param_with_arg expanded_params_args body
 		funtrace <- unfoldTracesM False envs [] [ [ CBlockStmt body' ] ]
 --		printLog $ "##### extract_traces_rets " ++ showTrace 0 (reverse funtrace) ++ "\n"
 		let funtraces = extract_traces_rets [] (reverse funtrace)
@@ -631,6 +632,14 @@ translateExprM toplevel envs expr = do
 	return combs
 	
 	where
+
+	expand_params_argsM ::  [ParamDecl] -> [CExpr] -> CovVecM [(Ident,CExpr)]
+	expand_params_argsM paramdecls args = concatForM (zip paramdecls args) expandparam where
+		expandparam :: (ParamDecl,CExpr) -> CovVecM [(Ident,CExpr)]
+		expandparam (paramdecl,arg) = do
+			let VarDecl (VarName srcident _) _ arg_ty = getVarDecl paramdecl
+			return [(srcident,arg)]
+--			addition_arg_env <- makeMemberExprsM arg_ty (CVar srcident (nodeInfo srcident))
 
 	extract_traces_rets :: [TraceElem] -> Trace -> [(Trace,CExpr)]
 	extract_traces_rets traceelems (Return retexpr : _) = [(traceelems,retexpr)]
@@ -655,10 +664,9 @@ translateExprM toplevel envs expr = do
 --			printLog $ "fun_trace=" ++ show fun_trace
 			create_combinations expr' (fun_trace++trace) rest
 
-	replace_param_with_arg :: [(ParamDecl,CExpr)] -> CStat -> CStat
+	replace_param_with_arg :: [(Ident,CExpr)] -> CStat -> CStat
 	replace_param_with_arg [] body = body
-	replace_param_with_arg ((paramdecl,arg):rest) body = replace_param_with_arg rest body' where
-		VarDecl (VarName srcident _) _ _ = getVarDecl paramdecl
+	replace_param_with_arg ((srcident,arg):rest) body = replace_param_with_arg rest body' where
 		body' = everywhere (mkT substparamarg) body
 		substparamarg :: CExpr -> CExpr
 		substparamarg (CVar ident _) | ident==srcident = arg
@@ -809,7 +817,7 @@ traceelemToMZ (Condition _ constr) = do
 		expr2' = expr2constr expr2
 		-- Leaving out brackets: Hopefully, the minzinc operators have the same precedences as in C
 		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"="),(CLndOp,"/\\"),(CLorOp,"\\/")]
-	expr2constr (CMember (CVar ptrident _) member _ _) = expr2constr 
+	expr2constr lexpr@(CMember (CVar _ _) _ _ _) = expr2constr $ CVar (internalIdent (lValueToVarName lexpr)) undefNode
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
 traceelemToMZ _ = return []
@@ -876,6 +884,7 @@ solveTraceM ret_type param_env traceid trace = do
 		Right _ -> error $ "Found more than one solution for " ++ show traceid ++ " !"
 	return (model,mb_solution)
 
+
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
 checkSolutionM _ resultdata | not checkSolutions = return resultdata
 checkSolutionM traceid resultdata@(_,Nothing) = do
@@ -895,7 +904,7 @@ checkSolutionM traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
 				Just (MInt i) -> [show i]
 				Just (MFloat f) -> [show f]
 				val -> error $ "checkSolutionM: " ++ show val ++ " not yet implemented"
-			PtrType target_ty _ _ -> []
+			PtrType target_ty _ _ -> ["0"]
 	printLog $ " checkSolution args = " ++ show args
 	(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
 		readProcessWithExitCode (takeFileName filename) args ""
