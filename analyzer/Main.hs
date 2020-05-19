@@ -817,7 +817,7 @@ traceelemToMZ (Condition _ constr) = do
 		expr2' = expr2constr expr2
 		-- Leaving out brackets: Hopefully, the minzinc operators have the same precedences as in C
 		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"="),(CLndOp,"/\\"),(CLorOp,"\\/")]
-	expr2constr lexpr@(CMember (CVar _ _) _ _ _) = expr2constr $ CVar (internalIdent (lValueToVarName lexpr)) undefNode
+--	expr2constr lexpr@(CMember (CVar _ _) _ _ _) = expr2constr $ CVar (internalIdent (lValueToVarName lexpr)) undefNode
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
 traceelemToMZ _ = return []
