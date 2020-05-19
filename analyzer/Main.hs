@@ -571,7 +571,6 @@ unfoldTraces1M toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespe
 	ty <- tyspec2TypeM typespec
 	new_env_items <- forM triples $ \case
 		(Just (CDeclr (Just ident) derivdeclrs _ _ ni),mb_init,Nothing) -> do
-			-- TODO: consider the derivdeclrs
 			let ty' = case derivdeclrs of
 				[] -> ty
 				[CPtrDeclr _ _] -> PtrType ty noTypeQuals noAttributes
