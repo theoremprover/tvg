@@ -160,6 +160,9 @@ main = do
 						False -> "FAIL, there are coverage gaps!"
 						True  -> "OK, we have full branch coverage."
 
+showEnv :: Env -> String
+showEnv env = "{\n    " ++ intercalate " ,\n    " (map (render.pretty) env) ++ "\n    }"
+
 showTestVector :: String -> (Env,Solution,Maybe CExpr) -> String
 showTestVector funname (env,solution,mb_retval) = funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ++
 	" = " ++ maybe "<NO_RETURN>" (const $ show $ getPredictedResult solution) mb_retval
@@ -273,6 +276,7 @@ covVectorsM filename opts = do
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
 	param_env <- concatMapM (declaration2EnvItemM True) funparamdecls
+	printLog $ "param_env = " ++ showEnv param_env
 	
 	let decls = map (NewDeclaration .snd) (reverse param_env ++ glob_env)
 
@@ -451,24 +455,28 @@ declaration2EnvItemM makenewidents decl = do
 	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
 	identTy2EnvItemM makenewidents srcident ty
 
-makeMemberExprsM :: Type -> CExpr -> CovVecM [EnvItem]
-makeMemberExprsM ty ptr_expr = case ty of
+makeMemberExprsM :: Ident -> Type -> CExpr -> CovVecM [EnvItem]
+makeMemberExprsM srcident ty ptr_expr = case ty of
 	DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 		members <- getMembersM sueref 
 		return $ for members $ \ (member_ident,member_ty) ->
 			let
+				old_lexpr = CMember (CVar srcident (nodeInfo srcident)) member_ident False (nodeInfo ptr_expr)
+				old_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName old_lexpr)
 				lexpr = CMember ptr_expr member_ident False (nodeInfo ptr_expr)
 				new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
 				in
-				(new_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
+				(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
 	PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> do
 		members <- getMembersM sueref 
 		return $ for members $ \ (member_ident,member_ty) ->
 			let
+				old_lexpr = CMember (CVar srcident (nodeInfo srcident)) member_ident True (nodeInfo ptr_expr)
+				old_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName old_lexpr)
 				lexpr = CMember ptr_expr member_ident True (nodeInfo ptr_expr)
 				new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
 				in
-				(new_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
+				(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
 	_ -> return []
 
 mkIdentWithCNodePos :: (CNode cnode) => cnode -> String -> Ident
@@ -480,7 +488,7 @@ identTy2EnvItemM makenewidents srcident ty = do
 	newident <- case makenewidents of
 		True -> createNewIdentM srcident $ lValueToVarName (CVar srcident (nodeInfo srcident))
 		False -> return srcident
-	other_envitems <- makeMemberExprsM ty' (CVar newident (nodeInfo srcident))
+	other_envitems <- makeMemberExprsM srcident ty' (CVar newident (nodeInfo srcident))
 	return $ (srcident,(newident,ty')) : other_envitems
 
 -- Just unfold the traces
@@ -742,11 +750,9 @@ var2MZ tyenv ident = do
 				return $ MZAST.CT $ MZAST.SetLit $
 					map (\ (Enumerator _ (CConst (CIntConst (CInteger i _ _) _)) _ _) ->
 						MZAST.IConst (fromIntegral i)) enums
-			TyComp (CompTypeRef sueref _ _) -> do
-				error "CompTypeRef not implemented yet"
+			TyComp (CompTypeRef sueref _ _) -> return $ MZAST.String
 			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
-		ty2mz (PtrType target_ty _ _) = return $
-			MZAST.Range (MZAST.IConst 0) (MZAST.IConst 65535)
+		ty2mz (PtrType target_ty _ _) = return $ MZAST.Range (MZAST.IConst 65000) (MZAST.IConst 99999)
 		ty2mz ty = error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 
 type Constraint = CExpr
@@ -817,7 +823,7 @@ traceelemToMZ (Condition _ constr) = do
 		expr2' = expr2constr expr2
 		-- Leaving out brackets: Hopefully, the minzinc operators have the same precedences as in C
 		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"="),(CLndOp,"/\\"),(CLorOp,"\\/")]
---	expr2constr lexpr@(CMember (CVar _ _) _ _ _) = expr2constr $ CVar (internalIdent (lValueToVarName lexpr)) undefNode
+	expr2constr lexpr@(CMember (CVar _ _) _ _ _) = expr2constr $ CVar (internalIdent (lValueToVarName lexpr)) undefNode
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
 traceelemToMZ _ = return []
