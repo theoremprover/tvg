@@ -907,7 +907,7 @@ checkSolutionM traceid resultdata@(_,Just (_,[],_)) = do
 	printLog $ "Empty solution cannot be checked for " ++ show traceid
 	return resultdata
 checkSolutionM traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
-	printLog $ "checkSolution env = " ++ showEnv env
+--	printLog $ "checkSolution env = " ++ showEnv env
 	srcfilename <- gets srcFilenameCVS
 	Just filename <- gets checkExeNameCVS
 	absolute_filename <- liftIO $ makeAbsolute srcfilename
@@ -920,7 +920,7 @@ checkSolutionM traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
 				val -> error $ "checkSolutionM: " ++ show val ++ " not yet implemented"
 			PtrType target_ty _ _ -> ["0"]
 			ty -> error $ "checkSolutionM args: type " ++ (render.pretty) ty ++ " not implemented!"
-	printLog $ " checkSolution args = " ++ show args
+--	printLog $ " checkSolution args = " ++ show args
 	(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
 		readProcessWithExitCode (takeFileName filename) args ""
 	case exitcode of
