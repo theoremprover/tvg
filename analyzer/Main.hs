@@ -57,10 +57,10 @@ stack build :analyzer-exe && stack exec analyzer-exe
 fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
-solveIt = True
-showOnlySolutions = True
-don'tShowTraces = True
-checkSolutions = True
+solveIt = False
+showOnlySolutions = False
+don'tShowTraces = False
+checkSolutions = False
 
 returnval_var_name = "return_val"
 
@@ -85,7 +85,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
-		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST"]
+		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : ["-writeTree"] --["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrrettest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : ["-writeTraceTree"] --["-writeAST","-writeGlobalDecls"]
@@ -683,6 +683,7 @@ subst_var :: [Env] -> CExpr -> CExpr
 subst_var envs (CVar ident ni) = case lookup ident (concat envs) of
 	Just (ident',_) -> CVar ident' ni
 	Nothing -> error $ " in subst_var : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
+subst_var envs expr@(CMember _ _ _ _) = CVar (Ident lValueToVarName expr) ni
 subst_var _ expr = expr
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
