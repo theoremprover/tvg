@@ -58,7 +58,7 @@ int f(STRUCT q,int a)
 {
     STRUCT q1;
     q1.member1 = ZWEI;
-    q1.member2 = q1.member2 + 1;
+    q1.member2 = q.member2 + 1;
     if(h(q1)==1)
     {
         return q.member1;
@@ -69,12 +69,13 @@ int f(STRUCT q,int a)
 #ifdef CALC
 int main(int argc, char* argv[])
 {
-    int m1 = atoi(argv[1]);
-    int m2 = atoi(argv[2]);
-    int y = atoi(argv[3]);
+    int m0 = atoi(argv[1]);
+    int m1 = atoi(argv[2]);
+    int m2 = atoi(argv[3]);
+    int y = atoi(argv[4]);
     STRUCT p = { m1, m2 };
 
-    printf("<fun>(p_m1=%i, p_m2=%i, y=%i) =\n%i\n",m1,m2,y,f(p,y));
+    printf("<fun>({p_m1=%i, p_m2=%i}, y=%i) =\n%i\n",m1,m2,y,f(p,y));
     return 0;
 }
 #endif

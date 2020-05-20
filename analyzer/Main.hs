@@ -276,7 +276,7 @@ covVectorsM filename opts = do
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
 	param_env <- concatMapM (declaration2EnvItemM True) funparamdecls
-	printLog $ "param_env = " ++ showEnv param_env
+--	printLog $ "param_env = " ++ showEnv param_env
 	
 	let decls = map (NewDeclaration .snd) (reverse param_env ++ glob_env)
 
@@ -429,7 +429,9 @@ lookupTagM ident = do
 getMembersM :: SUERef -> CovVecM [(Ident,Type)]
 getMembersM sueref = do
 	CompDef (CompType _ _ memberdecls _ _) <- lookupTagM sueref
-	return $ for memberdecls $ \ (MemberDecl (VarDecl (VarName ident _) _ ty) Nothing _) -> (ident,ty)
+	forM memberdecls $ \ (MemberDecl (VarDecl (VarName ident _) _ ty) Nothing _) -> do
+		ty' <- elimTypeDefsM ty
+		return (ident,ty')
 
 elimTypeDefsM :: Type -> CovVecM Type
 elimTypeDefsM directtype@(DirectType _ _ _) = pure directtype
@@ -458,7 +460,7 @@ declaration2EnvItemM makenewidents decl = do
 makeMemberExprsM :: Ident -> Type -> CExpr -> CovVecM [EnvItem]
 makeMemberExprsM srcident ty ptr_expr = case ty of
 	DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
-		members <- getMembersM sueref 
+		members <- getMembersM sueref
 		return $ for members $ \ (member_ident,member_ty) ->
 			let
 				old_lexpr = CMember (CVar srcident (nodeInfo srcident)) member_ident False (nodeInfo ptr_expr)
@@ -527,8 +529,6 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
 			let lexpr' = renameVars envs lexpr
-			printLog $ "lexpr=" ++ (render.pretty) lexpr
-			printLog $ "lexpr'=" ++ (render.pretty) lexpr'
 			unfoldTracesM toplevel envs (Assignment lexpr' assigned_expr'' : trace') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
@@ -907,6 +907,7 @@ checkSolutionM traceid resultdata@(_,Just (_,[],_)) = do
 	printLog $ "Empty solution cannot be checked for " ++ show traceid
 	return resultdata
 checkSolutionM traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
+	printLog $ "checkSolution env = " ++ showEnv env
 	srcfilename <- gets srcFilenameCVS
 	Just filename <- gets checkExeNameCVS
 	absolute_filename <- liftIO $ makeAbsolute srcfilename
