@@ -57,10 +57,10 @@ stack build :analyzer-exe && stack exec analyzer-exe
 fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
-solveIt = False
+solveIt = True
 showOnlySolutions = False
 don'tShowTraces = False
-checkSolutions = False
+checkSolutions = True
 
 returnval_var_name = "return_val"
 
@@ -526,7 +526,9 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
-			let lexpr' = subst_var envs lexpr
+			let lexpr' = renameVars envs lexpr
+			printLog $ "lexpr=" ++ (render.pretty) lexpr
+			printLog $ "lexpr'=" ++ (render.pretty) lexpr'
 			unfoldTracesM toplevel envs (Assignment lexpr' assigned_expr'' : trace') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
@@ -620,7 +622,7 @@ translateExprM toplevel envs expr = do
 		to_call expr = return expr
 	(expr',calls) <- runStateT (everywhereM (mkM to_call) expr) []
 
-	let expr'' = everywhere (mkT (subst_var envs)) expr'
+	let expr'' = renameVars envs expr'
 
 	funcalls_traces :: [(NodeInfo,[(Trace,CExpr)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
@@ -679,12 +681,17 @@ translateExprM toplevel envs expr = do
 		substparamarg (CVar ident _) | ident==srcident = arg
 		substparamarg expr = expr
 
-subst_var :: [Env] -> CExpr -> CExpr
-subst_var envs (CVar ident ni) = case lookup ident (concat envs) of
-	Just (ident',_) -> CVar ident' ni
-	Nothing -> error $ " in subst_var : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
-subst_var envs expr@(CMember _ _ _ _) = CVar (mkIdentWithCNodePos (lValueToVarName expr) ) ni
-subst_var _ expr = expr
+
+-- Renames Variables to unique names
+
+renameVars :: [Env] -> CExpr -> CExpr
+renameVars envs expr = everywhere (mkT subst_var) expr where
+	subst_var :: CExpr -> CExpr
+	subst_var (CVar ident ni) = case lookup ident (concat envs) of
+		Just (ident',_) -> CVar ident' ni
+		Nothing -> error $ " in subst_var : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
+	subst_var expr@(CMember _ _ _ ni) = CVar (mkIdentWithCNodePos expr (lValueToVarName expr)) ni
+	subst_var expr = expr
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
 tyspec2TypeM typespec = case typespec of
@@ -911,6 +918,7 @@ checkSolutionM traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
 				Just (MFloat f) -> [show f]
 				val -> error $ "checkSolutionM: " ++ show val ++ " not yet implemented"
 			PtrType target_ty _ _ -> ["0"]
+			ty -> error $ "checkSolutionM args: type " ++ (render.pretty) ty ++ " not implemented!"
 	printLog $ " checkSolution args = " ++ show args
 	(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
 		readProcessWithExitCode (takeFileName filename) args ""

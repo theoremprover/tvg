@@ -58,7 +58,7 @@ int f(STRUCT q,int a)
 {
     STRUCT q1;
     q1.member1 = ZWEI;
-    q1.member2 = q.member2 + 1;
+    q1.member2 = q1.member2 + 1;
     if(h(q1)==1)
     {
         return q.member1;
