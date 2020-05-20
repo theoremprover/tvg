@@ -683,7 +683,7 @@ subst_var :: [Env] -> CExpr -> CExpr
 subst_var envs (CVar ident ni) = case lookup ident (concat envs) of
 	Just (ident',_) -> CVar ident' ni
 	Nothing -> error $ " in subst_var : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
-subst_var envs expr@(CMember _ _ _ _) = CVar (Ident lValueToVarName expr) ni
+subst_var envs expr@(CMember _ _ _ _) = CVar (mkIdentWithCNodePos (lValueToVarName expr) ) ni
 subst_var _ expr = expr
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
