@@ -49,14 +49,21 @@ int g(enum Zahl z)
 }
 */
 
-int h(STRUCT r)
+int h(int* r)
 {
-    return (r.member2 + 1);
+    return (*r);
 }
 
-int f(STRUCT q,int a)
+int f(int* p)
 {
-    if(h(q)==1)
+    int x = h(p);
+    p++;
+    int y = *p;
+
+    int* p2 = &y;
+    int z = *p2;
+
+    if(z==y)
     {
         return 1;
     }
@@ -68,11 +75,8 @@ int main(int argc, char* argv[])
 {
     int m0 = atoi(argv[1]);
     int m1 = atoi(argv[2]);
-    int m2 = atoi(argv[3]);
-    int y = atoi(argv[4]);
-    STRUCT p = { m1, m2 };
-
-    printf("<fun>({p_m1=%i, p_m2=%i}, y=%i) =\n%i\n",m1,m2,y,f(p,y));
+    int p[2] = { m0,m1 };
+    printf("f(p={%i,%i}) =\n%i\n",m0,m1,f(p));
     return 0;
 }
 #endif

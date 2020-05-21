@@ -373,6 +373,7 @@ instance Eq CExpr where
 	(CUnary CIndOp expr1 _) ==  (CUnary CIndOp expr2 _) = expr1==expr2
 	_ == _ = False
 
+
 -- Normalizes an expression and creates a variable name for the result
 
 normalizeExpr :: CExpr -> String
