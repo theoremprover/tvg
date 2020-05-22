@@ -47,27 +47,21 @@ int g(enum Zahl z)
     if(z==EINS) return 1;
     else return 2;
 }
-*/
 
 int h(int* r)
 {
     return (*r);
 }
+*/
 
 int f(int* p)
 {
-    int x = h(p);
-    p++;
-    int y = *p;
-
-    int* p2 = &y;
-    int z = *p2;
-
-    if(z==y)
+    if(*p==2)
     {
-        return 1;
+        *p = 3;
+        return 0;
     }
-    return 2;
+    return 1;
 }
 
 #ifdef CALC
