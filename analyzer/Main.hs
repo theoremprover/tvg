@@ -299,12 +299,14 @@ type AnalyzeTreeM a = StateT ([TraceAnalysisResult],Set.Set Branch,Set.Set Branc
 analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> AnalyzeTreeM Bool
 
 analyzeTreeM opts ret_type param_env traceid res_line [] = do
-	res_trace <- lift $ elimAssignmentsM res_line
+--	printLog $ "=== TRACE " ++ show traceid ++ " ========================\n<leaving out builtins...>\n"
+--	printLog $ showLine res_line
 	
-	printLog $ "=== TRACE " ++ show traceid ++ " ========================\n<leaving out builtins...>\n"
-	printLog $ showLine res_trace
-	
-	resultdata@(_,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace
+	res_trace' <- lift $ elimAssignmentsM res_line	
+	printLog $ "\n=== TRACE after elimAssignments " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
+	printLog $ showLine res_trace'
+
+	resultdata@(_,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace'
 
 	startend <- lift $ gets funStartEndCVS
 	let visible_trace = Set.fromList $ concatMap to_branch res_line
@@ -709,6 +711,7 @@ translateExprM toplevel envs expr = do
 --			printLog $ "fun_trace=" ++ show fun_trace
 			create_combinations expr' (fun_trace++trace) rest
 
+	-- β-reduction
 	replace_param_with_arg :: [(Ident,CExpr)] -> CStat -> CStat
 	replace_param_with_arg [] body = body
 	replace_param_with_arg ((srcident,arg):rest) body = replace_param_with_arg rest body' where
@@ -756,6 +759,19 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 			substlvalue found_expr | lvalue == found_expr = expr
 			substlvalue found_expr                        = found_expr
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
+
+{-
+	let res_trace = elimIndAdr res_line
+	printLog $ "\n=== TRACE after elimIndAdr " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
+	printLog $ showLine res_trace
+
+
+elimIndAdr :: Trace -> Trace
+elimIndAdr trace = everywhere (mkT elim_ind_adr) trace where
+	elim_ind_adr :: CExpr -> CExpr
+	elim_ind_adr (CUnary CIndOp (CUnary CAdrOp expr _) ni) = expr
+	elim_ind_adr expr = expr
+-}
 
 
 -- MiniZinc Model Generation
