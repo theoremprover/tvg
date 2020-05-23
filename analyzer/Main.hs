@@ -74,6 +74,9 @@ printLog text = liftIO $ do
 	putStrLn text
 	appendFile logFile (text++"\n")
 
+showLine :: Trace -> String
+showLine trace = unlines $ map show (filter isnotbuiltin trace)
+
 main = do
 	hSetBuffering stdout NoBuffering
 
@@ -133,7 +136,7 @@ main = do
 							False -> return ()
 							True -> printLog $ unlines $ mbshowtraces (
 								[ "","=== TRACE " ++ show traceid ++ " ========================","<leaving out builtins...>" ] ++
-								map show (filter isnotbuiltin trace) ++
+								[ showLine trace ] ++
 								[ "",
 								"--- MODEL " ++ show traceid ++ " -------------------------",
 								if null model then "<empty>" else layout model,
@@ -297,6 +300,10 @@ analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> Anal
 
 analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	res_trace <- lift $ elimAssignmentsM res_line
+	
+	printLog $ "=== TRACE " ++ show traceid ++ " ========================\n<leaving out builtins...>\n"
+	printLog $ showLine res_trace
+	
 	resultdata@(_,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace
 
 	startend <- lift $ gets funStartEndCVS
@@ -402,7 +409,7 @@ lValueToVarName :: CExpr -> String
 lValueToVarName cvar@(CVar _ _) = normalizeExpr cvar
 lValueToVarName (CMember ptrexpr member isptr _) =
 	normalizeExpr ptrexpr ++ (if isptr then "_ARROW_" else "_DOT_") ++ identToString member
-lValueToVarName (CUnary CIndOp expr _) = "PTR_" ++ normalizeExpr expr
+--lValueToVarName (CUnary CIndOp expr _) = "PTR_" ++ normalizeExpr expr
 
 
 type EnvItem = (Ident,(Ident,Type))
@@ -460,6 +467,7 @@ declaration2EnvItemM makenewidents decl = do
 
 makeMemberExprsM :: Ident -> Type -> CExpr -> CovVecM [EnvItem]
 makeMemberExprsM srcident ty ptr_expr = case ty of
+
 	DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 		members <- getMembersM sueref
 		return $ for members $ \ (member_ident,member_ty) ->
@@ -470,6 +478,8 @@ makeMemberExprsM srcident ty ptr_expr = case ty of
 				new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
 				in
 				(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
+
+{-
 	PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> do
 		members <- getMembersM sueref 
 		return $ for members $ \ (member_ident,member_ty) ->
@@ -480,6 +490,8 @@ makeMemberExprsM srcident ty ptr_expr = case ty of
 				new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
 				in
 				(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
+-}
+
 	_ -> return []
 
 mkIdentWithCNodePos :: (CNode cnode) => cnode -> String -> Ident
@@ -528,9 +540,11 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 			return $ Return ret_expr' : trace'
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
-		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
-			let lexpr' = renameVars envs lexpr
-			unfoldTracesM toplevel envs (Assignment lexpr' assigned_expr'' : trace') (rest:rest2)
+		transids assigned_expr' trace $ \ (assigned_expr'',trace') ->
+			transids lexpr trace' $ \ (lexpr',trace'') -> do
+--				let
+--					lexpr' = renameVars envs lexpr
+				unfoldTracesM toplevel envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -613,7 +627,8 @@ unfoldTraces1M _ _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) c
 translateExprM :: Bool -> [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
 translateExprM toplevel envs expr = do
 --	printLog $ "===== translateExpr " ++ (render.pretty) expr ++ " ==============================="
-	let
+
+	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
 			CVar funident _ -> do
@@ -623,7 +638,24 @@ translateExprM toplevel envs expr = do
 		to_call expr = return expr
 	(expr',calls) <- runStateT (everywhereM (mkM to_call) expr) []
 
-	let expr'' = renameVars envs expr'
+	let
+		expr'' = renameVars envs expr'
+
+{-
+	let
+		-- declare and substitute the indirection target variables:
+		-- *ptr will become IND_ptr where (*ptr :: type)
+		intro_ind :: CExpr -> StateT [TraceElem] CovVecM CExpr
+		intro_ind (CUnary CIndOp target_expr ni) = do
+			let varname = lValueToVarName target_expr
+			case lookup varname (map snd $ concat envs) of
+				Just _ -> CVar (mkIdentWithCNodePos ni varname) ni
+				
+			ty <- inferTypeM target_expr
+			modify ( NewDeclaration 
+		intro_ind expr = return expr
+	(expr''',ind_decls) <- runStateT (everywhereM (mkM intro_ind) expr'') []
+-}
 
 	funcalls_traces :: [(NodeInfo,[(Trace,CExpr)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
@@ -650,6 +682,9 @@ translateExprM toplevel envs expr = do
 			let VarDecl (VarName srcident _) _ arg_ty = getVarDecl paramdecl
 			return [(srcident,arg)]
 --			addition_arg_env <- makeMemberExprsM arg_ty (CVar srcident (nodeInfo srcident))
+
+
+	-- Flattens the trace tree to a list of all paths through the tree, together with their return exprs
 
 	extract_traces_rets :: [TraceElem] -> Trace -> [(Trace,CExpr)]
 	extract_traces_rets traceelems (Return retexpr : _) = [(traceelems,retexpr)]
@@ -837,7 +872,6 @@ traceelemToMZ (Condition _ constr) = do
 traceelemToMZ _ = return []
 
 solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
-solveTraceM _ _ _ trace | not solveIt = return ([],Nothing)
 solveTraceM ret_type param_env traceid trace = do
 	let
 		tracename = show traceid
@@ -884,19 +918,21 @@ solveTraceM ret_type param_env traceid trace = do
 
 	let modelpath = analyzerPath </> "model_" ++ tracename
 	liftIO $ writeFile (modelpath ++ ".mzn") $ layout model
-	printLog $ "Running model " ++ tracename ++ "..." 
-
-	res <- liftIO $ case solveIt of
-		False -> return $ Right []
-		True -> runModel model modelpath 1 1
-	mb_solution <- case res of
-		Left err -> do
-			printLog $ show err
-			return Nothing
-		Right [] -> return Nothing
-		Right [sol] -> return $ Just (param_env,sol,mb_ret_val)
-		Right _ -> error $ "Found more than one solution for " ++ show traceid ++ " !"
-	return (model,mb_solution)
+	
+	case solveIt of
+		False -> return (model,Just (param_env,[],mb_ret_val))
+		True -> do
+			printLog $ "Running model " ++ tracename ++ "..." 
+		
+			res <- liftIO $ runModel model modelpath 1 1
+			mb_solution <- case res of
+				Left err -> do
+					printLog $ show err
+					return Nothing
+				Right [] -> return Nothing
+				Right [sol] -> return $ Just (param_env,sol,mb_ret_val)
+				Right _ -> error $ "Found more than one solution for " ++ show traceid ++ " !"
+			return (model,mb_solution)
 
 
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData

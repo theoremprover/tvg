@@ -56,9 +56,12 @@ int h(int* r)
 
 int f(int* p)
 {
-    if(*p==2)
+    int a = 0;
+    int* q = &a;
+    *q = 2;
+
+    if(a==*p)
     {
-        *p = 3;
         return 0;
     }
     return 1;
