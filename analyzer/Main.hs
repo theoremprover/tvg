@@ -57,7 +57,7 @@ stack build :analyzer-exe && stack exec analyzer-exe
 fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
-solveIt = False
+solveIt = True
 showOnlySolutions = False
 don'tShowTraces = False
 checkSolutions = solveIt && True
@@ -76,6 +76,10 @@ printLog text = liftIO $ do
 
 showLine :: Trace -> String
 showLine trace = unlines $ map show (filter isnotbuiltin trace)
+
+show_solution _ Nothing = "No solution"
+show_solution _ (Just (_,[],_)) = "Empty solution"
+show_solution funname (Just v@(_,solution,_)) = unlines [ show solution, showTestVector funname v ]
 
 main = do
 	hSetBuffering stdout NoBuffering
@@ -131,6 +135,8 @@ main = do
 					when (full_coverage && not (null deaths)) $ error "full coverage but deaths!"
 					when (not full_coverage && null deaths) $ error "coverage gaps but no deaths!"
 
+					printLog $ "\n####### FINAL RESULT #######\n"
+
 					forM_ testvectors $ \ (traceid,trace,(model,mb_solution)) -> do
 						case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
 							False -> return ()
@@ -142,14 +148,9 @@ main = do
 								if null model then "<empty>" else layout model,
 								"" ]) ++ [
 								"--- SOLUTION " ++ show traceid ++ " ----------------------",
-								show_solution mb_solution ]
-
+								show_solution funname mb_solution ]
 								where
-		
 								mbshowtraces ts = if don'tShowTraces then [] else ts
-								show_solution Nothing = "No solution"
-								show_solution (Just (_,[],_)) = "Empty solution"
-								show_solution (Just v@(_,solution,_)) = unlines [ show solution, showTestVector funname v ]
 
 					printLog $ "\n===== SUMMARY =====\n"
 
@@ -307,10 +308,14 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	printLog $ showLine res_trace
 	
 	res_trace' <- lift $ elimAssignmentsM res_trace
-	printLog $ "\n=== TRACE after elimAssignmentsM " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
+	printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
 	printLog $ showLine res_trace'
 
-	resultdata@(_,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace'
+	resultdata@(model,mb_solution) <- lift $ solveTraceM ret_type param_env traceid (reverse res_trace')
+	printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++
+		if null model then "<empty>" else layout model
+	funname <- lift $ gets funNameCVS
+	printLog $ "\n--- SOLUTION " ++ show traceid ++ " ----------------------\n" ++ show_solution funname mb_solution
 
 	startend <- lift $ gets funStartEndCVS
 	let visible_trace = Set.fromList $ concatMap to_branch res_line
@@ -417,8 +422,8 @@ lValueToVarName (CMember ptrexpr member isptr _) =
 	normalizeExpr ptrexpr ++ (if isptr then "_ARROW_" else "_DOT_") ++ identToString member
 --lValueToVarName (CUnary CIndOp expr _) = "PTR_" ++ normalizeExpr expr
 
-
-type EnvItem = (Ident,(Ident,Type))
+type TyEnvItem = (Ident,Type)
+type EnvItem = (Ident,TyEnvItem)
 instance Pretty EnvItem where
 	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> pretty idnew <+> text " :: " <+> pretty ty
 type Env = [EnvItem]
@@ -484,19 +489,6 @@ makeMemberExprsM srcident ty ptr_expr = case ty of
 				new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
 				in
 				(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
-
-{-
-	PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> do
-		members <- getMembersM sueref 
-		return $ for members $ \ (member_ident,member_ty) ->
-			let
-				old_lexpr = CMember (CVar srcident (nodeInfo srcident)) member_ident True (nodeInfo ptr_expr)
-				old_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName old_lexpr)
-				lexpr = CMember ptr_expr member_ident True (nodeInfo ptr_expr)
-				new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
-				in
-				(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
--}
 
 	_ -> return []
 
@@ -647,22 +639,6 @@ translateExprM toplevel envs expr = do
 	let
 		expr'' = renameVars envs expr'
 
-{-
-	let
-		-- declare and substitute the indirection target variables:
-		-- *ptr will become IND_ptr where (*ptr :: type)
-		intro_ind :: CExpr -> StateT [TraceElem] CovVecM CExpr
-		intro_ind (CUnary CIndOp target_expr ni) = do
-			let varname = lValueToVarName target_expr
-			case lookup varname (map snd $ concat envs) of
-				Just _ -> CVar (mkIdentWithCNodePos ni varname) ni
-				
-			ty <- inferTypeM target_expr
-			modify ( NewDeclaration 
-		intro_ind expr = return expr
-	(expr''',ind_decls) <- runStateT (everywhereM (mkM intro_ind) expr'') []
--}
-
 	funcalls_traces :: [(NodeInfo,[(Trace,CExpr)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
 		expanded_params_args <- expand_params_argsM paramdecls args
@@ -747,48 +723,48 @@ tyspec2TypeM typespec = case typespec of
 	_ -> error $ "tyspec2TypeM: " ++ (render.pretty) typespec ++ " not implemented yet."
 
 
-{-
-	let res_trace = elimIndAdr res_line
-	printLog $ "\n=== TRACE after elimIndAdr " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
-	printLog $ showLine res_trace
--}
+-- Substitutes an expression x by y everywhere in a
+substituteBy :: (Data a) => CExpr -> CExpr -> a -> a
+substituteBy x y a = everywhere (mkT substexpr) a
+	where
+	substexpr :: CExpr -> CExpr
+	substexpr found_expr | x == found_expr = y
+	substexpr found_expr                   = found_expr
 
 
 -- Eliminate Indirections 
 -- (trace is in straight order, not reversed)
 
 elimInds :: Trace -> CovVecM Trace
-elimInds trace = elim_indsM [] trace where
-	elim_indsM res_trace [] = return res_trace
-	elim_indsM res_trace () =
-
-{-
-	elim_ind [] trace
+elimInds trace = elim_indsM [] $ reverse trace
 	where
-	elim_ind res_trace [] = res_trace
-	elim_ind res_trace (Assignment 
-	
-	trace everywhere (mkT elim_ind_adr) trace where
-	elim_ind_adr :: CExpr -> CExpr
-	elim_ind_adr (CUnary CIndOp (CUnary CAdrOp expr _) ni) = expr
-	elim_ind_adr expr = expr
--}
+	tyenv = createTyEnv trace
+	elim_indsM :: Trace -> Trace -> CovVecM Trace
+	elim_indsM res_trace [] = return res_trace
+	elim_indsM res_trace (ti@(Assignment ptr@(CVar ptr_ident _) expr) : rest) = do
+		case lookup ptr_ident tyenv of
+			Nothing -> error $ "elemInds: could not find " ++ (render.pretty) ptr_ident
+			Just (PtrType _ _ _) -> elim_indsM (cancel_ind_adrs $ substituteBy ptr expr res_trace) rest
+			_ -> elim_indsM (ti : res_trace) rest
+	elim_indsM res_trace (ti : rest) = elim_indsM (ti : res_trace) rest
+
+	cancel_ind_adrs :: Trace -> Trace
+	cancel_ind_adrs trace = everywhere (mkT cancel_ind_adr) trace
+		where
+		cancel_ind_adr :: CExpr -> CExpr
+		cancel_ind_adr (CUnary CIndOp (CUnary CAdrOp expr _) _) = expr
+		cancel_ind_adr expr = expr
+
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
+-- trace is reversed!
 
 elimAssignmentsM :: Trace -> CovVecM Trace
-elimAssignmentsM trace = foldtraceM [] $ reverse trace
+elimAssignmentsM trace = foldtraceM [] trace
 	where
 	foldtraceM :: Trace -> Trace -> CovVecM Trace
 	foldtraceM result [] = return result
-	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (subst result) rest
-		where
-		subst :: Trace -> Trace
-		subst trace = everywhere (mkT substlvalue) trace
-			where
-			substlvalue :: CExpr -> CExpr
-			substlvalue found_expr | lvalue == found_expr = expr
-			substlvalue found_expr                        = found_expr
+	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (substituteBy lvalue expr result) rest
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
 
 
@@ -905,6 +881,12 @@ traceelemToMZ (Condition _ constr) = do
 
 traceelemToMZ _ = return []
 
+createTyEnv :: Trace -> [TyEnvItem]
+createTyEnv trace = concatMap traceitem2tyenv trace
+	where
+	traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
+	traceitem2tyenv _ = []
+
 solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
 solveTraceM ret_type param_env traceid trace = do
 	let
@@ -924,9 +906,8 @@ solveTraceM ret_type param_env traceid trace = do
 
 	constraintsG <- concatMapM traceelemToMZ trace'
 	
-	let tyenv = concatMap traceitem2tyenv trace' where
-		traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
-		traceitem2tyenv _ = []
+	let tyenv = createTyEnv trace'
+	
 	let constr_trace = concatMap traceitem2constr trace' where
 		traceitem2constr (Condition _ expr) = [expr]
 		traceitem2constr _ = []
@@ -963,7 +944,7 @@ solveTraceM ret_type param_env traceid trace = do
 				Left err -> do
 					printLog $ show err
 					return Nothing
-				Right [] -> return Nothing
+				Right [] -> error $ "Empty solution for " ++ tracename ++ " !"
 				Right [sol] -> return $ Just (param_env,sol,mb_ret_val)
 				Right _ -> error $ "Found more than one solution for " ++ show traceid ++ " !"
 			return (model,mb_solution)
