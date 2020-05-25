@@ -302,8 +302,12 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 --	printLog $ "=== TRACE " ++ show traceid ++ " ========================\n<leaving out builtins...>\n"
 --	printLog $ showLine res_line
 	
-	res_trace' <- lift $ elimAssignmentsM res_line	
-	printLog $ "\n=== TRACE after elimAssignments " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
+	res_trace <- lift $ elimInds res_line
+	printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
+	printLog $ showLine res_trace
+	
+	res_trace' <- lift $ elimAssignmentsM res_trace
+	printLog $ "\n=== TRACE after elimAssignmentsM " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
 	printLog $ showLine res_trace'
 
 	resultdata@(_,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace'
@@ -743,6 +747,33 @@ tyspec2TypeM typespec = case typespec of
 	_ -> error $ "tyspec2TypeM: " ++ (render.pretty) typespec ++ " not implemented yet."
 
 
+{-
+	let res_trace = elimIndAdr res_line
+	printLog $ "\n=== TRACE after elimIndAdr " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
+	printLog $ showLine res_trace
+-}
+
+
+-- Eliminate Indirections 
+-- (trace is in straight order, not reversed)
+
+elimInds :: Trace -> CovVecM Trace
+elimInds trace = elim_indsM [] trace where
+	elim_indsM res_trace [] = return res_trace
+	elim_indsM res_trace () =
+
+{-
+	elim_ind [] trace
+	where
+	elim_ind res_trace [] = res_trace
+	elim_ind res_trace (Assignment 
+	
+	trace everywhere (mkT elim_ind_adr) trace where
+	elim_ind_adr :: CExpr -> CExpr
+	elim_ind_adr (CUnary CIndOp (CUnary CAdrOp expr _) ni) = expr
+	elim_ind_adr expr = expr
+-}
+
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
 
 elimAssignmentsM :: Trace -> CovVecM Trace
@@ -759,19 +790,6 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 			substlvalue found_expr | lvalue == found_expr = expr
 			substlvalue found_expr                        = found_expr
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
-
-{-
-	let res_trace = elimIndAdr res_line
-	printLog $ "\n=== TRACE after elimIndAdr " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
-	printLog $ showLine res_trace
-
-
-elimIndAdr :: Trace -> Trace
-elimIndAdr trace = everywhere (mkT elim_ind_adr) trace where
-	elim_ind_adr :: CExpr -> CExpr
-	elim_ind_adr (CUnary CIndOp (CUnary CAdrOp expr _) ni) = expr
-	elim_ind_adr expr = expr
--}
 
 
 -- MiniZinc Model Generation

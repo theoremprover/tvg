@@ -58,7 +58,8 @@ int f(int* p)
 {
     int a = 0;
     int* q = &a;
-    *q = 2;
+    q = q + 1;
+    *(q-1) = 2;
 
     if(a==*p)
     {
