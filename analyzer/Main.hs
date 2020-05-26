@@ -481,6 +481,7 @@ declaration2EnvItemM makenewidents decl = do
 	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
 	identTy2EnvItemM makenewidents srcident ty
 
+{-
 makeMemberExprsM :: Ident -> Type -> CExpr -> CovVecM [EnvItem]
 makeMemberExprsM srcident ty ptr_expr = do
 	printLog $ "makeMemberExprsM " ++ (render.pretty) srcident ++ " " ++ (render.pretty) ty ++ " " ++ (render.pretty) ptr_expr
@@ -499,9 +500,11 @@ makeMemberExprsM srcident ty ptr_expr = do
 	
 		PtrType target_ty _ _ -> do
 			let srcident' = mkIdentWithCNodePos srcident ("PTR_" ++ identToString srcident)
+			identTy2EnvItemM 
 			makeMemberExprsM srcident' target_ty (CVar srcident' (nodeInfo srcident))
 	
 		_ -> return []
+-}
 
 mkIdentWithCNodePos :: (CNode cnode) => cnode -> String -> Ident
 mkIdentWithCNodePos cnode name = mkIdent (posOfNode $ nodeInfo cnode) name (Name 99999)
@@ -512,7 +515,26 @@ identTy2EnvItemM makenewidents srcident ty = do
 	newident <- case makenewidents of
 		True -> createNewIdentM srcident $ lValueToVarName (CVar srcident (nodeInfo srcident))
 		False -> return srcident
-	other_envitems <- makeMemberExprsM srcident ty' (CVar newident (nodeInfo srcident))
+
+	other_envitems <- case ty of
+
+		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
+			members <- getMembersM sueref
+			return $ for members $ \ (member_ident,member_ty) ->
+				let
+					old_lexpr = CMember (CVar srcident (nodeInfo srcident)) member_ident False (nodeInfo srcident)
+					old_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName old_lexpr)
+					lexpr = CMember (CVar newident (nodeInfo newident)) member_ident False (nodeInfo srcident)
+					new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
+					in
+					(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
+	
+		PtrType target_ty _ _ -> do
+			let srcident' = mkIdentWithCNodePos srcident ("PTR_" ++ identToString newident)
+			identTy2EnvItemM False srcident' target_ty
+	
+		_ -> return []
+
 	return $ (srcident,(newident,ty')) : other_envitems
 
 -- Just unfold the traces
@@ -674,7 +696,6 @@ translateExprM toplevel envs expr = do
 		expandparam (paramdecl,arg) = do
 			let VarDecl (VarName srcident _) _ arg_ty = getVarDecl paramdecl
 			return [(srcident,arg)]
---			addition_arg_env <- makeMemberExprsM arg_ty (CVar srcident (nodeInfo srcident))
 
 
 	-- Flattens the trace tree to a list of all paths through the tree, together with their return exprs
