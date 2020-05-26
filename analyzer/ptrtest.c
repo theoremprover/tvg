@@ -62,7 +62,7 @@ int f(int* p)
     q = &a;
     *q = 2;
 
-    if(a==*q)
+    if(a==*p)
     {
         return 0;
     }

@@ -89,10 +89,10 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : ["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
---		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : ["-writeTree"] --["-writeAST"]
+		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : ["-writeTree"] --["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrrettest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : ["-writeTraceTree"] --["-writeAST","-writeGlobalDecls"]
@@ -100,69 +100,70 @@ main = do
 
 	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
 	
-	parseCFile (newGCC gcc) Nothing [] filename >>= \case
-		Left err -> error $ show err
-		Right translunit -> do
-			when ("-writeAST" ∈ opts) $
-				writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
-			case runTrav_ $ analyseAST translunit of
-				Left errs -> putStrLn "ERRORS:" >> forM_ errs print
-				Right (globdecls,soft_errors) -> do
-					when (not $ null soft_errors) $ putStrLn "Soft errors:" >> forM_ soft_errors print
-					when ("-writeGlobalDecls" ∈ opts) $
-						writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
-
-					mb_checkexename <- case checkSolutions of
-						False -> return Nothing
-						True  -> do
-							let
-								srcfilename = takeFileName filename
-								chkexefilename = replaceExtension srcfilename "exe"
-							absolute_filename <- makeAbsolute filename
-							withCurrentDirectory (takeDirectory absolute_filename) $ do
-								(exitcode,stdout,stderr) <- readProcessWithExitCode gcc ["-o",chkexefilename,"-DCALC",srcfilename] ""
-								case exitcode of
-									ExitFailure _ -> error $ "Compilation failed:\n" ++ stderr
-									ExitSuccess -> return $ Just chkexefilename 
-
-					(full_coverage,(testvectors,covered,alls)) <- evalStateT (covVectorsM filename opts) $
-						CovVecState globdecls 1 translunit filename mb_checkexename funname undefined
-
-					printLog ""
-
-					let deaths = Set.toList $ Set.difference alls covered
-
-					when (full_coverage && not (null deaths)) $ error "full coverage but deaths!"
-					when (not full_coverage && null deaths) $ error "coverage gaps but no deaths!"
-
-					printLog $ "\n####### FINAL RESULT #######\n"
-
-					forM_ testvectors $ \ (traceid,trace,(model,mb_solution)) -> do
-						case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
-							False -> return ()
-							True -> printLog $ unlines $ mbshowtraces (
-								[ "","=== TRACE " ++ show traceid ++ " ========================","<leaving out builtins...>" ] ++
-								[ showLine trace ] ++
-								[ "",
-								"--- MODEL " ++ show traceid ++ " -------------------------",
-								if null model then "<empty>" else layout model,
-								"" ]) ++ [
-								"--- SOLUTION " ++ show traceid ++ " ----------------------",
-								show_solution funname mb_solution ]
-								where
-								mbshowtraces ts = if don'tShowTraces then [] else ts
-
-					printLog $ "\n===== SUMMARY =====\n"
-
-					forM_ testvectors $ \ (traceid,trace,(model,Just v)) -> do
-						printLog $ "Test Vector covering " ++ show traceid ++ " : "
-						printLog $ "    " ++ showTestVector funname v ++ "\n"
-					forM_ deaths $ \ branch -> do
-						printLog $ "DEAD " ++ show branch ++ "\n"
-
-					printLog $ case full_coverage of
-						False -> "FAIL, there are coverage gaps!"
-						True  -> "OK, we have full branch coverage."
+	parseCFile (newGCC gcc) Nothing [] filename
+		>>= \case
+			Left err -> error $ show err
+			Right translunit -> do
+				when ("-writeAST" ∈ opts) $
+					writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
+				case runTrav_ $ analyseAST translunit of
+					Left errs -> putStrLn "ERRORS:" >> forM_ errs print
+					Right (globdecls,soft_errors) -> do
+						when (not $ null soft_errors) $ putStrLn "Soft errors:" >> forM_ soft_errors print
+						when ("-writeGlobalDecls" ∈ opts) $
+							writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
+	
+						mb_checkexename <- case checkSolutions of
+							False -> return Nothing
+							True  -> do
+								let
+									srcfilename = takeFileName filename
+									chkexefilename = replaceExtension srcfilename "exe"
+								absolute_filename <- makeAbsolute filename
+								withCurrentDirectory (takeDirectory absolute_filename) $ do
+									(exitcode,stdout,stderr) <- readProcessWithExitCode gcc ["-o",chkexefilename,"-DCALC",srcfilename] ""
+									case exitcode of
+										ExitFailure _ -> error $ "Compilation failed:\n" ++ stderr
+										ExitSuccess -> return $ Just chkexefilename 
+	
+						(full_coverage,(testvectors,covered,alls)) <- evalStateT (covVectorsM filename opts) $
+							CovVecState globdecls 1 translunit filename mb_checkexename funname undefined
+	
+						printLog ""
+	
+						let deaths = Set.toList $ Set.difference alls covered
+	
+						when (full_coverage && not (null deaths)) $ error "full coverage but deaths!"
+						when (not full_coverage && null deaths) $ error "coverage gaps but no deaths!"
+	
+						printLog $ "\n####### FINAL RESULT #######\n"
+	
+						forM_ testvectors $ \ (traceid,trace,(model,mb_solution)) -> do
+							case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
+								False -> return ()
+								True -> printLog $ unlines $ mbshowtraces (
+									[ "","=== TRACE " ++ show traceid ++ " ========================","<leaving out builtins...>" ] ++
+									[ showLine trace ] ++
+									[ "",
+									"--- MODEL " ++ show traceid ++ " -------------------------",
+									if null model then "<empty>" else layout model,
+									"" ]) ++ [
+									"--- SOLUTION " ++ show traceid ++ " ----------------------",
+									show_solution funname mb_solution ]
+									where
+									mbshowtraces ts = if don'tShowTraces then [] else ts
+	
+						printLog $ "\n===== SUMMARY =====\n"
+	
+						forM_ testvectors $ \ (traceid,trace,(model,Just v)) -> do
+							printLog $ "Test Vector covering " ++ show traceid ++ " : "
+							printLog $ "    " ++ showTestVector funname v ++ "\n"
+						forM_ deaths $ \ branch -> do
+							printLog $ "DEAD " ++ show branch ++ "\n"
+	
+						printLog $ case full_coverage of
+							False -> "FAIL, there are coverage gaps!"
+							True  -> "OK, we have full branch coverage."
 
 showEnv :: Env -> String
 showEnv env = "{\n    " ++ intercalate " ,\n    " (map (render.pretty) env) ++ "\n    }"
@@ -174,10 +175,10 @@ showTestVector funname (env,solution,mb_retval) = funname ++ " ( " ++ intercalat
 	showarg :: EnvItem -> String
 	showarg (oldident,(newident,_)) =
 		identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
-			Nothing -> "DONT_CARE"
-			Just (MInt i) -> show i
+			Nothing         -> "DONT_CARE"
+			Just (MInt i)   -> show i
 			Just (MFloat f) -> show f
-			val -> error $ "showarg " ++ show val ++ " not yet implemented"
+			val             -> error $ "showarg " ++ show val ++ " not yet implemented"
 
 data CovVecState = CovVecState {
 	globDeclsCVS    :: GlobalDecls,
@@ -311,7 +312,11 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
 	printLog $ showLine res_trace'
 
-	resultdata@(model,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace'
+	res_trace'' <- lift $ substIndM res_trace'
+	printLog $ "\n--- TRACE after elimPtrRestM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
+	printLog $ showLine res_trace''
+
+	resultdata@(model,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace''
 	printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++
 		if null model then "<empty>" else layout model
 	funname <- lift $ gets funNameCVS
@@ -766,6 +771,12 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 	foldtraceM result [] = return result
 	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (substituteBy lvalue expr result) rest
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
+
+
+-- Substitute leftover indirections
+
+substIndM :: Trace -> CovVecM Trace
+substIndM trace = return trace
 
 
 -- MiniZinc Model Generation

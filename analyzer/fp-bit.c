@@ -1,3 +1,8 @@
+#ifdef CALC
+#include <stdio.h>
+#include <stdlib.h>
+#endif
+
 # 1 "fp-bit.c"
 # 1 "<built-in>"
 # 1 "<command-line>"
@@ -1454,7 +1459,7 @@ int main(int argc, char* argv[])
 {
     int x = atoi(argv[1]);
     int y = atoi(argv[2]);
-    printf("_fpdiv_parts(x=%i,z=%i) =\n%i\n",x,y,_fpdiv_parts(x,y));
+    printf("f(x=%i,z=%i) =\n%i\n",x,y,_fpdiv_parts(x,y));
     return 0;
 }
 #endif
