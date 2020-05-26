@@ -89,10 +89,10 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\fp-bit.i") : "_fpdiv_parts" : ["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
-		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : ["-writeTree"] --["-writeAST"]
+--		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : ["-writeTree"] --["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrrettest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : ["-writeTraceTree"] --["-writeAST","-writeGlobalDecls"]
@@ -920,10 +920,7 @@ solveTraceM ret_type param_env traceid trace = do
 
 	varsG <- concatMapM (var2MZ tyenv) vars
 	let
-		solution_vars = returnval_var_name : (
-			(map (\ (_,(ident,_)) -> identToString ident) param_env)
-			`intersect`
-			(map identToString vars) )
+		solution_vars = returnval_var_name : (map identToString vars)
 		model = includesG ++ varsG ++ [] ++ constraintsG ++ [] ++
 			[ MZAST.solve $ MZAST.satisfy MZAST.|: MZAST.Annotation "int_search" [
 				MZAST.E (MZAST.ArrayLit $ map (MZAST.Var . MZAST.Simpl) solution_vars),
@@ -945,7 +942,9 @@ solveTraceM ret_type param_env traceid trace = do
 					printLog $ show err
 					return Nothing
 				Right [] -> error $ "Empty solution for " ++ tracename ++ " !"
-				Right [sol] -> return $ Just (param_env,sol,mb_ret_val)
+				Right [sol] -> do
+					let sol_params = filter (\(varname,_) -> varname `elem` (returnval_var_name : map (identToString.fst.snd) param_env)) sol
+					return $ Just (param_env,sol_params,mb_ret_val)
 				Right _ -> error $ "Found more than one solution for " ++ show traceid ++ " !"
 			return (model,mb_solution)
 
