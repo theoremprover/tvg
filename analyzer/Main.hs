@@ -311,7 +311,7 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
 	printLog $ showLine res_trace'
 
-	resultdata@(model,mb_solution) <- lift $ solveTraceM ret_type param_env traceid (reverse res_trace')
+	resultdata@(model,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace'
 	printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++
 		if null model then "<empty>" else layout model
 	funname <- lift $ gets funNameCVS
@@ -757,10 +757,10 @@ elimInds trace = elim_indsM [] $ reverse trace
 
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
--- trace is reversed!
+-- trace should be reversed!
 
 elimAssignmentsM :: Trace -> CovVecM Trace
-elimAssignmentsM trace = foldtraceM [] trace
+elimAssignmentsM trace = foldtraceM [] $ reverse trace
 	where
 	foldtraceM :: Trace -> Trace -> CovVecM Trace
 	foldtraceM result [] = return result
@@ -891,6 +891,7 @@ solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
 solveTraceM ret_type param_env traceid trace = do
 	let
 		tracename = show traceid
+		param_names = map (fst.snd) param_env
 
 	let mb_ret_val = case last trace of
 		Return ret_expr -> Just ret_expr
@@ -913,14 +914,14 @@ solveTraceM ret_type param_env traceid trace = do
 		traceitem2constr _ = []
 	let
 		includesG = [ MZAST.include "include.mzn" ]
-		vars :: [Ident] = nub $ everything (++) (mkQ [] searchvar) constr_trace where
+		vars :: [Ident] = nub $ param_names ++ everything (++) (mkQ [] searchvar) constr_trace where
 			searchvar :: CExpr -> [Ident]
 			searchvar (CVar ident _) = [ ident ]
 			searchvar _ = []
 
 	varsG <- concatMapM (var2MZ tyenv) vars
 	let
-		solution_vars = returnval_var_name : (map identToString vars)
+		solution_vars = map identToString vars
 		model = includesG ++ varsG ++ [] ++ constraintsG ++ [] ++
 			[ MZAST.solve $ MZAST.satisfy MZAST.|: MZAST.Annotation "int_search" [
 				MZAST.E (MZAST.ArrayLit $ map (MZAST.Var . MZAST.Simpl) solution_vars),
@@ -943,7 +944,7 @@ solveTraceM ret_type param_env traceid trace = do
 					return Nothing
 				Right [] -> error $ "Empty solution for " ++ tracename ++ " !"
 				Right [sol] -> do
-					let sol_params = filter (\(varname,_) -> varname `elem` (returnval_var_name : map (identToString.fst.snd) param_env)) sol
+					let sol_params = filter (\(varname,_) -> varname `elem` (returnval_var_name : map identToString param_names)) sol
 					return $ Just (param_env,sol_params,mb_ret_val)
 				Right _ -> error $ "Found more than one solution for " ++ show traceid ++ " !"
 			return (model,mb_solution)
