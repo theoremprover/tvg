@@ -470,54 +470,37 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 	eliminparamdecl (AbstractParamDecl (VarDecl varname declattrs ty) ni) =
 		AbstractParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
 
-createNewIdentM :: Ident -> String -> CovVecM Ident
-createNewIdentM (Ident _ i ni) name_prefix = do
-	new_var_num <- gets newNameIndexCVS
-	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
-	return $ Ident (name_prefix ++ "_" ++ show new_var_num) i ni
+
+-- Extracts the declared identifer and the type from a Declaration
 
 declaration2EnvItemM :: Declaration decl => Bool -> decl -> CovVecM [EnvItem]
 declaration2EnvItemM makenewidents decl = do
 	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
 	identTy2EnvItemM makenewidents srcident ty
 
-{-
-makeMemberExprsM :: Ident -> Type -> CExpr -> CovVecM [EnvItem]
-makeMemberExprsM srcident ty ptr_expr = do
-	printLog $ "makeMemberExprsM " ++ (render.pretty) srcident ++ " " ++ (render.pretty) ty ++ " " ++ (render.pretty) ptr_expr
-	case ty of
-
-		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
-			members <- getMembersM sueref
-			return $ for members $ \ (member_ident,member_ty) ->
-				let
-					old_lexpr = CMember (CVar srcident (nodeInfo srcident)) member_ident False (nodeInfo ptr_expr)
-					old_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName old_lexpr)
-					lexpr = CMember ptr_expr member_ident False (nodeInfo ptr_expr)
-					new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
-					in
-					(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
-	
-		PtrType target_ty _ _ -> do
-			let srcident' = mkIdentWithCNodePos srcident ("PTR_" ++ identToString srcident)
-			identTy2EnvItemM 
-			makeMemberExprsM srcident' target_ty (CVar srcident' (nodeInfo srcident))
-	
-		_ -> return []
--}
-
 mkIdentWithCNodePos :: (CNode cnode) => cnode -> String -> Ident
 mkIdentWithCNodePos cnode name = mkIdent (posOfNode $ nodeInfo cnode) name (Name 99999)
+
+
+-- Takes an identifier and a type, and creates env items from that.
+-- if it is a struct/union, also create the member env items (p_ARROW_member1, a_DOT_member1 e.g.)
+-- if it is a pointer, also creates the target variable (PTR_p e.g.)
 
 identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM [EnvItem]
 identTy2EnvItemM makenewidents srcident ty = do
 	ty' <- elimTypeDefsM ty
+	
 	newident <- case makenewidents of
-		True -> createNewIdentM srcident $ lValueToVarName (CVar srcident (nodeInfo srcident))
 		False -> return srcident
+		True -> do
+			new_var_num <- gets newNameIndexCVS
+			modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
+			let
+				(Ident _ i ni) = srcident
+				name_prefix = lValueToVarName (CVar srcident (nodeInfo srcident))
+			return $ Ident (name_prefix ++ "_" ++ show new_var_num) i ni
 
-	other_envitems <- case ty of
-
+	other_envitems <- case ty' of
 		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 			members <- getMembersM sueref
 			return $ for members $ \ (member_ident,member_ty) ->
@@ -528,11 +511,9 @@ identTy2EnvItemM makenewidents srcident ty = do
 					new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
 					in
 					(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
-	
 		PtrType target_ty _ _ -> do
 			let srcident' = mkIdentWithCNodePos srcident ("PTR_" ++ identToString newident)
 			identTy2EnvItemM False srcident' target_ty
-	
 		_ -> return []
 
 	return $ (srcident,(newident,ty')) : other_envitems
