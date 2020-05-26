@@ -281,7 +281,7 @@ covVectorsM filename opts = do
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
 	param_env <- concatMapM (declaration2EnvItemM True) funparamdecls
---	printLog $ "param_env = " ++ showEnv param_env
+	printLog $ "param_env = " ++ showEnv param_env
 	
 	let decls = map (NewDeclaration .snd) (reverse param_env ++ glob_env)
 
@@ -482,20 +482,26 @@ declaration2EnvItemM makenewidents decl = do
 	identTy2EnvItemM makenewidents srcident ty
 
 makeMemberExprsM :: Ident -> Type -> CExpr -> CovVecM [EnvItem]
-makeMemberExprsM srcident ty ptr_expr = case ty of
+makeMemberExprsM srcident ty ptr_expr = do
+	printLog $ "makeMemberExprsM " ++ (render.pretty) srcident ++ " " ++ (render.pretty) ty ++ " " ++ (render.pretty) ptr_expr
+	case ty of
 
-	DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
-		members <- getMembersM sueref
-		return $ for members $ \ (member_ident,member_ty) ->
-			let
-				old_lexpr = CMember (CVar srcident (nodeInfo srcident)) member_ident False (nodeInfo ptr_expr)
-				old_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName old_lexpr)
-				lexpr = CMember ptr_expr member_ident False (nodeInfo ptr_expr)
-				new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
-				in
-				(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
-
-	_ -> return []
+		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
+			members <- getMembersM sueref
+			return $ for members $ \ (member_ident,member_ty) ->
+				let
+					old_lexpr = CMember (CVar srcident (nodeInfo srcident)) member_ident False (nodeInfo ptr_expr)
+					old_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName old_lexpr)
+					lexpr = CMember ptr_expr member_ident False (nodeInfo ptr_expr)
+					new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
+					in
+					(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
+	
+		PtrType target_ty _ _ -> do
+			let srcident' = mkIdentWithCNodePos srcident ("PTR_" ++ identToString srcident)
+			makeMemberExprsM srcident' target_ty (CVar srcident' (nodeInfo srcident))
+	
+		_ -> return []
 
 mkIdentWithCNodePos :: (CNode cnode) => cnode -> String -> Ident
 mkIdentWithCNodePos cnode name = mkIdent (posOfNode $ nodeInfo cnode) name (Name 99999)
