@@ -483,8 +483,8 @@ mkIdentWithCNodePos cnode name = mkIdent (posOfNode $ nodeInfo cnode) name (Name
 
 
 -- Takes an identifier and a type, and creates env items from that.
--- if it is a struct/union, also create the member env items (p_ARROW_member1, a_DOT_member1 e.g.)
--- if it is a pointer, also creates the target variable (PTR_p e.g.)
+-- if it is a struct/union, also create the member env items (p_ARROW_member1, a_DOT_member1 e.g.) recursively
+-- if it is a pointer, also creates the target variable (PTR_p e.g.) 
 
 identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM [EnvItem]
 identTy2EnvItemM makenewidents srcident ty = do
@@ -511,9 +511,11 @@ identTy2EnvItemM makenewidents srcident ty = do
 					new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
 					in
 					(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
+{-
 		PtrType target_ty _ _ -> do
 			let srcident' = mkIdentWithCNodePos srcident ("PTR_" ++ identToString newident)
 			identTy2EnvItemM False srcident' target_ty
+-}
 		_ -> return []
 
 	return $ (srcident,(newident,ty')) : other_envitems
@@ -554,8 +556,6 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') ->
 			transids lexpr trace' $ \ (lexpr',trace'') -> do
---				let
---					lexpr' = renameVars envs lexpr
 				unfoldTracesM toplevel envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
