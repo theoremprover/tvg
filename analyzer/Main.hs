@@ -790,13 +790,26 @@ substIndM res_trace new_idents (ti : rest) = do
 	(ti',add_tis) <- runStateT (everywhereM (mkM subst_indM) ti) []
 	substIndM (ti' : (map NewDeclaration add_tis) ++ res_trace) (map fst add_tis ++ new_idents) rest
 	where
-	subst_indM :: CExpr -> StateT [(Ident,Type)] CovVecM CExpr
-	subst_indM expr@(CUnary CIndOp (CVar ptr_ident _) ni) = do
+	
+	create_var :: CExpr -> Type -> StateT [(Ident,Type)] CovVecM CExpr
+	create_var expr ty = do
 		let newident = mkIdentWithCNodePos expr $ lValueToVarName expr
-		let Just (PtrType ty _ _) = lookup ptr_ident $ map envItemTE res_trace
 		when (not $ newident ∈ new_idents) $
 			modify ((newident,ty) : )
-		return $ CVar newident ni		
+		return $ CVar newident (nodeInfo expr)
+
+	subst_indM :: CExpr -> StateT [(Ident,Type)] CovVecM CExpr
+	subst_indM expr@(CUnary CIndOp (CVar ptr_ident _) ni) = do
+		let Just (PtrType ty _ _) = lookup ptr_ident $ map envItemTE res_trace
+		create_var expr ty
+	subst_indM (CMember (CUnary CAdrOp s _) member True ni) = return $ CMember s member False ni
+	subst_indM (CMember (CUnary CIndOp p _) member False ni) = return $ CMember p member True ni
+	subst_indM expr@(CMember (CVar ptr_ident _) _ True _) = do
+		let Just (PtrType ty _ _) = lookup ptr_ident $ map envItemTE res_trace
+		create_var expr ty
+	subst_indM expr@(CMember (CVar a_ident _) _ False _) = do
+		let Just ty = lookup a_ident $ map envItemTE res_trace
+		create_var expr ty
 	subst_indM expr = return expr
 
 
