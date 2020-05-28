@@ -312,7 +312,7 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
 	printLog $ showLine res_trace'
 
-	res_trace'' <- lift $ substIndM res_trace'
+	res_trace'' <- lift $ substIndM [] res_trace'
 	printLog $ "\n--- TRACE after elimPtrRestM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
 	printLog $ showLine res_trace''
 
@@ -783,8 +783,14 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 
 -- Substitute leftover indirections
 
-substIndM :: Trace -> CovVecM Trace
-substIndM trace = return trace
+substIndM :: Trace -> Trace -> CovVecM Trace
+substIndM res_trace [] = return $ reverse res_trace
+substIndM res_trace (ti : rest) = do
+	(ti',add_tis) <- runStateT (everywhereM (mkM subst_indM) ti) []
+	substIndM (ti' : res_trace) rest
+	where
+	subst_indM :: CExpr -> StateT [TraceElem] CovVecM CExpr
+	subst_indM = error ""
 
 
 -- MiniZinc Model Generation
