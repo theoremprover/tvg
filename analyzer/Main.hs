@@ -194,7 +194,7 @@ type CovVecM = StateT CovVecState IO
 data TraceElem =
 	Assignment CExpr CExpr |
 	Condition Bool CExpr |
-	NewDeclaration (Ident,Type) |
+	NewDeclaration { envItemTE :: (Ident,Type) } |
 	Return CExpr |
 	TraceOr [Trace] |
 	TraceAnd [Trace]
@@ -312,8 +312,8 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
 	printLog $ showLine res_trace'
 
-	res_trace'' <- lift $ substIndM [] res_trace'
-	printLog $ "\n--- TRACE after elimPtrRestM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
+	res_trace'' <- lift $ substIndM [] [] res_trace'
+	printLog $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
 	printLog $ showLine res_trace''
 
 	resultdata@(model,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace''
@@ -425,7 +425,8 @@ lValueToVarName :: CExpr -> String
 lValueToVarName cvar@(CVar _ _) = normalizeExpr cvar
 lValueToVarName (CMember ptrexpr member isptr _) =
 	normalizeExpr ptrexpr ++ (if isptr then "_ARROW_" else "_DOT_") ++ identToString member
---lValueToVarName (CUnary CIndOp expr _) = "PTR_" ++ normalizeExpr expr
+lValueToVarName (CUnary CIndOp expr _) = "PTR_" ++ normalizeExpr expr
+lValueToVarName lval = error $ "lValueToVarName " ++ (render.pretty) lval ++ " not implemented!"
 
 type TyEnvItem = (Ident,Type)
 type EnvItem = (Ident,TyEnvItem)
@@ -783,14 +784,20 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 
 -- Substitute leftover indirections
 
-substIndM :: Trace -> Trace -> CovVecM Trace
-substIndM res_trace [] = return $ reverse res_trace
-substIndM res_trace (ti : rest) = do
+substIndM :: Trace -> [Ident] -> Trace -> CovVecM Trace
+substIndM res_trace _ [] = return $ reverse res_trace
+substIndM res_trace new_idents (ti : rest) = do
 	(ti',add_tis) <- runStateT (everywhereM (mkM subst_indM) ti) []
-	substIndM (ti' : res_trace) rest
+	substIndM (ti' : (map NewDeclaration add_tis) ++ res_trace) (map fst add_tis ++ new_idents) rest
 	where
-	subst_indM :: CExpr -> StateT [TraceElem] CovVecM CExpr
-	subst_indM = error ""
+	subst_indM :: CExpr -> StateT [(Ident,Type)] CovVecM CExpr
+	subst_indM expr@(CUnary CIndOp (CVar ptr_ident _) ni) = do
+		let newident = mkIdentWithCNodePos expr $ lValueToVarName expr
+		let Just (PtrType ty _ _) = lookup ptr_ident $ map envItemTE res_trace
+		when (not $ newident ∈ new_idents) $
+			modify ((newident,ty) : )
+		return $ CVar newident ni		
+	subst_indM expr = return expr
 
 
 -- MiniZinc Model Generation

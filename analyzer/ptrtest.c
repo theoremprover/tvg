@@ -54,7 +54,7 @@ int h(int* r)
 }
 */
 
-int f(int* p)
+int f(STRUCT* p)
 {
     int a = 0;
     int* q;
@@ -62,7 +62,7 @@ int f(int* p)
     q = &a;
     *q = 2;
 
-    if(a==*p)
+    if(a == p->member2)
     {
         return 0;
     }
@@ -74,8 +74,8 @@ int main(int argc, char* argv[])
 {
     int m0 = atoi(argv[1]);
     int m1 = atoi(argv[2]);
-    int p[2] = { m0,m1 };
-    printf("f(p={%i,%i}) =\n%i\n",m0,m1,f(p));
+    STRUCT q = { m0,m1 };
+    printf("f(p={%i,%i}) =\n%i\n",m0,m1,f(&q));
     return 0;
 }
 #endif
