@@ -56,13 +56,14 @@ int h(int* r)
 
 int f(STRUCT* p)
 {
-    int a = 0;
+    STRUCT r = { EINS,10 };
+
     int* q;
 
-    q = &a;
+    q = &(r.member2);
     *q = 2;
 
-    if(a == p->member2)
+    if(r.member2 == p->member2)
     {
         return 0;
     }

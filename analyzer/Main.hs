@@ -260,7 +260,7 @@ covVectorsM :: String -> [String] -> CovVecM (Bool,([TraceAnalysisResult],Set.Se
 covVectorsM filename opts = do
 	funname <- gets funNameCVS
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
-	glob_env <- concatMapM (declaration2EnvItemM False) globdecls
+	glob_env <- createInterfaceM globdecls
 	let
 		-- creates the assignment statements from the global context
 		defs = concatMap def2stmt globdecls
@@ -280,7 +280,7 @@ covVectorsM filename opts = do
 			next : _ -> next
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
-	param_env <- concatMapM (declaration2EnvItemM True) funparamdecls
+	param_env <- concatMapM declaration2EnvItemM funparamdecls
 	printLog $ "param_env = " ++ showEnv param_env
 	
 	let decls = map (NewDeclaration .snd) (reverse param_env ++ glob_env)
@@ -474,34 +474,42 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 
 -- Extracts the declared identifer and the type from a Declaration
 
-declaration2EnvItemM :: Declaration decl => Bool -> decl -> CovVecM [EnvItem]
-declaration2EnvItemM makenewidents decl = do
+declaration2EnvItemM :: Declaration decl => decl -> CovVecM [EnvItem]
+declaration2EnvItemM decl = do
 	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
-	identTy2EnvItemM makenewidents srcident ty
+	identTy2EnvItemM srcident ty
 
 mkIdentWithCNodePos :: (CNode cnode) => cnode -> String -> Ident
 mkIdentWithCNodePos cnode name = mkIdent (posOfNode $ nodeInfo cnode) name (Name 99999)
 
 
--- Takes an identifier and a type, and creates env items from that.
--- if it is a struct/union, also create the member env items (p_ARROW_member1, a_DOT_member1 e.g.) recursively
--- if it is a pointer, also creates the target variable (PTR_p e.g.) 
+-- Takes an identifier and a type, and creates env item(s) from that.
 
-identTy2EnvItemM :: Bool -> Ident -> Type -> CovVecM [EnvItem]
-identTy2EnvItemM makenewidents srcident ty = do
+identTy2EnvItemM :: Ident -> Type -> CovVecM [EnvItem]
+identTy2EnvItemM srcident ty = do
 	ty' <- elimTypeDefsM ty
 	
-	newident <- case makenewidents of
-		False -> return srcident
-		True -> do
-			new_var_num <- gets newNameIndexCVS
-			modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
-			let
-				(Ident _ i ni) = srcident
-				name_prefix = lValueToVarName (CVar srcident (nodeInfo srcident))
-			return $ Ident (name_prefix ++ "_" ++ show new_var_num) i ni
+	new_var_num <- gets newNameIndexCVS
+	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
+	let
+		(Ident _ i ni) = srcident
+		name_prefix = lValueToVarName (CVar srcident (nodeInfo srcident))
+		newident = Ident (name_prefix ++ "_" ++ show new_var_num) i ni
 
+{-
 	other_envitems <- case ty' of
+-}
+
+	return $ [ (srcident,(newident,ty')) ]
+
+
+-- Recursively create all "interface" variables for the function to be analyzed
+
+createInterfaceM :: (Declaration decl) => [decl] -> CovVecM [EnvItem]
+createInterfaceM decls = forM decls $ \ decl -> do
+	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
+	elimTypeDefsM ty >>= \case
+
 		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 			members <- getMembersM sueref
 			return $ for members $ \ (member_ident,member_ty) ->
@@ -512,14 +520,14 @@ identTy2EnvItemM makenewidents srcident ty = do
 					new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
 					in
 					(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
-{-
+
 		PtrType target_ty _ _ -> do
 			let srcident' = mkIdentWithCNodePos srcident ("PTR_" ++ identToString newident)
-			identTy2EnvItemM False srcident' target_ty
--}
-		_ -> return []
+			
 
-	return $ (srcident,(newident,ty')) : other_envitems
+		_ -> return []
+		
+
 
 -- Just unfold the traces
 unfoldTracesM :: Bool -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM Trace
@@ -604,7 +612,7 @@ unfoldTraces1M toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespe
 			let ty' = case derivdeclrs of
 				[] -> ty
 				[CPtrDeclr _ _] -> PtrType ty noTypeQuals noAttributes
-			newenvitems <- identTy2EnvItemM True ident ty'
+			newenvitems <- identTy2EnvItemM ident ty'
 			let newdecls = map (NewDeclaration . snd) newenvitems
 			initializers <- case mb_init of
 				Nothing -> return []
