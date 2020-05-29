@@ -57,7 +57,7 @@ stack build :analyzer-exe && stack exec analyzer-exe
 fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
-solveIt = True
+solveIt = False
 showOnlySolutions = False
 don'tShowTraces = False
 checkSolutions = solveIt && True
@@ -659,9 +659,9 @@ translateExprM toplevel envs expr = do
 		expanded_params_args <- expand_params_argsM paramdecls args
 		let body' = replace_param_with_arg expanded_params_args body
 		funtrace <- unfoldTracesM False envs [] [ [ CBlockStmt body' ] ]
---		printLog $ "##### extract_traces_rets " ++ showTrace 0 (reverse funtrace) ++ "\n"
+		printLog $ "##### extract_traces_rets " ++ showTrace 0 (reverse funtrace) ++ "\n"
 		let funtraces = extract_traces_rets [] (reverse funtrace)
---		printLog $ "#### = " ++ show (map (\(tr,cex) -> (tr,(render.pretty) cex)) funtraces) ++ "\n"
+		printLog $ "#### = " ++ show (map (\(tr,cex) -> (tr,(render.pretty) cex)) funtraces) ++ "\n"
 		return (ni,funtraces) 
 
 	combs <- create_combinations expr'' [] funcalls_traces
@@ -723,7 +723,7 @@ renameVars envs expr = everywhere (mkT subst_var) expr where
 	subst_var (CVar ident ni) = case lookup ident (concat envs) of
 		Just (ident',_) -> CVar ident' ni
 		Nothing -> error $ " in subst_var : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
-	subst_var expr@(CMember _ _ _ ni) = CVar (mkIdentWithCNodePos expr (lValueToVarName expr)) ni
+--	subst_var expr@(CMember _ _ _ ni) = CVar (mkIdentWithCNodePos expr (lValueToVarName expr)) ni
 	subst_var expr = expr
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
@@ -848,7 +848,7 @@ var2MZ tyenv ident = do
 				return $ MZAST.CT $ MZAST.SetLit $
 					map (\ (Enumerator _ (CConst (CIntConst (CInteger i _ _) _)) _ _) ->
 						MZAST.IConst (fromIntegral i)) enums
-			TyComp (CompTypeRef sueref _ _) -> return $ MZAST.String
+--			TyComp (CompTypeRef sueref _ _) -> return $ MZAST.String
 			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 		ty2mz (PtrType target_ty _ _) = return $ MZAST.Range (MZAST.IConst 65000) (MZAST.IConst 99999)
 		ty2mz ty = error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
@@ -921,7 +921,7 @@ traceelemToMZ (Condition _ constr) = do
 		expr2' = expr2constr expr2
 		-- Leaving out brackets: Hopefully, the minzinc operators have the same precedences as in C
 		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"="),(CLndOp,"/\\"),(CLorOp,"\\/")]
-	expr2constr lexpr@(CMember (CVar _ _) _ _ _) = expr2constr $ CVar (internalIdent (lValueToVarName lexpr)) undefNode
+--	expr2constr lexpr@(CMember (CVar _ _) _ _ _) = expr2constr $ CVar (internalIdent (lValueToVarName lexpr)) undefNode
 	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
 
 traceelemToMZ _ = return []

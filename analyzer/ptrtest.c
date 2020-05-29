@@ -72,10 +72,10 @@ int f(STRUCT* p)
 #ifdef CALC
 int main(int argc, char* argv[])
 {
-    int m0 = atoi(argv[1]);
-    int m1 = atoi(argv[2]);
-    STRUCT q = { m0,m1 };
-    printf("f(p={%i,%i}) =\n%i\n",m0,m1,f(&q));
+    int arg1 = atoi(argv[1]);
+    int arg2 = atoi(argv[2]);
+    STRUCT q = { arg1,arg2 };
+    printf("f(p={%i,%i}) =\n%i\n",arg1,arg2,f(&q));
     return 0;
 }
 #endif
