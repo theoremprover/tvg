@@ -55,6 +55,7 @@ int h(int* r)
 */
 
 int f(STRUCT* p)
+// p :: STRUCT*, p_ARROW_member1 :: MyEnum, p_ARROW_member2 :: int
 {
     STRUCT r = { EINS,10 };
 

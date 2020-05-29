@@ -486,30 +486,29 @@ mkIdentWithCNodePos cnode name = mkIdent (posOfNode $ nodeInfo cnode) name (Name
 -- Takes an identifier and a type, and creates env item(s) from that.
 
 identTy2EnvItemM :: Ident -> Type -> CovVecM [EnvItem]
-identTy2EnvItemM srcident ty = do
+identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 	ty' <- elimTypeDefsM ty
-	
 	new_var_num <- gets newNameIndexCVS
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
 	let
-		(Ident _ i ni) = srcident
 		name_prefix = lValueToVarName (CVar srcident (nodeInfo srcident))
 		newident = Ident (name_prefix ++ "_" ++ show new_var_num) i ni
-
-{-
-	other_envitems <- case ty' of
--}
-
 	return $ [ (srcident,(newident,ty')) ]
 
 
--- Recursively create all "interface" variables for the function to be analyzed
+-- Recursively create all "interface" variables for the top level function to be analyzed
 
 createInterfaceM :: (Declaration decl) => [decl] -> CovVecM [EnvItem]
-createInterfaceM decls = forM decls $ \ decl -> do
+createInterfaceM decls = concatForM decls $ \ decl -> do
 	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
-	elimTypeDefsM ty >>= \case
-
+	ty' <- elimTypeDefsM ty
+	create_interfaceM (CVar srcident (nodeInfo srcident)) ty'
+	
+	where
+	create_interfaceM :: CExpr -> Type -> CovVecM [EnvItem]
+	create_interfaceM expr (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) ty = error ""
+	create_interfaceM expr (DirectType _ _ _) -> return [(srcident,(srcident,ty'))]
+{-
 		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 			members <- getMembersM sueref
 			return $ for members $ \ (member_ident,member_ty) ->
@@ -521,12 +520,14 @@ createInterfaceM decls = forM decls $ \ decl -> do
 					in
 					(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
 
-		PtrType target_ty _ _ -> do
+		
+
+		PtrType (target_ty@(DirectType _ _ _) _ _ -> do
 			let srcident' = mkIdentWithCNodePos srcident ("PTR_" ++ identToString newident)
 			
 
-		_ -> return []
-		
+		other_ty -> error $ "createInterfaceM: type " ++ (render.pretty) other_ty ++ " not implemented"
+-}
 
 
 -- Just unfold the traces
