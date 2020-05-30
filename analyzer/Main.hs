@@ -505,9 +505,17 @@ createInterfaceM decls = concatForM decls $ \ decl -> do
 	create_interfaceM (CVar srcident (nodeInfo srcident)) ty'
 	
 	where
+
 	create_interfaceM :: CExpr -> Type -> CovVecM [EnvItem]
-	create_interfaceM expr (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) ty = error ""
-	create_interfaceM expr (DirectType _ _ _) -> return [(srcident,(srcident,ty'))]
+
+	create_interfaceM (CVar srcident _) (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) ty = do
+		member_ty_s <- getMembersM sueref
+		members <- concatForM member_ty_s $ \ (ident,ty) -> create_interfaceM ()
+		return $ (srcident,(srcident,ty')) : members
+
+	create_interfaceM (CVar srcident _) (DirectType _ _ _) -> return [(srcident,(srcident,ty'))]
+
+	create_interfaceM expr (PtrType target_ty _ _) -> 
 {-
 		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 			members <- getMembersM sueref
@@ -528,6 +536,7 @@ createInterfaceM decls = concatForM decls $ \ decl -> do
 
 		other_ty -> error $ "createInterfaceM: type " ++ (render.pretty) other_ty ++ " not implemented"
 -}
+	create_interfaceM expr ty = error $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty ++ " not implemented"
 
 
 -- Just unfold the traces

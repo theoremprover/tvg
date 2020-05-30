@@ -47,11 +47,15 @@ int g(enum Zahl z)
     if(z==EINS) return 1;
     else return 2;
 }
-
-int h(int* r)
-{
-    return (*r);
-}
++/
+/*
+STRUCT* P  =>  p :: STRUCT*, p_ARROW_member1 :: MyEnum, p_ARROW_member2 :: int
+STRUCT a   =>  a :: STRUCT,  a_DOT_member_1 :: MyEnum,  a_DOT_member2 :: int
+int* p     =>  p :: int*,    IND_p :: int
+RSTRUCT a  =>  a :: RSTRUCT, .., a_DOT_member3 :: STRUCT,
+                                 a_DOT_member3_DOT_member1 :: MyEnum,
+                                 a_DOT_member3_DOT_member2 :: Int
+RSTRUCT* p =>
 */
 
 int f(STRUCT* p)
