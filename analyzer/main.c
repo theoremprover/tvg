@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 
-#include "fp-bit.c"
+extern
 
 int main(int argc, char* argv[])
 {
