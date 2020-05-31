@@ -58,11 +58,8 @@ RSTRUCT a  =>  a :: RSTRUCT, .., a_DOT_member3 :: STRUCT,
 RSTRUCT* p =>
 */
 
-int f(STRUCT* p)
-// p :: STRUCT*, p_ARROW_member1 :: MyEnum, p_ARROW_member2 :: int
+int f(STRUCT* p,STRUCT r)
 {
-    STRUCT r = { EINS,10 };
-
     int* q;
 
     q = &(r.member2);
@@ -81,8 +78,12 @@ int main(int argc, char* argv[])
     int arg1 = atoi(argv[1]);
     int arg2 = atoi(argv[2]);
     int arg3 = atoi(argv[3]);
-    STRUCT q = { arg1,arg2 };
-    printf("f(p=%i, p={%i,%i}) =\n%i\n",arg1,arg2,arg3,f(&q));
+    int arg4 = atoi(argv[4]);
+    int arg5 = atoi(argv[5]);
+    int arg6 = atoi(argv[6]);
+    STRUCT px = { arg2,arg3 };
+    STRUCT qx = { arg5,arg6 };
+    printf("f(p=%i, p={%i,%i}, q=%i, q={%i,%i}) =\n%i\n",arg1,arg2,arg3,arg4,arg5,arg6,f(&px,qx));
     return 0;
 }
 #endif

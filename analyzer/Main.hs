@@ -194,7 +194,7 @@ type CovVecM = StateT CovVecState IO
 data TraceElem =
 	Assignment CExpr CExpr |
 	Condition Bool CExpr |
-	NewDeclaration { envItemTE :: (Ident,Type) } |
+	NewDeclaration (Ident,Type) |
 	Return CExpr |
 	TraceOr [Trace] |
 	TraceAnd [Trace]
@@ -542,27 +542,6 @@ createInterfaceM decls = concatForM decls $ \ decl -> do
 
 	create_interfaceM expr ty = error $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty ++ " not implemented"
 
-{-
-		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
-			members <- getMembersM sueref
-			return $ for members $ \ (member_ident,member_ty) ->
-				let
-					old_lexpr = CMember (CVar srcident (nodeInfo srcident)) member_ident False (nodeInfo srcident)
-					old_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName old_lexpr)
-					lexpr = CMember (CVar newident (nodeInfo newident)) member_ident False (nodeInfo srcident)
-					new_mem_ident_ptr = mkIdentWithCNodePos member_ident (lValueToVarName lexpr)
-					in
-					(old_mem_ident_ptr,(new_mem_ident_ptr,member_ty))
-
-		
-
-		PtrType (target_ty@(DirectType _ _ _) _ _ -> do
-			let srcident' = mkIdentWithCNodePos srcident ("PTR_" ++ identToString newident)
-			
-
-		other_ty -> error $ "createInterfaceM: type " ++ (render.pretty) other_ty ++ " not implemented"
--}
-
 
 -- Just unfold the traces
 unfoldTracesM :: Bool -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM Trace
@@ -881,7 +860,7 @@ var2MZ tyenv ident = do
 			TyIntegral intty -> case intty of
 				TyBool -> return MZAST.Bool
 				TyShort -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
-				TyInt -> return $ MZAST.Range (MZAST.IConst (-30)) (MZAST.IConst 30) --MZAST.Int
+				TyInt -> return $ MZAST.Int --MZAST.Range (MZAST.IConst (-30)) (MZAST.IConst 30)
 				_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 			TyFloating floatty -> case floatty of
 				TyFloat -> return MZAST.Float
@@ -891,7 +870,7 @@ var2MZ tyenv ident = do
 				return $ MZAST.CT $ MZAST.SetLit $
 					map (\ (Enumerator _ (CConst (CIntConst (CInteger i _ _) _)) _ _) ->
 						MZAST.IConst (fromIntegral i)) enums
---			TyComp (CompTypeRef sueref _ _) -> return $ MZAST.String
+			TyComp (CompTypeRef sueref _ _) -> return $ MZAST.Range (MZAST.IConst 100000) (MZAST.IConst 199999)
 			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 		ty2mz (PtrType target_ty _ _) = return $ MZAST.Range (MZAST.IConst 65000) (MZAST.IConst 99999)
 		ty2mz ty = error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
@@ -1058,7 +1037,7 @@ checkSolutionM traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
 				Just (MInt i) -> [show i]
 				Just (MFloat f) -> [show f]
 				val -> error $ "checkSolutionM: " ++ show val ++ " not yet implemented"
-			PtrType target_ty _ _ -> ["0"]
+			PtrType target_ty _ _ -> ["65000"]
 			ty -> error $ "checkSolutionM args: type " ++ (render.pretty) ty ++ " not implemented!"
 	printLog $ " checkSolution args = " ++ show args
 	(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
