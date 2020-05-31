@@ -57,7 +57,7 @@ stack build :analyzer-exe && stack exec analyzer-exe
 fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
-solveIt = False
+solveIt = True
 showOnlySolutions = False
 don'tShowTraces = False
 checkSolutions = solveIt && True
@@ -260,7 +260,7 @@ covVectorsM :: String -> [String] -> CovVecM (Bool,([TraceAnalysisResult],Set.Se
 covVectorsM filename opts = do
 	funname <- gets funNameCVS
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
-	glob_env <- createInterfaceM globdecls
+	glob_env <- concatMapM declaration2EnvItemM globdecls
 	let
 		-- creates the assignment statements from the global context
 		defs = concatMap def2stmt globdecls
@@ -280,7 +280,7 @@ covVectorsM filename opts = do
 			next : _ -> next
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
-	param_env <- concatMapM declaration2EnvItemM funparamdecls
+	param_env <- createInterfaceM funparamdecls
 	printLog $ "param_env = " ++ showEnv param_env
 	
 	let decls = map (NewDeclaration .snd) (reverse param_env ++ glob_env)
@@ -312,7 +312,7 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
 	printLog $ showLine res_trace'
 
-	res_trace'' <- lift $ substIndM [] [] res_trace'
+	res_trace'' <- lift $ substIndM [] (map fst $ createTyEnv res_trace') res_trace'
 	printLog $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
 	printLog $ showLine res_trace''
 
@@ -412,7 +412,8 @@ normalizeExpr expr = case expr of
 				Just s -> s
 	CMember (CUnary CAdrOp expr _) member True ni -> normalizeExpr $ CMember expr member False ni
 	CMember (CUnary CIndOp expr _) member False ni -> normalizeExpr $ CMember expr member True ni
-	other -> error $ "normalizeExpr " ++ (render.pretty) other ++ " not implemented yet."
+	expr -> lValueToVarName expr
+--	other -> error $ "normalizeExpr " ++ (render.pretty) other ++ " not implemented yet."
 
 	where
 
@@ -425,7 +426,7 @@ lValueToVarName :: CExpr -> String
 lValueToVarName cvar@(CVar _ _) = normalizeExpr cvar
 lValueToVarName (CMember ptrexpr member isptr _) =
 	normalizeExpr ptrexpr ++ (if isptr then "_ARROW_" else "_DOT_") ++ identToString member
-lValueToVarName (CUnary CIndOp expr _) = "PTR_" ++ normalizeExpr expr
+lValueToVarName (CUnary CIndOp expr _) = "PTR_" ++ lValueToVarName expr
 lValueToVarName lval = error $ "lValueToVarName " ++ (render.pretty) lval ++ " not implemented!"
 
 type TyEnvItem = (Ident,Type)
@@ -477,7 +478,8 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 declaration2EnvItemM :: Declaration decl => decl -> CovVecM [EnvItem]
 declaration2EnvItemM decl = do
 	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
-	identTy2EnvItemM srcident ty
+	ty' <- elimTypeDefsM ty
+	return $ [ (srcident,(srcident,ty')) ]
 
 mkIdentWithCNodePos :: (CNode cnode) => cnode -> String -> Ident
 mkIdentWithCNodePos cnode name = mkIdent (posOfNode $ nodeInfo cnode) name (Name 99999)
@@ -506,16 +508,40 @@ createInterfaceM decls = concatForM decls $ \ decl -> do
 	
 	where
 
+	mk_envitemM :: CExpr -> Type -> [EnvItem] -> CovVecM [EnvItem]
+	mk_envitemM expr ty rest = do
+		ty' <- elimTypeDefsM ty
+		let srcident = mkIdentWithCNodePos expr (lValueToVarName expr)
+		return $ (srcident,(srcident,ty')) : rest
+		
 	create_interfaceM :: CExpr -> Type -> CovVecM [EnvItem]
 
-	create_interfaceM (CVar srcident _) (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) ty = do
+	-- STRUCT* p
+	create_interfaceM expr ty@(PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _) = do
 		member_ty_s <- getMembersM sueref
-		members <- concatForM member_ty_s $ \ (ident,ty) -> create_interfaceM ()
-		return $ (srcident,(srcident,ty')) : members
+		members <- concatForM member_ty_s $ \ (m_ident,m_ty) -> create_interfaceM (CMember expr m_ident True (nodeInfo expr)) m_ty
+		mk_envitemM expr ty members
 
-	create_interfaceM (CVar srcident _) (DirectType _ _ _) -> return [(srcident,(srcident,ty'))]
+	-- ty* p
+	create_interfaceM expr ty@(PtrType target_ty _ _) = do
+		target_ty' <- elimTypeDefsM target_ty
+		targets <- create_interfaceM (CUnary CIndOp expr (nodeInfo expr)) target_ty'
+		mk_envitemM expr ty targets
 
-	create_interfaceM expr (PtrType target_ty _ _) -> 
+	-- STRUCT expr
+	create_interfaceM expr ty@(DirectType (TyComp (CompTypeRef sueref _ _)) _ _) = do
+		member_ty_s <- getMembersM sueref
+		members <- concatForM member_ty_s $ \ (m_ident,m_ty) -> do
+			m_ty' <- elimTypeDefsM m_ty
+			create_interfaceM (CMember expr m_ident False (nodeInfo expr)) m_ty'
+		mk_envitemM expr ty members
+
+	-- direct-type expr  where  direct-type is no struct/union
+	create_interfaceM expr ty@(DirectType _ _ _) = do
+		mk_envitemM expr ty []
+
+	create_interfaceM expr ty = error $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty ++ " not implemented"
+
 {-
 		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 			members <- getMembersM sueref
@@ -536,7 +562,6 @@ createInterfaceM decls = concatForM decls $ \ decl -> do
 
 		other_ty -> error $ "createInterfaceM: type " ++ (render.pretty) other_ty ++ " not implemented"
 -}
-	create_interfaceM expr ty = error $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty ++ " not implemented"
 
 
 -- Just unfold the traces
@@ -818,15 +843,15 @@ substIndM res_trace new_idents (ti : rest) = do
 
 	subst_indM :: CExpr -> StateT [(Ident,Type)] CovVecM CExpr
 	subst_indM expr@(CUnary CIndOp (CVar ptr_ident _) ni) = do
-		let Just (PtrType ty _ _) = lookup ptr_ident $ map envItemTE res_trace
+		let Just (PtrType ty _ _) = lookup ptr_ident $ createTyEnv res_trace
 		create_var expr ty
 	subst_indM (CMember (CUnary CAdrOp s _) member True ni) = return $ CMember s member False ni
 	subst_indM (CMember (CUnary CIndOp p _) member False ni) = return $ CMember p member True ni
 	subst_indM expr@(CMember (CVar ptr_ident _) _ True _) = do
-		let Just (PtrType ty _ _) = lookup ptr_ident $ map envItemTE res_trace
+		let Just (PtrType ty _ _) = lookup ptr_ident $ createTyEnv res_trace
 		create_var expr ty
 	subst_indM expr@(CMember (CVar a_ident _) _ False _) = do
-		let Just ty = lookup a_ident $ map envItemTE res_trace
+		let Just ty = lookup a_ident $ createTyEnv res_trace
 		create_var expr ty
 	subst_indM expr = return expr
 
@@ -1035,7 +1060,7 @@ checkSolutionM traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
 				val -> error $ "checkSolutionM: " ++ show val ++ " not yet implemented"
 			PtrType target_ty _ _ -> ["0"]
 			ty -> error $ "checkSolutionM args: type " ++ (render.pretty) ty ++ " not implemented!"
---	printLog $ " checkSolution args = " ++ show args
+	printLog $ " checkSolution args = " ++ show args
 	(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
 		readProcessWithExitCode (takeFileName filename) args ""
 	case exitcode of
