@@ -666,6 +666,7 @@ translateExprM toplevel envs expr = do
 	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
+			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
 			CVar funident _ -> do
 				modify ( (funident,args,ni): )
 				return $ CConst $ CStrConst undefined ni
@@ -861,6 +862,11 @@ var2MZ tyenv ident = do
 				TyBool -> return MZAST.Bool
 				TyShort -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
 				TyInt -> return $ MZAST.Int --MZAST.Range (MZAST.IConst (-30)) (MZAST.IConst 30)
+				TyUShort -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 65535)
+				TyChar -> return $ MZAST.Range (MZAST.IConst (-128)) (MZAST.IConst 127)
+				TySChar -> return $ MZAST.Range (MZAST.IConst (-128)) (MZAST.IConst 127)
+				TyUChar -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 255)
+				TyUInt -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 2147483646)
 				_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 			TyFloating floatty -> case floatty of
 				TyFloat -> return MZAST.Float
