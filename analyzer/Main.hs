@@ -60,11 +60,11 @@ fp-bit.i: Function _fpdiv_parts, Zeile 1039
 solveIt = True
 showOnlySolutions = False
 don'tShowTraces = False
-checkSolutions = solveIt && True
+checkSolutions = solveIt && False
 
 returnval_var_name = "return_val"
 
-_UNROLLING_DEPTH = 3
+_UNROLLING_DEPTH = 5
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -427,6 +427,7 @@ lValueToVarName cvar@(CVar _ _) = normalizeExpr cvar
 lValueToVarName (CMember ptrexpr member isptr _) =
 	normalizeExpr ptrexpr ++ (if isptr then "_ARROW_" else "_DOT_") ++ identToString member
 lValueToVarName (CUnary CIndOp expr _) = "PTR_" ++ lValueToVarName expr
+lValueToVarName (CUnary CAdrOp expr _) = "ADR_" ++ lValueToVarName expr
 lValueToVarName lval = error $ "lValueToVarName " ++ (render.pretty) lval ++ " not implemented!"
 
 type TyEnvItem = (Ident,Type)
@@ -477,9 +478,10 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 
 declaration2EnvItemM :: Declaration decl => decl -> CovVecM [EnvItem]
 declaration2EnvItemM decl = do
-	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
+	let VarDecl (VarName srcident@(Ident srcname i ni) _) _ ty = getVarDecl decl
 	ty' <- elimTypeDefsM ty
-	return $ [ (srcident,(srcident,ty')) ]
+	let srcident' = if "_" `isPrefixOf` srcname then Ident ('a':srcname) i ni else srcident
+	return $ [ (srcident,(srcident',ty')) ]
 
 mkIdentWithCNodePos :: (CNode cnode) => cnode -> String -> Ident
 mkIdentWithCNodePos cnode name = mkIdent (posOfNode $ nodeInfo cnode) name (Name 99999)
@@ -831,6 +833,9 @@ substIndM res_trace new_idents (ti : rest) = do
 		let Just (PtrType ty _ _) = lookup ptr_ident $ createTyEnv res_trace
 		create_var expr ty
 	subst_indM expr@(CMember (CVar a_ident _) _ False _) = do
+		let Just ty = lookup a_ident $ createTyEnv res_trace
+		create_var expr ty
+	subst_indM expr@(CUnary CAdrOp (CVar a_ident _) _) = do
 		let Just ty = lookup a_ident $ createTyEnv res_trace
 		create_var expr ty
 	subst_indM expr = return expr
