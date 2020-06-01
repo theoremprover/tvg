@@ -1055,6 +1055,7 @@ _fpdiv_parts (fp_number_type * a,
 	  }
 	else if (numerator)
 	  {
+	    printf("GOTIT!\n");
 	    /* We're a further than half way by the small amount
 	       corresponding to the bits set in "numerator".  Knowing
 	       that, we round here and not in pack_d, because there we
@@ -1716,3 +1717,16 @@ int main(int argc, char* argv[])
     return 0;
 }
 #endif
+
+/*
+    _fpdiv_parts ( a = 82499 ,
+
+    a_ARROW_class = 3 , a_ARROW_sign = 150 , a_ARROW_normal_exp = 0 ,
+    a_ARROW_fraction = 149999 , a_ARROW_fraction_DOT_ll = 152 ,
+
+    b = 82499 ,
+    b_ARROW_class = 3 , b_ARROW_sign = 150 , b_ARROW_normal_exp = 0 ,
+    b_ARROW_fraction = 149999 , b_ARROW_fraction_DOT_ll = 159
+
+    ) = MInt 82499
+*/

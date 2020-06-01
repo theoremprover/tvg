@@ -58,8 +58,8 @@ fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
 solveIt = True
-showOnlySolutions = False
-don'tShowTraces = False
+showOnlySolutions = True
+don'tShowTraces = True
 checkSolutions = solveIt && False
 
 returnval_var_name = "return_val"
@@ -305,19 +305,19 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 --	printLog $ showLine res_line
 	
 	res_trace <- lift $ elimInds res_line
-	printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
-	printLog $ showLine res_trace
+	when (not don'tShowTraces) $ printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
+	when (not don'tShowTraces) $ printLog $ showLine res_trace
 	
 	res_trace' <- lift $ elimAssignmentsM res_trace
-	printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
-	printLog $ showLine res_trace'
+	when (not don'tShowTraces) $ printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
+	when (not don'tShowTraces) $ printLog $ showLine res_trace'
 
 	res_trace'' <- lift $ substIndM [] (map fst $ createTyEnv res_trace') res_trace'
-	printLog $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
-	printLog $ showLine res_trace''
+	when (not don'tShowTraces) $ printLog $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
+	when (not don'tShowTraces) $ printLog $ showLine res_trace''
 
 	resultdata@(model,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace''
-	printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++
+	when (not don'tShowTraces) $ printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++
 		if null model then "<empty>" else layout model
 	funname <- lift $ gets funNameCVS
 	printLog $ "\n--- SOLUTION " ++ show traceid ++ " ----------------------\n" ++ show_solution funname mb_solution
@@ -865,13 +865,13 @@ var2MZ tyenv ident = do
 			TyVoid -> error "ty2mz DirectType TyVoid should not occur!"
 			TyIntegral intty -> case intty of
 				TyBool -> return MZAST.Bool
-				TyShort -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
-				TyInt -> return $ MZAST.Int --MZAST.Range (MZAST.IConst (-30)) (MZAST.IConst 30)
+--				TyShort -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
+				TyInt -> return $ MZAST.Range (MZAST.IConst (-30)) (MZAST.IConst 30) --MZAST.Int
 				TyUShort -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 65535)
 				TyChar -> return $ MZAST.Range (MZAST.IConst (-128)) (MZAST.IConst 127)
 				TySChar -> return $ MZAST.Range (MZAST.IConst (-128)) (MZAST.IConst 127)
 				TyUChar -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 255)
-				TyUInt -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 2147483646)
+				TyUInt -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 300) --2147483646)
 				_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 			TyFloating floatty -> case floatty of
 				TyFloat -> return MZAST.Float
