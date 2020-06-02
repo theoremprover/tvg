@@ -861,21 +861,21 @@ var2MZ tyenv ident = do
 		mzty <- elimTypeDefsM ty >>= ty2mz
 		return $ MZAST.var mzty mzident
 		where
-		ty2mz ty@(DirectType tyname _ _) = case tyname of
+		ty2mz ty@(DirectType tyname _ attrs) = case tyname of
 			TyVoid -> error "ty2mz DirectType TyVoid should not occur!"
 			TyIntegral intty -> case intty of
-				TyBool -> return MZAST.Bool
---				TyShort -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
-				TyInt -> return $ MZAST.Range (MZAST.IConst (-30)) (MZAST.IConst 30) --MZAST.Int
+				TyBool   -> return MZAST.Bool
+--				TyShort  -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
+				TyInt    -> return $ MZAST.Int --MZAST.Range (MZAST.IConst (-30)) (MZAST.IConst 30)
 				TyUShort -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 65535)
-				TyChar -> return $ MZAST.Range (MZAST.IConst (-128)) (MZAST.IConst 127)
-				TySChar -> return $ MZAST.Range (MZAST.IConst (-128)) (MZAST.IConst 127)
-				TyUChar -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 255)
-				TyUInt -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 300) --2147483646)
+				TyChar   -> return $ MZAST.Range (MZAST.IConst (-128)) (MZAST.IConst 127)
+				TySChar  -> return $ MZAST.Range (MZAST.IConst (-128)) (MZAST.IConst 127)
+				TyUChar  -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 255)
+				TyUInt   -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 300) --2147483646)
 				_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 			TyFloating floatty -> case floatty of
 				TyFloat -> return MZAST.Float
-				_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
+				_       -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
 			TyEnum (EnumTypeRef sueref _) -> do
 				EnumDef (EnumType _ enums _ _) <- lookupTagM sueref
 				return $ MZAST.CT $ MZAST.SetLit $

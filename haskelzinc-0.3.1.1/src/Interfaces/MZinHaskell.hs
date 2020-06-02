@@ -109,7 +109,7 @@ testModelWithParser p m mpath s n = do
   let res_fp = spaceFix $ mpath ++ ".res"
   -- Write mzn file
   writeFile mzn_fp (layout m)
-  let mzn2fzn  = proc (mz_dir ++ "mzn2fzn.exe") [ mzn_fp ]
+  let mzn2fzn  = proc (mz_dir ++ "minizinc.exe") [ mzn_fp ]
   (ec1, res, err1) <- readCreateProcessWithExitCode mzn2fzn ""
   return $ case ec1 of
     ExitSuccess -> getAllSolutions p res

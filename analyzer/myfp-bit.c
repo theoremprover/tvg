@@ -1035,13 +1035,13 @@ _fpdiv_parts (fp_number_type * a,
     /* ??? Does divide one bit at a time.  Optimize.  */
     while (bit)
       {
-	if (numerator >= denominator)
-	  {
-	    quotient |= bit;
-	    numerator -= denominator;
-	  }
-	bit >>= 1;
-	numerator *= 2;
+            if (numerator >= denominator)
+              {
+                quotient |= bit;
+                numerator -= denominator;
+              }
+            bit >>= 1;
+            numerator *= 2;
       }
 
     if (!ROUND_TOWARDS_ZERO && (quotient & GARDMASK) == GARDMSB)
@@ -1055,7 +1055,9 @@ _fpdiv_parts (fp_number_type * a,
 	  }
 	else if (numerator)
 	  {
+#ifdef CALC
 	    printf("GOTIT!\n");
+#endif
 	    /* We're a further than half way by the small amount
 	       corresponding to the bits set in "numerator".  Knowing
 	       that, we round here and not in pack_d, because there we

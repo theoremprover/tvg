@@ -1,4 +1,4 @@
-int: k = 16;
+par int: k = 16;
 
 function var int: bitwise_or(var int: a, var int: b) =
   let {
