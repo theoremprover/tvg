@@ -1,12 +1,12 @@
 module Main where
 
 import Control.Applicative
-import Control.Monad ( join )
 import Data.Maybe
 import qualified Data.Traversable as T
+import Control.Monad
 
 import Z3.Monad
-
+{-
 script :: Z3 (Maybe [Integer])
 script = do
   q1 <- mkFreshIntVar "q1"
@@ -42,9 +42,41 @@ script = do
           join $ mkIte <$> mkLe _0 x <*> pure x <*> mkUnaryMinus x
         diagonal d c c' =
           join $ mkEq <$> (mkAbs =<< mkSub [c',c]) <*> (mkInteger d)
+-}
+
+getSolution :: [AST] -> Z3 (Maybe [(String,Integer)])
+getSolution asts = do
+	(_,mb_model) <- getModel
+	case mb_model of
+		Nothing -> return Nothing
+		Just m -> (return.Just) =<< ( forM asts $ \ ast -> do
+			Just val <- evalInt m ast
+			name <- astToString ast
+			return (name,val) )
+
+looplength :: Z3 (Maybe [(String,Integer)])
+looplength = do
+	_0 <- mkInteger 0
+	_32 <- mkInteger 32
+	n <- mkFreshIntVar "n"
+	assert =<< mkGe n =<< mkInteger 25
+	assert =<< mkGe _32 n
+
+--	bit0 <- mkFreshBvVar "bit0" 32
+	_27bv <- mkInt2bv 32 =<< mkInteger 27
+--	assert =<< mkEq _27 =<< mkBv2int _27bv False
+	
+	shr <- mkBvlshr _27bv =<< mkInt2bv 32 n
+	
+	_1 <- mkInteger 1
+	n_plus_1bv <- mkInt2bv 32 =<< mkAdd [n,_1]
+	shr1 <- mkBvlshr _27bv n_plus_1bv
+	
+	ibit <- mkBv2int shr False
+	ibit1 <- mkBv2int shr1 False
+	assert =<< mkNot =<< mkEq ibit _0
+	assert =<< mkEq ibit1 _0
+	getSolution [n]
 
 main :: IO ()
-main = evalZ3 script >>= \mbSol ->
-        case mbSol of
-             Nothing  -> error "No solution found."
-             Just sol -> putStr "Solution: " >> print sol
+main = evalZ3 looplength >>= print
