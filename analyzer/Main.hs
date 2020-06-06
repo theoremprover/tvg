@@ -61,8 +61,9 @@ solveIt = True
 showOnlySolutions = True
 don'tShowTraces = True
 checkSolutions = solveIt && False
-
 returnval_var_name = "return_val"
+
+data Solver = MiniZinc | Z3 deriving (Show,Eq)
 
 _UNROLLING_DEPTH = 5
 
@@ -126,8 +127,12 @@ main = do
 										ExitFailure _ -> error $ "Compilation failed:\n" ++ stderr
 										ExitSuccess -> return $ Just chkexefilename 
 	
+						let solver = case "-MiniZinc" ∈ opts of
+							True  -> MiniZinc
+							False -> Z3
+	
 						(full_coverage,(testvectors,covered,alls)) <- evalStateT (covVectorsM filename opts) $
-							CovVecState globdecls 1 translunit filename mb_checkexename funname undefined
+							CovVecState globdecls 1 translunit filename mb_checkexename funname undefined solver
 	
 						printLog ""
 	
@@ -138,7 +143,7 @@ main = do
 	
 						printLog $ "\n####### FINAL RESULT #######\n"
 	
-						forM_ testvectors $ \ (traceid,trace,(model,mb_solution)) -> do
+						forM_ testvectors $ \ (traceid,trace,(model_string,mb_solution)) -> do
 							case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
 								False -> return ()
 								True -> printLog $ unlines $ mbshowtraces (
@@ -146,7 +151,7 @@ main = do
 									[ showLine trace ] ++
 									[ "",
 									"--- MODEL " ++ show traceid ++ " -------------------------",
-									if null model then "<empty>" else layout model,
+									model_string,
 									"" ]) ++ [
 									"--- SOLUTION " ++ show traceid ++ " ----------------------",
 									show_solution funname mb_solution ]
@@ -187,7 +192,8 @@ data CovVecState = CovVecState {
 	srcFilenameCVS  :: String,
 	checkExeNameCVS :: Maybe String,
 	funNameCVS      :: String,
-	funStartEndCVS  :: ((Int,Int),(Int,Int))
+	funStartEndCVS  :: ((Int,Int),(Int,Int)),
+	solverCVS       :: Solver
 	}
 type CovVecM = StateT CovVecState IO
 
@@ -253,7 +259,7 @@ showTrace ind (te:trace) = indent ind ++ case te of
 	showlist traces = indent (ind+1) ++ "[\n" ++ showitems traces ++ indent (ind+1) ++ "]\n"
 	showitems traces = intercalate (indent (ind+1) ++ ",\n") (map (showTrace (ind+2)) traces)
 
-type ResultData = ([MZAST.ModelData],Maybe (Env,Solution,Maybe CExpr))
+type ResultData = (String,Maybe (Env,Solution,Maybe CExpr))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
 
 covVectorsM :: String -> [String] -> CovVecM (Bool,([TraceAnalysisResult],Set.Set Branch,Set.Set Branch))
@@ -316,9 +322,8 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	when (not don'tShowTraces) $ printLog $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
 	when (not don'tShowTraces) $ printLog $ showLine res_trace''
 
-	resultdata@(model,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace''
-	when (not don'tShowTraces) $ printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++
-		if null model then "<empty>" else layout model
+	resultdata@(model_string,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace''
+	when (not don'tShowTraces) $ printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++ model_string
 	funname <- lift $ gets funNameCVS
 	printLog $ "\n--- SOLUTION " ++ show traceid ++ " ----------------------\n" ++ show_solution funname mb_solution
 
@@ -841,9 +846,16 @@ substIndM res_trace new_idents (ti : rest) = do
 	subst_indM expr = return expr
 
 
--- MiniZinc Model Generation
-
 type TyEnv = [(Ident,Type)]
+
+createTyEnv :: Trace -> [TyEnvItem]
+createTyEnv trace = concatMap traceitem2tyenv trace
+	where
+	traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
+	traceitem2tyenv _ = []
+
+
+-- MiniZinc Model Generation
 
 var2MZ :: TyEnv -> Ident -> CovVecM [MZAST.ModelData]
 var2MZ tyenv ident = do
@@ -959,12 +971,6 @@ traceelemToMZ (Condition _ constr) = do
 
 traceelemToMZ _ = return []
 
-createTyEnv :: Trace -> [TyEnvItem]
-createTyEnv trace = concatMap traceitem2tyenv trace
-	where
-	traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
-	traceitem2tyenv _ = []
-
 solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
 solveTraceM ret_type param_env traceid trace = do
 	let
@@ -983,49 +989,57 @@ solveTraceM ret_type param_env traceid trace = do
 				Condition undefined $ CBinary CEqOp (CVar returnval_ident (nodeInfo returnval_ident)) ret_expr (nodeInfo ret_expr),
 				NewDeclaration (returnval_ident,ret_type) ]
 
-	constraintsG <- concatMapM traceelemToMZ trace'
-	
-	let tyenv = createTyEnv trace'
-	
-	let constr_trace = concatMap traceitem2constr trace' where
+	let
+		constr_trace = concatMap traceitem2constr trace' where
 		traceitem2constr (Condition _ expr) = [expr]
 		traceitem2constr _ = []
-	let
-		includesG = [ MZAST.include "include.mzn" ]
+		tyenv = createTyEnv trace'
 		vars :: [Ident] = nub $ param_names ++ everything (++) (mkQ [] searchvar) constr_trace where
 			searchvar :: CExpr -> [Ident]
 			searchvar (CVar ident _) = [ ident ]
 			searchvar _ = []
-
-	varsG <- concatMapM (var2MZ tyenv) vars
-	let
 		solution_vars = map identToString vars
-		model = includesG ++ varsG ++ [] ++ constraintsG ++ [] ++
-			[ MZAST.solve $ MZAST.satisfy MZAST.|: MZAST.Annotation "int_search" [
-				MZAST.E (MZAST.ArrayLit $ map (MZAST.Var . MZAST.Simpl) solution_vars),
-				MZAST.E (MZAST.Var $ MZAST.Simpl "input_order"),
-				MZAST.E (MZAST.Var $ MZAST.Simpl "indomain_median"),
-				MZAST.E (MZAST.Var $ MZAST.Simpl "complete") ] ]
 
-	let modelpath = analyzerPath </> "model_" ++ tracename
-	liftIO $ writeFile (modelpath ++ ".mzn") $ layout model
-	
-	case solveIt of
-		False -> return (model,Just (param_env,[],mb_ret_val))
-		True -> do
-			printLog $ "Running model " ++ tracename ++ "..." 
+	gets solverCVS >>= \case
+		MiniZinc -> do
+			constraintsG <- concatMapM traceelemToMZ trace'
+			
+			let
+				includesG = [ MZAST.include "include.mzn" ]
 		
-			res <- liftIO $ runModel model modelpath 1 1
-			mb_solution <- case res of
-				Left err -> do
-					printLog $ show err
-					return Nothing
-				Right [] -> error $ "Empty solution for " ++ tracename ++ " !"
-				Right [sol] -> do
-					let sol_params = filter (\(varname,_) -> varname `elem` (returnval_var_name : map identToString param_names)) sol
-					return $ Just (param_env,sol_params,mb_ret_val)
-				Right _ -> error $ "Found more than one solution for " ++ show traceid ++ " !"
-			return (model,mb_solution)
+			varsG <- concatMapM (var2MZ tyenv) vars
+			let
+				model = includesG ++ varsG ++ [] ++ constraintsG ++ [] ++
+					[ MZAST.solve $ MZAST.satisfy MZAST.|: MZAST.Annotation "int_search" [
+						MZAST.E (MZAST.ArrayLit $ map (MZAST.Var . MZAST.Simpl) solution_vars),
+						MZAST.E (MZAST.Var $ MZAST.Simpl "input_order"),
+						MZAST.E (MZAST.Var $ MZAST.Simpl "indomain_median"),
+						MZAST.E (MZAST.Var $ MZAST.Simpl "complete") ] ]
+		
+			let
+				model_string = if null model then "<empty>" else layout model
+				model_extension = ".mzn"
+
+			let modelpath = analyzerPath </> "model_" ++ tracename
+			liftIO $ writeFile (modelpath ++ model_extension) model_string
+		
+			case solveIt of
+				False -> return (model_string,Just (param_env,[],mb_ret_val))
+				True -> do
+					printLog $ "Running model " ++ tracename ++ "..." 
+					res <- liftIO $ runModel model modelpath 1 1
+					case res of
+						Left err -> do
+							printLog $ show err
+							return (model_string,Nothing)
+						Right [] -> error $ "Empty solution for " ++ tracename ++ " !"
+						Right [sol] -> do
+							let sol_params = filter (\ (varname,_) -> varname `elem` (returnval_var_name : map identToString param_names)) sol
+							return $ (model_string,Just (param_env,sol_params,mb_ret_val))
+						Right _ -> error $ "Found more than one solution for " ++ show traceid ++ " !"
+
+		Z3 -> do
+			error ""	
 
 
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
