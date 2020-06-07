@@ -59,18 +59,18 @@ looplength = do
 	_0 <- mkInteger 0
 	_32 <- mkInteger 32
 	n <- mkFreshIntVar "n"
-	assert =<< mkGe n =<< mkInteger 25
-	assert =<< mkGe _32 n
+--	assert =<< mkGe n =<< mkInteger 25
+--	assert =<< mkGe _32 n
 
---	bit0 <- mkFreshBvVar "bit0" 32
-	_27bv <- mkInt2bv 32 =<< mkInteger 27
---	assert =<< mkEq _27 =<< mkBv2int _27bv False
-	
-	shr <- mkBvlshr _27bv =<< mkInt2bv 32 n
+	bit0 <- mkFreshBvVar "bit0" 32
+	_27 <- mkInteger 27
+	assert =<< mkEq _27 =<< mkBv2int bit0 False
+
+	shr <- mkBvlshr bit0 =<< mkInt2bv 32 n
 	
 	_1 <- mkInteger 1
 	n_plus_1bv <- mkInt2bv 32 =<< mkAdd [n,_1]
-	shr1 <- mkBvlshr _27bv n_plus_1bv
+	shr1 <- mkBvlshr bit0 n_plus_1bv
 	
 	ibit <- mkBv2int shr False
 	ibit1 <- mkBv2int shr1 False
@@ -79,4 +79,4 @@ looplength = do
 	getSolution [n]
 
 main :: IO ()
-main = evalZ3 looplength >>= print
+main = evalZ3With Nothing (opt "smt.relevancy" (0::Int)) looplength >>= print
