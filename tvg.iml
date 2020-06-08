@@ -49,5 +49,6 @@
     <orderEntry type="library" name="random-1.1" level="project" />
     <orderEntry type="library" name="semigroups-0.18.5" level="project" />
     <orderEntry type="library" name="z3-408.1" level="project" />
+    <orderEntry type="module" module-name="monadiccp-gecode" />
   </component>
 </module>

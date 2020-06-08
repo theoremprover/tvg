@@ -63,9 +63,11 @@ don'tShowTraces = True
 checkSolutions = solveIt && False
 returnval_var_name = "return_val"
 
+z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
+
 data Solver = MiniZinc | Z3 deriving (Show,Eq)
 
-_UNROLLING_DEPTH = 5
+_UNROLLING_DEPTH = 3
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -87,10 +89,10 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : ["-writeTree"] --["-writeAST"]
@@ -878,7 +880,7 @@ var2MZ tyenv ident = do
 			TyIntegral intty -> case intty of
 				TyBool   -> return MZAST.Bool
 --				TyShort  -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
-				TyInt    -> return $ MZAST.Int --MZAST.Range (MZAST.IConst (-30)) (MZAST.IConst 30)
+				TyInt    -> return $ MZAST.Range (MZAST.IConst (-30)) (MZAST.IConst 30) --MZAST.Int
 				TyUShort -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 65535)
 				TyChar   -> return $ MZAST.Range (MZAST.IConst (-128)) (MZAST.IConst 127)
 				TySChar  -> return $ MZAST.Range (MZAST.IConst (-128)) (MZAST.IConst 127)
@@ -1039,7 +1041,22 @@ solveTraceM ret_type param_env traceid trace = do
 						Right _ -> error $ "Found more than one solution for " ++ show traceid ++ " !"
 
 		Z3 -> do
-			error ""	
+			let
+				constraints = for trace' $ \case
+					Condition _ expr -> SLeaf "constraint"
+					NewDeclaration (ident,ty) ->
+				model_string = lines $ map show $ constraints ++ [ SLeaf "check-sat", SLeaf "get-model" ]
+
+			let modelpathfile = analyzerPath </> "model_" ++ tracename ++ ".smtlib2"
+			liftIO $ writeFile modelpathfile model_string
+			printLog $ "Running model " ++ show tracename ++ "..."
+			(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
+				readProcessWithExitCode z3FilePath ["-smt2",takeFileName modelpathfile] ""
+			case exitcode of
+				ExitFailure _ -> error $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ stdout ++ stderr
+				ExitSuccess -> do
+					printLog stdout
+					return (model_string,Nothing)
 
 
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
