@@ -1142,7 +1142,7 @@ solveTraceM ret_type param_env traceid trace = do
 			let
 				varsZ3 = for (filter ((∈ vars).fst) tyenv) $ \ (ident,ty) -> SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
 				constraintsZ3 = concat $ for trace' $ \case
-					Condition _ expr -> [ SExpr [SLeaf "constraints", expr2SExpr tyenv expr] ]
+					Condition _ expr -> [ SExpr [SLeaf "assert", expr2SExpr tyenv expr] ]
 					_ -> []
 				model = [ SExpr [SLeaf "set-option", SLeaf ":smt.relevancy", SLeaf "0"] ] ++
 					varsZ3 ++
