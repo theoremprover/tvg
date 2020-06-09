@@ -21,6 +21,7 @@ import Prelude.Unicode
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
 import qualified Data.Set as Set
+import Text.Printf
 
 import Interfaces.FZSolutionParser
 import qualified Interfaces.MZAST as MZAST
@@ -292,7 +293,7 @@ covVectorsM filename opts = do
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
 	param_env <- createInterfaceM funparamdecls
-	printLog $ "param_env = " ++ showEnv param_env
+--	printLog $ "param_env = " ++ showEnv param_env
 	
 	let decls = map (NewDeclaration .snd) (reverse param_env ++ glob_env)
 
@@ -694,9 +695,9 @@ translateExprM toplevel envs expr = do
 		expanded_params_args <- expand_params_argsM paramdecls args
 		let body' = replace_param_with_arg expanded_params_args body
 		funtrace <- unfoldTracesM False envs [] [ [ CBlockStmt body' ] ]
-		printLog $ "##### extract_traces_rets " ++ showTrace 0 (reverse funtrace) ++ "\n"
+--		printLog $ "##### extract_traces_rets " ++ showTrace 0 (reverse funtrace) ++ "\n"
 		let funtraces = extract_traces_rets [] (reverse funtrace)
-		printLog $ "#### = " ++ show (map (\(tr,cex) -> (tr,(render.pretty) cex)) funtraces) ++ "\n"
+--		printLog $ "#### = " ++ show (map (\(tr,cex) -> (tr,(render.pretty) cex)) funtraces) ++ "\n"
 		return (ni,funtraces) 
 
 	combs <- create_combinations expr'' [] funcalls_traces
@@ -985,37 +986,38 @@ instance Show SExpr where
 data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Bool
 	deriving (Show,Eq,Ord)
 
-expr2SExpr :: TyEnv -> CExpr -> SExpr
-expr2SExpr tyenv expr = expr2sexpr (insert_eq0 False expr)
+expr2SExpr :: TyEnv -> Expr -> SExpr
+expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 False expr)
 	where
-	expr2sexpr expr = case expr of
-		CUnary CPlusOp expr _ -> expr2sexpr expr
-		CUnary op expr _ -> SExpr [ SLeaf op_str , expr2sexpr expr ] where
+	expr2sexpr :: Maybe Z3_Type -> CExpr -> SExpr
+	expr2sexpr cur_ty expr = case expr of
+		CUnary CPlusOp expr _ -> expr2sexpr cur_ty expr
+		CUnary op expr _ -> SExpr [ SLeaf op_str , expr2sexpr cur_ty expr ] where
 			op_str = case op of
 				CMinOp  -> "bvneg"
 				CCompOp -> "bvnot"
 				CNegOp  -> "not"
 				_       -> error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
-		CBinary op expr1 expr2 _ -> SExpr [ op_sexpr , expr2sexpr expr1 , expr2sexpr expr2 ] where
-			op_sexpr = case op of
-				CMulOp -> SLeaf "bvmul"
-				CDivOp -> SLeaf "bvdiv"
-				CRmdOp -> SLeaf $ unSigned "bvurem" "bvsrem"
-				CAddOp -> SLeaf "bvadd"
-				CSubOp -> SLeaf "bvsub"
-				CShlOp -> SLeaf $ unSigned "bvlshl" "bvashl"
-				CShrOp -> SLeaf $ unSigned "bvlshr" "bvashr"
-				CLeOp  -> SLeaf $ unSigned "bvult" "bvslt"
-				CGrOp  -> SLeaf $ unSigned "bvugt" "bvsgt"
-				CLeqOp -> SLeaf $ unSigned "bvule" "bvsle"
-				CGeqOp -> SLeaf $ unSigned "bvuge" "bvsge"
-				CEqOp  -> SLeaf "="
-				CNeqOp -> expr2sexpr $ CUnary CNegOp (CBinary CEqOp expr1 expr2 undefNode) undefNode
-				CAndOp -> SLeaf "bvand"
-				COrOp  -> SLeaf "bvor"
-				CXorOp -> SLeaf "bvxor"
-				CLndOp -> SLeaf "and"
-				CLorOp -> SLeaf "or"
+		CBinary CNeqOp expr1 expr2 _ -> expr2sexpr cur_ty $ CUnary CNegOp (CBinary CEqOp expr1 expr2 undefNode) undefNode
+		CBinary op expr1 expr2 _ -> SExpr [ op_sexpr , expr2sexpr subtype1 expr1 , expr2sexpr subtype2 expr2 ] where
+			(op_sexpr,subtype1,subtype2) = case op of
+				CMulOp -> (SLeaf "bvmul",cur_ty,cur_ty)
+				CDivOp -> (SLeaf "bvdiv",cur_ty,cur_ty)
+				CRmdOp -> (SLeaf $ unSigned "bvurem" "bvsrem",cur_ty,cur_ty)
+				CAddOp -> (SLeaf "bvadd",cur_ty,cur_ty)
+				CSubOp -> (SLeaf "bvsub",cur_ty,cur_ty)
+				CShlOp -> (SLeaf $ unSigned "bvlshl" "bvashl",cur_ty,cur_ty)
+				CShrOp -> (SLeaf $ unSigned "bvlshr" "bvashr",cur_ty,cur_ty)
+				CLeOp  -> (SLeaf $ unSigned "bvult" "bvslt",cur_ty,cur_ty)
+				CGrOp  -> (SLeaf $ unSigned "bvugt" "bvsgt",cur_ty,cur_ty)
+				CLeqOp -> (SLeaf $ unSigned "bvule" "bvsle",cur_ty,cur_ty)
+				CGeqOp -> (SLeaf $ unSigned "bvuge" "bvsge",cur_ty,cur_ty)
+				CEqOp  -> (SLeaf "=",infer_type expr,infer_type expr)
+				CAndOp -> (SLeaf "bvand",cur_ty,cur_ty)
+				COrOp  -> (SLeaf "bvor",cur_ty,cur_ty)
+				CXorOp -> (SLeaf "bvxor",cur_ty,cur_ty)
+				CLndOp -> (SLeaf "and",cur_ty,cur_ty)
+				CLorOp -> (SLeaf "or",cur_ty,cur_ty)
 
 			unSigned unsigned signed = case (infer_type expr1,infer_type expr2) of
 				(Just (Z3_BitVector _ is_signed1), Just (Z3_BitVector _ is_signed2)) | is_signed1==is_signed2 ->
@@ -1025,7 +1027,12 @@ expr2SExpr tyenv expr = expr2sexpr (insert_eq0 False expr)
 				other -> error $ "unSigned " ++ (render.pretty) expr1 ++ " " ++ (render.pretty) expr2 ++ " yielded " ++ show other
 
 		CVar ident _ -> SLeaf $ (render.pretty) ident
-		CConst const -> SLeaf $ (render.pretty) const
+		CConst cconst -> SLeaf $ case cconst of
+			CIntConst intconst _ -> let i = getCInteger intconst in
+				case cur_ty of
+					Just (Z3_BitVector size signed) -> printf "#x%*.*x" (size `div` 4) (size `div` 4) i
+					_ -> error $ "expr2SExpr: cur_ty " ++ show cur_ty ++ "is no BitVector!"
+			_ -> (render.pretty) cconst
 		cmember@(CMember _ _ _ _) -> error $ "expr2SExpr " ++ (render.pretty) cmember ++ " should not occur!"
 		ccall@(CCall _ _ _) -> error $ "expr2SExpr " ++ (render.pretty) ccall ++ " should not occur!"
 		expr -> error $ "expr2SExpr " ++ (render.pretty) expr ++ " not implemented" 
@@ -1144,22 +1151,30 @@ solveTraceM ret_type param_env traceid trace = do
 				constraintsZ3 = concat $ for trace' $ \case
 					Condition _ expr -> [ SExpr [SLeaf "assert", expr2SExpr tyenv expr] ]
 					_ -> []
-				model = [ SExpr [SLeaf "set-option", SLeaf ":smt.relevancy", SLeaf "0"] ] ++
+				outputnames = ( maybe [] (const [returnval_ident]) mb_ret_val ) ++ param_names
+				outputvarsZ3 = for outputnames $ \ ident -> SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
+				model = [
+					SExpr [SLeaf "set-option", SLeaf ":smt.relevancy", SLeaf "0"],
+					SExpr [SLeaf "set-option", SLeaf ":produce-models", SLeaf "true"] ] ++
 					varsZ3 ++
 					constraintsZ3 ++
-					[ SExpr [SLeaf "check-sat"], SExpr [SLeaf "get-model"] ]
+					[ SExpr [SLeaf "check-sat"] ] ++
+					outputvarsZ3
 				model_string = unlines $ map show model
 
 			let modelpathfile = analyzerPath </> "model_" ++ tracename ++ ".smtlib2"
 			liftIO $ writeFile modelpathfile model_string
 			printLog $ "Running model " ++ show tracename ++ "..."
-			(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
+			(_,stdout,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
 				readProcessWithExitCode z3FilePath ["-smt2",takeFileName modelpathfile] ""
-			case exitcode of
-				ExitFailure _ -> error $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ stdout ++ stderr
-				ExitSuccess -> do
-					printLog stdout
-					return (model_string,Nothing)
+			printLog stdout
+			case lines stdout of
+				"unsat" : _ -> return (model_string,Nothing)
+				"sat" : rest -> do
+					sol_params <- forM (zip outputnames rest) $ \ (ident,getvalue_s) -> case [
+						getvalue_s 
+					return $ Just (param_env,sol_params,mb_ret_val)
+				_ -> error $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ "stdout=" ++ stdout ++ "\nstderr=" ++ stderr
 
 
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
