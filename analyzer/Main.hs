@@ -57,6 +57,9 @@ stack build :analyzer-exe && stack exec analyzer-exe
 fp-bit.i: Function _fpdiv_parts, Zeile 1039
 --}
 
+intSize = 32
+longIntSize = 64
+
 solveIt = True
 showOnlySolutions = True
 don'tShowTraces = True
@@ -902,31 +905,32 @@ var2MZ tyenv ident = do
 
 type Constraint = CExpr
 
+eq0 :: Constraint -> Constraint
+eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
+
+insert_eq0 :: Bool -> Constraint -> Constraint
+insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then eq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
+insert_eq0 must_be_bool (CUnary unop expr ni) = case unop of
+	CNegOp -> CUnary CNegOp (insert_eq0 True expr) ni
+	unop   -> (if must_be_bool then eq0 else id) $ CUnary unop (insert_eq0 False expr) ni
+insert_eq0 must_be_bool (CCast _ expr _) = insert_eq0 must_be_bool expr
+insert_eq0 must_be_bool cvar@(CVar ident ni) = (if must_be_bool then eq0 else id) cvar
+insert_eq0 must_be_bool const@(CConst _) = (if must_be_bool then eq0 else id) const
+insert_eq0 must_be_bool (CBinary binop expr1 expr2 ni) = mb_eq0 $
+	CBinary binop (insert_eq0 must_be_bool' expr1) (insert_eq0 must_be_bool' expr2) ni
+	where
+	(must_be_bool',mb_eq0) = case must_be_bool of
+		_ | binop `elem` [CLndOp,CLorOp] -> (True,id)
+		_ | binop `elem` [CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp] -> (False,id)
+		True -> (False,eq0)
+		_ -> (False,id)
+insert_eq0 must_be_bool cmember@(CMember _ _ _ _) = (if must_be_bool then eq0 else id) cmember
+insert_eq0 _ expr = error $ "insert_eq0 " ++ (render.pretty) expr ++ " not implemented yet."
+
 traceelemToMZ :: TraceElem -> CovVecM [MZAST.ModelData]
 traceelemToMZ (Condition _ constr) = do
 	return [ MZAST.constraint (expr2constr . (flatten_not False) . (insert_eq0 True) $ constr) ]
 	where
-	eq0 :: Constraint -> Constraint
-	eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
-	insert_eq0 :: Bool -> Constraint -> Constraint
-	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then eq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
-	insert_eq0 must_be_bool (CUnary unop expr ni) = case unop of
-		CNegOp -> CUnary CNegOp (insert_eq0 True expr) ni
-		unop   -> (if must_be_bool then eq0 else id) $ CUnary unop (insert_eq0 False expr) ni
-	insert_eq0 must_be_bool (CCast _ expr _) = insert_eq0 must_be_bool expr
-	insert_eq0 must_be_bool cvar@(CVar ident ni) = (if must_be_bool then eq0 else id) cvar
-	insert_eq0 must_be_bool const@(CConst _) = (if must_be_bool then eq0 else id) const
-	insert_eq0 must_be_bool (CBinary binop expr1 expr2 ni) = mb_eq0 $
-		CBinary binop (insert_eq0 must_be_bool' expr1) (insert_eq0 must_be_bool' expr2) ni
-		where
-		(must_be_bool',mb_eq0) = case must_be_bool of
-			_ | binop `elem` [CLndOp,CLorOp] -> (True,id)
-			_ | binop `elem` [CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp] -> (False,id)
-			True -> (False,eq0)
-			_ -> (False,id)
-	insert_eq0 must_be_bool cmember@(CMember _ _ _ _) = (if must_be_bool then eq0 else id) cmember
-	insert_eq0 _ expr = error $ "insert_eq0 " ++ (render.pretty) expr ++ " not implemented yet."
-	
 	flatten_not :: Bool -> Constraint -> Constraint
 	flatten_not is_neg (CUnary CNegOp expr ni) = flatten_not (not is_neg) expr
 	flatten_not True un@(CUnary CCompOp _ _) = error $ "flatten_not True " ++ (render.pretty) un ++ " is impossible!"
@@ -978,11 +982,94 @@ instance Show SExpr where
 	show (SLeaf s) = s
 	show (SExpr sexprs) = "(" ++ intercalate " " (map show sexprs) ++ ")"
 
-expr2SExpr :: CExpr -> SExpr
-expr2SExpr expr = error ""
+data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Bool
+	deriving (Show,Eq,Ord)
+
+expr2SExpr :: TyEnv -> CExpr -> SExpr
+expr2SExpr tyenv expr = expr2sexpr (insert_eq0 False expr)
+	where
+	expr2sexpr expr = case expr of
+		CUnary CPlusOp expr _ -> expr2sexpr expr
+		CUnary op expr _ -> SExpr [ SLeaf op_str , expr2sexpr expr ] where
+			op_str = case op of
+				CMinOp  -> "bvneg"
+				CCompOp -> "bvnot"
+				CNegOp  -> "not"
+				_       -> error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
+		CBinary op expr1 expr2 _ -> SExpr [ op_sexpr , expr2sexpr expr1 , expr2sexpr expr2 ] where
+			op_sexpr = case op of
+				CMulOp -> SLeaf "bvmul"
+				CDivOp -> SLeaf "bvdiv"
+				CRmdOp -> SLeaf $ unSigned "bvurem" "bvsrem"
+				CAddOp -> SLeaf "bvadd"
+				CSubOp -> SLeaf "bvsub"
+				CShlOp -> SLeaf $ unSigned "bvlshl" "bvashl"
+				CShrOp -> SLeaf $ unSigned "bvlshr" "bvashr"
+				CLeOp  -> SLeaf $ unSigned "bvult" "bvslt"
+				CGrOp  -> SLeaf $ unSigned "bvugt" "bvsgt"
+				CLeqOp -> SLeaf $ unSigned "bvule" "bvsle"
+				CGeqOp -> SLeaf $ unSigned "bvuge" "bvsge"
+				CEqOp  -> SLeaf "="
+				CNeqOp -> expr2sexpr $ CUnary CNegOp (CBinary CEqOp expr1 expr2 undefNode) undefNode
+				CAndOp -> SLeaf "bvand"
+				COrOp  -> SLeaf "bvor"
+				CXorOp -> SLeaf "bvxor"
+				CLndOp -> SLeaf "and"
+				CLorOp -> SLeaf "or"
+
+			unSigned unsigned signed = case (infer_type expr1,infer_type expr2) of
+				(Just (Z3_BitVector _ is_signed1), Just (Z3_BitVector _ is_signed2)) | is_signed1==is_signed2 ->
+					if is_signed1 then signed else unsigned
+				(Just (Z3_BitVector _ is_signed), Nothing) -> if is_signed then signed else unsigned
+				(Nothing, Just (Z3_BitVector _ is_signed)) -> if is_signed then signed else unsigned
+				other -> error $ "unSigned " ++ (render.pretty) expr1 ++ " " ++ (render.pretty) expr2 ++ " yielded " ++ show other
+
+		CVar ident _ -> SLeaf $ (render.pretty) ident
+		CConst const -> SLeaf $ (render.pretty) const
+		cmember@(CMember _ _ _ _) -> error $ "expr2SExpr " ++ (render.pretty) cmember ++ " should not occur!"
+		ccall@(CCall _ _ _) -> error $ "expr2SExpr " ++ (render.pretty) ccall ++ " should not occur!"
+		expr -> error $ "expr2SExpr " ++ (render.pretty) expr ++ " not implemented" 
+
+	infer_type :: CExpr -> Maybe Z3_Type
+	infer_type (CVar ident _) = case lookup ident tyenv of
+		Nothing -> error $ "infer_type: " ++ (render.pretty) ident ++ " not found in tyenv!" 
+		Just ty -> Just $ ty2Z3Type ty
+	infer_type (CConst _) = Nothing
+	infer_type (CUnary _ expr _) = infer_type expr
+	infer_type expr@(CBinary _ expr1 expr2 _) = case [infer_type expr1, infer_type expr2] of
+		[Nothing,Nothing] -> Nothing
+		[Just t1,Just t2] | t1/=t2 -> error $ "infer_type " ++ (render.pretty) expr ++ " yields different types for operands: " ++ show t1 ++ " and " ++ show t2
+		res -> maximum res
+	infer_type other = error $ "infer_type " ++ (render.pretty) other ++ " not implemented!"
+
+ty2Z3Type :: Type -> Z3_Type
+ty2Z3Type ty = case ty of
+	DirectType tyname _ _ -> case tyname of
+		TyIntegral intty -> case intty of
+			TyBool   -> Z3_Bool
+			TyChar   -> Z3_BitVector 8 False
+			TySChar  -> Z3_BitVector 8 True
+			TyUChar  -> Z3_BitVector 8 False
+			TyShort  -> Z3_BitVector 16 True
+			TyUShort -> Z3_BitVector 16 False
+			TyInt    -> Z3_BitVector intSize True
+			TyUInt   -> Z3_BitVector intSize False
+			TyLong   -> Z3_BitVector longIntSize True
+			TyULong  -> Z3_BitVector longIntSize False
+			TyLLong  -> Z3_BitVector 64 True
+			TyULLong -> Z3_BitVector 64 False
+			other    -> error $ "ty2Z3Type " ++ show other ++ " not implemented!"
+		TyFloating _ -> Z3_Float
+		TyEnum _ -> Z3_BitVector intSize False
+		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
+	_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
 
 ty2SExpr :: Type -> SExpr
-ty2SExpr ty = error ""
+ty2SExpr ty = case ty2Z3Type ty of
+	Z3_BitVector size _ -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
+	Z3_Float -> SLeaf "Real"
+	Z3_Bool -> SLeaf "Bool"
+
 
 solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
 solveTraceM ret_type param_env traceid trace = do
@@ -1053,10 +1140,14 @@ solveTraceM ret_type param_env traceid trace = do
 
 		Z3 -> do
 			let
-				constraints = for trace' $ \case
-					Condition _ expr -> SExpr [SLeaf "constraints", expr2SExpr expr]
-					NewDeclaration (ident,ty) -> SExpr [SLeaf "declare-const", SLeaf ((render.pretty) ident), ty2SExpr ty]
-				model = constraints ++ [ SExpr [SLeaf "check-sat"], SExpr [SLeaf "get-model"] ]
+				varsZ3 = for (filter ((∈ vars).fst) tyenv) $ \ (ident,ty) -> SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
+				constraintsZ3 = concat $ for trace' $ \case
+					Condition _ expr -> [ SExpr [SLeaf "constraints", expr2SExpr tyenv expr] ]
+					_ -> []
+				model = [ SExpr [SLeaf "set-option", SLeaf ":smt.relevancy", SLeaf "0"] ] ++
+					varsZ3 ++
+					constraintsZ3 ++
+					[ SExpr [SLeaf "check-sat"], SExpr [SLeaf "get-model"] ]
 				model_string = unlines $ map show model
 
 			let modelpathfile = analyzerPath </> "model_" ++ tracename ++ ".smtlib2"
