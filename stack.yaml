@@ -41,7 +41,7 @@ packages:
 # using the same syntax as the packages field.
 # (e.g., acme-missiles-0.3)
 extra-deps: [
-  z3-408.1
+#  z3-408.1
 #  monadiccp-gecode-0.1.3
 #  g2-0.1.0.1,
 #  githash-0.1.3.3,
@@ -72,9 +72,7 @@ extra-deps: [
 #
 # Extra directories used by stack for building
 extra-include-dirs:
-  - "C:\\z3-4.8.8-x64-win\\include"
 extra-lib-dirs:
-  - "C:\\z3-4.8.8-x64-win\\bin"
 
 #
 # Allow a newer minor version of GHC than the snapshot specifies

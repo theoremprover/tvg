@@ -7,11 +7,9 @@
       <sourceFolder url="file://$MODULE_DIR$/analyzer" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/calltree" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/covreport" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/mcptest" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/grammar" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/prevent" isTestSource="false" />
       <sourceFolder url="file://$MODULE_DIR$/app" isTestSource="false" />
-      <sourceFolder url="file://$MODULE_DIR$/z3test" isTestSource="false" />
       <excludeFolder url="file://$MODULE_DIR$/.stack-work" />
     </content>
     <orderEntry type="inheritedJdk" />
@@ -45,10 +43,5 @@
     <orderEntry type="library" name="Win32-2.6.1.0" level="project" />
     <orderEntry type="library" name="clock-0.7.2" level="project" />
     <orderEntry type="library" name="mtl-2.2.2" level="project" />
-    <orderEntry type="library" name="monadiccp-0.7.7" level="project" />
-    <orderEntry type="library" name="random-1.1" level="project" />
-    <orderEntry type="library" name="semigroups-0.18.5" level="project" />
-    <orderEntry type="library" name="z3-408.1" level="project" />
-    <orderEntry type="module" module-name="monadiccp-gecode" />
   </component>
 </module>

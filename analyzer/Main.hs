@@ -973,6 +973,17 @@ traceelemToMZ (Condition _ constr) = do
 
 traceelemToMZ _ = return []
 
+data SExpr = SExpr [SExpr] | SLeaf String
+instance Show SExpr where
+	show (SLeaf s) = s
+	show (SExpr sexprs) = "(" ++ intercalate " " (map show sexprs) ++ ")"
+
+expr2SExpr :: CExpr -> SExpr
+expr2SExpr expr = error ""
+
+ty2SExpr :: Type -> SExpr
+ty2SExpr ty = error ""
+
 solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
 solveTraceM ret_type param_env traceid trace = do
 	let
@@ -1043,14 +1054,15 @@ solveTraceM ret_type param_env traceid trace = do
 		Z3 -> do
 			let
 				constraints = for trace' $ \case
-					Condition _ expr -> SLeaf "constraint"
-					NewDeclaration (ident,ty) ->
-				model_string = lines $ map show $ constraints ++ [ SLeaf "check-sat", SLeaf "get-model" ]
+					Condition _ expr -> SExpr [SLeaf "constraints", expr2SExpr expr]
+					NewDeclaration (ident,ty) -> SExpr [SLeaf "declare-const", SLeaf ((render.pretty) ident), ty2SExpr ty]
+				model = constraints ++ [ SExpr [SLeaf "check-sat"], SExpr [SLeaf "get-model"] ]
+				model_string = unlines $ map show model
 
 			let modelpathfile = analyzerPath </> "model_" ++ tracename ++ ".smtlib2"
 			liftIO $ writeFile modelpathfile model_string
 			printLog $ "Running model " ++ show tracename ++ "..."
-			(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
+			(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
 				readProcessWithExitCode z3FilePath ["-smt2",takeFileName modelpathfile] ""
 			case exitcode of
 				ExitFailure _ -> error $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ stdout ++ stderr
