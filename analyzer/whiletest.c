@@ -20,10 +20,11 @@ int f(int y)
     else return 0;
 }
 
-void main(int argc, char* argv[])
-{
 #ifdef CALC
+int main(int argc, char* argv[])
+{
     int y = atoi(argv[1]);
-    printf("f(%i) = %i\n",y,f(y));
-#endif
+    printf("f(%i) =\n%i\n",y,f(y));
+    return 0;
 }
+#endif

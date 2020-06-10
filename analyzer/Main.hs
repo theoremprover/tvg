@@ -98,8 +98,8 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : ["-writeTree"] --["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
@@ -1026,14 +1026,16 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 False expr)
 					if is_signed1 then signed else unsigned
 				(Just (Z3_BitVector _ is_signed), Nothing) -> if is_signed then signed else unsigned
 				(Nothing, Just (Z3_BitVector _ is_signed)) -> if is_signed then signed else unsigned
-				other -> error $ "unSigned " ++ (render.pretty) expr1 ++ " " ++ (render.pretty) expr2 ++ " yielded " ++ show other
+				(Nothing, Nothing) -> signed
+--				other -> error $ "unSigned " ++ (render.pretty) expr1 ++ " " ++ (render.pretty) expr2 ++ " yielded " ++ show other
 
 		CVar ident _ -> SLeaf $ (render.pretty) ident
 		CConst cconst -> SLeaf $ case cconst of
 			CIntConst intconst _ -> let i = getCInteger intconst in
 				case cur_ty of
-					Just (Z3_BitVector size signed) -> printf "#x%*.*x" (size `div` 4) (size `div` 4) i
-					_ -> error $ "expr2SExpr: cur_ty " ++ show cur_ty ++ "is no BitVector!"
+					Just (Z3_BitVector size _) -> printf "#x%*.*x" (size `div` 4) (size `div` 4) i
+					Nothing -> printf "#x%*.*x" (32 `div` 4 :: Int) (32 `div` 4 :: Int) i
+					_ -> error $ "expr2SExpr: cur_ty " ++ show cur_ty
 			_ -> (render.pretty) cconst
 		cmember@(CMember _ _ _ _) -> error $ "expr2SExpr " ++ (render.pretty) cmember ++ " should not occur!"
 		ccall@(CCall _ _ _) -> error $ "expr2SExpr " ++ (render.pretty) ccall ++ " should not occur!"
