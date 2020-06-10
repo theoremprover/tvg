@@ -36,6 +36,7 @@ dependencies:
 - extra
 - blaze-html
 - base-unicode-symbols
+- regex-tdfa
 
 library:
   source-dirs: src

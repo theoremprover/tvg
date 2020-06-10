@@ -22,6 +22,7 @@ import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
 import qualified Data.Set as Set
 import Text.Printf
+import Text.Regex.TDFA
 
 import Interfaces.FZSolutionParser
 import qualified Interfaces.MZAST as MZAST
@@ -1171,7 +1172,9 @@ solveTraceM ret_type param_env traceid trace = do
 			case lines stdout of
 				"unsat" : _ -> return (model_string,Nothing)
 				"sat" : rest -> do
-					sol_params <- forM (zip outputnames rest) $ \ (ident,getvalue_s) -> case [
+					(unlines rest)
+					sol_params <- forM (zip outputnames rest) $ \ (ident,getvalue_s) ->
+						case [
 						getvalue_s 
 					return $ Just (param_env,sol_params,mb_ret_val)
 				_ -> error $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ "stdout=" ++ stdout ++ "\nstderr=" ++ stderr

@@ -43,5 +43,7 @@
     <orderEntry type="library" name="Win32-2.6.1.0" level="project" />
     <orderEntry type="library" name="clock-0.7.2" level="project" />
     <orderEntry type="library" name="mtl-2.2.2" level="project" />
+    <orderEntry type="library" name="regex-tdfa-1.2.3.1" level="project" />
+    <orderEntry type="library" name="regex-base-0.93.2" level="project" />
   </component>
 </module>
