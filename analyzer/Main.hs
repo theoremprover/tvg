@@ -23,6 +23,7 @@ import Control.Monad.Trans.State.Strict
 import qualified Data.Set as Set
 import Text.Printf
 import Text.Regex.TDFA
+import Numeric (readHex)
 
 import Interfaces.FZSolutionParser
 import qualified Interfaces.MZAST as MZAST
@@ -65,7 +66,7 @@ longIntSize = 64
 solveIt = True
 showOnlySolutions = True
 don'tShowTraces = True
-checkSolutions = solveIt && False
+checkSolutions = solveIt && True
 returnval_var_name = "return_val"
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
@@ -1176,10 +1177,24 @@ solveTraceM ret_type param_env traceid trace = do
 					sol_params <- forM outputnames $ \ ident -> do
 						let is = identToString ident
 						case (unlines rest) =~ ("^\\(\\(" ++ is ++ " ([^\\)]+)\\)\\)$") :: (String,String,String,[String]) of
-							(_,_,_,[val_string]) -> printLog $ "Found " ++ is ++ " = " ++ val_string
+							(_,_,_,[val_string]) -> case lookup ident tyenv of
+								Nothing -> error $ "Parsing z3 output: Could not find type of " ++ is
+								Just ty -> return (is, case ty2Z3Type ty of
+									Z3_BitVector size signed -> let
+										'#':'x':hexdigits = val_string
+										[(i :: Integer,"")] = readHex hexdigits
+										in
+										MInt $ case signed of
+											False -> fromIntegral i
+											True  -> fromIntegral $ if i < 2^(size-1) then i else i - 2^size
+									Z3_Float -> MFloat (read val_string :: Float)
+									Z3_Bool -> MBool $ fromJust $ lookup val_string [("true",True),("false",False)] )
+
 							_ -> error $ "Parsing z3 output: Could not find " ++ is
-					return (model_string,Nothing)
+					return (model_string,Just (param_env,sol_params,mb_ret_val))
 				_ -> error $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ output
+
+--type ResultData = (String,Maybe (Env,Solution,Maybe CExpr))
 
 
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
