@@ -1166,11 +1166,12 @@ solveTraceM ret_type param_env traceid trace = do
 			let modelpathfile = analyzerPath </> "model_" ++ tracename ++ ".smtlib2"
 			liftIO $ writeFile modelpathfile model_string
 			printLog $ "Running model " ++ show tracename ++ "..."
-			(_,stdout,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
+			(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
 				readProcessWithExitCode z3FilePath ["-smt2",takeFileName modelpathfile] ""
-			printLog stdout
-			case lines stdout of
-				"unsat" : _ -> return (model_string,Nothing)
+			printLog output
+			case lines output of
+				"unsat"   : _ -> return (model_string,Nothing)
+				"unknown" : _ -> return (model_string,Nothing)
 				"sat" : rest -> do
 					sol_params <- forM outputnames $ \ ident -> do
 						let is = identToString ident
@@ -1178,7 +1179,7 @@ solveTraceM ret_type param_env traceid trace = do
 							(_,_,_,[val_string]) -> printLog $ "Found " ++ is ++ " = " ++ val_string
 							_ -> error $ "Parsing z3 output: Could not find " ++ is
 					return (model_string,Nothing)
-				_ -> error $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ "stdout=" ++ stdout ++ "\nstderr=" ++ stderr
+				_ -> error $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ output
 
 
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
