@@ -1172,11 +1172,12 @@ solveTraceM ret_type param_env traceid trace = do
 			case lines stdout of
 				"unsat" : _ -> return (model_string,Nothing)
 				"sat" : rest -> do
-					(unlines rest)
-					sol_params <- forM (zip outputnames rest) $ \ (ident,getvalue_s) ->
-						case [
-						getvalue_s 
-					return $ Just (param_env,sol_params,mb_ret_val)
+					sol_params <- forM outputnames $ \ ident -> do
+						let is = identToString ident
+						case (unlines rest) =~ ("^\\(\\(" ++ is ++ " ([^\\)]+)\\)\\)$") :: (String,String,String,[String]) of
+							(_,_,_,[val_string]) -> printLog $ "Found " ++ is ++ " = " ++ val_string
+							_ -> error $ "Parsing z3 output: Could not find " ++ is
+					return (model_string,Nothing)
 				_ -> error $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ "stdout=" ++ stdout ++ "\nstderr=" ++ stderr
 
 
