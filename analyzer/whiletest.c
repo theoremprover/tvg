@@ -9,7 +9,7 @@ int g(int x,int y)
     while(y>0)
     {
         erg *= 2; //erg = erg << 1;
-        y--;
+        y=y-1;
     }
     return(erg);
 }

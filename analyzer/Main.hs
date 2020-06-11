@@ -613,12 +613,79 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 	CExpr (Just expr) _ -> do
 		error $ "not implemented yet."
 
-	-- I'd like to create an algorithm that infers the invariant from the loop's body, so I don't have to unroll...
+{-
  	CWhile cond body False ni -> unfoldTracesM toplevel envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
 		where
 		unroll_loop :: Int -> [CBlockItem]
 		unroll_loop 0 = []
 		unroll_loop i = [ CBlockStmt $ CIf cond (CCompound [] (CBlockStmt body : unroll_loop (i-1)) ni) Nothing (nodeInfo body) ]
+-}
+ 	CWhile cond body False ni -> do
+ 		let
+ 			-- get all variables used in the condition and make sure there is no function call in it
+ 			cond_idents = nub $ everything (++) (mkQ [] searchvar) cond where
+				searchvar :: CExpr -> [Ident]
+				searchvar (CVar ident _) = [ ident ]
+				searchvar (CCall _ _ _) = error $ "while condition " ++ (render.pretty) cond ++ " contains function call!"
+				searchvar _ = []
+
+			-- get all identifiers that are assignend to in the syntactic body (i.e. not considering calls' bodies)
+			body_idents = nub $ everything (++) (mkQ [] searchvar) body where
+				searchvar :: CExpr -> [Ident]
+				searchvar (CVar ident _) = [ ident ]
+				searchvar _ = []
+
+--		printLog $ "cond_idents = " ++ show (map (render.pretty) cond_idents)
+		printLog $ "body_idents = " ++ show (map (render.pretty) body_idents)
+
+{-
+ 		bodytrace <- unfoldTracesM toplevel envs trace [[ CBlockStmt body ]]
+		printLog $ "bodytrace = \n" ++ showLine bodytrace
+ 		-- get every assignment in the body trace that
+ 		-- 1. assigns to a variable V mentioned in the condition
+ 		-- 2. assigns to the same variable V in the syntactic body.
+ 		--
+ 		-- if there is exactly one such assignment to V,
+ 		-- it must have occured exactly once in the syntactic body (and not somewhere in function call bodies).
+ 		-- Then this is the only assignment that affects the while condition in while's body.
+ 		-- All other variables in the condition can therefore be considered being constant during the loop.
+-}
+		let
+			body_assigns = everything (++) (mkQ [] searchvar) body where
+				searchvar :: CExpr -> [(CExpr,Ident,CExpr)]
+				searchvar (CAssign CAssignOp cvar@(CVar ident _) ass_expr _) = [ (cvar,ident,ass_expr) ]
+				searchvar _ = []
+
+ 		n <- case filter (\ (_,ass_ident,ass_expr) -> ass_ident ∈ cond_idents && ass_ident ∈ body_idents) body_assigns of
+			[ (ass_var,ass_ident,ass_expr) ] -> case ass_expr of
+				CBinary CSubOp (CVar ident _) cconst@(CConst _) _ | ident==ass_ident -> do
+					let
+						n_ident = internalIdent "n_loopings"
+						n_var = CVar n_ident undefNode
+						modelpath = analyzerPath </> "n_loopings_" ++ show (lineColNodeInfo cond) ++ ".smtlib2"
+					(model_string,mb_sol) <- makeAndSolveZ3ModelM
+						((n_ident,DirectType (TyIntegral TyUInt) noTypeQuals noAttributes) : createTyEnv trace)
+						[
+							CBinary CGeqOp n_var (CConst $ CIntConst (cInteger 0) undefNode) undefNode,
+							substituteBy ass_var (CBinary CSubOp ass_var (CBinary CMulOp n_var cconst undefNode) undefNode) cond,
+							CUnary CNegOp (substituteBy ass_var
+								(CBinary CSubOp ass_var (CBinary CMulOp (CBinary CAddOp n_var
+								(CConst $ CIntConst (cInteger 1) undefNode) undefNode) cconst undefNode) undefNode) cond) undefNode
+						]
+						[n_ident]
+						modelpath
+					printLog $ "Model is\n" ++ model_string
+					case mb_sol of
+						Nothing -> error $ "Found no solution for " ++ modelpath
+						Just sol@[(_,MInt n)] -> do
+							printLog $ "Found looping n solution " ++ show sol
+							return n
+						_ -> error $ "n_looping: Strange mb_sol=" ++ show mb_sol
+				_ -> error $ "CWhile: assignment " ++ (render.pretty) ass_ident ++ " := " ++ (render.pretty) ass_expr ++ " not implemented!"
+			other -> error $ "body contains not exactly one assignment of a variable from the condition " ++ (render.pretty) cond ++ ":\n" ++
+				unlines (map (\(ass_var,_,_) -> (render.pretty) ass_var) other)
+
+		unfoldTracesM toplevel envs trace ((replicate n (CBlockStmt body) ++ rest) : rest2 )
 
 	_ -> error $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 
@@ -1082,6 +1149,51 @@ ty2SExpr ty = case ty2Z3Type ty of
 	Z3_Bool -> SLeaf "Bool"
 
 
+makeAndSolveZ3ModelM :: TyEnv -> [CExpr] -> [Ident] -> String -> CovVecM (String,Maybe [(String,MValue)])
+makeAndSolveZ3ModelM var_decls constraints output_idents modelpathfile = do
+	let
+		varsZ3 = for var_decls $ \ (ident,ty) -> SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
+		constraintsZ3 = for constraints $ \ expr -> SExpr [SLeaf "assert", expr2SExpr var_decls expr]
+		outputvarsZ3 = for output_idents $ \ ident -> SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
+		model = [
+			SExpr [SLeaf "set-option", SLeaf ":smt.relevancy", SLeaf "0"],
+			SExpr [SLeaf "set-option", SLeaf ":produce-models", SLeaf "true"] ] ++
+			varsZ3 ++
+			constraintsZ3 ++
+			[ SExpr [SLeaf "check-sat"] ] ++
+			outputvarsZ3
+		model_string = unlines $ map show model
+
+	liftIO $ writeFile modelpathfile model_string
+	printLog $ "Running model " ++ takeFileName modelpathfile ++ "..."
+	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
+		readProcessWithExitCode z3FilePath ["-smt2",takeFileName modelpathfile] ""
+	printLog output
+	case lines output of
+		"unsat"   : _ -> return (model_string,Nothing)
+		"unknown" : _ -> return (model_string,Nothing)
+		"sat" : rest -> do
+			sol_params <- forM output_idents $ \ ident -> do
+				let is = identToString ident
+				case (unlines rest) =~ ("^\\(\\(" ++ is ++ " ([^\\)]+)\\)\\)$") :: (String,String,String,[String]) of
+					(_,_,_,[val_string]) -> case lookup ident var_decls of
+						Nothing -> error $ "Parsing z3 output: Could not find type of " ++ is
+						Just ty -> return (is, case ty2Z3Type ty of
+							Z3_BitVector size signed -> let
+								'#':'x':hexdigits = val_string
+								[(i :: Integer,"")] = readHex hexdigits
+								in
+								MInt $ case signed of
+									False -> fromIntegral i
+									True  -> fromIntegral $ if i < 2^(size-1) then i else i - 2^size
+							Z3_Float -> MFloat (read val_string :: Float)
+							Z3_Bool -> MBool $ fromJust $ lookup val_string [("true",True),("false",False)] )
+
+					_ -> error $ "Parsing z3 output: Could not find " ++ is
+			return (model_string,Just sol_params)
+		_ -> error $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ output
+
+
 solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
 solveTraceM ret_type param_env traceid trace = do
 	let
@@ -1106,9 +1218,9 @@ solveTraceM ret_type param_env traceid trace = do
 		traceitem2constr _ = []
 		tyenv = createTyEnv trace'
 		vars :: [Ident] = nub $ param_names ++ everything (++) (mkQ [] searchvar) constr_trace where
-			searchvar :: CExpr -> [Ident]
-			searchvar (CVar ident _) = [ ident ]
-			searchvar _ = []
+				searchvar :: CExpr -> [Ident]
+				searchvar (CVar ident _) = [ ident ]
+				searchvar _ = []
 		solution_vars = map identToString vars
 
 	gets solverCVS >>= \case
@@ -1150,54 +1262,20 @@ solveTraceM ret_type param_env traceid trace = do
 						Right _ -> error $ "Found more than one solution for " ++ show traceid ++ " !"
 
 		Z3 -> do
-			let
-				varsZ3 = for (filter ((∈ vars).fst) tyenv) $ \ (ident,ty) -> SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
-				constraintsZ3 = concat $ for trace' $ \case
-					Condition _ expr -> [ SExpr [SLeaf "assert", expr2SExpr tyenv expr] ]
-					_ -> []
-				outputnames = ( maybe [] (const [returnval_ident]) mb_ret_val ) ++ param_names
-				outputvarsZ3 = for outputnames $ \ ident -> SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
-				model = [
-					SExpr [SLeaf "set-option", SLeaf ":smt.relevancy", SLeaf "0"],
-					SExpr [SLeaf "set-option", SLeaf ":produce-models", SLeaf "true"] ] ++
-					varsZ3 ++
-					constraintsZ3 ++
-					[ SExpr [SLeaf "check-sat"] ] ++
-					outputvarsZ3
-				model_string = unlines $ map show model
+			(model_string,mb_sol) <- makeAndSolveZ3ModelM
+				(filter ((∈ vars).fst) tyenv)
+				(concat $ for trace' $ \case
+					Condition _ expr -> [expr]
+					_ -> [])
+				(( maybe [] (const [returnval_ident]) mb_ret_val ) ++ param_names)
+				(analyzerPath </> "model_" ++ tracename ++ ".smtlib2")
 
-			let modelpathfile = analyzerPath </> "model_" ++ tracename ++ ".smtlib2"
-			liftIO $ writeFile modelpathfile model_string
-			printLog $ "Running model " ++ show tracename ++ "..."
-			(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
-				readProcessWithExitCode z3FilePath ["-smt2",takeFileName modelpathfile] ""
-			printLog output
-			case lines output of
-				"unsat"   : _ -> return (model_string,Nothing)
-				"unknown" : _ -> return (model_string,Nothing)
-				"sat" : rest -> do
-					sol_params <- forM outputnames $ \ ident -> do
-						let is = identToString ident
-						case (unlines rest) =~ ("^\\(\\(" ++ is ++ " ([^\\)]+)\\)\\)$") :: (String,String,String,[String]) of
-							(_,_,_,[val_string]) -> case lookup ident tyenv of
-								Nothing -> error $ "Parsing z3 output: Could not find type of " ++ is
-								Just ty -> return (is, case ty2Z3Type ty of
-									Z3_BitVector size signed -> let
-										'#':'x':hexdigits = val_string
-										[(i :: Integer,"")] = readHex hexdigits
-										in
-										MInt $ case signed of
-											False -> fromIntegral i
-											True  -> fromIntegral $ if i < 2^(size-1) then i else i - 2^size
-									Z3_Float -> MFloat (read val_string :: Float)
-									Z3_Bool -> MBool $ fromJust $ lookup val_string [("true",True),("false",False)] )
+			return (model_string,case mb_sol of
+				Nothing -> Nothing
+				Just sol -> Just (param_env,sol,mb_ret_val))
 
-							_ -> error $ "Parsing z3 output: Could not find " ++ is
-					return (model_string,Just (param_env,sol_params,mb_ret_val))
-				_ -> error $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ output
 
 --type ResultData = (String,Maybe (Env,Solution,Maybe CExpr))
-
 
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
 checkSolutionM _ resultdata | not checkSolutions = return resultdata
