@@ -620,75 +620,80 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 		unroll_loop 0 = []
 		unroll_loop i = [ CBlockStmt $ CIf cond (CCompound [] (CBlockStmt body : unroll_loop (i-1)) ni) Nothing (nodeInfo body) ]
 -}
- 	CWhile cond body False ni -> do
- 		let
- 			-- get all variables used in the condition and make sure there is no function call in it
- 			cond_idents = nub $ everything (++) (mkQ [] searchvar) cond where
-				searchvar :: CExpr -> [Ident]
-				searchvar (CVar ident _) = [ ident ]
-				searchvar (CCall _ _ _) = error $ "while condition " ++ (render.pretty) cond ++ " contains function call!"
-				searchvar _ = []
-
-			-- get all identifiers that are assignend to in the syntactic body (i.e. not considering calls' bodies)
-			body_idents = nub $ everything (++) (mkQ [] searchvar) body where
-				searchvar :: CExpr -> [Ident]
-				searchvar (CVar ident _) = [ ident ]
-				searchvar _ = []
-
---		printLog $ "cond_idents = " ++ show (map (render.pretty) cond_idents)
-		printLog $ "body_idents = " ++ show (map (render.pretty) body_idents)
-
-{-
- 		bodytrace <- unfoldTracesM toplevel envs trace [[ CBlockStmt body ]]
-		printLog $ "bodytrace = \n" ++ showLine bodytrace
- 		-- get every assignment in the body trace that
- 		-- 1. assigns to a variable V mentioned in the condition
- 		-- 2. assigns to the same variable V in the syntactic body.
- 		--
- 		-- if there is exactly one such assignment to V,
- 		-- it must have occured exactly once in the syntactic body (and not somewhere in function call bodies).
- 		-- Then this is the only assignment that affects the while condition in while's body.
- 		-- All other variables in the condition can therefore be considered being constant during the loop.
--}
-		let
-			body_assigns = everything (++) (mkQ [] searchvar) body where
-				searchvar :: CExpr -> [(CExpr,Ident,CExpr)]
-				searchvar (CAssign CAssignOp cvar@(CVar ident _) ass_expr _) = [ (cvar,ident,ass_expr) ]
-				searchvar _ = []
-
- 		n <- case filter (\ (_,ass_ident,ass_expr) -> ass_ident ∈ cond_idents && ass_ident ∈ body_idents) body_assigns of
-			[ (ass_var,ass_ident,ass_expr) ] -> case ass_expr of
-				CBinary CSubOp (CVar ident _) cconst@(CConst _) _ | ident==ass_ident -> do
-					let
-						n_ident = internalIdent "n_loopings"
-						n_var = CVar n_ident undefNode
-						modelpath = analyzerPath </> "n_loopings_" ++ show (lineColNodeInfo cond) ++ ".smtlib2"
-					(model_string,mb_sol) <- makeAndSolveZ3ModelM
-						((n_ident,DirectType (TyIntegral TyUInt) noTypeQuals noAttributes) : createTyEnv trace)
-						[
-							CBinary CGeqOp n_var (CConst $ CIntConst (cInteger 0) undefNode) undefNode,
-							substituteBy ass_var (CBinary CSubOp ass_var (CBinary CMulOp n_var cconst undefNode) undefNode) cond,
-							CUnary CNegOp (substituteBy ass_var
-								(CBinary CSubOp ass_var (CBinary CMulOp (CBinary CAddOp n_var
-								(CConst $ CIntConst (cInteger 1) undefNode) undefNode) cconst undefNode) undefNode) cond) undefNode
-						]
-						[n_ident]
-						modelpath
-					printLog $ "Model is\n" ++ model_string
-					case mb_sol of
-						Nothing -> error $ "Found no solution for " ++ modelpath
-						Just sol@[(_,MInt n)] -> do
-							printLog $ "Found looping n solution " ++ show sol
-							return n
-						_ -> error $ "n_looping: Strange mb_sol=" ++ show mb_sol
-				_ -> error $ "CWhile: assignment " ++ (render.pretty) ass_ident ++ " := " ++ (render.pretty) ass_expr ++ " not implemented!"
-			other -> error $ "body contains not exactly one assignment of a variable from the condition " ++ (render.pretty) cond ++ ":\n" ++
-				unlines (map (\(ass_var,_,_) -> (render.pretty) ass_var) other)
-
-		unfoldTracesM toplevel envs trace ((replicate n (CBlockStmt body) ++ rest) : rest2 )
-
-	_ -> error $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
-
+ 	CWhile cond0 body False ni -> do
+ 		translateExprM toplevel envs cond0 >>= \case
+ 			[(cond,[])] -> do
+ 				body_trace <- unfoldTracesM toplevel envs [] [[CBlockStmt body]]
+ 				
+				let
+					-- get all variables used in the condition and make sure there is no function call in it
+					cond_idents = nub $ everything (++) (mkQ [] searchvar) cond where
+						searchvar :: CExpr -> [Ident]
+						searchvar (CVar ident _) = [ ident ]
+						searchvar (CCall _ _ _) = error $ "while condition " ++ (render.pretty) cond ++ " contains function call!"
+						searchvar _ = []
+		
+					-- get all identifiers that are assignend to in the syntactic body (i.e. not considering calls' bodies)
+					body_idents = nub $ everything (++) (mkQ [] searchvar) body where
+						searchvar :: CExpr -> [Ident]
+						searchvar (CVar ident _) = [ ident ]
+						searchvar _ = []
+		
+		--		printLog $ "cond_idents = " ++ show (map (render.pretty) cond_idents)
+				printLog $ "body_idents = " ++ show (map (render.pretty) body_idents)
+		
+		{-
+				bodytrace <- unfoldTracesM toplevel envs trace [[ CBlockStmt body ]]
+				printLog $ "bodytrace = \n" ++ showLine bodytrace
+				-- get every assignment in the body trace that
+				-- 1. assigns to a variable V mentioned in the condition
+				-- 2. assigns to the same variable V in the syntactic body.
+				--
+				-- if there is exactly one such assignment to V,
+				-- it must have occured exactly once in the syntactic body (and not somewhere in function call bodies).
+				-- Then this is the only assignment that affects the while condition in while's body.
+				-- All other variables in the condition can therefore be considered being constant during the loop.
+		-}
+				let
+					body_assigns = everything (++) (mkQ [] searchvar) body where
+						searchvar :: CExpr -> [(CExpr,Ident,CExpr)]
+						searchvar (CAssign CAssignOp cvar@(CVar ident _) ass_expr _) = [ (cvar,ident,ass_expr) ]
+						searchvar _ = []
+		
+				n <- case filter (\ (_,ass_ident,ass_expr) -> ass_ident ∈ cond_idents && ass_ident ∈ body_idents) body_assigns of
+					[ (ass_var,ass_ident,ass_expr) ] -> case ass_expr of
+						CBinary CSubOp (CVar ident _) cconst@(CConst _) _ | ident==ass_ident -> do
+							let
+								n_ident = internalIdent "n_loopings"
+								n_var = CVar n_ident undefNode
+								modelpath = analyzerPath </> "n_loopings_" ++ show (lineColNodeInfo cond) ++ ".smtlib2"
+							(model_string,mb_sol) <- makeAndSolveZ3ModelM
+								((n_ident,DirectType (TyIntegral TyUInt) noTypeQuals noAttributes) : createTyEnv trace)
+								[
+									CBinary CGeqOp n_var (CConst $ CIntConst (cInteger 0) undefNode) undefNode,
+									substituteBy ass_var (CBinary CSubOp ass_var (CBinary CMulOp n_var cconst undefNode) undefNode) cond,
+									CUnary CNegOp (substituteBy ass_var
+										(CBinary CSubOp ass_var (CBinary CMulOp (CBinary CAddOp n_var
+										(CConst $ CIntConst (cInteger 1) undefNode) undefNode) cconst undefNode) undefNode) cond) undefNode
+								]
+								[n_ident]
+								modelpath
+							printLog $ "Model is\n" ++ model_string
+							case mb_sol of
+								Nothing -> error $ "Found no solution for " ++ modelpath
+								Just sol@[(_,MInt n)] -> do
+									printLog $ "Found looping n solution " ++ show sol
+									return n
+								_ -> error $ "n_looping: Strange mb_sol=" ++ show mb_sol
+						_ -> error $ "CWhile: assignment " ++ (render.pretty) ass_ident ++ " := " ++ (render.pretty) ass_expr ++ " not implemented!"
+					other -> error $ "body contains not exactly one assignment of a variable from the condition " ++ (render.pretty) cond ++ ":\n" ++
+						unlines (map (\(ass_var,_,_) -> (render.pretty) ass_var) other)
+		
+				unfoldTracesM toplevel envs trace ((replicate n (CBlockStmt body) ++ rest) : rest2 )
+		
+			_ -> error $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
+		
+		_ -> error $ "while condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!"
 	where
 	
 	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM Trace) -> CovVecM Trace
