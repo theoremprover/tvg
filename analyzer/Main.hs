@@ -406,8 +406,18 @@ instance Eq CExpr where
 	(CVar id1 _) == (CVar id2 _) = id1==id2
 	(CMember ptrexpr1 ident1 isptr1 _) == (CMember ptrexpr2 ident2 isptr2 _) =
 		ident1==ident2 && isptr1==isptr2 && ptrexpr1 == ptrexpr2
-	(CUnary CIndOp expr1 _) ==  (CUnary CIndOp expr2 _) = expr1==expr2
+	(CUnary op1 expr1 _) == (CUnary op2 expr2 _) = op1==op2 && expr1==expr2
+	(CBinary op1 expr11 expr12 _) == (CBinary op2 expr21 expr22 _) = op1==op2 && expr11==expr21 && expr12==expr22
+	(CAssign op1 expr11 expr12 _) == (CAssign op2 expr21 expr22 _) = op1==op2 && expr11==expr21 && expr12==expr22
+	(CCall fun1 args1 _) == (CCall fun2 args2 _) = fun1==fun2 && args1==args2
+	(CConst const1) == (CConst const2) = const1==const2
 	_ == _ = False
+
+instance Eq CConst where
+	(CIntConst c1 _)   == (CIntConst c2 _)   = c1==c2
+	(CCharConst c1 _)  == (CCharConst c2 _)  = c1==c2
+	(CFloatConst c1 _) == (CFloatConst c2 _) = c1==c2
+	(CStrConst c1 _)   == (CStrConst c2 _)   = c1==c2
 
 
 -- Normalizes an expression and creates a variable name for the result
@@ -621,10 +631,13 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 		unroll_loop i = [ CBlockStmt $ CIf cond (CCompound [] (CBlockStmt body : unroll_loop (i-1)) ni) Nothing (nodeInfo body) ]
 -}
  	CWhile cond0 body False ni -> do
+{-
+	-- get every assignment in the body trace that
+	-- assigns exactly once in every body trace to a variable V mentioned in the condition.
+	-- if there is exactly one such assignment to V,
+-}
  		translateExprM toplevel envs cond0 >>= \case
  			[(cond,[])] -> do
- 				body_trace <- unfoldTracesM toplevel envs [] [[CBlockStmt body]]
- 				
 				let
 					-- get all variables used in the condition and make sure there is no function call in it
 					cond_idents = nub $ everything (++) (mkQ [] searchvar) cond where
@@ -632,36 +645,26 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 						searchvar (CVar ident _) = [ ident ]
 						searchvar (CCall _ _ _) = error $ "while condition " ++ (render.pretty) cond ++ " contains function call!"
 						searchvar _ = []
-		
-					-- get all identifiers that are assignend to in the syntactic body (i.e. not considering calls' bodies)
-					body_idents = nub $ everything (++) (mkQ [] searchvar) body where
-						searchvar :: CExpr -> [Ident]
-						searchvar (CVar ident _) = [ ident ]
-						searchvar _ = []
-		
-		--		printLog $ "cond_idents = " ++ show (map (render.pretty) cond_idents)
-				printLog $ "body_idents = " ++ show (map (render.pretty) body_idents)
-		
-		{-
-				bodytrace <- unfoldTracesM toplevel envs trace [[ CBlockStmt body ]]
-				printLog $ "bodytrace = \n" ++ showLine bodytrace
-				-- get every assignment in the body trace that
-				-- 1. assigns to a variable V mentioned in the condition
-				-- 2. assigns to the same variable V in the syntactic body.
-				--
-				-- if there is exactly one such assignment to V,
-				-- it must have occured exactly once in the syntactic body (and not somewhere in function call bodies).
-				-- Then this is the only assignment that affects the while condition in while's body.
-				-- All other variables in the condition can therefore be considered being constant during the loop.
-		-}
+
+				-- unfold body to all body traces and filter for all Assignments to variables from the condition
+ 				body_trace <- unfoldTracesM toplevel envs [] [[CBlockStmt body]]
+ 				let
+ 					body_traces = flattenTrace [] (reverse body_trace)
+ 					body_traces_ass = map (concatMap from_ass) body_traces where
+ 						from_ass (Assignment a@(CVar i _) b) | i ∈ cond_idents = [(a,b)]
+ 						from_ass _ = []
+--				printLog $ "body_traces_ass = "
+--				forM_ body_traces_ass $ \ bta -> printLog $ intercalate " , " (map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") bta)
+
+				-- Filter for all assignments that occur exactly once in every body trace
 				let
-					body_assigns = everything (++) (mkQ [] searchvar) body where
-						searchvar :: CExpr -> [(CExpr,Ident,CExpr)]
-						searchvar (CAssign CAssignOp cvar@(CVar ident _) ass_expr _) = [ (cvar,ident,ass_expr) ]
-						searchvar _ = []
-		
-				n <- case filter (\ (_,ass_ident,ass_expr) -> ass_ident ∈ cond_idents && ass_ident ∈ body_idents) body_assigns of
-					[ (ass_var,ass_ident,ass_expr) ] -> case ass_expr of
+					body_assigns = foldl1 intersect (map (exists_once) body_traces_ass)
+					exists_once l = filter (\ e -> length (filter (==e) l) == 1) l
+				printLog $ "body_assigns = "
+				printLog $ intercalate " , " $ map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") body_assigns
+
+				n <- case body_assigns of
+					[ (ass_var@(CVar ass_ident _),ass_expr) ] -> case ass_expr of
 						CBinary CSubOp (CVar ident _) cconst@(CConst _) _ | ident==ass_ident -> do
 							let
 								n_ident = internalIdent "n_loopings"
@@ -687,13 +690,16 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 								_ -> error $ "n_looping: Strange mb_sol=" ++ show mb_sol
 						_ -> error $ "CWhile: assignment " ++ (render.pretty) ass_ident ++ " := " ++ (render.pretty) ass_expr ++ " not implemented!"
 					other -> error $ "body contains not exactly one assignment of a variable from the condition " ++ (render.pretty) cond ++ ":\n" ++
-						unlines (map (\(ass_var,_,_) -> (render.pretty) ass_var) other)
-		
+						unlines (map (\(ass_var,_) -> (render.pretty) ass_var) other)
+
 				unfoldTracesM toplevel envs trace ((replicate n (CBlockStmt body) ++ rest) : rest2 )
+				error "Cont here"
 		
-			_ -> error $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
-		
-		_ -> error $ "while condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!"
+			_ -> error $ "while condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!"
+
+	_ -> error $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
+
+
 	where
 	
 	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM Trace) -> CovVecM Trace
@@ -770,7 +776,9 @@ translateExprM toplevel envs expr = do
 		let body' = replace_param_with_arg expanded_params_args body
 		funtrace <- unfoldTracesM False envs [] [ [ CBlockStmt body' ] ]
 --		printLog $ "##### extract_traces_rets " ++ showTrace 0 (reverse funtrace) ++ "\n"
-		let funtraces = extract_traces_rets [] (reverse funtrace)
+		let funtraces = for (flattenTrace [] (reverse funtrace)) $ \ tr -> case last tr of
+			Return retexpr -> (tr,retexpr)
+			_ -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace 0 tr
 --		printLog $ "#### = " ++ show (map (\(tr,cex) -> (tr,(render.pretty) cex)) funtraces) ++ "\n"
 		return (ni,funtraces) 
 
@@ -789,19 +797,6 @@ translateExprM toplevel envs expr = do
 			let VarDecl (VarName srcident _) _ arg_ty = getVarDecl paramdecl
 			return [(srcident,arg)]
 
-
-	-- Flattens the trace tree to a list of all paths through the tree, together with their return exprs
-
-	extract_traces_rets :: [TraceElem] -> Trace -> [(Trace,CExpr)]
-	extract_traces_rets traceelems (Return retexpr : _) = [(traceelems,retexpr)]
-	extract_traces_rets traceelems (TraceOr traces : rest) = case rest of
-		[] -> concat $ for (map reverse traces) (extract_traces_rets traceelems)
-		_ -> error $ "extract_traces_rets: TraceOr not last element " ++ showTrace 0 traceelems
-	extract_traces_rets traceelems (TraceAnd traces : rest) = case rest of
-		[] -> concat $ for (map reverse traces) (extract_traces_rets traceelems)
-		_ -> error $ "extract_traces_rets: TraceAnd not last element in trace " ++ showTrace 0 traceelems
-	extract_traces_rets traceelems [] = error $ "trace of no return : " ++ showTrace 0 traceelems
-	extract_traces_rets traceelems (te : rest) = extract_traces_rets (te:traceelems) rest
 
 	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExpr)])] -> CovVecM [(CExpr,Trace)]
 	create_combinations expr trace [] = return [(expr,trace)]
@@ -823,6 +818,19 @@ translateExprM toplevel envs expr = do
 		substparamarg :: CExpr -> CExpr
 		substparamarg (CVar ident _) | ident==srcident = arg
 		substparamarg expr = expr
+
+
+-- Flattens the trace tree to a list of all paths through the tree
+
+flattenTrace :: Trace -> Trace -> [Trace]
+flattenTrace traceelems [] = [traceelems]
+flattenTrace traceelems (TraceOr traces : rest) = case rest of
+	[] -> concat $ for (map reverse traces) (flattenTrace traceelems)
+	_ -> error $ "extract_traces_rets: TraceOr not last element " ++ showTrace 0 traceelems
+flattenTrace traceelems (TraceAnd traces : rest) = case rest of
+	[] -> concat $ for (map reverse traces) (flattenTrace traceelems)
+	_ -> error $ "extract_traces_rets: TraceAnd not last element " ++ showTrace 0 traceelems
+flattenTrace traceelems (te : rest) = flattenTrace (te:traceelems) rest
 
 
 -- Renames Variables to unique names
@@ -1115,7 +1123,8 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 False expr)
 
 	infer_type :: CExpr -> Maybe Z3_Type
 	infer_type (CVar ident _) = case lookup ident tyenv of
-		Nothing -> error $ "infer_type: " ++ (render.pretty) ident ++ " not found in tyenv!" 
+		Nothing -> error $ "infer_type: " ++ (render.pretty) ident ++ " not found in tyenv\n" ++
+			(unlines $ map (\(a,b) -> (render.pretty) a ++ " |-> " ++ (render.pretty) b) tyenv)
 		Just ty -> Just $ ty2Z3Type ty
 	infer_type (CConst _) = Nothing
 	infer_type (CUnary _ expr _) = infer_type expr
