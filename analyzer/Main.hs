@@ -670,8 +670,11 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 								n_ident = internalIdent "n_loopings"
 								n_var = CVar n_ident undefNode
 								modelpath = analyzerPath </> "n_loopings_" ++ show (lineColNodeInfo cond) ++ ".smtlib2"
+								n_type = case lookup ass_ident (map snd $ concat envs) of
+									Nothing -> error $ "CWhile: Could not find type of " ++ (render.pretty) ass_var
+									Just ty -> ty
 							(model_string,mb_sol) <- makeAndSolveZ3ModelM
-								((n_ident,DirectType (TyIntegral TyUInt) noTypeQuals noAttributes) : createTyEnv trace)
+								((n_ident,n_type) : map snd (concat envs))
 								[
 									CBinary CGeqOp n_var (CConst $ CIntConst (cInteger 0) undefNode) undefNode,
 									substituteBy ass_var (CBinary CSubOp ass_var (CBinary CMulOp n_var cconst undefNode) undefNode) cond,
@@ -698,7 +701,6 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 			_ -> error $ "while condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!"
 
 	_ -> error $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
-
 
 	where
 	
@@ -748,6 +750,7 @@ unfoldTraces1M toplevel (_:restenvs) trace ([]:rest2) = unfoldTracesM toplevel r
 unfoldTraces1M _ _ trace [] = return trace
 
 unfoldTraces1M _ _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
+
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
@@ -1164,10 +1167,15 @@ ty2SExpr ty = case ty2Z3Type ty of
 
 
 makeAndSolveZ3ModelM :: TyEnv -> [CExpr] -> [Ident] -> String -> CovVecM (String,Maybe [(String,MValue)])
-makeAndSolveZ3ModelM var_decls constraints output_idents modelpathfile = do
+makeAndSolveZ3ModelM tyenv constraints output_idents modelpathfile = do
 	let
-		varsZ3 = for var_decls $ \ (ident,ty) -> SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
-		constraintsZ3 = for constraints $ \ expr -> SExpr [SLeaf "assert", expr2SExpr var_decls expr]
+		constraints_vars = nub $ everything (++) (mkQ [] searchvar) constraints where
+			searchvar :: CExpr -> [Ident]
+			searchvar (CVar ident _) = [ ident ]
+			searchvar _ = []
+
+		varsZ3 = for (filter ((∈ constraints_vars).fst) tyenv) $ \ (ident,ty) -> SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
+		constraintsZ3 = for constraints $ \ expr -> SExpr [SLeaf "assert", expr2SExpr tyenv expr]
 		outputvarsZ3 = for output_idents $ \ ident -> SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
 		model = [
 			SExpr [SLeaf "set-option", SLeaf ":smt.relevancy", SLeaf "0"],
@@ -1190,7 +1198,7 @@ makeAndSolveZ3ModelM var_decls constraints output_idents modelpathfile = do
 			sol_params <- forM output_idents $ \ ident -> do
 				let is = identToString ident
 				case (unlines rest) =~ ("^\\(\\(" ++ is ++ " ([^\\)]+)\\)\\)$") :: (String,String,String,[String]) of
-					(_,_,_,[val_string]) -> case lookup ident var_decls of
+					(_,_,_,[val_string]) -> case lookup ident tyenv of
 						Nothing -> error $ "Parsing z3 output: Could not find type of " ++ is
 						Just ty -> return (is, case ty2Z3Type ty of
 							Z3_BitVector size signed -> let
@@ -1227,18 +1235,22 @@ solveTraceM ret_type param_env traceid trace = do
 				NewDeclaration (returnval_ident,ret_type) ]
 
 	let
-		constr_trace = concatMap traceitem2constr trace' where
+		constraints = concatMap traceitem2constr trace' where
 		traceitem2constr (Condition _ expr) = [expr]
 		traceitem2constr _ = []
+		
 		tyenv = createTyEnv trace'
-		vars :: [Ident] = nub $ param_names ++ everything (++) (mkQ [] searchvar) constr_trace where
-				searchvar :: CExpr -> [Ident]
-				searchvar (CVar ident _) = [ ident ]
-				searchvar _ = []
-		solution_vars = map identToString vars
 
 	gets solverCVS >>= \case
 		MiniZinc -> do
+		
+			let
+				vars :: [Ident] = nub $ param_names ++ everything (++) (mkQ [] searchvar) constraints where
+					searchvar :: CExpr -> [Ident]
+					searchvar (CVar ident _) = [ ident ]
+					searchvar _ = []
+				solution_vars = map identToString vars
+
 			constraintsG <- concatMapM traceelemToMZ trace'
 			
 			let
@@ -1277,10 +1289,8 @@ solveTraceM ret_type param_env traceid trace = do
 
 		Z3 -> do
 			(model_string,mb_sol) <- makeAndSolveZ3ModelM
-				(filter ((∈ vars).fst) tyenv)
-				(concat $ for trace' $ \case
-					Condition _ expr -> [expr]
-					_ -> [])
+				tyenv --(filter ((∈ vars).fst) tyenv)
+				constraints
 				(( maybe [] (const [returnval_ident]) mb_ret_val ) ++ param_names)
 				(analyzerPath </> "model_" ++ tracename ++ ".smtlib2")
 
