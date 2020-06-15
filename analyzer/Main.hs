@@ -65,7 +65,7 @@ longIntSize = 64
 
 solveIt = True
 showOnlySolutions = True
-don'tShowTraces = True
+don'tShowTraces = False
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
 
@@ -315,8 +315,8 @@ type AnalyzeTreeM a = StateT ([TraceAnalysisResult],Set.Set Branch,Set.Set Branc
 analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> AnalyzeTreeM Bool
 
 analyzeTreeM opts ret_type param_env traceid res_line [] = do
---	printLog $ "=== TRACE " ++ show traceid ++ " ========================\n<leaving out builtins...>\n"
---	printLog $ showLine res_line
+	when (not don'tShowTraces) $ printLog $ "=== TRACE " ++ show traceid ++ " ========================\n<leaving out builtins...>\n"
+	when (not don'tShowTraces) $ printLog $ showLine res_line
 	
 	res_trace <- lift $ elimInds res_line
 	when (not don'tShowTraces) $ printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
@@ -1175,7 +1175,7 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 			searchvar (CVar ident _) = [ ident ]
 			searchvar _ = []
 
-		varsZ3 = for (filter ((∈ constraints_vars).fst) tyenv) $ \ (ident,ty) -> SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
+		varsZ3 = for (filter ((∈ (constraints_vars ++ output_idents)).fst) tyenv) $ \ (ident,ty) -> SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
 		constraintsZ3 = for constraints $ \ expr -> SExpr [SLeaf "assert", expr2SExpr tyenv expr]
 		outputvarsZ3 = for output_idents $ \ ident -> SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
 		model = [
@@ -1294,7 +1294,7 @@ solveTraceM ret_type param_env traceid trace = do
 				tyenv --(filter ((∈ vars).fst) tyenv)
 				constraints
 				[]
-				(( maybe [] (const [returnval_ident]) mb_ret_val ) ++ param_names)
+				( maybe [] (const [returnval_ident]) mb_ret_val ++ param_names )
 				(analyzerPath </> "model_" ++ tracename ++ ".smtlib2")
 
 			return (model_string,case mb_sol of
