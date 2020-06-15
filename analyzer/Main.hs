@@ -667,21 +667,23 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 					[ (ass_var@(CVar ass_ident _),ass_expr) ] -> case ass_expr of
 						CBinary CSubOp (CVar ident _) cconst@(CConst _) _ | ident==ass_ident -> do
 							let
-								n_ident = internalIdent "n_loopings"
+								n_name = "n_loopings"
+								n_ident = internalIdent n_name
 								n_var = CVar n_ident undefNode
-								modelpath = analyzerPath </> "n_loopings_" ++ show (lineColNodeInfo cond) ++ ".smtlib2"
+								modelpath = analyzerPath </> n_name ++ show (lineColNodeInfo cond) ++ ".smtlib2"
 								n_type = case lookup ass_ident (map snd $ concat envs) of
 									Nothing -> error $ "CWhile: Could not find type of " ++ (render.pretty) ass_var
 									Just ty -> ty
 							(model_string,mb_sol) <- makeAndSolveZ3ModelM
 								((n_ident,n_type) : map snd (concat envs))
 								[
-									CBinary CGeqOp n_var (CConst $ CIntConst (cInteger 0) undefNode) undefNode,
+									CBinary CGeqOp n_var (CConst $ CIntConst (cInteger 1) undefNode) undefNode,
 									substituteBy ass_var (CBinary CSubOp ass_var (CBinary CMulOp n_var cconst undefNode) undefNode) cond,
 									CUnary CNegOp (substituteBy ass_var
 										(CBinary CSubOp ass_var (CBinary CMulOp (CBinary CAddOp n_var
 										(CConst $ CIntConst (cInteger 1) undefNode) undefNode) cconst undefNode) undefNode) cond) undefNode
 								]
+								[ SExpr [SLeaf "minimize",SLeaf n_name] ]
 								[n_ident]
 								modelpath
 							printLog $ "Model is\n" ++ model_string
@@ -696,7 +698,6 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 						unlines (map (\(ass_var,_) -> (render.pretty) ass_var) other)
 
 				unfoldTracesM toplevel envs trace ((replicate n (CBlockStmt body) ++ rest) : rest2 )
-				error "Cont here"
 		
 			_ -> error $ "while condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!"
 
@@ -779,9 +780,9 @@ translateExprM toplevel envs expr = do
 		let body' = replace_param_with_arg expanded_params_args body
 		funtrace <- unfoldTracesM False envs [] [ [ CBlockStmt body' ] ]
 --		printLog $ "##### extract_traces_rets " ++ showTrace 0 (reverse funtrace) ++ "\n"
-		let funtraces = for (flattenTrace [] (reverse funtrace)) $ \ tr -> case last tr of
-			Return retexpr -> (tr,retexpr)
-			_ -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace 0 tr
+		let funtraces = for (flattenTrace [] (reverse funtrace)) $ \case
+			Return retexpr : tr -> (tr,retexpr)
+			tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace 0 tr
 --		printLog $ "#### = " ++ show (map (\(tr,cex) -> (tr,(render.pretty) cex)) funtraces) ++ "\n"
 		return (ni,funtraces) 
 
@@ -1166,8 +1167,8 @@ ty2SExpr ty = case ty2Z3Type ty of
 	Z3_Bool -> SLeaf "Bool"
 
 
-makeAndSolveZ3ModelM :: TyEnv -> [CExpr] -> [Ident] -> String -> CovVecM (String,Maybe [(String,MValue)])
-makeAndSolveZ3ModelM tyenv constraints output_idents modelpathfile = do
+makeAndSolveZ3ModelM :: TyEnv -> [CExpr] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe [(String,MValue)])
+makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpathfile = do
 	let
 		constraints_vars = nub $ everything (++) (mkQ [] searchvar) constraints where
 			searchvar :: CExpr -> [Ident]
@@ -1182,6 +1183,7 @@ makeAndSolveZ3ModelM tyenv constraints output_idents modelpathfile = do
 			SExpr [SLeaf "set-option", SLeaf ":produce-models", SLeaf "true"] ] ++
 			varsZ3 ++
 			constraintsZ3 ++
+			additional_sexprs ++
 			[ SExpr [SLeaf "check-sat"] ] ++
 			outputvarsZ3
 		model_string = unlines $ map show model
@@ -1291,6 +1293,7 @@ solveTraceM ret_type param_env traceid trace = do
 			(model_string,mb_sol) <- makeAndSolveZ3ModelM
 				tyenv --(filter ((∈ vars).fst) tyenv)
 				constraints
+				[]
 				(( maybe [] (const [returnval_ident]) mb_ret_val ) ++ param_names)
 				(analyzerPath </> "model_" ++ tracename ++ ".smtlib2")
 
