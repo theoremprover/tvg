@@ -397,7 +397,7 @@ lookupFunM ident = do
 		Just other -> error $ "lookupFunM " ++ (render.pretty) ident ++ " yielded " ++ (render.pretty) other
 		Nothing -> error $ "Function " ++ (show ident) ++ " not found"
 
-isnotbuiltinIdent ident = not $ "__" `isPrefixOf` (identToString ident)
+isnotbuiltinIdent ident = not $ any (`isPrefixOf` (identToString ident)) ["__","a__"]
 
 isnotbuiltin (NewDeclaration (ident,_)) = isnotbuiltinIdent ident
 isnotbuiltin _ = True
@@ -660,8 +660,8 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 				let
 					body_assigns = foldl1 intersect (map (exists_once) body_traces_ass)
 					exists_once l = filter (\ e -> length (filter (==e) l) == 1) l
-				printLog $ "body_assigns = "
-				printLog $ intercalate " , " $ map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") body_assigns
+--				printLog $ "body_assigns = "
+--				printLog $ intercalate " , " $ map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") body_assigns
 
 				n <- case body_assigns of
 					[ (ass_var@(CVar ass_ident _),ass_expr) ] -> case ass_expr of
@@ -686,7 +686,7 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 								[ SExpr [SLeaf "minimize",SLeaf n_name] ]
 								[n_ident]
 								modelpath
-							printLog $ "Model is\n" ++ model_string
+--							printLog $ "Model is\n" ++ model_string
 							case mb_sol of
 								Nothing -> error $ "Found no solution for " ++ modelpath
 								Just sol@[(_,MInt n)] -> do
