@@ -65,7 +65,7 @@ longIntSize = 64
 
 solveIt = True
 showOnlySolutions = True
-don'tShowTraces = False
+don'tShowTraces = True
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
 
@@ -73,7 +73,7 @@ z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
 data Solver = MiniZinc | Z3 deriving (Show,Eq)
 
-_UNROLLING_DEPTH = 10
+_UNROLLING_DEPTH = 2
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -98,8 +98,8 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : ["-writeTree"] --["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
@@ -172,7 +172,7 @@ main = do
 							printLog $ "DEAD " ++ show branch ++ "\n"
 	
 						when (full_coverage && not (null deaths)) $ error "full coverage but deaths!"
-						when (not full_coverage && null deaths) $ error "coverage gaps but no deaths!"
+						when (not full_coverage && null deaths) $ error "not full_coverage and no deaths!"
 	
 						printLog $ case full_coverage of
 							False -> "FAIL, there are coverage gaps!"
@@ -259,7 +259,7 @@ showTrace :: Int -> Trace -> String
 showTrace _ [] = ""
 showTrace ind (te:trace) | not (isnotbuiltin te) = showTrace ind trace
 showTrace ind (te:trace) = indent ind ++ case te of
-	TraceOr traces  -> "OR\n" ++ showlist traces
+	TraceOr traces  -> "OR\n"  ++ showlist traces
 	TraceAnd traces -> "AND\n" ++ showlist traces
 	te              -> show te ++ "\n" ++ showTrace ind trace
 	where
@@ -315,20 +315,24 @@ type AnalyzeTreeM a = StateT ([TraceAnalysisResult],Set.Set Branch,Set.Set Branc
 analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> AnalyzeTreeM Bool
 
 analyzeTreeM opts ret_type param_env traceid res_line [] = do
-	when (not don'tShowTraces) $ printLog $ "=== TRACE " ++ show traceid ++ " ========================\n<leaving out builtins...>\n"
-	when (not don'tShowTraces) $ printLog $ showLine res_line
+	when True $ do --(not don'tShowTraces) $ do
+		printLog $ "=== TRACE " ++ show traceid ++ " ========================\n<leaving out builtins...>\n"
+		printLog $ showLine res_line
 	
 	res_trace <- lift $ elimInds res_line
-	when (not don'tShowTraces) $ printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
-	when (not don'tShowTraces) $ printLog $ showLine res_trace
+	when (not don'tShowTraces) $ do
+		printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
+		printLog $ showLine res_trace
 	
 	res_trace' <- lift $ elimAssignmentsM res_trace
-	when (not don'tShowTraces) $ printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
-	when (not don'tShowTraces) $ printLog $ showLine res_trace'
+	when (not don'tShowTraces) $ do
+		printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
+		printLog $ showLine res_trace'
 
 	res_trace'' <- lift $ substIndM [] (map fst $ createTyEnv res_trace') res_trace'
-	when (not don'tShowTraces) $ printLog $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
-	when (not don'tShowTraces) $ printLog $ showLine res_trace''
+	when (not don'tShowTraces) $ do
+		printLog $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
+		printLog $ showLine res_trace''
 
 	resultdata@(model_string,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace''
 	when (not don'tShowTraces) $ printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++ model_string
@@ -345,9 +349,11 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,resultdata)
 	case is_solution traceanalysisresult of
 		False -> do
+			printLog $ "### FALSE : Is no solution!"
 			modify $ \ (tas,covered,alls) -> (tas,covered,Set.union visible_trace alls)
 			return False
 		True  -> do
+			printLog $ "### TRUE : Is Solution"
 			lift $ checkSolutionM traceid resultdata
 			modify $ \ (tas,covered,alls) -> case visible_trace `Set.isSubsetOf` covered of
 				False -> (traceanalysisresult:tas,Set.union visible_trace covered,Set.union visible_trace alls)
@@ -355,19 +361,22 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 			return True
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceOr traces : rest) = case rest of
-	[] -> try_traces (zip [1..] traces)
-		where
-		try_traces :: [(Int,Trace)] -> AnalyzeTreeM Bool
-		try_traces [] = return False
-		try_traces ((i,trace):rest) = do
-			success <- analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
-			case success of
-				True -> return True
-				False -> try_traces rest
+	[] -> do
+		printLog $ "### analyzeTreeM : TraceOr " ++ show traceid
+		try_traces (zip [1..] traces)
+			where
+			try_traces :: [(Int,Trace)] -> AnalyzeTreeM Bool
+			try_traces [] = return False
+			try_traces ((i,trace):rest) = do
+				success <- analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
+				case success of
+					True -> return True
+					False -> try_traces rest
 	_ -> error $ "analyzeTreeM: TraceOr not last element in " ++ showTrace 1 res_line
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceAnd traces : rest) = case rest of
 	[] -> do
+		printLog $ "### analyzeTreeM : TraceAnd " ++ show traceid
 		results <- forM (zip [1..] traces) $ \ (i,trace) ->
 			analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
 		return $ all (==True) results
@@ -588,23 +597,25 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 	CCompound _ cbis _ -> unfoldTracesM toplevel ([]:envs) trace (cbis : (rest : rest2))
 
 	CIf cond then_stmt mb_else_stmt ni -> do
-		transids cond trace $ \ (cond',trace') -> do
+		transids ((:[]).(if toplevel then TraceAnd else TraceOr)) cond trace $ \ (cond',trace') -> do
 			then_trace <- unfoldTracesM toplevel envs (Condition True cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
 			let not_cond = Condition False (CUnary CNegOp cond' (nodeInfo cond'))
 			else_trace <- case mb_else_stmt of
 				Nothing        -> unfoldTracesM toplevel envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM toplevel envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
-			return $ [ (if toplevel then TraceAnd else TraceOr) [ then_trace, else_trace ] ]
+			return [ then_trace, else_trace ]
 
 	CReturn Nothing _ -> return trace
 	CReturn (Just ret_expr) _ -> do
-		transids ret_expr trace $ \ (ret_expr',trace') -> do
-			return $ Return ret_expr' : trace'
+		transids head ret_expr trace $ \ (ret_expr',trace') -> do
+			return [ Return ret_expr' : trace' ]
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
-		transids assigned_expr' trace $ \ (assigned_expr'',trace') ->
-			transids lexpr trace' $ \ (lexpr',trace'') -> do
-				unfoldTracesM toplevel envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
+		transids head assigned_expr' trace $ \ (assigned_expr'',trace') -> do
+			trs2 <- transids head lexpr trace' $ \ (lexpr',trace'') -> do
+				trs <- unfoldTracesM toplevel envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
+				return [trs]
+			return [trs2]
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -623,10 +634,20 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 	CExpr (Just expr) _ -> do
 		error $ "not implemented yet."
 
+	-- That's cheating: Insert condition into trace
+	CGotoPtr cond _ -> unfoldTracesM toplevel envs (Condition True cond : trace) ( rest : rest2 )
+
  	CWhile cond body False ni -> do
- 		unrolleds <- forM [0 .. _UNROLLING_DEPTH] $ \ n ->
- 			unfoldTracesM toplevel envs trace ((replicate n (CBlockStmt body) ++ rest) : rest2 )
+		unrolleds <- forM [0 .. _UNROLLING_DEPTH] $ \ n ->
+			unfoldTracesM toplevel envs trace ((unroll n ++ rest) : rest2 )
 		return [ TraceOr unrolleds ]
+
+		where
+
+		unroll :: Int -> [CBlockItem]
+		unroll n = concat ( replicate n [ CBlockStmt (CGotoPtr cond undefNode), CBlockStmt body ] ) ++
+			[ CBlockStmt $ CGotoPtr (CUnary CNegOp cond undefNode) undefNode ]
+
 {-
  	CWhile cond0 body False ni -> do
 
@@ -703,15 +724,15 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 
 	where
 	
-	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM Trace) -> CovVecM Trace
-	transids expr trace cont = do
-		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM toplevel envs expr
-		conts :: [Trace] <- forM additional_expr_traces $ \ (expr',trace') -> do
+	transids :: ([Trace] -> Trace) -> CExpr -> Trace -> ((CExpr,Trace) -> CovVecM [Trace]) -> CovVecM Trace
+	transids compose expr trace cont = do
+		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM envs expr
+		contss :: [[Trace]] <- forM additional_expr_traces $ \ (expr',trace') -> do
 			cont (expr',trace'++trace)
-		case conts of
+		case contss of
 			[] -> error $ "transids Strange: conts empty!"
-			[e] -> return e
-			conts -> return [ TraceOr conts ]
+			[e] -> return $ compose e
+			_ -> return $ compose $ map ((:[]) . TraceOr) contss
 
 unfoldTraces1M toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
@@ -754,8 +775,8 @@ unfoldTraces1M _ _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) c
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
 
-translateExprM :: Bool -> [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
-translateExprM toplevel envs expr = do
+translateExprM :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
+translateExprM envs expr = do
 --	printLog $ "===== translateExpr " ++ (render.pretty) expr ++ " ==============================="
 
 	let	
