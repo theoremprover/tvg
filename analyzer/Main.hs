@@ -73,7 +73,7 @@ z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
 data Solver = MiniZinc | Z3 deriving (Show,Eq)
 
-_UNROLLING_DEPTH = 3
+_UNROLLING_DEPTH = 10
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -146,9 +146,6 @@ main = do
 	
 						let deaths = Set.toList $ Set.difference alls covered
 	
-						when (full_coverage && not (null deaths)) $ error "full coverage but deaths!"
-						when (not full_coverage && null deaths) $ error "coverage gaps but no deaths!"
-	
 						printLog $ "\n####### FINAL RESULT #######\n"
 	
 						forM_ testvectors $ \ (traceid,trace,(model_string,mb_solution)) -> do
@@ -173,6 +170,9 @@ main = do
 							printLog $ "    " ++ showTestVector funname v ++ "\n"
 						forM_ deaths $ \ branch -> do
 							printLog $ "DEAD " ++ show branch ++ "\n"
+	
+						when (full_coverage && not (null deaths)) $ error "full coverage but deaths!"
+						when (not full_coverage && null deaths) $ error "coverage gaps but no deaths!"
 	
 						printLog $ case full_coverage of
 							False -> "FAIL, there are coverage gaps!"
@@ -623,19 +623,17 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 	CExpr (Just expr) _ -> do
 		error $ "not implemented yet."
 
+ 	CWhile cond body False ni -> do
+ 		unrolleds <- forM [0 .. _UNROLLING_DEPTH] $ \ n ->
+ 			unfoldTracesM toplevel envs trace ((replicate n (CBlockStmt body) ++ rest) : rest2 )
+		return [ TraceOr unrolleds ]
 {-
- 	CWhile cond body False ni -> unfoldTracesM toplevel envs trace ((unroll_loop _UNROLLING_DEPTH ++ rest) : rest2 )
-		where
-		unroll_loop :: Int -> [CBlockItem]
-		unroll_loop 0 = []
-		unroll_loop i = [ CBlockStmt $ CIf cond (CCompound [] (CBlockStmt body : unroll_loop (i-1)) ni) Nothing (nodeInfo body) ]
--}
  	CWhile cond0 body False ni -> do
-{-
+
 	-- get every assignment in the body trace that
 	-- assigns exactly once in every body trace to a variable V mentioned in the condition.
 	-- if there is exactly one such assignment to V,
--}
+
  		translateExprM toplevel envs cond0 >>= \case
  			[(cond,[])] -> do
 				let
@@ -700,7 +698,7 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 				unfoldTracesM toplevel envs trace ((replicate n (CBlockStmt body) ++ rest) : rest2 )
 		
 			_ -> error $ "while condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!"
-
+-}
 	_ -> error $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 
 	where
@@ -1293,7 +1291,7 @@ solveTraceM ret_type param_env traceid trace = do
 			(model_string,mb_sol) <- makeAndSolveZ3ModelM
 				tyenv --(filter ((∈ vars).fst) tyenv)
 				constraints
-				[]
+				(for param_names $ \ name -> SExpr [SLeaf "minimize",SLeaf (identToString name)])
 				( maybe [] (const [returnval_ident]) mb_ret_val ++ param_names )
 				(analyzerPath </> "model_" ++ tracename ++ ".smtlib2")
 
