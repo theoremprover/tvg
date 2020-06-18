@@ -265,7 +265,7 @@ showTrace ind (te:trace) = indent ind ++ case te of
 	where
 	indent i = concat $ replicate i ":   "
 	showlist traces = indent (ind+1) ++ "[\n" ++ showitems traces ++ indent (ind+1) ++ "]\n"
-	showitems traces = intercalate (indent (ind+1) ++ ",\n") (map (showTrace (ind+2)) traces)
+	showitems traces = intercalate (indent (ind+2) ++ ",\n") (map (showTrace (ind+2)) traces)
 
 type ResultData = (String,Maybe (Env,Solution,Maybe CExpr))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
@@ -301,6 +301,8 @@ covVectorsM filename opts = do
 
 	trace <- unfoldTracesM True (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
+	printLog $ "\n********** TRACE ***********\n" ++ showTrace 1 trace
+	printLog $ "****************************\n"
 
 	runStateT (analyzeTreeM opts ret_type param_env [] [] trace) ([],Set.empty,Set.empty)
 

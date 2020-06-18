@@ -67,9 +67,7 @@ dataTreeToHtml (Leaf s) = li (stringToHtml s)
 dataTreeToHtml (DataTree s subtrees) = (li ! [identifier "myUL"]) ((thespan ! [myclass]) (stringToHtml s) +++
 	(ulist ! [theclass "nested"]) (concatHtml $ map dataTreeToHtml subtrees))
 	where
-	myclass = theclass $ case subtrees of
-		[] -> "leaf"
-		_  -> "caret"
+	myclass = theclass $ if null subtrees then "leaf" else "caret"
 
 genericToHTMLString :: (Generic a,DataTreeNode (Rep a)) => a -> String
 genericToHTMLString x = dataTreeToHTMLString $ toDataTree x
