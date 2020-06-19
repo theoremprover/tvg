@@ -68,6 +68,7 @@ showOnlySolutions = True
 don'tShowTraces = True
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
+outputVerbosity = 0
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
@@ -83,6 +84,9 @@ printLog text = liftIO $ do
 	putStrLn text
 	appendFile logFile (text++"\n")
 
+printLogV :: (MonadIO m) => Int -> String -> m ()
+printLogV verbosity text = when (verbosity>=outputVerbosity) $ printLog text
+
 showLine :: Trace -> String
 showLine trace = unlines $ map show (filter isnotbuiltin trace)
 
@@ -96,7 +100,7 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_ret.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -296,14 +300,14 @@ covVectorsM filename opts = do
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
 	param_env <- createInterfaceM funparamdecls
---	printLog $ "param_env = " ++ showEnv param_env
+	printLogV 1 $ "param_env = " ++ showEnv param_env
 	
 	let decls = map (NewDeclaration .snd) (reverse param_env ++ glob_env)
 
 	trace <- unfoldTracesM True (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
-	printLog $ "\n********** TRACE ***********\n" ++ showTrace 0 trace
-	printLog $ "****************************\n"
+	printLogV 1 $ "\n********** TRACE ***********\n" ++ showTrace 0 trace
+	printLogV 1 $ "****************************\n"
 
 	runStateT (analyzeTreeM opts ret_type param_env [] [] trace) ([],Set.empty,Set.empty)
 
@@ -319,28 +323,28 @@ analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> Anal
 
 analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	when True $ do --(not don'tShowTraces) $ do
-		printLog $ "=== TRACE " ++ show traceid ++ " ========================\n<leaving out builtins...>\n"
-		printLog $ showLine res_line
+		printLogV 1 $ "=== TRACE " ++ show traceid ++ " ========================\n<leaving out builtins...>\n"
+		printLogV 1 $ showLine res_line
 	
 	res_trace <- lift $ elimInds res_line
 	when (not don'tShowTraces) $ do
-		printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
-		printLog $ showLine res_trace
+		printLogV 1 $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
+		printLogV 1 $ showLine res_trace
 	
 	res_trace' <- lift $ elimAssignmentsM res_trace
 	when (not don'tShowTraces) $ do
-		printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
-		printLog $ showLine res_trace'
+		printLogV 1 $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
+		printLogV 1 $ showLine res_trace'
 
 	res_trace'' <- lift $ substIndM [] (map fst $ createTyEnv res_trace') res_trace'
 	when (not don'tShowTraces) $ do
-		printLog $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
-		printLog $ showLine res_trace''
+		printLogV 1 $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
+		printLogV 1 $ showLine res_trace''
 
 	resultdata@(model_string,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace''
-	when (not don'tShowTraces) $ printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++ model_string
+	when (not don'tShowTraces) $ printLogV 1 $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++ model_string
 	funname <- lift $ gets funNameCVS
-	printLog $ "\n--- SOLUTION " ++ show traceid ++ " ----------------------\n" ++ show_solution funname mb_solution
+	printLogV 1 $ "\n--- SOLUTION " ++ show traceid ++ " ----------------------\n" ++ show_solution funname mb_solution
 
 	startend <- lift $ gets funStartEndCVS
 	let visible_trace = Set.fromList $ concatMap to_branch res_line
@@ -352,11 +356,11 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,resultdata)
 	case is_solution traceanalysisresult of
 		False -> do
-			printLog $ "### FALSE : " ++ show traceid ++ " no solution!"
+			printLogV 1  $ "### FALSE : " ++ show traceid ++ " no solution!"
 			modify $ \ (tas,covered,alls) -> (tas,covered,Set.union visible_trace alls)
 			return False
 		True  -> do
-			printLog $ "### TRUE : " ++ show traceid ++ " Is Solution"
+			printLogV 1  $ "### TRUE : " ++ show traceid ++ " Is Solution"
 			lift $ checkSolutionM traceid resultdata
 			modify $ \ (tas,covered,alls) -> case visible_trace `Set.isSubsetOf` covered of
 				False -> (traceanalysisresult:tas,Set.union visible_trace covered,Set.union visible_trace alls)
@@ -365,7 +369,7 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceOr traces : rest) = case rest of
 	[] -> do
-		printLog $ "### analyzeTreeM : TraceOr " ++ show traceid ++ " ..."
+		printLogV 1 $ "### analyzeTreeM : TraceOr " ++ show traceid ++ " ..."
 		try_traces (zip [1..] traces)
 			where
 			try_traces :: [(Int,Trace)] -> AnalyzeTreeM Bool
@@ -375,16 +379,16 @@ analyzeTreeM opts ret_type param_env traceid res_line (TraceOr traces : rest) = 
 				success <- analyzeTreeM opts ret_type param_env traceid' res_line trace
 				case success of
 					True -> do
-						printLog $ "### analyzeTreeM : TraceOr " ++ show traceid' ++ " returned TRUE"
+						printLogV 1  $ "### analyzeTreeM : TraceOr " ++ show traceid' ++ " returned TRUE"
 						return True
 					False -> do
-						printLog $ "### analyzeTreeM : TraceOr " ++ show traceid' ++ " returned FALSE, trying the rest..."
+						printLogV 1  $ "### analyzeTreeM : TraceOr " ++ show traceid' ++ " returned FALSE, trying the rest..."
 						try_traces rest
 	_ -> error $ "analyzeTreeM: TraceOr not last element in " ++ showTrace 1 res_line
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceAnd traces : rest) = case rest of
 	[] -> do
-		printLog $ "### analyzeTreeM : TraceAnd " ++ show traceid ++ " ..."
+		printLogV 1  $ "### analyzeTreeM : TraceAnd " ++ show traceid ++ " ..."
 		results <- forM (zip [1..] traces) $ \ (i,trace) ->
 			analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
 		return $ all (==True) results
@@ -592,9 +596,6 @@ unfoldTracesM toplevel envs trace cbss = do
 		[] -> return "[]"
 		(l : _) -> return $ "[ " ++ (intercalate " , " (map (render.pretty) l)) ++ " ] : _"
 	res <- unfoldTraces1M toplevel envs trace cbss
---	printLog $ "============================================================================="
---	printLog $ "unfoldTracesM " ++ show toplevel ++ " envs trace " ++ cbss_txt
---	printLog $ showTrace 0 res
 	return res
 
 unfoldTraces1M :: Bool -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM Trace
@@ -784,8 +785,6 @@ unfoldTraces1M _ _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) c
 
 translateExprM :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
 translateExprM envs expr = do
---	printLog $ "===== translateExpr " ++ (render.pretty) expr ++ " ==============================="
-
 	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
@@ -1341,7 +1340,7 @@ checkSolutionM traceid resultdata@(_,Just (_,[],_)) = do
 	printLog $ "Empty solution cannot be checked for " ++ show traceid
 	return resultdata
 checkSolutionM traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
---	printLog $ "checkSolution env = " ++ showEnv env
+	printLogV 1 $ "checkSolution env = " ++ showEnv env
 	srcfilename <- gets srcFilenameCVS
 	Just filename <- gets checkExeNameCVS
 	absolute_filename <- liftIO $ makeAbsolute srcfilename
@@ -1354,7 +1353,7 @@ checkSolutionM traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
 				val -> error $ "checkSolutionM: " ++ show val ++ " not yet implemented"
 			PtrType target_ty _ _ -> ["65000"]
 			ty -> error $ "checkSolutionM args: type " ++ (render.pretty) ty ++ " not implemented!"
-	printLog $ " checkSolution args = " ++ show args
+	printLogV 1 $ "checkSolution args = " ++ show args
 	(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
 		readProcessWithExitCode (takeFileName filename) args ""
 	case exitcode of

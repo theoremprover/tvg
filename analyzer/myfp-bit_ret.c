@@ -974,7 +974,7 @@ multiply (FLO_type arg_a, FLO_type arg_b)
 #endif /* L_mul_sf || L_mul_df || L_mul_tf */
 
 #if defined(L_div_sf) || defined(L_div_df) || defined(L_div_tf)
-static inline __attribute__ ((__always_inline__)) fp_number_type *
+static inline __attribute__ ((__always_inline__)) fp_number_type*
 _fpdiv_parts (fp_number_type * a,
 	      fp_number_type * b)
 {
@@ -1070,7 +1070,7 @@ _fpdiv_parts (fp_number_type * a,
       }
 
     a->fraction.ll = quotient;
-    return (a);
+    return a;
   }
 }
 
@@ -1711,11 +1711,25 @@ int main(int argc, char* argv[])
     fp_number_type b = { argb1, argb2, argb3, { argb5 } };
 
 
-
-    printf("f(a=%i, a={ %i,%i,%i, fraction=%i,fraction={%i} },   b=%i, b={ %i,%i,%i, fraction=%i,fraction={%i} }) =\n%i\n",
+    fp_number_type* ret = _fpdiv_parts(&a,&b);
+    printf("f(a=%i, a={ %i,%i,%i, fraction=%i,fraction={%i} },   b=%i, b={ %i,%i,%i, fraction=%i,fraction={%i} }) =\n%i\n%i\n%i\n%i\n",
         arga0,arga1,arga2,arga3,arga4,arga5,
         argb0,argb1,argb2,argb3,argb4,argb5,
-        _fpdiv_parts(&a,&b));
+        ret->class,ret->sign,ret->normal_expr,ret->fraction.ll);
     return 0;
 }
 #endif
+
+/*
+typedef struct
+{
+  fp_class_type class;
+  unsigned int sign;
+  int normal_exp;
+
+  struct
+    {
+      fractype ll;
+    } fraction;
+} fp_number_type;
+*/
