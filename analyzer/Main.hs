@@ -301,7 +301,7 @@ covVectorsM filename opts = do
 
 	trace <- unfoldTracesM True (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
-	printLog $ "\n********** TRACE ***********\n" ++ showTrace 1 trace
+	printLog $ "\n********** TRACE ***********\n" ++ showTrace 0 trace
 	printLog $ "****************************\n"
 
 	runStateT (analyzeTreeM opts ret_type param_env [] [] trace) ([],Set.empty,Set.empty)
@@ -599,25 +599,23 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 	CCompound _ cbis _ -> unfoldTracesM toplevel ([]:envs) trace (cbis : (rest : rest2))
 
 	CIf cond then_stmt mb_else_stmt ni -> do
-		transids ((:[]).(if toplevel then TraceAnd else TraceOr)) cond trace $ \ (cond',trace') -> do
+		transids TraceOr cond trace $ \ (cond',trace') -> do
 			then_trace <- unfoldTracesM toplevel envs (Condition True cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
 			let not_cond = Condition False (CUnary CNegOp cond' (nodeInfo cond'))
 			else_trace <- case mb_else_stmt of
 				Nothing        -> unfoldTracesM toplevel envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM toplevel envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
-			return [ then_trace, else_trace ]
+			return [ (if toplevel then TraceAnd else TraceOr) [ then_trace, else_trace ] ]
 
 	CReturn Nothing _ -> return trace
 	CReturn (Just ret_expr) _ -> do
-		transids head ret_expr trace $ \ (ret_expr',trace') -> do
-			return [ Return ret_expr' : trace' ]
+		transids undefined ret_expr trace $ \ (ret_expr',trace') -> do
+			return $ Return ret_expr' : trace'
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
-		transids head assigned_expr' trace $ \ (assigned_expr'',trace') -> do
-			trs2 <- transids head lexpr trace' $ \ (lexpr',trace'') -> do
-				trs <- unfoldTracesM toplevel envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
-				return [trs]
-			return [trs2]
+		transids undefined assigned_expr' trace $ \ (assigned_expr'',trace') -> do
+			transids undefined lexpr trace' $ \ (lexpr',trace'') -> do
+				unfoldTracesM toplevel envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -726,15 +724,15 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 
 	where
 	
-	transids :: ([Trace] -> Trace) -> CExpr -> Trace -> ((CExpr,Trace) -> CovVecM [Trace]) -> CovVecM Trace
+	transids :: ([Trace] -> TraceElem) -> CExpr -> Trace -> ((CExpr,Trace) -> CovVecM Trace) -> CovVecM Trace
 	transids compose expr trace cont = do
 		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM envs expr
-		contss :: [[Trace]] <- forM additional_expr_traces $ \ (expr',trace') -> do
+		conts :: [Trace] <- forM additional_expr_traces $ \ (expr',trace') -> do
 			cont (expr',trace'++trace)
-		case contss of
+		case conts of
 			[] -> error $ "transids Strange: conts empty!"
-			[e] -> return $ compose e
-			_ -> return $ compose $ map ((:[]) . TraceOr) contss
+			[e] -> return e
+			_ -> return [ compose conts ]
 
 unfoldTraces1M toplevel (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec

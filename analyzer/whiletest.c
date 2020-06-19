@@ -11,6 +11,7 @@ int g(int x,int y)
         erg *= 2; //erg = erg << 1;
         y=y-1;
     }
+    if(erg<=1) { erg=100; } // should not be reported as dead
     return(erg);
 }
 
