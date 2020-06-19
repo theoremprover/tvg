@@ -1,5 +1,11 @@
+#ifdef CALC
+#include <stdio.h>
+#include <stdlib.h>
+#endif
+
 #define FLOAT_BIT_ORDER_MISMATCH
 #define FLOAT
+#define FLOAT_ONLY
 /* This is a software floating point library which can be used
    for targets without hardware floating point. 
    Copyright (C) 1994, 1995, 1996, 1997, 1998, 2000, 2001, 2002, 2003,
@@ -1678,3 +1684,12 @@ tf_to_sf (TFtype arg_a)
 
 #endif /* ! FLOAT */
 #endif /* !EXTENDED_FLOAT_STUBS */
+
+#ifdef CALC
+int main(int argc, char* argv[])
+{
+    int y = atoi(argv[1]);
+    printf("f(%i) =\n%i\n",y,f(y));
+    return 0;
+}
+#endif
