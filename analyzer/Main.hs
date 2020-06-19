@@ -91,6 +91,7 @@ show_solution _ (Just (_,[],_)) = "Empty solution"
 show_solution funname (Just v@(_,solution,_)) = unlines [ show solution, showTestVector funname v ]
 
 main = do
+	-- when there is an error, we'd like to have *all* output till then
 	hSetBuffering stdout NoBuffering
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
@@ -98,8 +99,8 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : ["-writeTree"] --["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
@@ -351,11 +352,11 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,resultdata)
 	case is_solution traceanalysisresult of
 		False -> do
-			printLog $ "### FALSE : Is no solution!"
+			printLog $ "### FALSE : " ++ show traceid ++ " no solution!"
 			modify $ \ (tas,covered,alls) -> (tas,covered,Set.union visible_trace alls)
 			return False
 		True  -> do
-			printLog $ "### TRUE : Is Solution"
+			printLog $ "### TRUE : " ++ show traceid ++ " Is Solution"
 			lift $ checkSolutionM traceid resultdata
 			modify $ \ (tas,covered,alls) -> case visible_trace `Set.isSubsetOf` covered of
 				False -> (traceanalysisresult:tas,Set.union visible_trace covered,Set.union visible_trace alls)
@@ -364,21 +365,26 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceOr traces : rest) = case rest of
 	[] -> do
-		printLog $ "### analyzeTreeM : TraceOr " ++ show traceid
+		printLog $ "### analyzeTreeM : TraceOr " ++ show traceid ++ " ..."
 		try_traces (zip [1..] traces)
 			where
 			try_traces :: [(Int,Trace)] -> AnalyzeTreeM Bool
 			try_traces [] = return False
 			try_traces ((i,trace):rest) = do
-				success <- analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
+				let traceid' = (traceid++[i])
+				success <- analyzeTreeM opts ret_type param_env traceid' res_line trace
 				case success of
-					True -> return True
-					False -> try_traces rest
+					True -> do
+						printLog $ "### analyzeTreeM : TraceOr " ++ show traceid' ++ " returned TRUE"
+						return True
+					False -> do
+						printLog $ "### analyzeTreeM : TraceOr " ++ show traceid' ++ " returned FALSE, trying the rest..."
+						try_traces rest
 	_ -> error $ "analyzeTreeM: TraceOr not last element in " ++ showTrace 1 res_line
 
 analyzeTreeM opts ret_type param_env traceid res_line (TraceAnd traces : rest) = case rest of
 	[] -> do
-		printLog $ "### analyzeTreeM : TraceAnd " ++ show traceid
+		printLog $ "### analyzeTreeM : TraceAnd " ++ show traceid ++ " ..."
 		results <- forM (zip [1..] traces) $ \ (i,trace) ->
 			analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
 		return $ all (==True) results
@@ -599,13 +605,14 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 	CCompound _ cbis _ -> unfoldTracesM toplevel ([]:envs) trace (cbis : (rest : rest2))
 
 	CIf cond then_stmt mb_else_stmt ni -> do
-		transids TraceOr cond trace $ \ (cond',trace') -> do
-			then_trace <- unfoldTracesM toplevel envs (Condition True cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
+		then_trace <- transids TraceOr cond trace $ \ (cond',trace') -> do
+			unfoldTracesM toplevel envs (Condition True cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
+		else_trace <- transids TraceOr cond trace $ \ (cond',trace') -> do
 			let not_cond = Condition False (CUnary CNegOp cond' (nodeInfo cond'))
-			else_trace <- case mb_else_stmt of
+			case mb_else_stmt of
 				Nothing        -> unfoldTracesM toplevel envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM toplevel envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
-			return [ (if toplevel then TraceAnd else TraceOr) [ then_trace, else_trace ] ]
+		return [ (if toplevel then TraceAnd else TraceOr) [then_trace,else_trace] ]
 
 	CReturn Nothing _ -> return trace
 	CReturn (Just ret_expr) _ -> do
@@ -613,8 +620,8 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 			return $ Return ret_expr' : trace'
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
-		transids undefined assigned_expr' trace $ \ (assigned_expr'',trace') -> do
-			transids undefined lexpr trace' $ \ (lexpr',trace'') -> do
+		transids TraceOr assigned_expr' trace $ \ (assigned_expr'',trace') -> do
+			transids (error "more than one transid results for lexpr!") lexpr trace' $ \ (lexpr',trace'') -> do
 				unfoldTracesM toplevel envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
