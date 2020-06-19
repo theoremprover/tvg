@@ -73,7 +73,7 @@ z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
 data Solver = MiniZinc | Z3 deriving (Show,Eq)
 
-_UNROLLING_DEPTH = 2
+_UNROLLING_DEPTH = 32
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -100,7 +100,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : ["-writeTree"] --["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
@@ -1183,7 +1183,9 @@ ty2Z3Type ty = case ty of
 			other    -> error $ "ty2Z3Type " ++ show other ++ " not implemented!"
 		TyFloating _ -> Z3_Float
 		TyEnum _ -> Z3_BitVector intSize False
+		TyComp _ -> Z3_BitVector 16 False
 		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
+	PtrType _ _ _ -> Z3_BitVector 16 False
 	_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
 
 ty2SExpr :: Type -> SExpr
@@ -1217,7 +1219,7 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 	liftIO $ writeFile modelpathfile model_string
 	printLog $ "Running model " ++ takeFileName modelpathfile ++ "..."
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
-		readProcessWithExitCode z3FilePath ["-smt2",takeFileName modelpathfile] ""
+		readProcessWithExitCode z3FilePath ["-smt2","parallel.enable=true",takeFileName modelpathfile] ""
 	printLog output
 	case lines output of
 		"unsat"   : _ -> return (model_string,Nothing)
