@@ -72,8 +72,6 @@ outputVerbosity = 0
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
-data Solver = MiniZinc | Z3 deriving (Show,Eq)
-
 _UNROLLING_DEPTH = 32
 
 analyzerPath = "analyzer"
@@ -100,7 +98,7 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_ret.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -140,12 +138,8 @@ main = do
 										ExitFailure _ -> error $ "Compilation failed:\n" ++ stderr
 										ExitSuccess -> return $ Just chkexefilename 
 	
-						let solver = case "-MiniZinc" ∈ opts of
-							True  -> MiniZinc
-							False -> Z3
-	
 						(full_coverage,(testvectors,covered,alls)) <- evalStateT (covVectorsM filename opts) $
-							CovVecState globdecls 1 translunit filename mb_checkexename funname undefined solver
+							CovVecState globdecls 1 translunit filename mb_checkexename funname undefined
 	
 						printLog ""
 	
@@ -205,8 +199,7 @@ data CovVecState = CovVecState {
 	srcFilenameCVS  :: String,
 	checkExeNameCVS :: Maybe String,
 	funNameCVS      :: String,
-	funStartEndCVS  :: ((Int,Int),(Int,Int)),
-	solverCVS       :: Solver
+	funStartEndCVS  :: ((Int,Int),(Int,Int))
 	}
 type CovVecM = StateT CovVecState IO
 
@@ -361,7 +354,7 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 			return False
 		True  -> do
 			printLogV 1  $ "### TRUE : " ++ show traceid ++ " Is Solution"
-			lift $ checkSolutionM traceid resultdata
+			lift $ checkSolutionM ret_type traceid resultdata
 			modify $ \ (tas,covered,alls) -> case visible_trace `Set.isSubsetOf` covered of
 				False -> (traceanalysisresult:tas,Set.union visible_trace covered,Set.union visible_trace alls)
 				True  -> (tas,covered,alls)
@@ -582,7 +575,7 @@ createInterfaceM decls = concatForM decls $ \ decl -> do
 			create_interfaceM (CMember expr m_ident False (nodeInfo expr)) m_ty'
 		mk_envitemM expr ty members
 
-	-- direct-type expr  where  direct-type is no struct/union
+	-- direct-type expr where direct-type is no struct/union
 	create_interfaceM expr ty@(DirectType _ _ _) = do
 		mk_envitemM expr ty []
 
@@ -971,124 +964,6 @@ createTyEnv trace = concatMap traceitem2tyenv trace
 	traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
 	traceitem2tyenv _ = []
 
-
--- MiniZinc Model Generation
-
-var2MZ :: TyEnv -> Ident -> CovVecM [MZAST.ModelData]
-var2MZ tyenv ident = do
-	let ty = case lookup ident tyenv of
-		Just ty -> ty
-		Nothing -> error $ "var2MZ: Could not find " ++ (render.pretty) ident ++ " in\n" ++
-			unlines (map (\ (ident,ty) -> (render.pretty) ident ++ " |-> " ++ (render.pretty) ty ) tyenv)
-	mzvar <- mkmzvarM (identToString ident,ty)
-	return $ mzvar : []
-
-	where
-
-	mkmzvarM :: (String,Type) -> CovVecM MZAST.ModelData
-	mkmzvarM (mzident,ty) = do
-		mzty <- elimTypeDefsM ty >>= ty2mz
-		return $ MZAST.var mzty mzident
-		where
-		ty2mz ty@(DirectType tyname _ attrs) = case tyname of
-			TyVoid -> error "ty2mz DirectType TyVoid should not occur!"
-			TyIntegral intty -> case intty of
-				TyBool   -> return MZAST.Bool
---				TyShort  -> return $ MZAST.Range (MZAST.IConst (-32768)) (MZAST.IConst 32767)
-				TyInt    -> return $ MZAST.Range (MZAST.IConst (-30)) (MZAST.IConst 30) --MZAST.Int
-				TyUShort -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 65535)
-				TyChar   -> return $ MZAST.Range (MZAST.IConst (-128)) (MZAST.IConst 127)
-				TySChar  -> return $ MZAST.Range (MZAST.IConst (-128)) (MZAST.IConst 127)
-				TyUChar  -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 255)
-				TyUInt   -> return $ MZAST.Range (MZAST.IConst 0) (MZAST.IConst 300) --2147483646)
-				_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
-			TyFloating floatty -> case floatty of
-				TyFloat -> return MZAST.Float
-				_       -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
-			TyEnum (EnumTypeRef sueref _) -> do
-				EnumDef (EnumType _ enums _ _) <- lookupTagM sueref
-				return $ MZAST.CT $ MZAST.SetLit $
-					map (\ (Enumerator _ (CConst (CIntConst (CInteger i _ _) _)) _ _) ->
-						MZAST.IConst (fromIntegral i)) enums
-			TyComp (CompTypeRef sueref _ _) -> return $ MZAST.Range (MZAST.IConst 100000) (MZAST.IConst 199999)
-			_ -> error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
-		ty2mz (PtrType target_ty _ _) = return $ MZAST.Range (MZAST.IConst 65000) (MZAST.IConst 99999)
-		ty2mz ty = error $ "ty2mz " ++ (render.pretty) ty ++ " not implemented yet"
-
-type Constraint = CExpr
-
-eq0 :: Constraint -> Constraint
-eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
-
-insert_eq0 :: Bool -> Constraint -> Constraint
-insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then eq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
-insert_eq0 must_be_bool (CUnary unop expr ni) = case unop of
-	CNegOp -> CUnary CNegOp (insert_eq0 True expr) ni
-	unop   -> (if must_be_bool then eq0 else id) $ CUnary unop (insert_eq0 False expr) ni
-insert_eq0 must_be_bool (CCast _ expr _) = insert_eq0 must_be_bool expr
-insert_eq0 must_be_bool cvar@(CVar ident ni) = (if must_be_bool then eq0 else id) cvar
-insert_eq0 must_be_bool const@(CConst _) = (if must_be_bool then eq0 else id) const
-insert_eq0 must_be_bool (CBinary binop expr1 expr2 ni) = mb_eq0 $
-	CBinary binop (insert_eq0 must_be_bool' expr1) (insert_eq0 must_be_bool' expr2) ni
-	where
-	(must_be_bool',mb_eq0) = case must_be_bool of
-		_ | binop `elem` [CLndOp,CLorOp] -> (True,id)
-		_ | binop `elem` [CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp] -> (False,id)
-		True -> (False,eq0)
-		_ -> (False,id)
-insert_eq0 must_be_bool cmember@(CMember _ _ _ _) = (if must_be_bool then eq0 else id) cmember
-insert_eq0 _ expr = error $ "insert_eq0 " ++ (render.pretty) expr ++ " not implemented yet."
-
-traceelemToMZ :: TraceElem -> CovVecM [MZAST.ModelData]
-traceelemToMZ (Condition _ constr) = do
-	return [ MZAST.constraint (expr2constr . (flatten_not False) . (insert_eq0 True) $ constr) ]
-	where
-	flatten_not :: Bool -> Constraint -> Constraint
-	flatten_not is_neg (CUnary CNegOp expr ni) = flatten_not (not is_neg) expr
-	flatten_not True un@(CUnary CCompOp _ _) = error $ "flatten_not True " ++ (render.pretty) un ++ " is impossible!"
-	flatten_not False (CUnary CCompOp expr ni) = CUnary CCompOp (flatten_not False expr) ni
-	flatten_not is_neg (CUnary unop expr ni) = CUnary unop (flatten_not is_neg expr) ni
-	flatten_not False cmember@(CMember ptr_expr ident isptr ni) = cmember
-	flatten_not True cmember@(CMember ptr_expr ident isptr ni) = error $ "flatten_not True " ++ (render.pretty) cmember ++ " is impossible!"
-	flatten_not False cvar@(CVar ident ni) = cvar
-	flatten_not True cvar@(CVar ident ni) = error $ "flatten_not True " ++ (render.pretty) cvar ++ " is impossible!"
-	flatten_not False cconst@(CConst _) = cconst
-	flatten_not True cconst@(CConst _) = error $ "flatten_not True " ++ show cconst ++ " is impossible!"
-	flatten_not False (CBinary binop expr1 expr2 ni) = CBinary binop (flatten_not False expr1) (flatten_not False expr2) ni
-	flatten_not True (CBinary binop expr1 expr2 ni) = CBinary binop' (flatten_not is_neg' expr1) (flatten_not is_neg' expr2) ni
-		where
-		(binop',is_neg') = case binop of
-			CLeOp  -> (CGeqOp,False)
-			CGrOp  -> (CLeqOp,False)
-			CLeqOp -> (CGrOp, False)
-			CGeqOp -> (CLeOp, False)
-			CEqOp  -> (CNeqOp,False)
-			CNeqOp -> (CEqOp, False)
-			CLndOp -> (CLorOp,True)
-			CLorOp -> (CLndOp,True)
-			op -> error $ "flatten_not True " ++ show op ++ " is impossible!"
-	flatten_not is_neg expr = error $ "flatten_not " ++ show is_neg ++ " " ++ (render.pretty) expr ++ " not implemented yet"
-
-	expr2constr (CUnary CCompOp expr _) = MZAST.Call (MZAST.stringToIdent "bitwise_not") [MZAST.AnnExpr (expr2constr expr) []]
-	expr2constr (CUnary CNegOp expr _) = error $ "expr2constr CUnaryOp CNegOp should not occur!"
-	expr2constr (CUnary unop expr _) = MZAST.U (MZAST.Op $ MZAST.stringToIdent $ (render.pretty) unop) (expr2constr expr)
-	expr2constr (CVar (Ident name _ _) _) = MZAST.Var $ MZAST.stringToIdent name
-	expr2constr (CConst (CIntConst (CInteger i _ _) _)) = MZAST.IConst $ fromIntegral i
-	expr2constr (CConst (CFloatConst (CFloat s_float) _)) = MZAST.FConst $ read s_float
-	expr2constr (CBinary binop expr1 expr2 _) = case lookup binop
-		[(CAndOp,"bitwise_and"),(COrOp,"bitwise_or"),(CXorOp,"bitwise_xor"),(CShrOp,"bitshift_right"),(CShlOp,"bitshift_left")] of
-			Just funname -> MZAST.Call (MZAST.stringToIdent funname) [MZAST.AnnExpr expr1' [],MZAST.AnnExpr expr2' []]
-			Nothing -> MZAST.Bi (MZAST.Op $ MZAST.stringToIdent mznop) expr1' expr2'
-		where
-		expr1' = expr2constr expr1
-		expr2' = expr2constr expr2
-		-- Leaving out brackets: Hopefully, the minzinc operators have the same precedences as in C
-		mznop = maybe ((render.pretty) binop) id $ lookup binop [(CEqOp,"="),(CLndOp,"/\\"),(CLorOp,"\\/")]
---	expr2constr lexpr@(CMember (CVar _ _) _ _ _) = expr2constr $ CVar (internalIdent (lValueToVarName lexpr)) undefNode
-	expr2constr expr = error $ "expr2constr " ++ show expr ++ " not implemented yet"
-
-traceelemToMZ _ = return []
-
 data SExpr = SExpr [SExpr] | SLeaf String
 instance Show SExpr where
 	show (SLeaf s) = s
@@ -1097,9 +972,35 @@ instance Show SExpr where
 data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Bool
 	deriving (Show,Eq,Ord)
 
+type Constraint = CExpr
+
 expr2SExpr :: TyEnv -> Expr -> SExpr
 expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 False expr)
+
 	where
+
+	eq0 :: Constraint -> Constraint
+	eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
+	
+	insert_eq0 :: Bool -> Constraint -> Constraint
+	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then eq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
+	insert_eq0 must_be_bool (CUnary unop expr ni) = case unop of
+		CNegOp -> CUnary CNegOp (insert_eq0 True expr) ni
+		unop   -> (if must_be_bool then eq0 else id) $ CUnary unop (insert_eq0 False expr) ni
+	insert_eq0 must_be_bool (CCast _ expr _) = insert_eq0 must_be_bool expr
+	insert_eq0 must_be_bool cvar@(CVar ident ni) = (if must_be_bool then eq0 else id) cvar
+	insert_eq0 must_be_bool const@(CConst _) = (if must_be_bool then eq0 else id) const
+	insert_eq0 must_be_bool (CBinary binop expr1 expr2 ni) = mb_eq0 $
+		CBinary binop (insert_eq0 must_be_bool' expr1) (insert_eq0 must_be_bool' expr2) ni
+		where
+		(must_be_bool',mb_eq0) = case must_be_bool of
+			_ | binop `elem` [CLndOp,CLorOp] -> (True,id)
+			_ | binop `elem` [CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp] -> (False,id)
+			True -> (False,eq0)
+			_ -> (False,id)
+	insert_eq0 must_be_bool cmember@(CMember _ _ _ _) = (if must_be_bool then eq0 else id) cmember
+	insert_eq0 _ expr = error $ "insert_eq0 " ++ (render.pretty) expr ++ " not implemented yet."
+
 	expr2sexpr :: Maybe Z3_Type -> CExpr -> SExpr
 	expr2sexpr cur_ty expr = case expr of
 		CUnary CPlusOp expr _ -> expr2sexpr cur_ty expr
@@ -1190,8 +1091,8 @@ ty2Z3Type ty = case ty of
 ty2SExpr :: Type -> SExpr
 ty2SExpr ty = case ty2Z3Type ty of
 	Z3_BitVector size _ -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
-	Z3_Float -> SLeaf "Real"
-	Z3_Bool -> SLeaf "Bool"
+	Z3_Float            -> SLeaf "Real"
+	Z3_Bool             -> SLeaf "Bool"
 
 
 makeAndSolveZ3ModelM :: TyEnv -> [CExpr] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe [(String,MValue)])
@@ -1250,12 +1151,10 @@ solveTraceM ret_type param_env traceid trace = do
 	let
 		tracename = show traceid
 		param_names = map (fst.snd) param_env
+		mb_ret_val = case last trace of
+			Return ret_expr -> Just ret_expr
+			_               -> Nothing
 
-	let mb_ret_val = case last trace of
-		Return ret_expr -> Just ret_expr
-		_               -> Nothing
-
-	let
 		returnval_ident = internalIdent returnval_var_name
 		trace' = trace ++ case mb_ret_val of
 			Nothing -> []
@@ -1263,83 +1162,35 @@ solveTraceM ret_type param_env traceid trace = do
 				Condition undefined $ CBinary CEqOp (CVar returnval_ident (nodeInfo returnval_ident)) ret_expr (nodeInfo ret_expr),
 				NewDeclaration (returnval_ident,ret_type) ]
 
-	let
 		constraints = concatMap traceitem2constr trace' where
 		traceitem2constr (Condition _ expr) = [expr]
 		traceitem2constr _ = []
 		
 		tyenv = createTyEnv trace'
 
-	gets solverCVS >>= \case
-		MiniZinc -> do
-		
-			let
-				vars :: [Ident] = nub $ param_names ++ everything (++) (mkQ [] searchvar) constraints where
-					searchvar :: CExpr -> [Ident]
-					searchvar (CVar ident _) = [ ident ]
-					searchvar _ = []
-				solution_vars = map identToString vars
+	(model_string,mb_sol) <- makeAndSolveZ3ModelM
+		tyenv
+		constraints
+		(for param_names $ \ name -> SExpr [SLeaf "minimize",SLeaf (identToString name)])
+		( maybe [] (const [returnval_ident]) mb_ret_val ++ param_names )
+		(analyzerPath </> "model_" ++ tracename ++ ".smtlib2")
 
-			constraintsG <- concatMapM traceelemToMZ trace'
-			
-			let
-				includesG = [ MZAST.include "include.mzn" ]
-		
-			varsG <- concatMapM (var2MZ tyenv) vars
-			let
-				model = includesG ++ varsG ++ [] ++ constraintsG ++ [] ++
-					[ MZAST.solve $ MZAST.satisfy MZAST.|: MZAST.Annotation "int_search" [
-						MZAST.E (MZAST.ArrayLit $ map (MZAST.Var . MZAST.Simpl) solution_vars),
-						MZAST.E (MZAST.Var $ MZAST.Simpl "input_order"),
-						MZAST.E (MZAST.Var $ MZAST.Simpl "indomain_median"),
-						MZAST.E (MZAST.Var $ MZAST.Simpl "complete") ] ]
-		
-			let
-				model_string = if null model then "<empty>" else layout model
-				model_extension = ".mzn"
-
-			let modelpath = analyzerPath </> "model_" ++ tracename
-			liftIO $ writeFile (modelpath ++ model_extension) model_string
-		
-			case solveIt of
-				False -> return (model_string,Just (param_env,[],mb_ret_val))
-				True -> do
-					printLog $ "Running model " ++ tracename ++ "..." 
-					res <- liftIO $ runModel model modelpath 1 1
-					case res of
-						Left err -> do
-							printLog $ show err
-							return (model_string,Nothing)
-						Right [] -> error $ "Empty solution for " ++ tracename ++ " !"
-						Right [sol] -> do
-							let sol_params = filter (\ (varname,_) -> varname `elem` (returnval_var_name : map identToString param_names)) sol
-							return $ (model_string,Just (param_env,sol_params,mb_ret_val))
-						Right _ -> error $ "Found more than one solution for " ++ show traceid ++ " !"
-
-		Z3 -> do
-			(model_string,mb_sol) <- makeAndSolveZ3ModelM
-				tyenv --(filter ((∈ vars).fst) tyenv)
-				constraints
-				(for param_names $ \ name -> SExpr [SLeaf "minimize",SLeaf (identToString name)])
-				( maybe [] (const [returnval_ident]) mb_ret_val ++ param_names )
-				(analyzerPath </> "model_" ++ tracename ++ ".smtlib2")
-
-			return (model_string,case mb_sol of
-				Nothing -> Nothing
-				Just sol -> Just (param_env,sol,mb_ret_val))
+	return (model_string,case mb_sol of
+		Nothing -> Nothing
+		Just sol -> Just (param_env,sol,mb_ret_val))
 
 
 --type ResultData = (String,Maybe (Env,Solution,Maybe CExpr))
 
-checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
-checkSolutionM _ resultdata | not checkSolutions = return resultdata
-checkSolutionM traceid resultdata@(_,Nothing) = do
+checkSolutionM :: Type -> [Int] -> ResultData -> CovVecM ResultData
+checkSolutionM _ _ resultdata | not checkSolutions = return resultdata
+checkSolutionM _ traceid resultdata@(_,Nothing) = do
 	printLog $ "No solution to check for " ++ show traceid
 	return resultdata
-checkSolutionM traceid resultdata@(_,Just (_,[],_)) = do
+checkSolutionM _ traceid resultdata@(_,Just (_,[],_)) = do
 	printLog $ "Empty solution cannot be checked for " ++ show traceid
 	return resultdata
-checkSolutionM traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
+checkSolutionM ret_ty traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
 	printLogV 1 $ "checkSolution env = " ++ showEnv env
 	srcfilename <- gets srcFilenameCVS
 	Just filename <- gets checkExeNameCVS
