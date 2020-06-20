@@ -92,8 +92,8 @@ showLine :: Trace -> String
 showLine trace = unlines $ map show (filter isnotbuiltin trace)
 
 show_solution _ Nothing = "No solution"
-show_solution _ (Just (_,[],_)) = "Empty solution"
-show_solution funname (Just v@(_,solution,_)) = unlines [ show solution, showTestVector funname v ]
+show_solution _ (Just (_,_,[],_)) = "Empty solution"
+show_solution funname (Just v@(_,_,solution,_)) = unlines [ show solution, showTestVector funname v ]
 
 main = do
 	-- when there is an error, we'd like to have *all* output till then
@@ -151,7 +151,7 @@ main = do
 						printLog $ "\n####### FINAL RESULT #######\n"
 	
 						forM_ testvectors $ \ (traceid,trace,(model_string,mb_solution)) -> do
-							case not showOnlySolutions || maybe False (not.null.(\(_,b,_)->b)) mb_solution of
+							case not showOnlySolutions || maybe False (not.null.(\(_,_,b,_)->b)) mb_solution of
 								False -> return ()
 								True -> printLog $ unlines $ mbshowtraces (
 									[ "","=== TRACE " ++ show traceid ++ " ========================","<leaving out builtins...>" ] ++
@@ -183,17 +183,17 @@ main = do
 showEnv :: Env -> String
 showEnv env = "{\n    " ++ intercalate " ,\n    " (map (render.pretty) env) ++ "\n    }"
 
-showTestVector :: String -> (Env,Solution,Maybe CExpr) -> String
-showTestVector funname (env,solution,mb_retval) = funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ++
-	" = " ++ maybe "<NO_RETURN>" (const $ show $ solution) mb_retval
+showTestVector :: String -> (Env,Env,Solution,Maybe CExpr) -> String
+showTestVector funname (env,ret_env,solution,mb_retval) = funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ++
+	" = " ++ maybe "<NO_RETURN>" (const $ (intercalate " " $ map showarg ret_env)) mb_retval
 	where
 	showarg :: EnvItem -> String
 	showarg (oldident,(newident,_)) =
 		identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
 			Nothing           -> "DONT_CARE"
+			Just (BoolVal b)  -> show b
 			Just (IntVal i)   -> show i
 			Just (FloatVal f) -> show f
-			val               -> error $ "showarg " ++ show val ++ " not yet implemented"
 
 data CovVecState = CovVecState {
 	globDeclsCVS    :: GlobalDecls,
@@ -268,7 +268,7 @@ showTrace ind (te:trace) = indent ind ++ case te of
 	showlist traces = indent (ind+1) ++ "[\n" ++ showitems traces ++ indent (ind+1) ++ "]\n"
 	showitems traces = intercalate (indent (ind+2) ++ ",\n") (map (showTrace (ind+2)) traces)
 
-type ResultData = (String,Maybe (Env,Solution,Maybe CExpr))
+type ResultData = (String,Maybe (Env,Env,Solution,Maybe CExpr))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
 
 covVectorsM :: String -> [String] -> CovVecM (Bool,([TraceAnalysisResult],Set.Set Branch,Set.Set Branch))
@@ -357,7 +357,7 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 			return False
 		True  -> do
 			printLogV 1  $ "### TRUE : " ++ show traceid ++ " Is Solution"
-			lift $ checkSolutionM ret_type traceid resultdata
+			lift $ checkSolutionM traceid resultdata
 			modify $ \ (tas,covered,alls) -> case visible_trace `Set.isSubsetOf` covered of
 				False -> (traceanalysisresult:tas,Set.union visible_trace covered,Set.union visible_trace alls)
 				True  -> (tas,covered,alls)
@@ -394,7 +394,7 @@ analyzeTreeM opts ret_type param_env traceid res_line (te:rest) = do
 	analyzeTreeM opts ret_type param_env traceid (te:res_line) rest
 
 is_solution :: TraceAnalysisResult -> Bool
-is_solution (_,_,(_,Just (_,solution,_))) = not $ null solution
+is_solution (_,_,(_,Just (_,_,solution,_))) = not $ null solution
 is_solution _ = False
 
 is_visible_traceelem :: (CNode a) => ((Int,Int),(Int,Int)) -> a -> Bool
@@ -1181,6 +1181,8 @@ solveTraceM ret_type param_env traceid trace = do
 		
 		tyenv = createTyEnv trace'
 
+	ret_env <- createInterfaceM [(internalIdent returnval_var_name,ret_type)]
+
 	(model_string,mb_sol) <- makeAndSolveZ3ModelM
 		tyenv
 		constraints
@@ -1190,22 +1192,21 @@ solveTraceM ret_type param_env traceid trace = do
 
 	return (model_string,case mb_sol of
 		Nothing -> Nothing
-		Just sol -> Just (param_env,sol,mb_ret_val))
+		Just sol -> Just (param_env,ret_env,sol,mb_ret_val))
 
 
 --type ResultData = (String,Maybe (Env,Solution,Maybe CExpr))
 
-checkSolutionM :: Type -> [Int] -> ResultData -> CovVecM ResultData
-checkSolutionM _ _ resultdata | not checkSolutions = return resultdata
-checkSolutionM _ traceid resultdata@(_,Nothing) = do
+checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
+checkSolutionM _ resultdata | not checkSolutions = return resultdata
+checkSolutionM traceid resultdata@(_,Nothing) = do
 	printLog $ "No solution to check for " ++ show traceid
 	return resultdata
-checkSolutionM _ traceid resultdata@(_,Just (_,[],_)) = do
+checkSolutionM traceid resultdata@(_,Just (_,_,[],_)) = do
 	printLog $ "Empty solution cannot be checked for " ++ show traceid
 	return resultdata
-checkSolutionM ret_ty traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
+checkSolutionM traceid resultdata@(_,Just (env,ret_env,solution,Just res_expr)) = do
 	printLogV 1 $ "checkSolution env = " ++ showEnv env
-	ret_env <- createInterfaceM [(internalIdent returnval_var_name,ret_ty)]
 	srcfilename <- gets srcFilenameCVS
 	Just filename <- gets checkExeNameCVS
 	absolute_filename <- liftIO $ makeAbsolute srcfilename
@@ -1222,13 +1223,16 @@ checkSolutionM ret_ty traceid resultdata@(_,Just (env,solution,Just res_expr)) =
 	case exitcode of
 		ExitFailure _ -> error $ "Execution of " ++ filename ++ " failed:\n" ++ stdout ++ stderr
 		ExitSuccess -> do
-			let outputs = words $ last $ lines stdout
-			when (length ret_env /= length outputs || length outputs /= length solution) $
+			let
+				outputs = words $ last $ lines stdout
+				-- get all solution vars that are in the ret_env
+				ret_solution = filter ((∈ map (identToString.fst) ret_env).fst) solution
+			when (length ret_env /= length outputs || length outputs /= length ret_solution) $
 				error $ "checkSolutionM: lengths of ret_env, solution, outputs differ:\n" ++
 					"ret_env = " ++ showEnv ret_env ++ "\n" ++
-					"solution = " ++ show solution ++ "\n" ++
+					"ret_solution = " ++ show ret_solution ++ "\n" ++
 					"outputs = " ++ show outputs ++ "\n"
-			forM_ (zip3 ret_env outputs solution) $ \ ((sourceident,(ident,ty)),s,(ident_s,predicted_result)) -> do
+			forM_ (zip3 ret_env outputs ret_solution) $ \ ((sourceident,(ident,ty)),s,(ident_s,predicted_result)) -> do
 				when (identToString ident /= ident_s) $
 					error $ "checkSolutionM: ident=" ++ identToString ident ++ " and ident_s=" ++ ident_s ++ " mismatch"
 				case ty of
