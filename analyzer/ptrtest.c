@@ -58,7 +58,7 @@ RSTRUCT a  =>  a :: RSTRUCT, .., a_DOT_member3 :: STRUCT,
 RSTRUCT* p =>
 */
 
-int f(STRUCT* p,STRUCT r)
+STRUCT* f(STRUCT* p,STRUCT r)
 {
     int* q;
 
@@ -67,23 +67,25 @@ int f(STRUCT* p,STRUCT r)
 
     if(r.member2 == p->member2)
     {
-        return 0;
+        return p;
     }
-    return 1;
+    return p;
 }
 
 #ifdef CALC
 int main(int argc, char* argv[])
 {
-    int arg1 = atoi(argv[1]);
-    int arg2 = atoi(argv[2]);
-    int arg3 = atoi(argv[3]);
-    int arg4 = atoi(argv[4]);
-    int arg5 = atoi(argv[5]);
-    int arg6 = atoi(argv[6]);
+    int i = 1;
+    int arg1 = atoi(argv[i++]);
+    int arg2 = atoi(argv[i++]);
+    int arg3 = atoi(argv[i++]);
+    int arg4 = atoi(argv[i++]);
+    int arg5 = atoi(argv[i++]);
+    int arg6 = atoi(argv[i++]);
     STRUCT px = { arg2,arg3 };
     STRUCT qx = { arg5,arg6 };
-    printf("f(p=%i, p={%i,%i}, q=%i, q={%i,%i}) =\n%i\n",arg1,arg2,arg3,arg4,arg5,arg6,f(&px,qx));
+    STRUCT* res = f(&px,qx);
+    printf("f(p=%i, p={%i,%i}, q=%i, q={%i,%i}) =\n%i %i %i\n",arg1,arg2,arg3,arg4,arg5,arg6,res,res->member1,res->member2);
     return 0;
 }
 #endif

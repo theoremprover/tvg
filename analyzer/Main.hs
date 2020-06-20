@@ -25,11 +25,13 @@ import Text.Printf
 import Text.Regex.TDFA
 import Numeric (readHex)
 
+{-
 import Interfaces.FZSolutionParser
 import qualified Interfaces.MZAST as MZAST
 import Interfaces.MZPrinter
 import Interfaces.MZinHaskell
 import qualified Interfaces.MZBuiltIns as MZB
+-}
 
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
@@ -68,7 +70,8 @@ showOnlySolutions = True
 don'tShowTraces = True
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
-outputVerbosity = 0
+outputVerbosity = 1
+floatTolerance = 1e-7 :: Float
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
@@ -98,13 +101,13 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
---		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : ["-writeTree"] --["-writeAST"]
+		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrrettest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : ["-writeTraceTree"] --["-writeAST","-writeGlobalDecls"]
@@ -182,15 +185,15 @@ showEnv env = "{\n    " ++ intercalate " ,\n    " (map (render.pretty) env) ++ "
 
 showTestVector :: String -> (Env,Solution,Maybe CExpr) -> String
 showTestVector funname (env,solution,mb_retval) = funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ++
-	" = " ++ maybe "<NO_RETURN>" (const $ show $ getPredictedResult solution) mb_retval
+	" = " ++ maybe "<NO_RETURN>" (const $ show $ solution) mb_retval
 	where
 	showarg :: EnvItem -> String
 	showarg (oldident,(newident,_)) =
 		identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
-			Nothing         -> "DONT_CARE"
-			Just (MInt i)   -> show i
-			Just (MFloat f) -> show f
-			val             -> error $ "showarg " ++ show val ++ " not yet implemented"
+			Nothing           -> "DONT_CARE"
+			Just (IntVal i)   -> show i
+			Just (FloatVal f) -> show f
+			val               -> error $ "showarg " ++ show val ++ " not yet implemented"
 
 data CovVecState = CovVecState {
 	globDeclsCVS    :: GlobalDecls,
@@ -292,7 +295,7 @@ covVectorsM filename opts = do
 			next : _ -> next
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
-	param_env <- createInterfaceM funparamdecls
+	param_env <- createInterfaceM $ for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
 	printLogV 1 $ "param_env = " ++ showEnv param_env
 	
 	let decls = map (NewDeclaration .snd) (reverse param_env ++ glob_env)
@@ -539,48 +542,46 @@ identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 
 -- Recursively create all "interface" variables for the top level function to be analyzed
 
-createInterfaceM :: (Declaration decl) => [decl] -> CovVecM [EnvItem]
-createInterfaceM decls = concatForM decls $ \ decl -> do
-	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
-	ty' <- elimTypeDefsM ty
-	create_interfaceM (CVar srcident (nodeInfo srcident)) ty'
-	
+createInterfaceM :: [(Ident,Type)] -> CovVecM [EnvItem]
+createInterfaceM ty_env = concatForM ty_env $ \ (srcident,ty) -> do
+--	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
+	elimTypeDefsM ty >>= create_interfaceM (CVar srcident (nodeInfo srcident))
+
 	where
 
-	mk_envitemM :: CExpr -> Type -> [EnvItem] -> CovVecM [EnvItem]
-	mk_envitemM expr ty rest = do
-		ty' <- elimTypeDefsM ty
-		let srcident = mkIdentWithCNodePos expr (lValueToVarName expr)
-		return $ (srcident,(srcident,ty')) : rest
-		
 	create_interfaceM :: CExpr -> Type -> CovVecM [EnvItem]
+	create_interfaceM expr ty = elimTypeDefsM ty >>= \case
 
-	-- STRUCT* p
-	create_interfaceM expr ty@(PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _) = do
-		member_ty_s <- getMembersM sueref
-		members <- concatForM member_ty_s $ \ (m_ident,m_ty) -> create_interfaceM (CMember expr m_ident True (nodeInfo expr)) m_ty
-		mk_envitemM expr ty members
+		-- STRUCT* p
+		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> prepend_plainvar $ do
+			member_ty_s <- getMembersM sueref
+			concatForM member_ty_s $ \ (m_ident,m_ty) -> create_interfaceM (CMember expr m_ident True (nodeInfo expr)) m_ty
 
-	-- ty* p
-	create_interfaceM expr ty@(PtrType target_ty _ _) = do
-		target_ty' <- elimTypeDefsM target_ty
-		targets <- create_interfaceM (CUnary CIndOp expr (nodeInfo expr)) target_ty'
-		mk_envitemM expr ty targets
+		-- ty* p
+		PtrType target_ty _ _ -> prepend_plainvar $ do
+			create_interfaceM (CUnary CIndOp expr (nodeInfo expr)) target_ty
 
-	-- STRUCT expr
-	create_interfaceM expr ty@(DirectType (TyComp (CompTypeRef sueref _ _)) _ _) = do
-		member_ty_s <- getMembersM sueref
-		members <- concatForM member_ty_s $ \ (m_ident,m_ty) -> do
-			m_ty' <- elimTypeDefsM m_ty
-			create_interfaceM (CMember expr m_ident False (nodeInfo expr)) m_ty'
-		mk_envitemM expr ty members
+		-- STRUCT expr
+		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> prepend_plainvar $ do
+			member_ty_s <- getMembersM sueref
+			concatForM member_ty_s $ \ (m_ident,m_ty) -> do
+				create_interfaceM (CMember expr m_ident False (nodeInfo expr)) m_ty
 
-	-- direct-type expr where direct-type is no struct/union
-	create_interfaceM expr ty@(DirectType _ _ _) = do
-		mk_envitemM expr ty []
+		-- direct-type expr where direct-type is no struct/union
+		ty'@(DirectType _ _ _) -> do
+			let srcident = mkIdentWithCNodePos expr (lValueToVarName expr)
+			return [ (srcident,(srcident,ty')) ]
 
-	create_interfaceM expr ty = error $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty ++ " not implemented"
+		ty' ->
+			error $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
 
+		where
+
+		prepend_plainvar :: CovVecM [EnvItem] -> CovVecM [EnvItem]
+		prepend_plainvar rest_m = do
+			let srcident = internalIdent $ lValueToVarName expr
+			rest <- rest_m
+			return $ (srcident,(srcident,ty)) : rest
 
 -- Just unfold the traces
 unfoldTracesM :: Bool -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM Trace
@@ -981,7 +982,7 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 False expr)
 
 	eq0 :: Constraint -> Constraint
 	eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
-	
+
 	insert_eq0 :: Bool -> Constraint -> Constraint
 	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then eq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
 	insert_eq0 must_be_bool (CUnary unop expr ni) = case unop of
@@ -1094,8 +1095,20 @@ ty2SExpr ty = case ty2Z3Type ty of
 	Z3_Float            -> SLeaf "Real"
 	Z3_Bool             -> SLeaf "Bool"
 
+type Solution = [(String,SolutionVal)]
 
-makeAndSolveZ3ModelM :: TyEnv -> [CExpr] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe [(String,MValue)])
+data SolutionVal = IntVal Int | BoolVal Bool | FloatVal Float
+instance Eq SolutionVal where
+	IntVal i1   == IntVal i2   = i1==i2
+	BoolVal b1  == BoolVal b2  = b1==b2
+	FloatVal f1 == FloatVal f2 = f2-f1 <= floatTolerance
+
+instance Show SolutionVal where
+	show (IntVal i) = show i
+	show (BoolVal b) = show b
+	show (FloatVal f) = show f
+
+makeAndSolveZ3ModelM :: TyEnv -> [CExpr] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpathfile = do
 	let
 		constraints_vars = nub $ everything (++) (mkQ [] searchvar) constraints where
@@ -1135,11 +1148,11 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 								'#':'x':hexdigits = val_string
 								[(i :: Integer,"")] = readHex hexdigits
 								in
-								MInt $ case signed of
+								IntVal $ case signed of
 									False -> fromIntegral i
 									True  -> fromIntegral $ if i < 2^(size-1) then i else i - 2^size
-							Z3_Float -> MFloat (read val_string :: Float)
-							Z3_Bool -> MBool $ fromJust $ lookup val_string [("true",True),("false",False)] )
+							Z3_Float -> FloatVal (read val_string :: Float)
+							Z3_Bool -> BoolVal $ fromJust $ lookup val_string [("true",True),("false",False)] )
 
 					_ -> error $ "Parsing z3 output: Could not find " ++ is
 			return (model_string,Just sol_params)
@@ -1192,6 +1205,7 @@ checkSolutionM _ traceid resultdata@(_,Just (_,[],_)) = do
 	return resultdata
 checkSolutionM ret_ty traceid resultdata@(_,Just (env,solution,Just res_expr)) = do
 	printLogV 1 $ "checkSolution env = " ++ showEnv env
+	ret_env <- createInterfaceM [(internalIdent returnval_var_name,ret_ty)]
 	srcfilename <- gets srcFilenameCVS
 	Just filename <- gets checkExeNameCVS
 	absolute_filename <- liftIO $ makeAbsolute srcfilename
@@ -1199,9 +1213,7 @@ checkSolutionM ret_ty traceid resultdata@(_,Just (env,solution,Just res_expr)) =
 		args = concat $ for env $ \ (_,(newident,ty)) -> case ty of
 			DirectType _ _ _ -> case lookup (identToString newident) solution of
 				Nothing -> ["99"]
-				Just (MInt i) -> [show i]
-				Just (MFloat f) -> [show f]
-				val -> error $ "checkSolutionM: " ++ show val ++ " not yet implemented"
+				Just v -> [show v]
 			PtrType target_ty _ _ -> ["65000"]
 			ty -> error $ "checkSolutionM args: type " ++ (render.pretty) ty ++ " not implemented!"
 	printLogV 1 $ "checkSolution args = " ++ show args
@@ -1210,16 +1222,28 @@ checkSolutionM ret_ty traceid resultdata@(_,Just (env,solution,Just res_expr)) =
 	case exitcode of
 		ExitFailure _ -> error $ "Execution of " ++ filename ++ " failed:\n" ++ stdout ++ stderr
 		ExitSuccess -> do
-			let exec_result = (read $ last $ lines stdout) :: Int
-			let (MInt predicted_result) = getPredictedResult solution
-			case exec_result == predicted_result of
-				False -> do
-					let txt = "ERROR in " ++ show traceid ++ " exec_result=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result
-					printLog txt
-					error txt
-				True  -> printLog $ "checkSolutionM " ++ show traceid ++ " OK."
-			return resultdata
+			let outputs = words $ last $ lines stdout
+			when (length ret_env /= length outputs || length outputs /= length solution) $
+				error $ "checkSolutionM: lengths of ret_env, solution, outputs differ:\n" ++
+					"ret_env = " ++ showEnv ret_env ++ "\n" ++
+					"solution = " ++ show solution ++ "\n" ++
+					"outputs = " ++ show outputs ++ "\n"
+			forM_ (zip3 ret_env outputs solution) $ \ ((sourceident,(ident,ty)),s,(ident_s,predicted_result)) -> do
+				when (identToString ident /= ident_s) $
+					error $ "checkSolutionM: ident=" ++ identToString ident ++ " and ident_s=" ++ ident_s ++ " mismatch"
+				case ty of
+					PtrType _ _ _ -> return ()
+					_ -> do
+						let exec_result = case ty of
+							DirectType (TyIntegral TyBool) _ _  -> BoolVal $ (read s :: Int) == 0
+							DirectType (TyIntegral _) _ _       -> IntVal (read s)
+							DirectType (TyFloating TyFloat) _ _ -> FloatVal (read s)
+							DirectType (TyEnum _) _ _           -> IntVal (read s)
+							_ -> error $ "checkSolutionM: parsing type " ++ (render.pretty) ty ++ " of " ++ ident_s ++ " not implemented!"
+						when (exec_result /= predicted_result) $ do
+							let txt = "ERROR in " ++ show traceid ++ " exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result
+							printLog txt
+							error txt
 
-getPredictedResult solution = predicted_result
-	where
-	Just predicted_result = lookup returnval_var_name solution
+			printLog $ "checkSolutionM " ++ show traceid ++ " OK."
+			return resultdata

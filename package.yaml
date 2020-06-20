@@ -32,7 +32,6 @@ dependencies:
 - html
 - binary
 - containers
-- haskelzinc
 - extra
 - blaze-html
 - base-unicode-symbols
