@@ -25,14 +25,6 @@ import Text.Printf
 import Text.Regex.TDFA
 import Numeric (readHex)
 
-{-
-import Interfaces.FZSolutionParser
-import qualified Interfaces.MZAST as MZAST
-import Interfaces.MZPrinter
-import Interfaces.MZinHaskell
-import qualified Interfaces.MZBuiltIns as MZB
--}
-
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
 import qualified GHC.Generics as GHCG
@@ -92,8 +84,8 @@ showLine :: Trace -> String
 showLine trace = unlines $ map show (filter isnotbuiltin trace)
 
 show_solution _ Nothing = "No solution"
-show_solution _ (Just (_,_,[],_)) = "Empty solution"
-show_solution funname (Just v@(_,_,solution,_)) = unlines [ show solution, showTestVector funname v ]
+show_solution _ (Just (_,_,[])) = "Empty solution"
+show_solution funname (Just v@(_,_,solution)) = unlines [ show solution, showTestVector funname v ]
 
 main = do
 	-- when there is an error, we'd like to have *all* output till then
@@ -151,7 +143,7 @@ main = do
 						printLog $ "\n####### FINAL RESULT #######\n"
 	
 						forM_ testvectors $ \ (traceid,trace,(model_string,mb_solution)) -> do
-							case not showOnlySolutions || maybe False (not.null.(\(_,_,b,_)->b)) mb_solution of
+							case not showOnlySolutions || maybe False (not.null.(\(_,_,b)->b)) mb_solution of
 								False -> return ()
 								True -> printLog $ unlines $ mbshowtraces (
 									[ "","=== TRACE " ++ show traceid ++ " ========================","<leaving out builtins...>" ] ++
@@ -183,9 +175,9 @@ main = do
 showEnv :: Env -> String
 showEnv env = "{\n    " ++ intercalate " ,\n    " (map (render.pretty) env) ++ "\n    }"
 
-showTestVector :: String -> (Env,Env,Solution,Maybe CExpr) -> String
-showTestVector funname (env,ret_env,solution,mb_retval) = funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ++
-	" = " ++ maybe "<NO_RETURN>" (const $ (intercalate " " $ map showarg ret_env)) mb_retval
+showTestVector :: String -> (Env,Env,Solution) -> String
+showTestVector funname (env,ret_env,solution) = funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ++
+	" = " ++ intercalate " " (map showarg ret_env)
 	where
 	showarg :: EnvItem -> String
 	showarg (oldident,(newident,_)) =
@@ -234,6 +226,9 @@ instance Pretty NodeInfo where
 		where
 		(line,col) = lineColNodeInfo ni
 
+instance (Pretty a) => Pretty [a] where
+	pretty xs = brackets $ hcat $ punctuate comma (map pretty xs)
+
 traceToHTMLString :: Trace -> String
 traceToHTMLString trace = dataTreeToHTMLString [ trace2datatree trace ]
 	where
@@ -249,7 +244,7 @@ instance Show TraceElem where
 		(Assignment lvalue expr)   -> "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
 		(Condition b expr)         -> "COND " ++ (if b then "(THEN) " else "(ELSE) ") ++ (render.pretty) expr
 		(NewDeclaration (lval,ty)) -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
-		(Return expr)              -> "RET  " ++ (render.pretty) expr
+		(Return exprs)             -> "RET  " ++ (render.pretty) exprs
 		(TraceOr traces)           -> "OR   " ++ show traces
 		(TraceAnd traces)          -> "AND  " ++ show traces
 		) ++ "  (" ++ (render.pretty) (nodeInfo te) ++ ")"
@@ -268,7 +263,7 @@ showTrace ind (te:trace) = indent ind ++ case te of
 	showlist traces = indent (ind+1) ++ "[\n" ++ showitems traces ++ indent (ind+1) ++ "]\n"
 	showitems traces = intercalate (indent (ind+2) ++ ",\n") (map (showTrace (ind+2)) traces)
 
-type ResultData = (String,Maybe (Env,Env,Solution,Maybe CExpr))
+type ResultData = (String,Maybe (Env,Env,Solution))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
 
 covVectorsM :: String -> [String] -> CovVecM (Bool,([TraceAnalysisResult],Set.Set Branch,Set.Set Branch))
@@ -322,13 +317,18 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 		printLogV 1 $ "=== TRACE " ++ show traceid ++ " ========================\n<leaving out builtins...>\n"
 		printLogV 1 $ showLine res_line
 	
-	res_trace <- lift $ elimInds res_line
+	res_trace_i <- lift $ insertReturnvals ret_type res_line
+	when (True) $ do
+		printLogV 1 $ "\n=== TRACE after insertReturnvals " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
+		printLogV 1 $ showLine res_trace_i
+
+	res_trace <- lift $ elimInds res_trace_i
 	when (not don'tShowTraces) $ do
 		printLogV 1 $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
 		printLogV 1 $ showLine res_trace
 	
 	res_trace' <- lift $ elimAssignmentsM res_trace
-	when (not don'tShowTraces) $ do
+	when (True) $ do
 		printLogV 1 $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
 		printLogV 1 $ showLine res_trace'
 
@@ -394,7 +394,7 @@ analyzeTreeM opts ret_type param_env traceid res_line (te:rest) = do
 	analyzeTreeM opts ret_type param_env traceid (te:res_line) rest
 
 is_solution :: TraceAnalysisResult -> Bool
-is_solution (_,_,(_,Just (_,_,solution,_))) = not $ null solution
+is_solution (_,_,(_,Just (_,_,solution))) = not $ null solution
 is_solution _ = False
 
 is_visible_traceelem :: (CNode a) => ((Int,Int),(Int,Int)) -> a -> Bool
@@ -887,6 +887,28 @@ substituteBy x y a = everywhere (mkT substexpr) a
 	substexpr found_expr                   = found_expr
 
 
+-- Insert returnval conditions in order to find out function result
+insertReturnvals :: Type -> Trace -> CovVecM Trace
+insertReturnvals ret_type trace = do
+	let
+		mb_ret_val = case last trace of
+			Return ret_expr -> Just ret_expr
+			_               -> Nothing
+	retval_env  <- createInterfaceM [(internalIdent returnval_var_name,ret_type)]
+	ret_assigns <- case mb_ret_val of
+		Nothing -> return []
+		Just ret_expr -> do
+			retexpr_env <- createInterfaceM [(internalIdent $ lValueToVarName ret_expr,ret_type)]	
+			return $ zip3 (map fst retexpr_env) (map fst retval_env) (map (snd.snd) retexpr_env)
+	let
+		retval_trace = concat $ for ret_assigns $ \ (retexpr_ident,retval_ident,ty) -> [
+			NewDeclaration (retval_ident,ty),
+			Condition True $ CBinary CEqOp
+				(CVar retval_ident (nodeInfo retval_ident))
+				(CVar retexpr_ident (nodeInfo retexpr_ident))
+				(nodeInfo retexpr_ident) ]
+	return $ init trace ++ retval_trace ++ [last trace]
+
 -- Eliminate Indirections 
 -- (trace is in straight order, not reversed)
 
@@ -1165,29 +1187,15 @@ solveTraceM ret_type param_env traceid trace = do
 	let
 		tracename = show traceid
 
-	let
-		returnval_ident = internalIdent returnval_var_name
-		mb_ret_val = case last trace of
-			Return ret_expr -> Just ret_expr
-			_               -> Nothing
-		trace' = trace ++ case mb_ret_val of
-			Nothing -> []
-			Just ret_expr -> [
-				Condition undefined $ CBinary CEqOp (CVar returnval_ident (nodeInfo returnval_ident)) ret_expr (nodeInfo ret_expr),
-				NewDeclaration (returnval_ident,ret_type) ]
-	ret_env <- case mb_ret_val of
-		Nothing -> return []
-		Just ret_expr  -> createInterfaceM [(internalIdent $ lValueToVarName ret_expr,ret_type)]
-
+	retval_env  <- createInterfaceM [(internalIdent returnval_var_name,ret_type)]
 	let
 		param_names = map (fst.snd) param_env
-		ret_names = map (fst.snd) ret_env
-   
-		constraints = concatMap traceitem2constr trace' where
+		ret_names   = map (fst.snd) retval_env
+		constraints = concatMap traceitem2constr trace where
 		traceitem2constr (Condition _ expr) = [expr]
 		traceitem2constr _ = []
 		
-		tyenv = createTyEnv trace'
+		tyenv = createTyEnv trace
 
 	(model_string,mb_sol) <- makeAndSolveZ3ModelM
 		tyenv
@@ -1198,20 +1206,18 @@ solveTraceM ret_type param_env traceid trace = do
 
 	return (model_string,case mb_sol of
 		Nothing -> Nothing
-		Just sol -> Just (param_env,ret_env,sol,mb_ret_val))
+		Just sol -> Just (param_env,retval_env,sol))
 
-
---type ResultData = (String,Maybe (Env,Solution,Maybe CExpr))
 
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
 checkSolutionM _ resultdata | not checkSolutions = return resultdata
 checkSolutionM traceid resultdata@(_,Nothing) = do
 	printLog $ "No solution to check for " ++ show traceid
 	return resultdata
-checkSolutionM traceid resultdata@(_,Just (_,_,[],_)) = do
+checkSolutionM traceid resultdata@(_,Just (_,_,[])) = do
 	printLog $ "Empty solution cannot be checked for " ++ show traceid
 	return resultdata
-checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution,Just res_expr)) = do
+checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution)) = do
 	printLogV 1 $ "checkSolution param_env =\n" ++ showEnv param_env
 	printLogV 1 $ "checkSolution ret_env =\n" ++ showEnv ret_env
 	srcfilename <- gets srcFilenameCVS
@@ -1252,7 +1258,7 @@ checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution,Just res_e
 							DirectType (TyEnum _) _ _           -> IntVal (read s)
 							_ -> error $ "checkSolutionM: parsing type " ++ (render.pretty) ty ++ " of " ++ ident_s ++ " not implemented!"
 						when (exec_result /= predicted_result) $ do
-							let txt = "ERROR in " ++ show traceid ++ " exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result
+							let txt = "ERROR in " ++ show traceid ++ " for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result
 							printLog txt
 							error txt
 
