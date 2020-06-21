@@ -1130,6 +1130,7 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 		model_string = unlines $ map show model
 
 	liftIO $ writeFile modelpathfile model_string
+	printLogV 1 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string
 	printLog $ "Running model " ++ takeFileName modelpathfile ++ "..."
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
 		readProcessWithExitCode z3FilePath ["-smt2","parallel.enable=true",takeFileName modelpathfile] ""
@@ -1163,31 +1164,36 @@ solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
 solveTraceM ret_type param_env traceid trace = do
 	let
 		tracename = show traceid
-		param_names = map (fst.snd) param_env
+
+	let
+		returnval_ident = internalIdent returnval_var_name
 		mb_ret_val = case last trace of
 			Return ret_expr -> Just ret_expr
 			_               -> Nothing
-
-		returnval_ident = internalIdent returnval_var_name
 		trace' = trace ++ case mb_ret_val of
 			Nothing -> []
 			Just ret_expr -> [
 				Condition undefined $ CBinary CEqOp (CVar returnval_ident (nodeInfo returnval_ident)) ret_expr (nodeInfo ret_expr),
 				NewDeclaration (returnval_ident,ret_type) ]
+	ret_env <- case mb_ret_val of
+		Nothing -> return []
+		Just ret_expr  -> createInterfaceM [(internalIdent $ lValueToVarName ret_expr,ret_type)]
 
+	let
+		param_names = map (fst.snd) param_env
+		ret_names = map (fst.snd) ret_env
+   
 		constraints = concatMap traceitem2constr trace' where
 		traceitem2constr (Condition _ expr) = [expr]
 		traceitem2constr _ = []
 		
 		tyenv = createTyEnv trace'
 
-	ret_env <- createInterfaceM [(internalIdent returnval_var_name,ret_type)]
-
 	(model_string,mb_sol) <- makeAndSolveZ3ModelM
 		tyenv
 		constraints
 		(for param_names $ \ name -> SExpr [SLeaf "minimize",SLeaf (identToString name)])
-		( maybe [] (const [returnval_ident]) mb_ret_val ++ param_names )
+		(param_names ++ ret_names)
 		(analyzerPath </> "model_" ++ tracename ++ ".smtlib2")
 
 	return (model_string,case mb_sol of
@@ -1205,13 +1211,14 @@ checkSolutionM traceid resultdata@(_,Nothing) = do
 checkSolutionM traceid resultdata@(_,Just (_,_,[],_)) = do
 	printLog $ "Empty solution cannot be checked for " ++ show traceid
 	return resultdata
-checkSolutionM traceid resultdata@(_,Just (env,ret_env,solution,Just res_expr)) = do
-	printLogV 1 $ "checkSolution env = " ++ showEnv env
+checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution,Just res_expr)) = do
+	printLogV 1 $ "checkSolution param_env =\n" ++ showEnv param_env
+	printLogV 1 $ "checkSolution ret_env =\n" ++ showEnv ret_env
 	srcfilename <- gets srcFilenameCVS
 	Just filename <- gets checkExeNameCVS
 	absolute_filename <- liftIO $ makeAbsolute srcfilename
 	let
-		args = concat $ for env $ \ (_,(newident,ty)) -> case ty of
+		args = concat $ for param_env $ \ (_,(newident,ty)) -> case ty of
 			DirectType _ _ _ -> case lookup (identToString newident) solution of
 				Nothing -> ["99"]
 				Just v -> [show v]

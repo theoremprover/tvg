@@ -67,6 +67,7 @@ STRUCT* f(STRUCT* p,STRUCT r)
 
     if(r.member2 == p->member2)
     {
+        p->member2++;
         return p;
     }
     return p;
