@@ -67,7 +67,7 @@ floatTolerance = 1e-7 :: Float
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
-_UNROLLING_DEPTH = 32
+_UNROLLING_DEPTHS = [0..3]
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -175,6 +175,12 @@ main = do
 showEnv :: Env -> String
 showEnv env = "{\n    " ++ intercalate " ,\n    " (map (render.pretty) env) ++ "\n    }"
 
+showTyEnv :: TyEnv -> String
+showTyEnv tyenv = "{\n    " ++ intercalate " ,\n    " (map (render.pretty) tyenv) ++ "\n    }"
+
+showIdents :: [Ident] -> String
+showIdents idents = "[ " ++ intercalate ", " (map (render.pretty) idents) ++ " ]"
+
 showTestVector :: String -> (Env,Env,Solution) -> String
 showTestVector funname (env,ret_env,solution) = funname ++ " ( " ++ intercalate " , " (map showarg env) ++ " )" ++
 	"\n    = " ++ intercalate " , " (map showarg ret_env)
@@ -183,7 +189,6 @@ showTestVector funname (env,ret_env,solution) = funname ++ " ( " ++ intercalate 
 	showarg (oldident,(newident,_)) =
 		identToString oldident ++ " = " ++ case lookup (identToString newident) solution of
 			Nothing           -> "DONT_CARE"
-			Just (BoolVal b)  -> show b
 			Just (IntVal i)   -> show i
 			Just (FloatVal f) -> show f
 
@@ -283,7 +288,7 @@ covVectorsM filename opts = do
 	FunDef (VarDecl _ _ (FunctionType (FunType ret_type funparamdecls False) _)) body fundef_ni <-
 		lookupFunM (builtinIdent funname)
 	ret_type' <- elimTypeDefsM ret_type
-	
+
 	let
 		fun_lc = lineColNodeInfo fundef_ni
 		next_lc = case sort $ filter (> lineColNodeInfo fundef_ni) $ map lineColNodeInfo globdecls of
@@ -299,8 +304,9 @@ covVectorsM filename opts = do
 
 	trace <- unfoldTracesM (Just ret_type') (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
-	printLogV 1 $ "\n********** TRACE ***********\n" ++ showTrace 0 trace
-	printLogV 1 $ "****************************\n"
+	when (not don'tShowTraces) $ do
+		printLog $ "\n********** TRACE ***********\n" ++ showTrace 0 trace
+		printLog $ "****************************\n"
 
 	runStateT (analyzeTreeM opts ret_type param_env [] [] trace) ([],Set.empty,Set.empty)
 
@@ -315,27 +321,27 @@ type AnalyzeTreeM a = StateT ([TraceAnalysisResult],Set.Set Branch,Set.Set Branc
 analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> AnalyzeTreeM Bool
 
 analyzeTreeM opts ret_type param_env traceid res_line [] = do
-	when True $ do --(not don'tShowTraces) $ do
-		printLogV 1 $ "=== TRACE " ++ show traceid ++ " ========================\n<leaving out builtins...>\n"
-		printLogV 1 $ showLine res_line
+	when (not don'tShowTraces) $ do
+		printLog $ "=== TRACE " ++ show traceid ++ " ========================\n<leaving out builtins...>\n"
+		printLog $ showLine res_line
 
 	res_trace <- lift $ elimInds res_line
 	when (not don'tShowTraces) $ do
-		printLogV 1 $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
-		printLogV 1 $ showLine res_trace
+		printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
+		printLog $ showLine res_trace
 	
 	res_trace' <- lift $ elimAssignmentsM res_trace
 	when (not don'tShowTraces) $ do
-		printLogV 1 $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
-		printLogV 1 $ showLine res_trace'
+		printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
+		printLog $ showLine res_trace'
 
 	res_trace'' <- lift $ substIndM [] (map fst $ createTyEnv res_trace') res_trace'
 	when (not don'tShowTraces) $ do
-		printLogV 1 $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
-		printLogV 1 $ showLine res_trace''
+		printLog $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
+		printLog $ showLine res_trace''
 
 	resultdata@(model_string,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace''
-	when (not don'tShowTraces) $ printLogV 1 $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++ model_string
+	when (not don'tShowTraces) $ printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++ model_string
 	funname <- lift $ gets funNameCVS
 	printLogV 1 $ "\n--- SOLUTION " ++ show traceid ++ " ----------------------\n" ++ show_solution funname mb_solution
 
@@ -468,9 +474,11 @@ lValueToVarName (CUnary CAdrOp expr _) = "ADR_" ++ lValueToVarName expr
 lValueToVarName lval = error $ "lValueToVarName " ++ (render.pretty) lval ++ " not implemented!"
 
 type TyEnvItem = (Ident,Type)
+instance Pretty TyEnvItem where
+	pretty (idnew,ty) = pretty idnew <+> text " :: " <+> pretty ty
 type EnvItem = (Ident,TyEnvItem)
 instance Pretty EnvItem where
-	pretty (idold,(idnew,ty)) = pretty idold <+> text " |-> " <+> pretty idnew <+> text " :: " <+> pretty ty
+	pretty (idold,tyenvitem) = pretty idold <+> text " |-> " <+> pretty tyenvitem
 type Env = [EnvItem]
 
 envToString :: Env -> String
@@ -540,45 +548,43 @@ identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 -- Recursively create all "interface" variables for the top level function to be analyzed
 
 createInterfaceM :: [(Ident,Type)] -> CovVecM [(EnvItem,CExpr)]
-createInterfaceM ty_env = concatForM ty_env $ \ (srcident,ty) -> do
---	let VarDecl (VarName srcident _) _ ty = getVarDecl decl
-	elimTypeDefsM ty >>= create_interfaceM (CVar srcident (nodeInfo srcident))
+createInterfaceM ty_env = concatForM ty_env $ \ (srcident,ty) ->
+	createInterfaceFromExprM (CVar srcident (nodeInfo srcident)) ty
+
+createInterfaceFromExprM :: CExpr -> Type -> CovVecM [(EnvItem,CExpr)]
+createInterfaceFromExprM expr ty = elimTypeDefsM ty >>= \case
+
+	-- STRUCT* p
+	PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> prepend_plainvar $ do
+		member_ty_s <- getMembersM sueref
+		concatForM member_ty_s $ \ (m_ident,m_ty) ->
+			createInterfaceFromExprM (CMember expr m_ident True (nodeInfo expr)) m_ty
+
+	-- ty* p
+	PtrType target_ty _ _ -> prepend_plainvar $ do
+		createInterfaceFromExprM (CUnary CIndOp expr (nodeInfo expr)) target_ty
+
+	-- STRUCT expr
+	DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> prepend_plainvar $ do
+		member_ty_s <- getMembersM sueref
+		concatForM member_ty_s $ \ (m_ident,m_ty) -> do
+			createInterfaceFromExprM (CMember expr m_ident False (nodeInfo expr)) m_ty
+
+	-- direct-type expr where direct-type is no struct/union
+	ty'@(DirectType _ _ _) -> do
+		let srcident = mkIdentWithCNodePos expr (lValueToVarName expr)
+		return [ ((srcident,(srcident,ty')),expr) ]
+
+	ty' ->
+		error $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
 
 	where
 
-	create_interfaceM :: CExpr -> Type -> CovVecM [(EnvItem,CExpr)]
-	create_interfaceM expr ty = elimTypeDefsM ty >>= \case
-
-		-- STRUCT* p
-		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> prepend_plainvar $ do
-			member_ty_s <- getMembersM sueref
-			concatForM member_ty_s $ \ (m_ident,m_ty) -> create_interfaceM (CMember expr m_ident True (nodeInfo expr)) m_ty
-
-		-- ty* p
-		PtrType target_ty _ _ -> prepend_plainvar $ do
-			create_interfaceM (CUnary CIndOp expr (nodeInfo expr)) target_ty
-
-		-- STRUCT expr
-		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> prepend_plainvar $ do
-			member_ty_s <- getMembersM sueref
-			concatForM member_ty_s $ \ (m_ident,m_ty) -> do
-				create_interfaceM (CMember expr m_ident False (nodeInfo expr)) m_ty
-
-		-- direct-type expr where direct-type is no struct/union
-		ty'@(DirectType _ _ _) -> do
-			let srcident = mkIdentWithCNodePos expr (lValueToVarName expr)
-			return [ ((srcident,(srcident,ty')),expr) ]
-
-		ty' ->
-			error $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
-
-		where
-
-		prepend_plainvar :: CovVecM [(EnvItem,CExpr)] -> CovVecM [(EnvItem,CExpr)]
-		prepend_plainvar rest_m = do
-			let srcident = internalIdent $ lValueToVarName expr
-			rest <- rest_m
-			return $ ((srcident,(srcident,ty)),expr) : rest
+	prepend_plainvar :: CovVecM [(EnvItem,CExpr)] -> CovVecM [(EnvItem,CExpr)]
+	prepend_plainvar rest_m = do
+		let srcident = internalIdent $ lValueToVarName expr
+		rest <- rest_m
+		return $ ((srcident,(srcident,ty)),expr) : rest
 
 -- Just unfold the traces
 unfoldTracesM :: Maybe Type -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM Trace
@@ -607,37 +613,13 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 		return [ (if isJust mb_ret_type then TraceAnd else TraceOr) [then_trace,else_trace] ]
 
 	CReturn Nothing _ -> return trace
-
-{-
--- Insert returnval conditions in order to find out function result
-insertReturnvals :: Type -> Trace -> CovVecM Trace
-insertReturnvals ret_type trace = do
-	let
-		mb_ret_val = case last trace of
-			Return ret_expr -> Just ret_expr
-			_               -> Nothing
-	retval_env  <- createInterfaceM [(internalIdent returnval_var_name,ret_type)]
-	ret_assigns <- case mb_ret_val of
-		Nothing -> return []
-		Just ret_expr -> do
-			retexpr_env <- createInterfaceM [(internalIdent $ lValueToVarName ret_expr,ret_type)]
-			return $ zip3 (map fst retexpr_env) (map fst retval_env) (map (snd.snd) retexpr_env)
-	let
-		retval_trace = concat $ for ret_assigns $ \ (retexpr_ident,retval_ident,ty) -> [
-			NewDeclaration (retval_ident,ty),
-			Condition True $ CBinary CEqOp
-				(CVar retval_ident (nodeInfo retval_ident))
-				(CVar retexpr_ident (nodeInfo retexpr_ident))
-				(nodeInfo retexpr_ident) ]
-	return $ init trace ++ retval_trace ++ [last trace]
--}
 	CReturn (Just ret_expr) _ -> do
 		transids undefined ret_expr trace $ \ (ret_expr',trace') -> do
 			ret_trace <- case mb_ret_type of
 				Nothing -> return []
 				Just ret_type -> do
 					ret_var_expr <- createInterfaceM [(internalIdent returnval_var_name,ret_type)]
-					ret_env_expr <- createInterfaceM [(internalIdent $ lValueToVarName ret_expr,ret_type)]
+					ret_env_expr <- createInterfaceFromExprM ret_expr' ret_type
 					when (length ret_var_expr /= length ret_env_expr) $ error "unfoldTraces1M CReturn: length ret_var_expr /= length ret_env_expr !"
 					return $ concat $ for (zip ret_var_expr ret_env_expr) $
 						\ ( ((_,(ret_var_ident,ret_var_ty)),_) , (_,ret_member_expr)) -> [
@@ -647,7 +629,7 @@ insertReturnvals ret_type trace = do
 								(nodeInfo ret_member_expr),
 							NewDeclaration (ret_var_ident,ret_var_ty) ]
 			return $ Return ret_expr' : (ret_trace ++ trace')
-			
+
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids TraceOr assigned_expr' trace $ \ (assigned_expr'',trace') -> do
 			transids (error "more than one transid results for lexpr!") lexpr trace' $ \ (lexpr',trace'') -> do
@@ -670,11 +652,11 @@ insertReturnvals ret_type trace = do
 	CExpr (Just expr) _ -> do
 		error $ "not implemented yet."
 
-	-- That's cheating: Insert condition into trace
+	-- That's cheating: Insert condition into trace (for loop unrolling)
 	CGotoPtr cond _ -> unfoldTracesM mb_ret_type envs (Condition True cond : trace) ( rest : rest2 )
 
  	CWhile cond body False ni -> do
-		unrolleds <- forM [0 .. _UNROLLING_DEPTH] $ \ n ->
+		unrolleds <- forM _UNROLLING_DEPTHS $ \ n ->
 			unfoldTracesM mb_ret_type envs trace ((unroll n ++ rest) : rest2 )
 		return [ TraceOr unrolleds ]
 
@@ -815,6 +797,8 @@ translateExprM :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
 translateExprM envs expr = do
 	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
+		-- eliminate casts
+		to_call (CCast _ cexpr _) = return cexpr
 		to_call (CCall funexpr args ni) = case funexpr of
 			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
 			CVar funident _ -> do
@@ -898,7 +882,6 @@ renameVars envs expr = everywhere (mkT subst_var) expr where
 	subst_var (CVar ident ni) = case lookup ident (concat envs) of
 		Just (ident',_) -> CVar ident' ni
 		Nothing -> error $ " in subst_var : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
---	subst_var expr@(CMember _ _ _ ni) = CVar (mkIdentWithCNodePos expr (lValueToVarName expr)) ni
 	subst_var expr = expr
 
 tyspec2TypeM :: CTypeSpec -> CovVecM Type
@@ -921,7 +904,7 @@ substituteBy x y a = everywhere (mkT substexpr) a
 	substexpr found_expr                   = found_expr
 
 
--- Eliminate Indirections 
+-- Eliminate Indirections
 -- (trace is in straight order, not reversed)
 
 elimInds :: Trace -> CovVecM Trace
@@ -946,7 +929,7 @@ elimInds trace = elim_indsM [] $ reverse trace
 
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
--- trace should be reversed!
+-- trace should be given reversed!
 
 elimAssignmentsM :: Trace -> CovVecM Trace
 elimAssignmentsM trace = foldtraceM [] $ reverse trace
@@ -982,9 +965,9 @@ substIndM res_trace new_idents (ti : rest) = do
 	subst_indM expr@(CMember (CVar ptr_ident _) _ True _) = do
 		let Just (PtrType ty _ _) = lookup ptr_ident $ createTyEnv res_trace
 		create_var expr ty
-	subst_indM expr@(CMember (CVar a_ident _) _ False _) = do
-		let Just ty = lookup a_ident $ createTyEnv res_trace
-		create_var expr ty
+	subst_indM expr@(CMember (CVar a_ident _) _ False _) = case lookup a_ident $ createTyEnv res_trace of
+		Nothing -> error $ "subst_indM " ++ (render.pretty) expr ++ " : " ++ (render.pretty) a_ident ++ " not found!"
+		Just ty -> create_var expr ty
 	subst_indM expr@(CUnary CAdrOp (CVar a_ident _) _) = do
 		let Just ty = lookup a_ident $ createTyEnv res_trace
 		create_var expr ty
@@ -1101,9 +1084,9 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 False expr)
 
 ty2Z3Type :: Type -> Z3_Type
 ty2Z3Type ty = case ty of
+	DirectType (TyComp (CompTypeRef _ _ _)) _ _ -> Z3_BitVector 4 False
 	DirectType tyname _ _ -> case tyname of
 		TyIntegral intty -> case intty of
-			TyBool   -> Z3_Bool
 			TyChar   -> Z3_BitVector 8 False
 			TySChar  -> Z3_BitVector 8 True
 			TyUChar  -> Z3_BitVector 8 False
@@ -1127,30 +1110,32 @@ ty2SExpr :: Type -> SExpr
 ty2SExpr ty = case ty2Z3Type ty of
 	Z3_BitVector size _ -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
 	Z3_Float            -> SLeaf "Real"
-	Z3_Bool             -> SLeaf "Bool"
 
 type Solution = [(String,SolutionVal)]
 
-data SolutionVal = IntVal Int | BoolVal Bool | FloatVal Float
+data SolutionVal = IntVal Int | FloatVal Float
 instance Eq SolutionVal where
 	IntVal i1   == IntVal i2   = i1==i2
-	BoolVal b1  == BoolVal b2  = b1==b2
 	FloatVal f1 == FloatVal f2 = f2-f1 <= floatTolerance
 
 instance Show SolutionVal where
 	show (IntVal i) = show i
-	show (BoolVal b) = show b
 	show (FloatVal f) = show f
 
 makeAndSolveZ3ModelM :: TyEnv -> [CExpr] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpathfile = do
+--	printLog $ "tyenv=" ++ showTyEnv tyenv
+	printLogV 1 $ "output_idents = " ++ showIdents output_idents
 	let
 		constraints_vars = nub $ everything (++) (mkQ [] searchvar) constraints where
 			searchvar :: CExpr -> [Ident]
 			searchvar (CVar ident _) = [ ident ]
 			searchvar _ = []
+	printLogV 1 $ "constraints_vars = " ++ showIdents constraints_vars
 
-		varsZ3 = for (filter ((∈ (constraints_vars ++ output_idents)).fst) tyenv) $ \ (ident,ty) -> SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
+	let
+		varsZ3 = for (filter ((∈ (constraints_vars ++ output_idents)).fst) tyenv) $ \ (ident,ty) ->
+			SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
 		constraintsZ3 = for constraints $ \ expr -> SExpr [SLeaf "assert", expr2SExpr tyenv expr]
 		outputvarsZ3 = for output_idents $ \ ident -> SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
 		model = [
@@ -1186,8 +1171,7 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 								IntVal $ case signed of
 									False -> fromIntegral i
 									True  -> fromIntegral $ if i < 2^(size-1) then i else i - 2^size
-							Z3_Float -> FloatVal (read val_string :: Float)
-							Z3_Bool -> BoolVal $ fromJust $ lookup val_string [("true",True),("false",False)] )
+							Z3_Float -> FloatVal (read val_string :: Float) )
 
 					_ -> error $ "Parsing z3 output: Could not find " ++ is
 			return (model_string,Just sol_params)
@@ -1263,9 +1247,9 @@ checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution)) = do
 					error $ "checkSolutionM: ident=" ++ identToString ident ++ " and ident_s=" ++ ident_s ++ " mismatch"
 				case ty of
 					PtrType _ _ _ -> return ()
+					DirectType (TyComp _) _ _ -> return ()
 					_ -> do
 						let exec_result = case ty of
-							DirectType (TyIntegral TyBool) _ _  -> BoolVal $ (read s :: Int) == 0
 							DirectType (TyIntegral _) _ _       -> IntVal (read s)
 							DirectType (TyFloating TyFloat) _ _ -> FloatVal (read s)
 							DirectType (TyEnum _) _ _           -> IntVal (read s)

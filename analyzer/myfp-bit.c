@@ -1710,7 +1710,6 @@ int main(int argc, char* argv[])
     fp_number_type a = { arga1, arga2, arga3, { arga5 } };
     fp_number_type b = { argb1, argb2, argb3, { argb5 } };
 
-
     fp_number_type* r = _fpdiv_parts(&a,&b);
     printf("f(a=%i, a={ %i,%i,%i, fraction=%i,fraction={%i} },   b=%i, b={ %i,%i,%i, fraction=%i,fraction={%i} }) =\n%i %i %i %i %i %i\n",
         arga0,arga1,arga2,arga3,arga4,arga5,
