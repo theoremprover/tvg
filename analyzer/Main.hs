@@ -59,7 +59,7 @@ longIntSize = 64
 
 solveIt = True
 showOnlySolutions = True
-don'tShowTraces = True
+don'tShowTraces = False
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
 outputVerbosity = 1
@@ -925,6 +925,7 @@ elimInds trace = elim_indsM [] $ reverse trace
 		where
 		cancel_ind_adr :: CExpr -> CExpr
 		cancel_ind_adr (CUnary CIndOp (CUnary CAdrOp expr _) _) = expr
+		cancel_ind_adr (CMember (CUnary CAdrOp obj _) member True ni) = CMember obj member False ni
 		cancel_ind_adr expr = expr
 
 
