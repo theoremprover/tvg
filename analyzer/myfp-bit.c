@@ -1711,11 +1711,11 @@ int main(int argc, char* argv[])
     fp_number_type b = { argb1, argb2, argb3, { argb5 } };
 
 
-
-    printf("f(a=%i, a={ %i,%i,%i, fraction=%i,fraction={%i} },   b=%i, b={ %i,%i,%i, fraction=%i,fraction={%i} }) =\n%i\n",
+    fp_number_type* r = _fpdiv_parts(&a,&b);
+    printf("f(a=%i, a={ %i,%i,%i, fraction=%i,fraction={%i} },   b=%i, b={ %i,%i,%i, fraction=%i,fraction={%i} }) =\n%i %i %i %i %i %i\n",
         arga0,arga1,arga2,arga3,arga4,arga5,
         argb0,argb1,argb2,argb3,argb4,argb5,
-        _fpdiv_parts(&a,&b));
+        r,r->class,r->sign,r->normal_exp,&(r->fraction),r->fraction.ll);
     return 0;
 }
 #endif
