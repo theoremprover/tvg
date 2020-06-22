@@ -612,7 +612,7 @@ unfoldTraces1M toplevel envs trace ((CBlockStmt stmt : rest) : rest2) = case stm
 	CReturn Nothing _ -> return trace
 	CReturn (Just ret_expr) _ -> do
 		transids undefined ret_expr trace $ \ (ret_expr',trace') -> do
-			return $ Return ret_expr' : trace'
+			return $ Return ret_expr' : : trace'
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids TraceOr assigned_expr' trace $ \ (assigned_expr'',trace') -> do
@@ -898,7 +898,7 @@ insertReturnvals ret_type trace = do
 	ret_assigns <- case mb_ret_val of
 		Nothing -> return []
 		Just ret_expr -> do
-			retexpr_env <- createInterfaceM [(internalIdent $ lValueToVarName ret_expr,ret_type)]	
+			retexpr_env <- createInterfaceM [(internalIdent $ lValueToVarName ret_expr,ret_type)]
 			return $ zip3 (map fst retexpr_env) (map fst retval_env) (map (snd.snd) retexpr_env)
 	let
 		retval_trace = concat $ for ret_assigns $ \ (retexpr_ident,retval_ident,ty) -> [
