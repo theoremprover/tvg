@@ -59,7 +59,7 @@ longIntSize = 64
 
 solveIt = True
 showOnlySolutions = True
-don'tShowTraces = True
+don'tShowTraces = False
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
 outputVerbosity = 1
@@ -318,7 +318,7 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 		printLogV 1 $ showLine res_line
 	
 	res_trace_i <- lift $ insertReturnvals ret_type res_line
-	when (True) $ do
+	when (not don'tShowTraces) $ do
 		printLogV 1 $ "\n=== TRACE after insertReturnvals " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
 		printLogV 1 $ showLine res_trace_i
 
@@ -328,7 +328,7 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 		printLogV 1 $ showLine res_trace
 	
 	res_trace' <- lift $ elimAssignmentsM res_trace
-	when (True) $ do
+	when (not don'tShowTraces) $ do
 		printLogV 1 $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
 		printLogV 1 $ showLine res_trace'
 
