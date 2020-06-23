@@ -64,6 +64,7 @@ checkSolutions = solveIt && True
 returnval_var_name = "return_val"
 outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
+showBuiltins = True
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
@@ -258,7 +259,7 @@ type Trace = [TraceElem]
 
 showTrace :: Int -> Trace -> String
 showTrace _ [] = ""
-showTrace ind (te:trace) | not (isnotbuiltin te) = showTrace ind trace
+showTrace ind (te:trace) | not showBuiltins && not (isnotbuiltin te) = showTrace ind trace
 showTrace ind (te:trace) = indent ind ++ case te of
 	TraceOr traces  -> "OR\n"  ++ showlist traces
 	TraceAnd traces -> "AND\n" ++ showlist traces
@@ -277,13 +278,15 @@ covVectorsM filename opts = do
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
 	glob_env <- concatMapM declaration2EnvItemM globdecls
 	let
-		-- creates the assignment statements from the global context
-		defs = concatMap def2stmt globdecls
-		def2stmt :: IdentDecl -> [CBlockItem]
-		def2stmt ed@(EnumeratorDef (Enumerator ident expr _ _)) = assnstmt ident expr (nodeInfo ed)
-		def2stmt od@(ObjectDef (ObjDef (VarDecl (VarName ident _) _ _) (Just (CInitExpr expr _)) _)) = assnstmt ident expr (nodeInfo od)
-		def2stmt _ = []
-		assnstmt ident expr ni = [ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident (nodeInfo ident)) expr ni) ni) ] 
+		def2stmt :: IdentDecl -> CovVecM [CBlockItem]
+		def2stmt (EnumeratorDef (Enumerator ident expr _ ni)) = return $
+			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident (nodeInfo ident)) expr ni) ni) ]
+		def2stmt (ObjectDef (ObjDef (VarDecl (VarName ident _) _ ty) (Just initializer) ni)) = do
+			ty' <- elimTypeDefsM ty
+			cinitializer2blockitems (CVar ident ni) ty' initializer
+		def2stmt _ = return []
+	-- creates the assignment statements from the global context
+	defs <- concatMapM def2stmt globdecls
 
 	FunDef (VarDecl _ _ (FunctionType (FunType ret_type funparamdecls False) _)) body fundef_ni <-
 		lookupFunM (builtinIdent funname)
@@ -304,7 +307,7 @@ covVectorsM filename opts = do
 
 	trace <- unfoldTracesM (Just ret_type') (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
-	when (not don'tShowTraces) $ do
+	when (False {-not don'tShowTraces-}) $ do
 		printLog $ "\n********** TRACE ***********\n" ++ showTrace 0 trace
 		printLog $ "****************************\n"
 
@@ -322,22 +325,26 @@ analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> Anal
 
 analyzeTreeM opts ret_type param_env traceid res_line [] = do
 	when (not don'tShowTraces) $ do
-		printLog $ "=== TRACE " ++ show traceid ++ " ========================\n<leaving out builtins...>\n"
+		printLog $ "=== TRACE " ++ show traceid ++ " ========================\n" ++
+			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine res_line
 
 	res_trace <- lift $ elimInds res_line
 	when (not don'tShowTraces) $ do
-		printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n<leaving out builtins...>\n"
+		printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n" ++
+			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine res_trace
 	
 	res_trace' <- lift $ elimAssignmentsM res_trace
 	when (not don'tShowTraces) $ do
-		printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
+		printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n" ++
+			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine res_trace'
 
 	res_trace'' <- lift $ substIndM [] (map fst $ createTyEnv res_trace') res_trace'
 	when (not don'tShowTraces) $ do
-		printLog $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n<leaving out builtins...>\n"
+		printLog $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n" ++
+			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine res_trace''
 
 	resultdata@(model_string,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace''
@@ -764,20 +771,6 @@ unfoldTraces1M mb_ret_type (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec type
 			initializers <- case mb_init of
 				Nothing -> return []
 				Just initializer -> cinitializer2blockitems (CVar ident ni) ty' initializer
-					where
-					cinitializer2blockitems :: CExpr -> Type -> CInit -> CovVecM [CBlockItem]
-					cinitializer2blockitems lexpr ty initializer =
-						case initializer of
-							CInitExpr expr ni_init -> return [ CBlockStmt $ CExpr (
-								Just $ CAssign CAssignOp lexpr expr ni_init) ni_init ]
-							CInitList initlist _ -> case ty of
-								DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
-									memberidentstypes <- getMembersM sueref
-									concatForM (zip initlist memberidentstypes) $ \case
-										(([],initializer),(memberident,memberty)) ->
-											cinitializer2blockitems (CMember lexpr memberident False (nodeInfo memberident)) memberty initializer
-										_ -> error $ "unfoldTracesM initializers: CPartDesignators not implemented yet!"
-								_ -> error $ "unfoldTracesM initializers: " ++ (render.pretty) ty ++ " is no composite type!"
 			return (newenvitems,newdecls,initializers)
 		triple -> error $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 	let (newenvs,newitems,initializerss) = unzip3 $ reverse new_env_items
@@ -789,6 +782,19 @@ unfoldTraces1M _ _ trace [] = return trace
 
 unfoldTraces1M _ _ _ ((cbi:_):_) = error $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
+cinitializer2blockitems :: CExpr -> Type -> CInit -> CovVecM [CBlockItem]
+cinitializer2blockitems lexpr ty initializer =
+	case initializer of
+		CInitExpr expr ni_init -> return [ CBlockStmt $ CExpr (
+			Just $ CAssign CAssignOp lexpr expr ni_init) ni_init ]
+		CInitList initlist _ -> case ty of
+			DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
+				memberidentstypes <- getMembersM sueref
+				concatForM (zip initlist memberidentstypes) $ \case
+					(([],initializer),(memberident,memberty)) ->
+						cinitializer2blockitems (CMember lexpr memberident False (nodeInfo memberident)) memberty initializer
+					_ -> error $ "cinitializer2blockitems: CPartDesignators not implemented yet!"
+			_ -> error $ "cinitializer2blockitems: " ++ (render.pretty) ty ++ " is no composite type!"
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
