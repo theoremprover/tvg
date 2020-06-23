@@ -925,7 +925,7 @@ elimInds trace = elim_indsM [] $ reverse trace
 		where
 		cancel_ind_adr :: CExpr -> CExpr
 		cancel_ind_adr (CUnary CIndOp (CUnary CAdrOp expr _) _) = expr
-		cancel_ind_adr (CMember (CUnary CAdrOp obj _) member True ni) = CMember obj member False ni
+--		cancel_ind_adr (CMember (CUnary CAdrOp obj _) member True ni) = CMember obj member False ni
 		cancel_ind_adr expr = expr
 
 
@@ -988,7 +988,7 @@ instance Show SExpr where
 	show (SLeaf s) = s
 	show (SExpr sexprs) = "(" ++ intercalate " " (map show sexprs) ++ ")"
 
-data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Bool
+data Z3_Type = Z3_BitVector Int Bool | Z3_Float
 	deriving (Show,Eq,Ord)
 
 type Constraint = CExpr
