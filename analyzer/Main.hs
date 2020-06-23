@@ -547,7 +547,7 @@ identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 	new_var_num <- gets newNameIndexCVS
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
 	let
-		name_prefix = lValueToVarName (CVar srcident (nodeInfo srcident))
+		name_prefix = identToString srcident
 		newident = Ident (name_prefix ++ "_" ++ show new_var_num) i ni
 	return $ [ (srcident,(newident,ty')) ]
 
@@ -559,39 +559,39 @@ createInterfaceM ty_env = concatForM ty_env $ \ (srcident,ty) ->
 	createInterfaceFromExprM (CVar srcident (nodeInfo srcident)) ty
 
 createInterfaceFromExprM :: CExpr -> Type -> CovVecM [(EnvItem,CExpr)]
-createInterfaceFromExprM expr ty = elimTypeDefsM ty >>= \case
+createInterfaceFromExprM expr ty = do
+	ty' <- elimTypeDefsM ty
+	case ty' of
+	
+		-- STRUCT* p
+		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> prepend_plainvar ty' $ do
+			member_ty_s <- getMembersM sueref
+			concatForM member_ty_s $ \ (m_ident,m_ty) ->
+				createInterfaceFromExprM (CMember expr m_ident True (nodeInfo expr)) m_ty
+	
+		-- ty* p
+		PtrType target_ty _ _ -> prepend_plainvar ty' $ do
+			createInterfaceFromExprM (CUnary CIndOp expr (nodeInfo expr)) target_ty
+	
+		-- STRUCT expr
+		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> prepend_plainvar ty' $ do
+			member_ty_s <- getMembersM sueref
+			concatForM member_ty_s $ \ (m_ident,m_ty) -> do
+				createInterfaceFromExprM (CMember expr m_ident False (nodeInfo expr)) m_ty
+	
+		-- direct-type expr where direct-type is no struct/union
+		DirectType _ _ _ -> prepend_plainvar ty' $ return []
+	
+		_ ->
+			error $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
 
-	-- STRUCT* p
-	PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> prepend_plainvar $ do
-		member_ty_s <- getMembersM sueref
-		concatForM member_ty_s $ \ (m_ident,m_ty) ->
-			createInterfaceFromExprM (CMember expr m_ident True (nodeInfo expr)) m_ty
-
-	-- ty* p
-	PtrType target_ty _ _ -> prepend_plainvar $ do
-		createInterfaceFromExprM (CUnary CIndOp expr (nodeInfo expr)) target_ty
-
-	-- STRUCT expr
-	DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> prepend_plainvar $ do
-		member_ty_s <- getMembersM sueref
-		concatForM member_ty_s $ \ (m_ident,m_ty) -> do
-			createInterfaceFromExprM (CMember expr m_ident False (nodeInfo expr)) m_ty
-
-	-- direct-type expr where direct-type is no struct/union
-	ty'@(DirectType _ _ _) -> do
-		let srcident = mkIdentWithCNodePos expr (lValueToVarName expr)
-		return [ ((srcident,(srcident,ty')),expr) ]
-
-	ty' ->
-		error $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
-
-	where
-
-	prepend_plainvar :: CovVecM [(EnvItem,CExpr)] -> CovVecM [(EnvItem,CExpr)]
-	prepend_plainvar rest_m = do
-		let srcident = internalIdent $ lValueToVarName expr
-		rest <- rest_m
-		return $ ((srcident,(srcident,ty)),expr) : rest
+		where
+	
+		prepend_plainvar :: Type -> CovVecM [(EnvItem,CExpr)] -> CovVecM [(EnvItem,CExpr)]
+		prepend_plainvar ty' rest_m = do
+			let srcident = internalIdent $ lValueToVarName expr
+			rest <- rest_m
+			return $ ((srcident,(srcident,ty')),expr) : rest
 
 -- Just unfold the traces
 unfoldTracesM :: Maybe Type -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM Trace
