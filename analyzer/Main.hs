@@ -94,13 +94,13 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
---		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST"]
+		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrrettest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : ["-writeTraceTree"] --["-writeAST","-writeGlobalDecls"]
@@ -908,8 +908,22 @@ substituteBy x y a = everywhere (mkT substexpr) a
 	substexpr found_expr                   = found_expr
 
 
--- Eliminate Indirections
--- (trace is in straight order, not reversed)
+-- Going from the end of the trace backwards,
+-- for all ASSN ptr = expr where ptr is a pointer (probably expr=&...),
+-- substitute ptr by expr in the already processed trace
+-- and cancel */& operators in *(&x)
+-- (input trace is in straight order, not reversed)
+
+{- EXAMPLE:
+	int mem;
+	int x,y;
+	int* p;
+	p = &x;
+	*p = 3;
+	mem = *p;
+	p = &y;
+	*p = 4;
+-}
 
 elimInds :: Trace -> CovVecM Trace
 elimInds trace = elim_indsM [] $ reverse trace
@@ -920,7 +934,7 @@ elimInds trace = elim_indsM [] $ reverse trace
 	elim_indsM res_trace (ti@(Assignment ptr@(CVar ptr_ident _) expr) : rest) = do
 		case lookup ptr_ident tyenv of
 			Nothing -> error $ "elemInds: could not find " ++ (render.pretty) ptr_ident
-			Just (PtrType _ _ _) -> elim_indsM (cancel_ind_adrs $ substituteBy ptr expr res_trace) rest
+			Just (PtrType _ _ _) -> elim_indsM ({-cancel_ind_adrs $-} substituteBy ptr expr res_trace) rest
 			_ -> elim_indsM (ti : res_trace) rest
 	elim_indsM res_trace (ti : rest) = elim_indsM (ti : res_trace) rest
 
@@ -929,7 +943,7 @@ elimInds trace = elim_indsM [] $ reverse trace
 		where
 		cancel_ind_adr :: CExpr -> CExpr
 		cancel_ind_adr (CUnary CIndOp (CUnary CAdrOp expr _) _) = expr
---		cancel_ind_adr (CMember (CUnary CAdrOp obj _) member True ni) = CMember obj member False ni
+		cancel_ind_adr (CMember (CUnary CAdrOp obj _) member True ni) = CMember obj member False ni
 		cancel_ind_adr expr = expr
 
 
@@ -950,6 +964,7 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 simplifyTraceM :: Trace -> CovVecM Trace
 simplifyTraceM trace = everywhereM (mkM simplify) trace where
 	simplify :: CExpr -> CovVecM CExpr
+	simplify (CUnary CIndOp (CUnary CAdrOp expr _) _) = return expr
 	simplify (CMember (CUnary CAdrOp s _) member True ni) = return $ CMember s member False ni
 	simplify (CMember (CUnary CIndOp p _) member False ni) = return $ CMember p member True ni
 	simplify expr = return expr
