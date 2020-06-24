@@ -329,25 +329,31 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine res_line
 
-	res_trace <- lift $ elimInds res_line
+	res_trace_elim_inds <- lift $ elimInds res_line
 	when (not don'tShowTraces) $ do
 		printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_trace
+		printLog $ showLine res_trace_elim_inds
 	
-	res_trace' <- lift $ elimAssignmentsM res_trace
+	res_trace_elim'd_assigns <- lift $ elimAssignmentsM res_trace_elim_inds
 	when (not don'tShowTraces) $ do
 		printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_trace'
+		printLog $ showLine res_trace_elim'd_assigns
 
-	res_trace'' <- lift $ substIndM [] (map fst $ createTyEnv res_trace') res_trace'
+	res_trace_simplified <- lift $ simplifyTraceM res_trace_elim'd_assigns
 	when (not don'tShowTraces) $ do
 		printLog $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_trace''
+		printLog $ showLine res_trace_simplified
 
-	resultdata@(model_string,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace''
+	res_trace_symbolic <- lift $ createSymbolicVarsM [] (map fst $ createTyEnv res_trace_simplified) res_trace_simplified
+	when (not don'tShowTraces) $ do
+		printLog $ "\n--- TRACE after substIndM " ++ show traceid ++ " -----------\n" ++
+			if showBuiltins then "" else "<leaving out builtins...>\n"
+		printLog $ showLine res_trace_symbolic
+
+	resultdata@(model_string,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace_symbolic
 	when (not don'tShowTraces) $ printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++ model_string
 	funname <- lift $ gets funNameCVS
 	printLogV 1 $ "\n--- SOLUTION " ++ show traceid ++ " ----------------------\n" ++ show_solution funname mb_solution
@@ -447,37 +453,22 @@ instance Eq CConst where
 	(CStrConst c1 _)   == (CStrConst c2 _)   = c1==c2
 
 
--- Normalizes an expression and creates a variable name for the result
-
-normalizeExpr :: CExpr -> String
-normalizeExpr expr = case expr of
-	CVar varident _ -> identToString varident
-	CBinary binop (CVar varident _) (CConst const) _ ->
-		identToString varident ++ "_" ++ binop2str binop ++ "_" ++ const2str const
-		where
-		binop2str binop = case lookup binop [
-			(CMulOp,"mul"),(CDivOp,"div"),(CRmdOp,"rmd"),(CAddOp,"plus"),(CSubOp,"minus"),
-			(CShlOp,"shl"),(CShrOp,"shr"),(CAndOp,"and"),(CXorOp,"xor"),(COrOp,"or") ] of
-				Nothing -> error $ "binop2str " ++ (render.pretty) binop ++ " not implemented"
-				Just s -> s
-	CMember (CUnary CAdrOp expr _) member True ni -> normalizeExpr $ CMember expr member False ni
-	CMember (CUnary CIndOp expr _) member False ni -> normalizeExpr $ CMember expr member True ni
-	expr -> lValueToVarName expr
---	other -> error $ "normalizeExpr " ++ (render.pretty) other ++ " not implemented yet."
-
-	where
-
-	const2str (CIntConst cint _) = (if i<0 then "m" else "") ++ show (abs i)
-		where
-		i = getCInteger cint
-	const2str x = error $ "const2str " ++ (render.pretty) x ++ " not implemented"
-
 lValueToVarName :: CExpr -> String
-lValueToVarName cvar@(CVar _ _) = normalizeExpr cvar
+lValueToVarName (CVar ident _) = identToString ident
 lValueToVarName (CMember ptrexpr member isptr _) =
-	normalizeExpr ptrexpr ++ (if isptr then "_ARROW_" else "_DOT_") ++ identToString member
+	lValueToVarName ptrexpr ++ (if isptr then "_ARROW_" else "_DOT_") ++ identToString member
 lValueToVarName (CUnary CIndOp expr _) = "PTR_" ++ lValueToVarName expr
 lValueToVarName (CUnary CAdrOp expr _) = "ADR_" ++ lValueToVarName expr
+lValueToVarName (CBinary binop expr1 expr2 _) =
+	lValueToVarName expr1 ++ "_" ++ binop2str binop ++ "_" ++ lValueToVarName expr2
+	where
+	binop2str binop = case lookup binop [
+		(CMulOp,"mul"),(CDivOp,"div"),(CRmdOp,"rmd"),(CAddOp,"plus"),(CSubOp,"minus"),
+		(CShlOp,"shl"),(CShrOp,"shr"),(CAndOp,"and"),(CXorOp,"xor"),(COrOp,"or") ] of
+			Nothing -> error $ "binop2str " ++ (render.pretty) binop ++ " not implemented"
+			Just s -> s
+lValueToVarName (CConst (CIntConst cint _)) = (if i<0 then "m" else "") ++ show (abs i) where
+	i = getCInteger cint
 lValueToVarName lval = error $ "lValueToVarName " ++ (render.pretty) lval ++ " not implemented!"
 
 type TyEnvItem = (Ident,Type)
@@ -504,6 +495,13 @@ lookupTagM ident = do
 	case Map.lookup ident tags of
 		Just tagdef -> return tagdef
 		Nothing -> error $ "Tag " ++ (show ident) ++ " not found"
+
+getMemberTypeM :: Type -> Ident -> CovVecM Type
+getMemberTypeM ty@(DirectType (TyComp (CompTypeRef sueref _ _)) _ _) member = do
+	mem_tys <- getMembersM sueref
+	case lookup member mem_tys of
+		Nothing -> error $ "getMemberTypeM: Could not find member " ++ (render.pretty) member ++ " in " ++ (render.pretty) ty
+		Just mem_ty -> return mem_ty
 
 getMembersM :: SUERef -> CovVecM [(Ident,Type)]
 getMembersM sueref = do
@@ -947,13 +945,22 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
 
 
--- Substitute leftover indirections
+-- Simplify
 
-substIndM :: Trace -> [Ident] -> Trace -> CovVecM Trace
-substIndM res_trace _ [] = return $ reverse res_trace
-substIndM res_trace new_idents (ti : rest) = do
-	(ti',add_tis) <- runStateT (everywhereM (mkM subst_indM) ti) []
-	substIndM (ti' : (map NewDeclaration add_tis) ++ res_trace) (map fst add_tis ++ new_idents) rest
+simplifyTraceM :: Trace -> CovVecM Trace
+simplifyTraceM trace = everywhereM (mkM simplify) trace where
+	simplify :: CExpr -> CovVecM CExpr
+	simplify (CMember (CUnary CAdrOp s _) member True ni) = return $ CMember s member False ni
+	simplify (CMember (CUnary CIndOp p _) member False ni) = return $ CMember p member True ni
+	simplify expr = return expr
+
+-- Create symbolic vars for leftover expressions
+
+createSymbolicVarsM :: Trace -> [Ident] -> Trace -> CovVecM Trace
+createSymbolicVarsM res_trace _ [] = return $ reverse res_trace
+createSymbolicVarsM res_trace new_idents (ti : rest) = do
+	(ti',add_tis) <- runStateT (everywhereM (mkM createsymvar_m) ti) []
+	createSymbolicVarsM (ti' : (map NewDeclaration add_tis) ++ res_trace) (map fst add_tis ++ new_idents) rest
 	where
 	
 	create_var :: CExpr -> Type -> StateT [(Ident,Type)] CovVecM CExpr
@@ -963,23 +970,45 @@ substIndM res_trace new_idents (ti : rest) = do
 			modify ((newident,ty) : )
 		return $ CVar newident (nodeInfo expr)
 
-	subst_indM :: CExpr -> StateT [(Ident,Type)] CovVecM CExpr
-	subst_indM expr@(CUnary CIndOp (CVar ptr_ident _) ni) = do
+	createsymvar_m :: CExpr -> StateT [(Ident,Type)] CovVecM CExpr
+
+	createsymvar_m expr@(CUnary CIndOp (CVar ptr_ident _) ni) = do
 		let Just (PtrType ty _ _) = lookup ptr_ident $ createTyEnv res_trace
 		create_var expr ty
-	subst_indM (CMember (CUnary CAdrOp s _) member True ni) = return $ CMember s member False ni
-	subst_indM (CMember (CUnary CIndOp p _) member False ni) = return $ CMember p member True ni
-	subst_indM expr@(CMember (CVar ptr_ident _) _ True _) = do
-		let Just (PtrType ty _ _) = lookup ptr_ident $ createTyEnv res_trace
-		create_var expr ty
-	subst_indM expr@(CMember (CVar a_ident _) _ False _) = case lookup a_ident $ createTyEnv res_trace of
-		Nothing -> error $ "subst_indM " ++ (render.pretty) expr ++ " : " ++ (render.pretty) a_ident ++ " not found!"
-		Just ty -> create_var expr ty
-	subst_indM expr@(CUnary CAdrOp (CVar a_ident _) _) = do
+
+	--  for ptr->member   create    p1_ARROW_member :: member_type
+	createsymvar_m expr@(CMember (CVar ptr_ident _) member True _) = do
+		let tyenv = createTyEnv res_trace
+		case lookup ptr_ident tyenv of
+			Nothing -> error $ "createsymvar_m: Could not find " ++ (render.pretty) ptr_ident ++ " in " ++ showTyEnv tyenv
+			Just (PtrType sue_ty _ _) -> do
+				member_ty <- lift $ getMemberTypeM sue_ty member
+				create_var expr member_ty
+
+	--  for a.member   create    a_DOT_member :: member_type
+	createsymvar_m expr@(CMember (CVar a_ident _) member False _) = do
+		let tyenv = createTyEnv res_trace
+		case lookup a_ident tyenv of
+			Nothing -> error $ "createsymvar_m: Could not find " ++ (render.pretty) a_ident ++ " in " ++ showTyEnv tyenv
+			Just a_ty -> do
+				member_ty <- lift $ getMemberTypeM a_ty member
+				create_var expr member_ty
+
+	createsymvar_m expr@(CUnary CAdrOp (CVar a_ident _) _) = do
 		let Just ty = lookup a_ident $ createTyEnv res_trace
 		create_var expr ty
-	subst_indM expr = return expr
 
+	createsymvar_m expr = return expr
+
+{-
+-- Simplifies an expression
+
+simplifyExpr :: CExpr -> CExpr
+simplifyExpr expr = case expr of
+	CMember (CUnary CAdrOp expr _) member True ni -> CMember (simplifyExpr expr) member False ni
+	CMember (CUnary CIndOp expr _) member False ni -> CMember (simplifyExpr expr) member True ni
+	expr -> expr
+-}
 
 type TyEnv = [(Ident,Type)]
 
