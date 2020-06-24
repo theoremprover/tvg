@@ -64,6 +64,7 @@ STRUCT* f(STRUCT* p,STRUCT r)
 
     q = &(r.member2);
     *q = 2;
+    *q = 3;
 
     if(r.member2 == p->member2)
     {
