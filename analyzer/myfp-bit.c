@@ -1693,6 +1693,10 @@ tf_to_sf (TFtype arg_a)
 #ifdef CALC
 int main(int argc, char* argv[])
 {
+    //printf("IMPLICIT_1=%i\n",IMPLICIT_1);
+    //printf("FRACBITS=%i, NGARDS=%i\n",FRACBITS,NGARDS);
+    // FRACBITS=23, NGARDS=7
+
     int i = 1 ;
     int arga0 = atoi(argv[i++]); // a
     int arga1 = atoi(argv[i++]); // fp_class_type class;
