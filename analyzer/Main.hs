@@ -68,7 +68,7 @@ showBuiltins = False
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
-_UNROLLING_DEPTHS = [30]
+_UNROLLING_DEPTHS = [31]
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -633,7 +633,7 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 				else_trace <- else_trace_m
 				return [ (if isJust mb_ret_type then TraceAnd else TraceOr) [then_trace,else_trace] ]
 			num -> do
---				printLogV 1 $ "Condition at " ++ (render.pretty) (nodeInfo cond) ++ " already reached " ++ show num ++ " times, cutting off one branch."
+				printLogV 1 $ "Condition at " ++ (render.pretty) (nodeInfo cond) ++ " already reached " ++ show num ++ " times, cutting off one branch."
 				case num `mod` 2 == 0 of
 					True  -> then_trace_m
 					False -> else_trace_m
