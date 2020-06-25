@@ -68,7 +68,7 @@ showBuiltins = False
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
-_UNROLLING_DEPTHS = [31]
+_UNROLLING_DEPTHS = [30]
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -619,15 +619,25 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 	CCompound _ cbis _ -> unfoldTracesM mb_ret_type ([]:envs) trace (cbis : (rest : rest2))
 
 	CIf cond then_stmt mb_else_stmt ni -> do
-		then_trace <- transids TraceOr cond trace $ \ (cond',trace') -> do
+		let then_trace_m = transids TraceOr cond trace $ \ (cond',trace') -> do
 			unfoldTracesM mb_ret_type envs (Condition True cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
-		else_trace <- transids TraceOr cond trace $ \ (cond',trace') -> do
+		let else_trace_m = transids TraceOr cond trace $ \ (cond',trace') -> do
 			let not_cond = Condition False (CUnary CNegOp cond' (nodeInfo cond'))
 			case mb_else_stmt of
 				Nothing        -> unfoldTracesM mb_ret_type envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM mb_ret_type envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
-		return [ (if isJust mb_ret_type then TraceAnd else TraceOr) [then_trace,else_trace] ]
 
+		case num_reached cond of
+			0   -> do
+				then_trace <- then_trace_m
+				else_trace <- else_trace_m
+				return [ (if isJust mb_ret_type then TraceAnd else TraceOr) [then_trace,else_trace] ]
+			num -> do
+--				printLogV 1 $ "Condition at " ++ (render.pretty) (nodeInfo cond) ++ " already reached " ++ show num ++ " times, cutting off one branch."
+				case num `mod` 2 == 0 of
+					True  -> then_trace_m
+					False -> else_trace_m
+		
 	CReturn Nothing _ -> return trace
 	CReturn (Just ret_expr) _ -> do
 		transids undefined ret_expr trace $ \ (ret_expr',trace') -> do
@@ -671,7 +681,7 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 	-- That's cheating: Insert condition into trace (for loop unrolling)
 	CGotoPtr cond _ -> unfoldTracesM mb_ret_type envs (Condition True cond : trace) ( rest : rest2 )
 
- 	CWhile cond body False ni -> do
+ 	CWhile cond body False _ -> do
 		transids TraceOr cond trace $ \ (cond',trace') -> do
 			unrolleds <- forM _UNROLLING_DEPTHS $ \ n ->
 				unfoldTracesM mb_ret_type envs trace' ((unroll cond' n ++ rest) : rest2 )
@@ -758,6 +768,9 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 	_ -> myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 
 	where
+	
+	num_reached :: (CNode cnode) => cnode -> Int
+	num_reached cnode = length $ filter ((== nodeInfo cnode).nodeInfo) trace
 	
 	transids :: ([Trace] -> TraceElem) -> CExpr -> Trace -> ((CExpr,Trace) -> CovVecM Trace) -> CovVecM Trace
 	transids compose expr trace cont = do
