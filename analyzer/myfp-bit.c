@@ -1696,6 +1696,7 @@ int main(int argc, char* argv[])
     //printf("IMPLICIT_1=%i\n",IMPLICIT_1);
     //printf("FRACBITS=%i, NGARDS=%i\n",FRACBITS,NGARDS);
     // FRACBITS=23, NGARDS=7
+    printf("ROUND_TOWARDS_ZERO=%i, GARDMASK=%i, GARDMSB=%i\n",ROUND_TOWARDS_ZERO,GARDMASK,GARDMSB);
 
     int i = 1 ;
     int arga0 = atoi(argv[i++]); // a

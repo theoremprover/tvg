@@ -68,7 +68,7 @@ showBuiltins = False
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
-_UNROLLING_DEPTHS = [31]
+_UNROLLING_DEPTHS = [30,31]
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -100,6 +100,7 @@ main = do
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -157,8 +158,8 @@ main = do
 									[ "",
 									"--- MODEL " ++ show traceid ++ " -------------------------",
 									model_string,
-									"" ]) ++ [
-									"--- SOLUTION " ++ show traceid ++ " ----------------------",
+									"" ]) ++
+									[ "--- SOLUTION " ++ show traceid ++ " ----------------------",
 									show_solution funname mb_solution ]
 									where
 									mbshowtraces ts = if don'tShowTraces then [] else ts
@@ -628,7 +629,7 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 				Just else_stmt -> unfoldTracesM mb_ret_type envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 
 		case num_reached cond of
-			0   -> do
+			num | num<=1 -> do
 				then_trace <- then_trace_m
 				else_trace <- else_trace_m
 				return [ (if isJust mb_ret_type then TraceAnd else TraceOr) [then_trace,else_trace] ]
@@ -679,19 +680,20 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 		myError $ "not implemented yet."
 
 	-- That's cheating: Insert condition into trace (for loop unrolling)
-	CGotoPtr cond _ -> unfoldTracesM mb_ret_type envs (Condition True cond : trace) ( rest : rest2 )
+	CGotoPtr cond _ -> do
+		transids TraceOr cond trace $ \ (cond',trace') -> do
+			unfoldTracesM mb_ret_type envs (Condition True cond' : trace') ( rest : rest2 )
 
  	CWhile cond body False _ -> do
-		transids TraceOr cond trace $ \ (cond',trace') -> do
-			unrolleds <- forM _UNROLLING_DEPTHS $ \ n ->
-				unfoldTracesM mb_ret_type envs trace' ((unroll cond' n ++ rest) : rest2 )
-			return [ TraceOr unrolleds ]
+		unrolleds <- forM _UNROLLING_DEPTHS $ \ n ->
+			unfoldTracesM mb_ret_type envs trace ((unroll cond n ++ rest) : rest2 )
+		return [ TraceOr unrolleds ]
 
 		where
 
 		unroll :: CExpr -> Int -> [CBlockItem]
-		unroll cond n = concat ( replicate n [ CBlockStmt (CGotoPtr cond undefNode), CBlockStmt body ] ) ++
-			[ CBlockStmt $ CGotoPtr (CUnary CNegOp cond undefNode) undefNode ]
+		unroll while_cond n = concat ( replicate n [ CBlockStmt (CGotoPtr while_cond undefNode), CBlockStmt body ] ) ++
+			[ CBlockStmt $ CGotoPtr (CUnary CNegOp while_cond undefNode) undefNode ]
 
 {-
  	CWhile cond0 body False ni -> do
@@ -1069,26 +1071,26 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 
 	where
 
-	eq0 :: Constraint -> Constraint
-	eq0 constr = CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode
+	neq0 :: Constraint -> Constraint
+	neq0 constr = CUnary CNegOp (CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode) undefNode
 
 	insert_eq0 :: Bool -> Constraint -> Constraint
-	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then eq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
+	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then neq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
 	insert_eq0 must_be_bool (CUnary unop expr ni) = case unop of
 		CNegOp -> CUnary CNegOp (insert_eq0 True expr) ni
-		unop   -> (if must_be_bool then eq0 else id) $ CUnary unop (insert_eq0 False expr) ni
+		unop   -> (if must_be_bool then neq0 else id) $ CUnary unop (insert_eq0 False expr) ni
 	insert_eq0 must_be_bool (CCast _ expr _) = insert_eq0 must_be_bool expr
-	insert_eq0 must_be_bool cvar@(CVar ident ni) = (if must_be_bool then eq0 else id) cvar
-	insert_eq0 must_be_bool const@(CConst _) = (if must_be_bool then eq0 else id) const
+	insert_eq0 must_be_bool cvar@(CVar ident ni) = (if must_be_bool then neq0 else id) cvar
+	insert_eq0 must_be_bool const@(CConst _) = (if must_be_bool then neq0 else id) const
 	insert_eq0 must_be_bool (CBinary binop expr1 expr2 ni) = mb_eq0 $
 		CBinary binop (insert_eq0 must_be_bool' expr1) (insert_eq0 must_be_bool' expr2) ni
 		where
 		(must_be_bool',mb_eq0) = case must_be_bool of
 			_ | binop `elem` [CLndOp,CLorOp] -> (True,id)
 			_ | binop `elem` [CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp] -> (False,id)
-			True -> (False,eq0)
+			True -> (False,neq0)
 			_ -> (False,id)
-	insert_eq0 must_be_bool cmember@(CMember _ _ _ _) = (if must_be_bool then eq0 else id) cmember
+	insert_eq0 must_be_bool cmember@(CMember _ _ _ _) = (if must_be_bool then neq0 else id) cmember
 	insert_eq0 _ expr = error $ "insert_eq0 " ++ (render.pretty) expr ++ " not implemented yet."
 
 	expr2sexpr :: Maybe Z3_Type -> CExpr -> SExpr
@@ -1227,8 +1229,8 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 		readProcessWithExitCode z3FilePath ["-smt2","parallel.enable=true",takeFileName modelpathfile] ""
 	printLog output
 	case lines output of
-		"unsat"   : _ -> return (model_string,Nothing)
-		"unknown" : _ -> return (model_string,Nothing)
+		"unsat"   : _ -> return (model_string_linenumbers,Nothing)
+		"unknown" : _ -> return (model_string_linenumbers,Nothing)
 		"sat" : rest -> do
 			sol_params <- forM output_idents $ \ ident -> do
 				let is = identToString ident
@@ -1246,7 +1248,7 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 							Z3_Float -> FloatVal (read val_string :: Float) )
 
 					_ -> myError $ "Parsing z3 output: Could not find " ++ is
-			return (model_string,Just sol_params)
+			return (model_string_linenumbers,Just sol_params)
 		_ -> myError $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ output
 
 
