@@ -1328,8 +1328,8 @@ checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution)) = do
 							_ -> error $ "checkSolutionM: parsing type " ++ (render.pretty) ty ++ " of " ++ ident_s ++ " not implemented!"
 						when (exec_result /= predicted_result) $ do
 							let txt = "ERROR in " ++ show traceid ++ " for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result
-							printLog txt
-							--error txt
+							myError txt
+							--printLog txt
 
 			printLog $ "checkSolutionM " ++ show traceid ++ " OK."
 			return resultdata
