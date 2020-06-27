@@ -65,6 +65,7 @@ returnval_var_name = "return_val"
 outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
 showBuiltins = False
+sameConditionThreshold = 2
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
@@ -629,7 +630,7 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 				Just else_stmt -> unfoldTracesM mb_ret_type envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 
 		case num_reached cond of
-			num | num<=1 -> do
+			num | num<=sameConditionThreshold -> do
 				then_trace <- then_trace_m
 				else_trace <- else_trace_m
 				return [ (if isJust mb_ret_type then TraceAnd else TraceOr) [then_trace,else_trace] ]
@@ -760,13 +761,18 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 									Just ty -> return ty
 								(model_string,mb_sol) <- makeAndSolveZ3ModelM
 									((n_ident,n_type) : map snd (concat envs))
-									[
-										CBinary CGeqOp n_var (CConst $ CIntConst (cInteger 0) undefNode) undefNode,
-										substituteBy ass_var (i_n n_var) cond,
-										CUnary CNegOp
-											(substituteBy ass_var
-												(i_n $ CBinary CAddOp n_var (CConst $ CIntConst (cInteger 1) undefNode) undefNode) cond) undefNode
-									]
+									(let
+										c i         = CConst $ CIntConst (cInteger i) undefNode
+										cond_i      = substituteBy ass_var (i_n n_var) cond
+										cond_iplus1 = substituteBy ass_var (i_n $ CBinary CAddOp n_var (c 1) undefNode) cond
+										cond_0      = substituteBy ass_var (i_n $ c 0) cond
+										not_c e     = CUnary CNegOp e undefNode
+										in
+										[
+											CBinary CGeqOp n_var (c 0) undefNode,
+											CBinary CLorOp (CBinary CLndOp (not_c cond_0) (CBinary CEqOp n_var (c 0) undefNode) undefNode)
+												(CBinary CLndOp cond_i (not_c cond_iplus1) undefNode) undefNode
+										])
 									[ SExpr [SLeaf "minimize",SLeaf n_name] ]
 									[n_ident]
 									modelpath
