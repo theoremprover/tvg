@@ -634,7 +634,7 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 				else_trace <- else_trace_m
 				return [ (if isJust mb_ret_type then TraceAnd else TraceOr) [then_trace,else_trace] ]
 			num -> do
-				printLogV 1 $ "Condition at " ++ (render.pretty) (nodeInfo cond) ++ " already reached " ++ show num ++ " times, cutting off one branch."
+--				printLogV 1 $ "Condition at " ++ (render.pretty) (nodeInfo cond) ++ " already reached " ++ show num ++ " times, cutting off one branch."
 				case num `mod` 2 == 0 of
 					True  -> then_trace_m
 					False -> else_trace_m
@@ -715,13 +715,8 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
  		translateExprM envs cond0 >>= \case
  			[(cond,[])] -> do
 				let
-					-- get all variables used in the condition and make sure there is no function call in it
-					cond_idents = nub $ everything (++) (mkQ [] searchvar) cond where
-						searchvar :: CExpr -> [Ident]
-						searchvar (CVar ident _) = [ ident ]
-						searchvar (CCall _ _ _) = error $ "loop condition " ++ (render.pretty) cond ++ " contains function call!"
-						searchvar _ = []
-
+					-- get all variables used in the condition
+					cond_idents = fvar cond
 				-- unfold body to all body traces and filter for all Assignments to variables from the condition
  				body_trace <- unfoldTracesM mb_ret_type envs [] [[CBlockStmt body]]
  				let
@@ -730,7 +725,8 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
  						from_ass (Assignment a@(CVar i _) b) | i ∈ cond_idents = [(a,b)]
  						from_ass _ = []
 				printLogV 1 $ "body_traces_ass = "
-				forM_ body_traces_ass $ \ bta -> printLog $ intercalate " , " (map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") bta)
+				forM_ body_traces_ass $ \ bta ->
+					printLogV 1 $ intercalate " , " (map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") bta)
 
 				-- Filter for all assignments that occur exactly once in every body trace
 				let
@@ -741,36 +737,45 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 
 				case body_assigns of
 					[ (ass_var@(CVar ass_ident _),ass_expr) ] -> do
-						let i_n :: CExpr -> CExpr = case ass_expr of
-							-- for all binops where the following holds (Linearity?):
-							-- i_n = i_(n-1) `binop` c  =>  i_n = i_0 `binop` c
-							CBinary binop (CVar ident _) cconst@(CConst _) _ | ident==ass_ident && binop ∈ [CSubOp,CAddOp,CShrOp,CShlOp] ->
-								\ n_var -> CBinary binop ass_var (CBinary CMulOp n_var cconst undefNode) undefNode
-							_ -> error $ "infer_loopingsM: assignment " ++ (render.pretty) ass_ident ++ " := " ++ (render.pretty) ass_expr ++ " not implemented!"
 						let
-							n_name = "n_loopings"
-							n_ident = internalIdent n_name
-							n_var = CVar n_ident undefNode
-							modelpath = analyzerPath </> n_name ++ show (lineColNodeInfo cond) ++ ".smtlib2"
-						n_type <- case lookup ass_ident (map snd $ concat envs) of
-							Nothing -> myError $ "infer_loopingsM: Could not find type of " ++ (render.pretty) ass_var
-							Just ty -> return ty
-						(model_string,mb_sol) <- makeAndSolveZ3ModelM
-							((n_ident,n_type) : map snd (concat envs))
-							[
-								CBinary CGeqOp n_var (CConst $ CIntConst (cInteger 0) undefNode) undefNode,
-								substituteBy ass_var (i_n n_var) cond,
-								CUnary CNegOp (substituteBy ass_var
-									(i_n $ CBinary CAddOp n_var (CConst $ CIntConst (cInteger 1) undefNode) undefNode) cond) undefNode
-							]
-							[ SExpr [SLeaf "minimize",SLeaf n_name] ]
-							[n_ident]
-							modelpath
-						printLogV 1 $ "Model is\n" ++ model_string
-						return $ case mb_sol of
-							Nothing                 -> (Nothing,"Found no solution for " ++ modelpath)
-							Just sol@[(_,IntVal n)] -> (Just n, "Found looping solution n = " ++ show sol)
-							_                       -> (Nothing,"n_looping: Strange mb_sol=" ++ show mb_sol)
+							is_ass_to_ass_var (Assignment (CVar ident _) _) | ident==ass_ident = True
+							is_ass_to_ass_var _ = False
+						case filter is_ass_to_ass_var trace of
+							[] -> return (Nothing,"infer_loopingsM: There is no assignment to the loop counter " ++ (render.pretty) ass_var ++ " prior to the loop")
+							ass@(Assignment _ i_0) : _ | null (fvar i_0)-> do
+								printLogV 1 $ "last assignment to loop counter is " ++ show ass
+								let i_n :: CExpr -> CExpr = case ass_expr of
+									-- for all binops where the following holds (Linearity?):
+									-- i_n = i_(n-1) `binop` c  =>  i_n = i_0 `binop` c
+									CBinary binop (CVar ident _) cconst@(CConst _) _ | ident==ass_ident && binop ∈ [CSubOp,CAddOp,CShrOp,CShlOp] ->
+										\ n_var -> CBinary binop i_0 (CBinary CMulOp n_var cconst undefNode) undefNode
+									_ -> error $ "infer_loopingsM: assignment " ++ (render.pretty) ass_ident ++ " := " ++ (render.pretty) ass_expr ++ " not implemented!"
+								let
+									n_name = "n_loopings"
+									n_ident = internalIdent n_name
+									n_var = CVar n_ident undefNode
+									modelpath = analyzerPath </> n_name ++ show (lineColNodeInfo cond) ++ ".smtlib2"
+								n_type <- case lookup ass_ident (map snd $ concat envs) of
+									Nothing -> myError $ "infer_loopingsM: Could not find type of " ++ (render.pretty) ass_var
+									Just ty -> return ty
+								(model_string,mb_sol) <- makeAndSolveZ3ModelM
+									((n_ident,n_type) : map snd (concat envs))
+									[
+										CBinary CGeqOp n_var (CConst $ CIntConst (cInteger 0) undefNode) undefNode,
+										substituteBy ass_var (i_n n_var) cond,
+										CUnary CNegOp
+											(substituteBy ass_var
+												(i_n $ CBinary CAddOp n_var (CConst $ CIntConst (cInteger 1) undefNode) undefNode) cond) undefNode
+									]
+									[ SExpr [SLeaf "minimize",SLeaf n_name] ]
+									[n_ident]
+									modelpath
+--								printLogV 1 $ "Model is\n" ++ model_string
+								return $ case mb_sol of
+									Nothing                 -> (Nothing,"Found no solution for " ++ modelpath)
+									Just sol@[(_,IntVal n)] -> (Just n, "Found looping solution n = " ++ show sol)
+									_                       -> (Nothing,"n_looping: Strange mb_sol=" ++ show mb_sol)
+							ass -> return (Nothing,"infer_loopingsM: " ++ show ass ++ " is not assigning a constant.")
 					other -> return $ (Nothing,"body contains not exactly one assignment of a variable from the condition " ++ (render.pretty) cond ++ ":\n" ++
 						unlines (map (\(ass_var,_) -> (render.pretty) ass_var) other))
 		
@@ -808,6 +813,13 @@ unfoldTraces1M mb_ret_type (_:restenvs) trace ([]:rest2) = unfoldTracesM mb_ret_
 unfoldTraces1M _ _ trace [] = return trace
 
 unfoldTraces1M _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
+
+fvar :: Data d => d -> [Ident]
+fvar expr = nub $ everything (++) (mkQ [] searchvar) expr
+	where
+	searchvar :: CExpr -> [Ident]
+	searchvar (CVar ident _) = [ ident ]
+	searchvar _ = []
 
 cinitializer2blockitems :: CExpr -> Type -> CInit -> CovVecM [CBlockItem]
 cinitializer2blockitems lexpr ty initializer =
@@ -1203,10 +1215,7 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 --	printLog $ "tyenv=" ++ showTyEnv tyenv
 	printLogV 1 $ "output_idents = " ++ showIdents output_idents
 	let
-		constraints_vars = nub $ everything (++) (mkQ [] searchvar) constraints where
-			searchvar :: CExpr -> [Ident]
-			searchvar (CVar ident _) = [ ident ]
-			searchvar _ = []
+		constraints_vars = fvar constraints
 	printLogV 1 $ "constraints_vars = " ++ showIdents constraints_vars
 
 	let
