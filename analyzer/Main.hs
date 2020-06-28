@@ -819,9 +819,15 @@ unfoldTraces1M _ _ trace [] = return trace
 
 unfoldTraces1M _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
+-- ⩵ ⩾ ⋏ ⋎ ∗ − not_c _𝟶 _𝟷 ≠
+
 infix 4 ⩵
 (⩵) :: CExpr -> CExpr -> CExpr
 a ⩵ b = CBinary CEqOp a b undefNode
+
+infix 4 !⩵
+(!⩵) :: CExpr -> CExpr -> CExpr
+a !⩵ b = not_c $ CBinary CEqOp a b undefNode
 
 infix 4 ⩾
 (⩾) :: CExpr -> CExpr -> CExpr
@@ -1120,13 +1126,15 @@ data Z3_Type = Z3_BitVector Int Bool | Z3_Float
 
 type Constraint = CExpr
 
+-- ⩵ ⩾ ⋏ ⋎ ∗ − not_c _𝟶 _𝟷 ≠
+
 expr2SExpr :: TyEnv -> Expr -> SExpr
 expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 
 	where
 
 	neq0 :: Constraint -> Constraint
-	neq0 constr = CUnary CNegOp (CBinary CEqOp constr (CConst (CIntConst (cInteger 0) undefNode)) undefNode) undefNode
+	neq0 constr = not_c $ constr ⩵ _𝟶
 
 	insert_eq0 :: Bool -> Constraint -> Constraint
 	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then neq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
@@ -1156,7 +1164,7 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 				CCompOp -> "bvnot"
 				CNegOp  -> "not"
 				_       -> error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
-		CBinary CNeqOp expr1 expr2 _ -> expr2sexpr cur_ty $ CUnary CNegOp (CBinary CEqOp expr1 expr2 undefNode) undefNode
+		CBinary CNeqOp expr1 expr2 _ -> expr2sexpr cur_ty $ expr1 !⩵ expr2
 		CBinary op expr1 expr2 _ -> SExpr [ op_sexpr , expr2sexpr subtype1 expr1 , expr2sexpr subtype2 expr2 ] where
 			(op_sexpr,subtype1,subtype2) = case op of
 				CMulOp -> (SLeaf "bvmul",cur_ty,cur_ty)
