@@ -65,7 +65,7 @@ returnval_var_name = "return_val"
 outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
 showBuiltins = False
-sameConditionThreshold = 2
+sameConditionThreshold = 0
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
@@ -749,7 +749,7 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 									-- for all binops where the following holds (Linearity?):
 									-- i_n = i_(n-1) `binop` c  =>  i_n = i_0 `binop` c
 									CBinary binop (CVar ident _) cconst@(CConst _) _ | ident==ass_ident && binop ∈ [CSubOp,CAddOp,CShrOp,CShlOp] ->
-										\ n_var -> CBinary binop i_0 (CBinary CMulOp n_var cconst undefNode) undefNode
+										\ n_var -> CBinary binop i_0 (n_var ∗ cconst) undefNode
 									_ -> error $ "infer_loopingsM: assignment " ++ (render.pretty) ass_ident ++ " := " ++ (render.pretty) ass_expr ++ " not implemented!"
 								let
 									n_name = "n_loopings"
@@ -762,16 +762,15 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 								(model_string,mb_sol) <- makeAndSolveZ3ModelM
 									((n_ident,n_type) : map snd (concat envs))
 									(let
-										c i         = CConst $ CIntConst (cInteger i) undefNode
-										cond_i      = substituteBy ass_var (i_n n_var) cond
-										cond_iplus1 = substituteBy ass_var (i_n $ CBinary CAddOp n_var (c 1) undefNode) cond
-										cond_0      = substituteBy ass_var (i_n $ c 0) cond
-										not_c e     = CUnary CNegOp e undefNode
+										cond_n       = substituteBy ass_var (i_n n_var) cond
+										cond_nminus1 = substituteBy ass_var (i_n $ n_var − _𝟷) cond
+										cond_0       = substituteBy ass_var (i_n _𝟶) cond
 										in
 										[
-											CBinary CGeqOp n_var (c 0) undefNode,
-											CBinary CLorOp (CBinary CLndOp (not_c cond_0) (CBinary CEqOp n_var (c 0) undefNode) undefNode)
-												(CBinary CLndOp cond_i (not_c cond_iplus1) undefNode) undefNode
+											n_var ⩾ _𝟶,
+											not_c cond_0  ⋏  n_var ⩵ _𝟶
+												⋎
+												cond_nminus1 ⋏ n_var ⩾ _𝟷 ⋏ not_c cond_n
 										])
 									[ SExpr [SLeaf "minimize",SLeaf n_name] ]
 									[n_ident]
@@ -819,6 +818,41 @@ unfoldTraces1M mb_ret_type (_:restenvs) trace ([]:rest2) = unfoldTracesM mb_ret_
 unfoldTraces1M _ _ trace [] = return trace
 
 unfoldTraces1M _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
+
+infix 4 ⩵
+(⩵) :: CExpr -> CExpr -> CExpr
+a ⩵ b = CBinary CEqOp a b undefNode
+
+infix 4 ⩾
+(⩾) :: CExpr -> CExpr -> CExpr
+a ⩾ b = CBinary CGeqOp a b undefNode
+
+infixr 3 ⋏
+(⋏) :: CExpr -> CExpr -> CExpr
+a ⋏ b = CBinary CLndOp a b undefNode
+
+infixr 2 ⋎
+(⋎) :: CExpr -> CExpr -> CExpr
+a ⋎ b = CBinary CLorOp a b undefNode
+
+infixr 7 ∗
+(∗) :: CExpr -> CExpr -> CExpr
+a ∗ b = CBinary CMulOp a b undefNode
+
+infixr 6 −
+(−) :: CExpr -> CExpr -> CExpr
+a − b = CBinary CMulOp a b undefNode
+
+
+not_c :: CExpr -> CExpr
+not_c e = CUnary CNegOp e undefNode
+
+int_c :: Integer -> CExpr
+int_c i = CConst $ CIntConst (cInteger i) undefNode
+
+_𝟶 = int_c 0
+
+_𝟷 = int_c 0
 
 fvar :: Data d => d -> [Ident]
 fvar expr = nub $ everything (++) (mkQ [] searchvar) expr
