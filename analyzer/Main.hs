@@ -65,7 +65,7 @@ returnval_var_name = "return_val"
 outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
 showBuiltins = False
-sameConditionThreshold = 0
+sameConditionThreshold = 3
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 

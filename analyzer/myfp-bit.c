@@ -1031,7 +1031,7 @@ _fpdiv_parts (fp_number_type * a,
 	numerator *= 2;
 	a->normal_exp--;
       }
-    bit = 1<<0; //IMPLICIT_1;
+    bit = IMPLICIT_1;
     quotient = 0;
     /* ??? Does divide one bit at a time.  Optimize.  */
     while (bit)
