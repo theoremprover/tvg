@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards,LambdaCase,OverloadedStrings #-}
+{-# LANGUAGE PackageImports,RecordWildCards,LambdaCase,OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 module Main where
@@ -14,7 +14,7 @@ import System.Exit
 import Data.List
 import Control.Monad
 import System.Directory
-import Language.C
+import "language-c" Language.C
 import Language.C.Data.Ident
 import Language.C.Data.Node
 import Language.C.System.GCC

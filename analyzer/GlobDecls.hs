@@ -1,9 +1,9 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE PackageImports,OverloadedStrings #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 module GlobDecls where
 
-import Language.C
+import "language-c" Language.C
 import Language.C.Data.Ident
 import Language.C.Analysis.AstAnalysis
 --import Language.C.Analysis.TravMonad

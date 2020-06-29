@@ -36,6 +36,8 @@ dependencies:
 - blaze-html
 - base-unicode-symbols
 - regex-tdfa
+- language-c-quote
+- mainland-pretty
 
 library:
   source-dirs: src

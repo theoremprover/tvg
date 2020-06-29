@@ -1,10 +1,10 @@
-{-# LANGUAGE TypeOperators,FlexibleInstances,FlexibleContexts,ScopedTypeVariables #-}
+{-# LANGUAGE PackageImports,TypeOperators,FlexibleInstances,FlexibleContexts,ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 module DataTree (genericToHTMLString,dataTreeToHTMLString,DataTree(..)) where
 
 import GHC.Generics
-import Language.C
+import "language-c" Language.C
 import Language.C.Data.Ident
 import Text.Html
 

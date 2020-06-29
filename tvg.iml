@@ -44,5 +44,30 @@
     <orderEntry type="library" name="mtl-2.2.2" level="project" />
     <orderEntry type="library" name="regex-tdfa-1.2.3.1" level="project" />
     <orderEntry type="library" name="regex-base-0.93.2" level="project" />
+    <orderEntry type="library" name="language-c-quote-0.12.2" level="project" />
+    <orderEntry type="library" name="exception-mtl-0.4.0.1" level="project" />
+    <orderEntry type="library" name="exception-transformers-0.4.0.7" level="project" />
+    <orderEntry type="library" name="mainland-pretty-0.7" level="project" />
+    <orderEntry type="library" name="srcloc-0.5.1.2" level="project" />
+    <orderEntry type="library" name="symbol-0.2.4" level="project" />
+    <orderEntry type="library" name="template-haskell-2.13.0.0" level="project" />
+    <orderEntry type="library" name="haskell-src-meta-0.8.0.3" level="project" />
+    <orderEntry type="library" name="stm-2.4.5.0" level="project" />
+    <orderEntry type="library" name="transformers-compat-0.6.2" level="project" />
+    <orderEntry type="library" name="ghc-boot-th-8.4.3" level="project" />
+    <orderEntry type="library" name="haskell-src-exts-1.20.2" level="project" />
+    <orderEntry type="library" name="th-orphans-0.13.6" level="project" />
+    <orderEntry type="library" name="cpphs-1.20.8" level="project" />
+    <orderEntry type="library" name="th-lift-0.7.10" level="project" />
+    <orderEntry type="library" name="th-reify-many-0.1.8" level="project" />
+    <orderEntry type="library" name="th-lift-instances-0.1.11" level="project" />
+    <orderEntry type="library" name="old-locale-1.0.0.7" level="project" />
+    <orderEntry type="library" name="old-time-1.1.0.3" level="project" />
+    <orderEntry type="library" name="polyparse-1.12" level="project" />
+    <orderEntry type="library" name="th-abstraction-0.2.8.0" level="project" />
+    <orderEntry type="library" name="safe-0.3.17" level="project" />
+    <orderEntry type="library" name="th-expand-syns-0.4.4.0" level="project" />
+    <orderEntry type="library" name="vector-0.12.0.1" level="project" />
+    <orderEntry type="library" name="primitive-0.6.3.0" level="project" />
   </component>
 </module>

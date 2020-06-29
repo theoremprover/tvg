@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
-{-# LANGUAGE UnicodeSyntax,LambdaCase,ScopedTypeVariables,TupleSections,TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,DeriveDataTypeable,DeriveGeneric #-}
+{-# LANGUAGE PackageImports,QuasiQuotes,UnicodeSyntax,LambdaCase,ScopedTypeVariables,TupleSections,TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,DeriveDataTypeable,DeriveGeneric #-}
 
 module Main where
 
@@ -8,7 +8,7 @@ import System.FilePath
 import System.Process
 import System.Directory
 import System.Exit
-import Language.C
+import "language-c" Language.C
 import Language.C.Data.Ident
 import Language.C.Data.Node
 import Language.C.Data.Position
@@ -36,6 +36,11 @@ import Data.List
 import Data.Maybe
 import System.IO
 import Data.Either
+
+import "language-c-quote" Language.C.Quote.GCC
+import "language-c-quote" Language.C.Pretty
+import Text.PrettyPrint.Mainland.Class (ppr)
+import Text.PrettyPrint.Mainland (prettyCompact)
 
 import DataTree
 import GlobDecls
@@ -66,10 +71,11 @@ outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
 showBuiltins = False
 sameConditionThreshold = 3
+sameConditionThresholdExceptions = [28,29,30]
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
-_UNROLLING_DEPTHS = [30,31]
+_UNROLLING_DEPTHS = [0..3]
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -94,6 +100,7 @@ show_solution _ Nothing = "No solution"
 show_solution _ (Just (_,_,[])) = "Empty solution"
 show_solution funname (Just v@(_,_,solution)) = unlines [ show solution, showTestVector funname v ]
 
+main :: IO ()
 main = do
 	-- when there is an error, we'd like to have *all* output till then
 	hSetBuffering stdout NoBuffering
@@ -630,7 +637,7 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 				Just else_stmt -> unfoldTracesM mb_ret_type envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 
 		case num_reached cond of
-			num | num<=sameConditionThreshold -> do
+			num | num <= sameConditionThreshold || num ∈ sameConditionThresholdExceptions -> do
 				then_trace <- then_trace_m
 				else_trace <- else_trace_m
 				return [ (if isJust mb_ret_type then TraceAnd else TraceOr) [then_trace,else_trace] ]
@@ -1393,3 +1400,39 @@ checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution)) = do
 
 			printLog $ "checkSolutionM " ++ show traceid ++ " OK."
 			return resultdata
+
+{-
+testsrc :: String
+testsrc = (prettyCompact.ppr) $ [cunit|
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "myfp-bit.c"
+
+int main(int argc, char* argv[])
+{
+    int i = 1 ;
+    int arga0 = atoi(argv[i++]);
+    int arga1 = atoi(argv[i++]);
+    int arga2 = atoi(argv[i++]);
+    int arga3 = atoi(argv[i++]);
+    int arga4 = atoi(argv[i++]);
+
+    int argb0 = atoi(argv[i++]);
+    int argb1 = atoi(argv[i++]);
+    int argb2 = atoi(argv[i++]);
+    int argb3 = atoi(argv[i++]);
+    int argb4 = atoi(argv[i++]);
+
+    fp_number_type a = { arga1, arga2, arga3, { arga4 } };
+    fp_number_type b = { argb1, argb2, argb3, { argb4 } };
+
+    fp_number_type* r = _fpdiv_parts(&a,&b);
+    printf("f(a=%i, a={ %i,%i,%i, fraction={%i} },   b=%i, b={ %i,%i,%i, fraction={%i} }) =\n%i %i %i %i %i\n",
+        arga0,arga1,arga2,arga3,arga4,
+        argb0,argb1,argb2,argb3,argb4,
+        r,r->class,r->sign,r->normal_exp,r->fraction.ll);
+    return 0;
+}
+|]
+-}

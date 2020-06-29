@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards,LambdaCase,OverloadedStrings,TupleSections,ScopedTypeVariables,StandaloneDeriving,FlexibleInstances,TypeSynonymInstances #-}
+{-# LANGUAGE PackageImports,RecordWildCards,LambdaCase,OverloadedStrings,TupleSections,ScopedTypeVariables,StandaloneDeriving,FlexibleInstances,TypeSynonymInstances #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 {-
@@ -15,10 +15,10 @@ import Data.List
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Extra
-import Language.C
+import "language-c" Language.C
 import Language.C.Data.Ident
 import Language.C.System.GCC
-import Language.C.Pretty
+import "language-c" Language.C.Pretty
 import Data.Generics
 import Control.Monad.Trans.State.Strict
 import Data.Graph

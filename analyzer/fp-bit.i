@@ -1037,6 +1037,8 @@ _fpdiv_parts (fp_number_type * a,
  else if (numerator)
    {
 
+// How to get in here?!?!
+
 
      quotient += 0x3f + 1;
 

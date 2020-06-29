@@ -1,4 +1,4 @@
-{-# LANGUAGE RecordWildCards,LambdaCase,OverloadedStrings,StandaloneDeriving,ExplicitForAll,DeriveGeneric,FlexibleInstances,TupleSections #-}
+{-# LANGUAGE PackageImports,RecordWildCards,LambdaCase,OverloadedStrings,StandaloneDeriving,ExplicitForAll,DeriveGeneric,FlexibleInstances,TupleSections #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 {--
@@ -13,7 +13,7 @@ import Prelude hiding ((<>))
 import System.Environment
 import Data.List
 import Control.Monad
-import Language.C
+import "language-c" Language.C
 import Language.C.System.GCC
 import Language.C.Analysis.AstAnalysis
 import Language.C.Analysis.TravMonad
@@ -25,7 +25,7 @@ import System.FilePath
 import qualified Data.Map.Strict as Map
 import Data.Data
 import Data.Generics
-import Language.C.Pretty
+import "language-c" Language.C.Pretty
 import Text.PrettyPrint hiding ((<+>))
 import Text.Printf
 

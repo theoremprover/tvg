@@ -1,11 +1,11 @@
 
-{-# LANGUAGE TypeOperators,FlexibleInstances,FlexibleContexts,ScopedTypeVariables #-}
+{-# LANGUAGE PackageImports,TypeOperators,FlexibleInstances,FlexibleContexts,ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 module ShowAST (showDataTree) where
 
 import GHC.Generics
-import Language.C
+import "language-c" Language.C
 import Language.C.Data.Ident
 
 ind i = take (2*i) $ cycle "| "
