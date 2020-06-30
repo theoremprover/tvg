@@ -275,8 +275,8 @@ showTrace ind (te:trace) = indent ind ++ case te of
 type ResultData = (String,Maybe (Env,Env,Solution))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
 
-main_src :: String
-main_src = (prettyCompact.ppr) $ [cunit|
+main_src :: String -> String
+main_src x = (prettyCompact.ppr) $ [cunit|
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -284,7 +284,7 @@ main_src = (prettyCompact.ppr) $ [cunit|
 
 int main(int argc, char* argv[])
 {
-    int i = 1 ;
+    int i = $x ;
 
     struct fp_number_type a = { arga1, arga2, arga3, { arga4 } };
     struct fp_number_type b = { argb1, argb2, argb3, { argb4 } };
