@@ -1131,15 +1131,6 @@ createSymbolicVarsM res_trace new_idents (ti : rest) = do
 	--  for a.member   create    a_DOT_member :: member_type
 	createsymvar_m expr@(CMember (CVar a_ident _) member False ni) = do
 		return $ CVar (mkIdentWithCNodePos expr $ lValueToVarName expr) ni
-{-
-		let tyenv = createTyEnv res_trace
-		case lookup a_ident tyenv of
-			Nothing -> 
-				--myError $ "createsymvar_m: Could not find " ++ (render.pretty) a_ident ++ " of " ++ (render.pretty) expr ++ " in " ++ showTyEnv tyenv
-			Just a_ty -> do
-				member_ty <- lift $ getMemberTypeM a_ty member
-				create_var expr member_ty
--}
 
 	createsymvar_m expr@(CUnary CAdrOp (CVar a_ident _) _) = do
 		let Just ty = lookup a_ident $ createTyEnv res_trace
