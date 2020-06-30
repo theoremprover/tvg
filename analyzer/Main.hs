@@ -70,8 +70,8 @@ returnval_var_name = "return_val"
 outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
 showBuiltins = False
-sameConditionThreshold = 3
-sameConditionThresholdExceptions = [28,29,30]
+sameConditionThreshold = 1
+sameConditionThresholdExceptions = [26,27,28,29,30,31]
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
@@ -135,21 +135,8 @@ main = do
 						when ("-writeGlobalDecls" ∈ opts) $
 							writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 	
-						mb_checkexename <- case checkSolutions of
-							False -> return Nothing
-							True  -> do
-								let
-									srcfilename = takeFileName filename
-									chkexefilename = replaceExtension srcfilename "exe"
-								absolute_filename <- makeAbsolute filename
-								withCurrentDirectory (takeDirectory absolute_filename) $ do
-									(exitcode,stdout,stderr) <- readProcessWithExitCode gcc ["-o",chkexefilename,"-DCALC",srcfilename] ""
-									case exitcode of
-										ExitFailure _ -> myError $ "Compilation failed:\n" ++ stderr
-										ExitSuccess -> return $ Just chkexefilename 
-	
 						(full_coverage,(testvectors,covered,alls)) <- evalStateT (covVectorsM filename opts) $
-							CovVecState globdecls 1 translunit filename mb_checkexename funname undefined
+							CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc
 	
 						printLog ""
 	
@@ -214,7 +201,9 @@ data CovVecState = CovVecState {
 	srcFilenameCVS  :: String,
 	checkExeNameCVS :: Maybe String,
 	funNameCVS      :: String,
-	funStartEndCVS  :: ((Int,Int),(Int,Int))
+	funStartEndCVS  :: ((Int,Int),(Int,Int)),
+	numTracesCVS    :: Int,
+	compilerCVS     :: String
 	}
 type CovVecM = StateT CovVecState IO
 
@@ -286,6 +275,29 @@ showTrace ind (te:trace) = indent ind ++ case te of
 type ResultData = (String,Maybe (Env,Env,Solution))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
 
+main_src :: String
+main_src = (prettyCompact.ppr) $ [cunit|
+#include <stdio.h>
+#include <stdlib.h>
+
+#include "myfp-bit.c"
+
+int main(int argc, char* argv[])
+{
+    int i = 1 ;
+
+    struct fp_number_type a = { arga1, arga2, arga3, { arga4 } };
+    struct fp_number_type b = { argb1, argb2, argb3, { argb4 } };
+
+    struct fp_number_type* r = _fpdiv_parts(&a,&b);
+    printf("f(a=%i, a={ %i,%i,%i, fraction={%i} },   b=%i, b={ %i,%i,%i, fraction={%i} }) =\n%i %i %i %i %i\n",
+        arga0,arga1,arga2,arga3,arga4,
+        argb0,argb1,argb2,argb3,argb4,
+        r,r->class,r->sign,r->normal_exp,r->fraction.ll);
+    return 0;
+}
+|]
+
 covVectorsM :: String -> [String] -> CovVecM (Bool,([TraceAnalysisResult],Set.Set Branch,Set.Set Branch))
 covVectorsM filename opts = do
 	funname <- gets funNameCVS
@@ -319,13 +331,25 @@ covVectorsM filename opts = do
 	
 	let decls = map (NewDeclaration .snd) (reverse param_env ++ glob_env)
 
+	when checkSolutions $ do
+		let
+			srcfilename = takeFileName filename
+			chkexefilename = replaceExtension srcfilename "exe"
+		absolute_filename <- liftIO $ makeAbsolute filename
+		gcc <- gets compilerCVS
+		(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
+			readProcessWithExitCode gcc ["-o",chkexefilename,"-DCALC",srcfilename] ""
+		case exitcode of
+			ExitFailure _ -> myError $ "Compilation failed:\n" ++ stderr
+			ExitSuccess -> modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
+
 	trace <- unfoldTracesM (Just ret_type') (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
 	when (False {-not don'tShowTraces-}) $ do
 		printLog $ "\n********** TRACE ***********\n" ++ showTrace 0 trace
 		printLog $ "****************************\n"
 
-	runStateT (analyzeTreeM opts ret_type param_env [] [] trace) ([],Set.empty,Set.empty)
+	runStateT (analyzeTreeM (0,100) opts ret_type param_env [] [] trace) ([],Set.empty,Set.empty)
 
 type Location = (Int,Int)
 
@@ -335,9 +359,12 @@ showLocation (l,c) = "line " ++ show l ++ ", col " ++ show c
 type AnalyzeTreeM a = StateT ([TraceAnalysisResult],Set.Set Branch,Set.Set Branch) CovVecM a
 -- Unfolds the tree to all execution paths, collecting the solutions and promoting them upwards.
 
-analyzeTreeM :: [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> AnalyzeTreeM Bool
+analyzeTreeM :: (Int,Int) -> [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> AnalyzeTreeM Bool
 
-analyzeTreeM opts ret_type param_env traceid res_line [] = do
+analyzeTreeM (pct_start,pct_end) opts ret_type param_env traceid res_line [] = do
+	printLog $ " #### " ++ show pct_start ++ " %"
+	printLog ""
+
 	when (not don'tShowTraces) $ do
 		printLog $ "=== TRACE " ++ show traceid ++ " ========================\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
@@ -399,16 +426,17 @@ analyzeTreeM opts ret_type param_env traceid res_line [] = do
 				True  -> (tas,covered,alls)
 			return True
 
-analyzeTreeM opts ret_type param_env traceid res_line (TraceOr traces : rest) = case rest of
+analyzeTreeM pcts opts ret_type param_env traceid res_line (TraceOr traces : rest) = case rest of
 	[] -> do
 		printLogV 1 $ "### analyzeTreeM : TraceOr " ++ show traceid ++ " ..."
 		try_traces (zip [1..] traces)
 			where
+			num_subtraces = length traces
 			try_traces :: [(Int,Trace)] -> AnalyzeTreeM Bool
 			try_traces [] = return False
 			try_traces ((i,trace):rest) = do
 				let traceid' = (traceid++[i])
-				success <- analyzeTreeM opts ret_type param_env traceid' res_line trace
+				success <- analyzeTreeM (new_pcts pcts i num_subtraces) opts ret_type param_env traceid' res_line trace
 				case success of
 					True -> do
 						printLogV 1  $ "### analyzeTreeM : TraceOr " ++ show traceid' ++ " returned TRUE"
@@ -418,16 +446,21 @@ analyzeTreeM opts ret_type param_env traceid res_line (TraceOr traces : rest) = 
 						try_traces rest
 	_ -> myError $ "analyzeTreeM: TraceOr not last element in " ++ showTrace 1 res_line
 
-analyzeTreeM opts ret_type param_env traceid res_line (TraceAnd traces : rest) = case rest of
+analyzeTreeM pcts opts ret_type param_env traceid res_line (TraceAnd traces : rest) = case rest of
 	[] -> do
 		printLogV 1  $ "### analyzeTreeM : TraceAnd " ++ show traceid ++ " ..."
-		results <- forM (zip [1..] traces) $ \ (i,trace) ->
-			analyzeTreeM opts ret_type param_env (traceid++[i]) res_line trace
+		let num_subtraces = length traces
+		results <- forM (zip [1..] traces) $ \ (i,trace) -> do
+			analyzeTreeM (new_pcts pcts i num_subtraces) opts ret_type param_env (traceid++[i]) res_line trace
 		return $ all (==True) results
 	_ -> myError $ "analyzeTreeM: TraceAnd not last element in " ++ showTrace 1 res_line
 
-analyzeTreeM opts ret_type param_env traceid res_line (te:rest) = do
-	analyzeTreeM opts ret_type param_env traceid (te:res_line) rest
+analyzeTreeM pcts opts ret_type param_env traceid res_line (te:rest) = do
+	analyzeTreeM pcts opts ret_type param_env traceid (te:res_line) rest
+
+new_pcts (pct_start,pct_end) i num_subtraces = (pct_start',pct_end') where
+	pct_start' = pct_start + div ((i-1)*(pct_end-pct_start)) num_subtraces
+	pct_end' = pct_start' + div (pct_end-pct_start) num_subtraces
 
 is_solution :: TraceAnalysisResult -> Bool
 is_solution (_,_,(_,Just (_,_,solution))) = not $ null solution
@@ -1400,39 +1433,3 @@ checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution)) = do
 
 			printLog $ "checkSolutionM " ++ show traceid ++ " OK."
 			return resultdata
-
-{-
-testsrc :: String
-testsrc = (prettyCompact.ppr) $ [cunit|
-#include <stdio.h>
-#include <stdlib.h>
-
-#include "myfp-bit.c"
-
-int main(int argc, char* argv[])
-{
-    int i = 1 ;
-    int arga0 = atoi(argv[i++]);
-    int arga1 = atoi(argv[i++]);
-    int arga2 = atoi(argv[i++]);
-    int arga3 = atoi(argv[i++]);
-    int arga4 = atoi(argv[i++]);
-
-    int argb0 = atoi(argv[i++]);
-    int argb1 = atoi(argv[i++]);
-    int argb2 = atoi(argv[i++]);
-    int argb3 = atoi(argv[i++]);
-    int argb4 = atoi(argv[i++]);
-
-    fp_number_type a = { arga1, arga2, arga3, { arga4 } };
-    fp_number_type b = { argb1, argb2, argb3, { argb4 } };
-
-    fp_number_type* r = _fpdiv_parts(&a,&b);
-    printf("f(a=%i, a={ %i,%i,%i, fraction={%i} },   b=%i, b={ %i,%i,%i, fraction={%i} }) =\n%i %i %i %i %i\n",
-        arga0,arga1,arga2,arga3,arga4,
-        argb0,argb1,argb2,argb3,argb4,
-        r,r->class,r->sign,r->normal_exp,r->fraction.ll);
-    return 0;
-}
-|]
--}
