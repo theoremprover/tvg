@@ -662,7 +662,6 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 
 	CCompound _ cbis _ -> unfoldTracesM mb_ret_type ([]:envs) trace (cbis : (rest : rest2))
 
--- ⩵ ⩾ ⋏ ⋎ ∗ − not_c _𝟶 _𝟷 ≠
 	CSwitch condexpr (CCompound [] cbis _) switch_ni -> do
 		let
 			cond_ni = nodeInfo condexpr
@@ -671,6 +670,8 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 			last_stmt = case last cbis of
 				CBlockStmt (CDefault default_stmt _) -> default_stmt
 				CBlockStmt (CCase caseexpr stmt case_ni) -> CIf (CBinary CEqOp cond_var caseexpr case_ni) stmt Nothing case_ni
+
+			casestmts_wo_breaks = 
 
 			ifcases_stmt = foldr create_caseif last_stmt (init cbis) where
 				create_caseif :: CBlockItem -> CStat -> CStat
