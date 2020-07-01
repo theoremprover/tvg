@@ -109,7 +109,8 @@ main = do
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -345,7 +346,7 @@ covVectorsM filename opts = do
 			ExitFailure _ -> myError $ "Compilation failed:\n" ++ stderr
 			ExitSuccess -> modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
 
-	trace <- unfoldTracesM (Just ret_type') (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
+	trace <- unfoldTracesM (Just ret_type') [] (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
 	when (False {-not don'tShowTraces-}) $ do
 		printLog $ "\n********** TRACE ***********\n" ++ showTrace 0 trace
@@ -647,50 +648,57 @@ createInterfaceFromExprM expr ty = do
 			return $ ((srcident,(srcident,ty')),expr) : rest
 
 -- Just unfold the traces
-unfoldTracesM :: Maybe Type -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM Trace
-unfoldTracesM mb_ret_type envs trace cbss = do
+unfoldTracesM :: Maybe Type -> [Int] -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM Trace
+unfoldTracesM mb_ret_type break_stack envs trace cbss = do
 	cbss_txt <- case cbss of
 		[] -> return "[]"
 		(l : _) -> return $ "[ " ++ (intercalate " , " (map (render.pretty) l)) ++ " ] : _"
-	res <- unfoldTraces1M mb_ret_type envs trace cbss
+	res <- unfoldTraces1M mb_ret_type break_stack envs trace cbss
 	return res
 
-unfoldTraces1M :: Maybe Type -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM Trace
-unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case stmt of
+unfoldTraces1M :: Maybe Type -> [Int] -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM Trace
+unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest) : rest2) = case stmt of
 
-	CLabel _ cstat _ _ -> unfoldTracesM mb_ret_type envs trace ((CBlockStmt cstat : rest) : rest2)
+	CLabel _ cstat _ _ -> unfoldTracesM mb_ret_type break_stack envs trace ((CBlockStmt cstat : rest) : rest2)
 
-	CCompound _ cbis _ -> unfoldTracesM mb_ret_type ([]:envs) trace (cbis : (rest : rest2))
+	CCompound _ cbis _ -> unfoldTracesM mb_ret_type break_stack ([]:envs) trace (cbis : (rest : rest2))
 
 	CSwitch condexpr (CCompound [] cbis _) switch_ni -> do
 		let
 			cond_ni = nodeInfo condexpr
 			(l,c) = lineColNodeInfo condexpr
-			cond_var = CVar (mkIdentWithCNodePos condexpr $ "cond_" ++ show l ++ "_" ++ show c) cond_ni
-			last_stmt = case last cbis of
-				CBlockStmt (CDefault default_stmt _) -> default_stmt
-				CBlockStmt (CCase caseexpr stmt case_ni) -> CIf (CBinary CEqOp cond_var caseexpr case_ni) stmt Nothing case_ni
+			cond_var_ident = mkIdentWithCNodePos condexpr $ "cond_" ++ show l ++ "_" ++ show c
+			cond_var = CVar cond_var_ident cond_ni
 
-			casestmts_wo_breaks = 
+			collect_stmts :: [CBlockItem] -> [CBlockItem]
+			collect_stmts [] = []
+			collect_stmts [ CBlockStmt (CDefault stmt _) ] = [CBlockStmt stmt]
+			collect_stmts (CBlockStmt (CCase caseexpr stmt case_ni) : rest) = [ CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr case_ni)
+				(CCompound [] (CBlockStmt stmt : rest) undefNode) (Just $ CCompound [] (collect_stmts rest) undefNode) case_ni ]
+			collect_stmts (other:rest) = other : collect_stmts rest
+			
+			ifcases_bis = collect_stmts cbis
 
-			ifcases_stmt = foldr create_caseif last_stmt (init cbis) where
-				create_caseif :: CBlockItem -> CStat -> CStat
-				create_caseif (CBlockStmt (CCase caseexpr stmt case_ni)) elsestmt =
-					CIf (CBinary CEqOp cond_var caseexpr case_ni) stmt (Just elsestmt) case_ni
-
-		unfoldTracesM mb_ret_type envs trace ( (
-			CBlockStmt (CExpr (Just (CAssign CAssignOp cond_var condexpr cond_ni)) cond_ni) :
-			CBlockStmt ifcases_stmt :
+		unfoldTracesM mb_ret_type (length bstss : break_stack) envs trace ( (
+			CBlockDecl (CDecl [CTypeSpec $ CLongType cond_ni]
+				[(Just $ CDeclr (Just cond_var_ident) [] Nothing [] cond_ni, Just $ CInitExpr condexpr cond_ni, Nothing)] cond_ni) :
+			ifcases_bis ++
 			rest) : rest2 )
+
+	CBreak _ -> case break_stack of
+		[] -> error $ "unfoldTraces1M " ++ (render.pretty) stmt ++ " : empty break stack!"
+		(b:rest) -> do
+			let through_compounds = length bstss - b
+			unfoldTracesM mb_ret_type rest (drop through_compounds envs) trace (drop through_compounds bstss)
 
 	CIf cond then_stmt mb_else_stmt ni -> do
 		let then_trace_m = transids TraceOr cond trace $ \ (cond',trace') -> do
-			unfoldTracesM mb_ret_type envs (Condition True cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
+			unfoldTracesM mb_ret_type break_stack envs (Condition True cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
 		let else_trace_m = transids TraceOr cond trace $ \ (cond',trace') -> do
 			let not_cond = Condition False (CUnary CNegOp cond' (nodeInfo cond'))
 			case mb_else_stmt of
-				Nothing        -> unfoldTracesM mb_ret_type envs (not_cond : trace') ( rest : rest2 )
-				Just else_stmt -> unfoldTracesM mb_ret_type envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
+				Nothing        -> unfoldTracesM mb_ret_type break_stack envs (not_cond : trace') ( rest : rest2 )
+				Just else_stmt -> unfoldTracesM mb_ret_type break_stack envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 
 		case num_reached cond of
 			num | num <= sameConditionThreshold || num ∈ sameConditionThresholdExceptions -> do
@@ -724,7 +732,7 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids TraceOr assigned_expr' trace $ \ (assigned_expr'',trace') -> do
 			transids (error "more than one transid results for lexpr!") lexpr trace' $ \ (lexpr',trace'') -> do
-				unfoldTracesM mb_ret_type envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
+				unfoldTracesM mb_ret_type break_stack envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -734,7 +742,7 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 			Just binop -> CBinary binop lexpr assigned_expr ni
 
 	CExpr (Just (CUnary unaryop expr ni_op)) ni | unaryop ∈ map fst unaryops -> do
-		unfoldTracesM mb_ret_type envs trace ( (CBlockStmt stmt' : rest) : rest2 )
+		unfoldTracesM mb_ret_type break_stack envs trace ( (CBlockStmt stmt' : rest) : rest2 )
 		where
 		stmt' = CExpr (Just $ CAssign assignop expr (CConst $ CIntConst (cInteger 1) ni_op) ni) ni
 		Just assignop = lookup unaryop unaryops
@@ -746,7 +754,7 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 	-- That's cheating: Insert condition into trace (for loop unrolling)
 	CGotoPtr cond _ -> do
 		transids TraceOr cond trace $ \ (cond',trace') -> do
-			unfoldTracesM mb_ret_type envs (Condition True cond' : trace') ( rest : rest2 )
+			unfoldTracesM mb_ret_type break_stack envs (Condition True cond' : trace') ( rest : rest2 )
 
  	CWhile cond body False _ -> do
  		(mb_unrolling_depth,msg) <- infer_loopingsM cond body
@@ -756,7 +764,7 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
  			Just n -> [n]
  
 		unrolleds <- forM unrolling_depths $ \ n ->
-			unfoldTracesM mb_ret_type envs trace ((unroll cond n ++ rest) : rest2 )
+			unfoldTracesM mb_ret_type break_stack envs trace ((unroll cond n ++ rest) : rest2 )
 		return $ case unrolleds of
 			[ trace' ] -> trace'
 			unrolleds  -> [ TraceOr unrolleds ]
@@ -782,7 +790,7 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 					-- get all variables used in the condition
 					cond_idents = fvar cond
 				-- unfold body to all body traces and filter for all Assignments to variables from the condition
- 				body_trace <- unfoldTracesM mb_ret_type envs [] [[CBlockStmt body]]
+ 				body_trace <- unfoldTracesM mb_ret_type break_stack envs [] [[CBlockStmt body]]
  				let
  					body_traces = flattenTrace [] (reverse body_trace)
  					body_traces_ass = map (concatMap from_ass) body_traces where
@@ -859,7 +867,7 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 			[e] -> return e
 			_ -> return [ compose conts ]
 
-unfoldTraces1M mb_ret_type (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
+unfoldTraces1M mb_ret_type break_stack (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
 	new_env_items <- forM triples $ \case
 		(Just (CDeclr (Just ident) derivdeclrs _ _ ni),mb_init,Nothing) -> do
@@ -874,13 +882,13 @@ unfoldTraces1M mb_ret_type (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec type
 			return (newenvitems,newdecls,initializers)
 		triple -> myError $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 	let (newenvs,newitems,initializerss) = unzip3 $ reverse new_env_items
-	unfoldTracesM mb_ret_type ((concat newenvs ++ env) : envs) (concat newitems ++ trace) ((concat initializerss ++ rest):rest2)
+	unfoldTracesM mb_ret_type break_stack ((concat newenvs ++ env) : envs) (concat newitems ++ trace) ((concat initializerss ++ rest):rest2)
 
-unfoldTraces1M mb_ret_type (_:restenvs) trace ([]:rest2) = unfoldTracesM mb_ret_type restenvs trace rest2
+unfoldTraces1M mb_ret_type break_stack (_:restenvs) trace ([]:rest2) = unfoldTracesM mb_ret_type break_stack restenvs trace rest2
 
-unfoldTraces1M _ _ trace [] = return trace
+unfoldTraces1M _ _ _ trace [] = return trace
 
-unfoldTraces1M _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
+unfoldTraces1M _ _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
 -- ⩵ ⩾ ⋏ ⋎ ∗ − not_c _𝟶 _𝟷 ≠
 
@@ -969,7 +977,7 @@ translateExprM envs expr = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
 		expanded_params_args <- expand_params_argsM paramdecls args
 		let body' = replace_param_with_arg expanded_params_args body
-		funtrace <- unfoldTracesM Nothing envs [] [ [ CBlockStmt body' ] ]
+		funtrace <- unfoldTracesM Nothing [] envs [] [ [ CBlockStmt body' ] ]
 --		printLog $ "##### extract_traces_rets " ++ showTrace 0 (reverse funtrace) ++ "\n"
 		let funtraces = for (flattenTrace [] (reverse funtrace)) $ \case
 			Return retexpr : tr -> (tr,retexpr)
@@ -1042,6 +1050,7 @@ tyspec2TypeM :: CTypeSpec -> CovVecM Type
 tyspec2TypeM typespec = case typespec of
 	CVoidType _  -> return $ DirectType TyVoid noTypeQuals noAttributes
 	CIntType _   -> return $ DirectType (TyIntegral TyInt) noTypeQuals noAttributes
+	CLongType _  -> return $ DirectType (TyIntegral TyLong) noTypeQuals noAttributes
 	CCharType _  -> return $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes
 	CShortType _ -> return $ DirectType (TyIntegral TyShort) noTypeQuals noAttributes
 	CFloatType _ -> return $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
