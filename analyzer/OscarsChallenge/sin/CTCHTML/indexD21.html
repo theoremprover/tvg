@@ -1,0 +1,141 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>CTC++ Coverage Report - Execution Profile - xsin.c</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="keyword" content="CTC++, Testwell, Test Coverage Analyzer">
+<meta name="date" content="Sat Jun 29 15:02:31 2019">
+<meta name="generator" content="Testwell CTC++ add-on utility ctc2html v5.4">
+<link href="index.html" rel="contents">
+<link href="ctc.css" rel="stylesheet" type="text/css">
+<script src="ctc.js" type="text/javascript"></script>
+<script src="sorttable.js" type="text/javascript"></script>
+<script src="own_javascript.js" type="text/javascript"></script>
+</head>
+<body>
+<span class="reportb">CTC++ Coverage Report</span><span class="report">- Execution Profile</span><span class="info">#21/22</span><br><br>
+<span class="pages"><a href="indexF.html" target="_top">Directory Summary</a> | <a href="index.html" target="_top">Files Summary</a> | <a href="indexB1.html" target="_top">Functions Summary</a> | <a href="indexU.html" target="_top">Untested Code</a> | <a href="indexD1.html">Execution Profile</a><br>
+To files: <a href="indexD1.html">First</a> | <a href="indexD20.html">Previous</a> | <a href="indexD22.html">Next</a> | <a href="indexD22.html">Last</a> | <a href="indexA.html#a21">Index</a> | <a href="indexD21.html" target="_top">No Index</a></span><br><br>
+<span class="infob">Source file:</span><span class="infob">E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xsin.c</span><br>
+<span class="infob">Instrumentation mode:</span><span class="info">multicondition</span><span class="indent"></span><span class="infob">Reduced to:</span><span class="info">MC/DC coverage</span><br>
+<span class="infob">TER:</span><span class="below">65 % (15/23) structural,</span><span class="below">72 % (13/18) statement</span><br><br>
+<table class="execution">
+<thead>
+<tr><th>Hits/True</th><th>False</th><th><a href="indexD21.html#ut1" title="First untested">Line</a></th><th>Source</th></tr>
+</thead>
+<tbody>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">1</td><td><span class="lineplain"><span class="preproc">#include&nbsp;"defs.h"</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">2</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">3</td><td><span class="lineplain"><span class="keyword">static</span>&nbsp;<span class="keyword">const</span>&nbsp;<span class="keyword">double</span>&nbsp;c[]&nbsp;=&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">4</td><td><span class="lineplain">&nbsp;0.00000000206374484196,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">5</td><td><span class="lineplain">&nbsp;-0.00000027555365134677,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">6</td><td><span class="lineplain">&nbsp;0.00002480157946764225,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">7</td><td><span class="lineplain">&nbsp;-0.00138888888730525966,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">8</td><td><span class="lineplain">&nbsp;0.04166666666651986722,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">9</td><td><span class="lineplain">&nbsp;-0.49999999999999547304,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">10</td><td><span class="lineplain">&nbsp;};</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">11</td><td><span class="lineplain"><span class="keyword">static</span>&nbsp;<span class="keyword">const</span>&nbsp;<span class="keyword">double</span>&nbsp;s[]&nbsp;=&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">12</td><td><span class="lineplain">&nbsp;0.00000000015893606014,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">13</td><td><span class="lineplain">&nbsp;-0.00000002505069049138,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">14</td><td><span class="lineplain">&nbsp;0.00000275573131527032,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">15</td><td><span class="lineplain">&nbsp;-0.00019841269827816117,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">16</td><td><span class="lineplain">&nbsp;0.00833333333331908278,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">17</td><td><span class="lineplain">&nbsp;-0.16666666666666612594,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">18</td><td><span class="lineplain">&nbsp;};</span></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD21.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xsin.c">Top</a></td></tr>
+<tr><td class="profile"><a name="a38"></a>14</td><td class="profile"></td><td class="profile_line">19</td><td><span class="linehit"><span class="keyword">double</span>&nbsp;_Sinx(<span class="keyword">double</span>&nbsp;x,&nbsp;<span class="keyword">unsigned</span>&nbsp;<span class="keyword">int</span>&nbsp;qoff,&nbsp;<span class="keyword">int</span>&nbsp;quads)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">20</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">21</td><td><span class="linehit">&nbsp;<span class="keyword">switch</span>&nbsp;(_Dtest(&amp;x))</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">22</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile">2</td><td class="profile"></td><td class="profile_line">23</td><td><span class="linehit">&nbsp;<span class="keyword">case</span>&nbsp;2:</span></td></tr>
+<tr><td class="profile">2</td><td class="profile"></td><td class="profile_line">24</td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;(x);</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD21.html#ut2" name="ut1">25</a></td><td><span class="linenhit">&nbsp;<span class="keyword">case</span>&nbsp;0:</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD21.html#ut3" name="ut2">26</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;((qoff&nbsp;&amp;&nbsp;0x1)&nbsp;!=&nbsp;0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">27</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;x&nbsp;=&nbsp;1.0;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD21.html#ut4" name="ut3">28</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;((qoff&nbsp;&amp;&nbsp;0x2)&nbsp;!=&nbsp;0&nbsp;?&nbsp;-x&nbsp;:&nbsp;x);</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD21.html#ut5" name="ut4">28</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;return ( ( qoff &amp; 0x2 ) != 0 ? - x : x )</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD21.html#ut6" name="ut5">29</a></td><td><span class="linenhit">&nbsp;<span class="keyword">case</span>&nbsp;1:</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">30</td><td><span class="linenhit">&nbsp;&nbsp;_Feraise(0x01);</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD21.html#ut7" name="ut6">31</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;(_Nan._Double);</span></td></tr>
+<tr><td class="profile">12</td><td class="profile"></td><td class="profile_line">32</td><td><span class="linehit">&nbsp;<span class="keyword">default</span>:</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">33</td><td><span class="linehit">&nbsp;&nbsp;qoff&nbsp;+=&nbsp;_Quad(&amp;x,&nbsp;quads);</span></td></tr>
+<tr><td class="profile">2</td><td class="profile">10</td><td class="profile_line">34</td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(-_Rteps._Double&nbsp;&lt;&nbsp;x&nbsp;&amp;&amp;&nbsp;x&nbsp;&lt;&nbsp;_Rteps._Double)</span></td></tr>
+<tr><td class="profile">2</td><td class="profile"></td><td class="profile_line">34</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">2</td><td class="profile_line">34</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">8</td><td class="profile_line">34</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: F &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_pass" colspan="2">+</td><td class="profile_line">34</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 + 3</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_pass" colspan="2">+</td><td class="profile_line">34</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 + 2</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">35</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile">1</td><td class="profile">1</td><td class="profile_line">36</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;((qoff&nbsp;&amp;&nbsp;0x1)&nbsp;!=&nbsp;0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">37</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;x&nbsp;=&nbsp;1.0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">38</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">39</td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">40</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">41</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;w&nbsp;=&nbsp;x&nbsp;*&nbsp;x;</span></td></tr>
+<tr><td class="profile">5</td><td class="profile">5</td><td class="profile_line">42</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;((qoff&nbsp;&amp;&nbsp;0x1)&nbsp;!=&nbsp;0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">43</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;x&nbsp;=&nbsp;1.0&nbsp;+&nbsp;w&nbsp;*&nbsp;(((((c[0]&nbsp;*&nbsp;w&nbsp;+&nbsp;c[1])&nbsp;*&nbsp;w&nbsp;+&nbsp;c[2])&nbsp;*&nbsp;w&nbsp;+&nbsp;c[3])&nbsp;*&nbsp;w&nbsp;+&nbsp;c[4])&nbsp;*&nbsp;w&nbsp;+&nbsp;c[5]);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">44</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">45</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;x&nbsp;+=&nbsp;x&nbsp;*&nbsp;w&nbsp;*&nbsp;(((((s[0]&nbsp;*&nbsp;w&nbsp;+&nbsp;s[1])&nbsp;*&nbsp;w&nbsp;+&nbsp;s[2])&nbsp;*&nbsp;w&nbsp;+&nbsp;s[3])&nbsp;*&nbsp;w&nbsp;+&nbsp;s[4])&nbsp;*&nbsp;w&nbsp;+&nbsp;s[5]);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">46</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile">4</td><td class="profile">8</td><td class="profile_line">47</td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(qoff&nbsp;&amp;&nbsp;0x2)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">48</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;((*_Pmsw(&amp;(x)))&nbsp;^=&nbsp;((<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)0x8000));</span></td></tr>
+<tr><td class="profile">12</td><td class="profile"></td><td class="profile_line">49</td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;(x);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">50</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">51</td><td><a title="Function _Sinx()
+TER 65 % (15/23) structural, 72 % (13/18) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">52</td><td><span class="lineplain"><span class="comment">/*&nbsp;OS:&nbsp;dead&nbsp;code</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">53</td><td><span class="lineplain"><span class="comment">double&nbsp;_Sincos(double&nbsp;x,&nbsp;double&nbsp;*pcos)</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">54</td><td><span class="lineplain">&nbsp;<span class="comment">{</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">55</td><td><span class="lineplain">&nbsp;<span class="comment">switch&nbsp;(_Dtest(&amp;x))</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">56</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">{</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">57</td><td><span class="lineplain">&nbsp;<span class="comment">case&nbsp;2:</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">58</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">*pcos&nbsp;=&nbsp;x;</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">59</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">return&nbsp;(x);</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">60</td><td><span class="lineplain">&nbsp;<span class="comment">case&nbsp;0:</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">61</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">*pcos&nbsp;=&nbsp;1.0;</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">62</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">return&nbsp;(x);</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">63</td><td><span class="lineplain">&nbsp;<span class="comment">case&nbsp;1:</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">64</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">*pcos&nbsp;=&nbsp;_Nan._Double;</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">65</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">_Feraise(0x01);</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">66</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">return&nbsp;(_Nan._Double);</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">67</td><td><span class="lineplain">&nbsp;<span class="comment">default:</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">68</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;<span class="comment">{</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">69</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">unsigned&nbsp;int&nbsp;qoff&nbsp;=&nbsp;_Quad(&amp;x,&nbsp;0);</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">70</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">if&nbsp;(-_Rteps._Double&nbsp;&lt;&nbsp;x&nbsp;&amp;&amp;&nbsp;x&nbsp;&lt;&nbsp;_Rteps._Double)</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">71</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;<span class="comment">if&nbsp;((qoff&nbsp;&amp;&nbsp;0x1)&nbsp;==&nbsp;0)</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">72</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">*pcos&nbsp;=&nbsp;1.0;</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">73</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;<span class="comment">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">74</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">{</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">75</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">*pcos&nbsp;=&nbsp;x;</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">76</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">x&nbsp;=&nbsp;1.0;</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">77</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">}</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">78</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">79</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;<span class="comment">{</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">80</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;<span class="comment">double&nbsp;w&nbsp;=&nbsp;x&nbsp;*&nbsp;x;</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">81</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;<span class="comment">if&nbsp;((qoff&nbsp;&amp;&nbsp;0x1)&nbsp;!=&nbsp;0)</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">82</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">x&nbsp;=&nbsp;1.0&nbsp;+&nbsp;w&nbsp;*&nbsp;(((((c[0]&nbsp;*&nbsp;w&nbsp;+&nbsp;c[1])&nbsp;*&nbsp;w&nbsp;+&nbsp;c[2])&nbsp;*&nbsp;w&nbsp;+&nbsp;c[3])&nbsp;*&nbsp;w&nbsp;+&nbsp;c[4])&nbsp;*&nbsp;w&nbsp;+&nbsp;c[5]);</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">83</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;<span class="comment">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">84</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">x&nbsp;+=&nbsp;x&nbsp;*&nbsp;w&nbsp;*&nbsp;(((((s[0]&nbsp;*&nbsp;w&nbsp;+&nbsp;s[1])&nbsp;*&nbsp;w&nbsp;+&nbsp;s[2])&nbsp;*&nbsp;w&nbsp;+&nbsp;s[3])&nbsp;*&nbsp;w&nbsp;+&nbsp;s[4])&nbsp;*&nbsp;w&nbsp;+&nbsp;s[5]);</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">85</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;<span class="comment">}</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">86</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">if&nbsp;(((qoff&nbsp;+&nbsp;1)&nbsp;&amp;&nbsp;0x2)&nbsp;!=&nbsp;0)</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">87</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;<span class="comment">*pcos&nbsp;=&nbsp;-*pcos;</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">88</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">if&nbsp;(qoff&nbsp;&amp;&nbsp;0x2)</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">89</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;<span class="comment">((*_Pmsw(&amp;(x)))&nbsp;^=&nbsp;((unsigned&nbsp;short)0x8000));</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">90</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">return&nbsp;(x);</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">91</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;<span class="comment">}</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">92</td><td><span class="lineplain">&nbsp;&nbsp;<span class="comment">}</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">93</td><td><span class="lineplain">&nbsp;<span class="comment">}</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">94</td><td><span class="lineplain"><span class="comment">double&nbsp;_Sin(double&nbsp;x,&nbsp;unsigned&nbsp;int&nbsp;qoff)</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">95</td><td><span class="lineplain">&nbsp;<span class="comment">{</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">96</td><td><span class="lineplain">&nbsp;<span class="comment">return&nbsp;(_Sinx(x,&nbsp;qoff,&nbsp;0));</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">97</td><td><span class="lineplain">&nbsp;<span class="comment">}</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">98</td><td><span class="lineplain"><span class="comment">*/</span></span></td></tr>
+</tbody>
+</table>
+<a name="ut7"></a>
+<span class="belowb">***TER</span><span class="belowb">65 % (15/23) of FILE xsin.c</span><br>
+<span class="terindent"></span><span class="belowb">72 % (13/18) statement</span><br><br>
+<span class="pages"><a href="indexF.html" target="_top">Directory Summary</a> | <a href="index.html" target="_top">Files Summary</a> | <a href="indexB1.html" target="_top">Functions Summary</a> | <a href="indexU.html" target="_top">Untested Code</a> | <a href="indexD1.html">Execution Profile</a><br>
+To files: <a href="indexD1.html">First</a> | <a href="indexD20.html">Previous</a> | <a href="indexD22.html">Next</a> | <a href="indexD22.html">Last</a> | <a href="indexD21.html">Top</a> | <a href="indexA.html#a21">Index</a> | <a href="indexD21.html" target="_top">No Index</a></span><br><br>
+</body>
+</html>

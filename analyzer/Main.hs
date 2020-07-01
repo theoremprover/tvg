@@ -69,6 +69,7 @@ checkSolutions = solveIt && True
 returnval_var_name = "return_val"
 outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
+doubleTolerance = 1e-10 :: Double
 showBuiltins = False
 sameConditionThreshold = 1
 sameConditionThresholdExceptions = [26,27,28,29,30,31]
@@ -107,7 +108,8 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -660,6 +662,26 @@ unfoldTraces1M mb_ret_type envs trace ((CBlockStmt stmt : rest) : rest2) = case 
 
 	CCompound _ cbis _ -> unfoldTracesM mb_ret_type ([]:envs) trace (cbis : (rest : rest2))
 
+-- ⩵ ⩾ ⋏ ⋎ ∗ − not_c _𝟶 _𝟷 ≠
+	CSwitch condexpr (CCompound [] cbis _) switch_ni -> do
+		let
+			cond_ni = nodeInfo condexpr
+			(l,c) = lineColNodeInfo condexpr
+			cond_var = CVar (mkIdentWithCNodePos condexpr $ "cond_" ++ show l ++ "_" ++ show c) cond_ni
+			last_stmt = case last cbis of
+				CBlockStmt (CDefault default_stmt _) -> default_stmt
+				CBlockStmt (CCase caseexpr stmt case_ni) -> CIf (CBinary CEqOp cond_var caseexpr case_ni) stmt Nothing case_ni
+
+			ifcases_stmt = foldr create_caseif last_stmt (init cbis) where
+				create_caseif :: CBlockItem -> CStat -> CStat
+				create_caseif (CBlockStmt (CCase caseexpr stmt case_ni)) elsestmt =
+					CIf (CBinary CEqOp cond_var caseexpr case_ni) stmt (Just elsestmt) case_ni
+
+		unfoldTracesM mb_ret_type envs trace ( (
+			CBlockStmt (CExpr (Just (CAssign CAssignOp cond_var condexpr cond_ni)) cond_ni) :
+			CBlockStmt ifcases_stmt :
+			rest) : rest2 )
+
 	CIf cond then_stmt mb_else_stmt ni -> do
 		let then_trace_m = transids TraceOr cond trace $ \ (cond',trace') -> do
 			unfoldTracesM mb_ret_type envs (Condition True cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
@@ -919,7 +941,7 @@ cinitializer2blockitems lexpr ty initializer =
 					(([],initializer),(memberident,memberty)) ->
 						cinitializer2blockitems (CMember lexpr memberident False (nodeInfo memberident)) memberty initializer
 					_ -> myError $ "cinitializer2blockitems: CPartDesignators not implemented yet!"
-			_ -> myError $ "cinitializer2blockitems: " ++ (render.pretty) ty ++ " is no composite type!"
+			_ -> myError $ "cinitializer2blockitems: " ++ (render.pretty) ty ++ " at " ++ (show $ nodeInfo lexpr) ++ " is no composite type!"
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
@@ -1152,7 +1174,7 @@ instance Show SExpr where
 	show (SLeaf s) = s
 	show (SExpr sexprs) = "(" ++ intercalate " " (map show sexprs) ++ ")"
 
-data Z3_Type = Z3_BitVector Int Bool | Z3_Float
+data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Double
 	deriving (Show,Eq,Ord)
 
 type Constraint = CExpr
@@ -1266,7 +1288,8 @@ ty2Z3Type ty = case ty of
 			TyLLong  -> Z3_BitVector 64 True
 			TyULLong -> Z3_BitVector 64 False
 			other    -> error $ "ty2Z3Type " ++ show other ++ " not implemented!"
-		TyFloating _ -> Z3_Float
+		TyFloating TyFloat -> Z3_Float
+		TyFloating TyDouble -> Z3_Double
 		TyEnum _ -> Z3_BitVector intSize False
 		TyComp _ -> Z3_BitVector 16 False
 		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
@@ -1276,18 +1299,21 @@ ty2Z3Type ty = case ty of
 ty2SExpr :: Type -> SExpr
 ty2SExpr ty = case ty2Z3Type ty of
 	Z3_BitVector size _ -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
-	Z3_Float            -> SLeaf "Real"
+	Z3_Float            -> SLeaf "Float32"
+	Z3_Double           -> SLeaf "Float64"
 
 type Solution = [(String,SolutionVal)]
 
-data SolutionVal = IntVal Int | FloatVal Float
+data SolutionVal = IntVal Int | FloatVal Float | DoubleVal Double
 instance Eq SolutionVal where
 	IntVal i1   == IntVal i2   = i1==i2
 	FloatVal f1 == FloatVal f2 = f2-f1 <= floatTolerance
+	DoubleVal f1 == DoubleVal f2 = f2-f1 <= doubleTolerance
 
 instance Show SolutionVal where
 	show (IntVal i) = show i
 	show (FloatVal f) = show f
+	show (DoubleVal f) = show f
 
 makeAndSolveZ3ModelM :: TyEnv -> [CExpr] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpathfile = do

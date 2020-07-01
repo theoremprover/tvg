@@ -1,0 +1,512 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>CTC++ Coverage Report - Execution Profile - xprec.c</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="keyword" content="CTC++, Testwell, Test Coverage Analyzer">
+<meta name="date" content="Sat Jun 29 15:02:31 2019">
+<meta name="generator" content="Testwell CTC++ add-on utility ctc2html v5.4">
+<link href="index.html" rel="contents">
+<link href="ctc.css" rel="stylesheet" type="text/css">
+<script src="ctc.js" type="text/javascript"></script>
+<script src="sorttable.js" type="text/javascript"></script>
+<script src="own_javascript.js" type="text/javascript"></script>
+</head>
+<body>
+<span class="reportb">CTC++ Coverage Report</span><span class="report">- Execution Profile</span><span class="info">#19/22</span><br><br>
+<span class="pages"><a href="indexF.html" target="_top">Directory Summary</a> | <a href="index.html" target="_top">Files Summary</a> | <a href="indexB1.html" target="_top">Functions Summary</a> | <a href="indexU.html" target="_top">Untested Code</a> | <a href="indexD1.html">Execution Profile</a><br>
+To files: <a href="indexD1.html">First</a> | <a href="indexD18.html">Previous</a> | <a href="indexD20.html">Next</a> | <a href="indexD22.html">Last</a> | <a href="indexA.html#a19">Index</a> | <a href="indexD19.html" target="_top">No Index</a></span><br><br>
+<span class="infob">Source file:</span><span class="infob">E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xprec.c</span><br>
+<span class="infob">Instrumentation mode:</span><span class="info">multicondition</span><span class="indent"></span><span class="infob">Reduced to:</span><span class="info">MC/DC coverage</span><br>
+<span class="infob">TER:</span><span class="below">35 % (73/209) structural,</span><span class="below">46 % (118/259) statement</span><br><br>
+<table class="execution">
+<thead>
+<tr><th>Hits/True</th><th>False</th><th><a href="indexD19.html#ut1" title="First untested">Line</a></th><th>Source</th></tr>
+</thead>
+<tbody>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">1</td><td><span class="lineplain"><span class="preproc">#include&nbsp;"defs.h"</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">2</td><td><span class="lineplain"><span class="preproc">#include&nbsp;&lt;stdio.h&gt;</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">3</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD19.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xprec.c">Top</a></td></tr>
+<tr><td class="tcolnhit"><a name="a22"></a>0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut2" name="ut1">4</a></td><td><span class="linenhit"><span class="keyword">double</span>&nbsp;_Xp_getw(<span class="keyword">const</span>&nbsp;<span class="keyword">double</span>&nbsp;*p,&nbsp;<span class="keyword">int</span>&nbsp;n)&nbsp;{</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut3" name="ut2">5</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;_Xp_getw_help(p,n,0);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">6</td><td><a title="Function _Xp_getw()
+TER 0 % (0/2) structural, 0 % (0/1) statement"><span class="lineplain">}</span></a></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD19.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xprec.c">Top</a></td></tr>
+<tr><td class="profile"><a name="a23"></a>12</td><td class="profile"></td><td class="profile_line">7</td><td><span class="linehit"><span class="keyword">double</span>&nbsp;_Xp_getw_help(<span class="keyword">const</span>&nbsp;<span class="keyword">double</span>&nbsp;*p,&nbsp;<span class="keyword">int</span>&nbsp;n,<span class="keyword">double</span>&nbsp;sin_arg)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">8</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">9</td><td><span class="linehit">&nbsp;printf(<span class="string">"calling&nbsp;sin(%17.g)&nbsp;-&gt;&nbsp;_Xp_getw(%.17g/%.17g,%d)\n"</span>,sin_arg,p[0],p[1],n);</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">12</td><td class="profile_line"><a href="indexD19.html#ut4" name="ut3">10</a></td><td><span class="linehit">&nbsp;<span class="keyword">if</span>&nbsp;(n&nbsp;==&nbsp;0)</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut5" name="ut4">11</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;(0.0);</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">12</td><td class="profile_line"><a href="indexD19.html#ut6" name="ut5">12</a></td><td><span class="linehit">&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(n&nbsp;==&nbsp;1&nbsp;||&nbsp;p[0]&nbsp;==&nbsp;0.0&nbsp;||&nbsp;p[1]&nbsp;==&nbsp;0.0)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">12</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;1: T || _ || _</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">12</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;2: F || T || _</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">12</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;3: F || F || T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">12</td><td class="profile_line">12</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;4: F || F || F</span></td></tr>
+<tr onmouseover="highlight(this, 4, 1)" onmouseout="unhighlight(this, 4, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut7" name="ut6">12</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 4</span></td></tr>
+<tr onmouseover="highlight(this, 4, 2)" onmouseout="unhighlight(this, 4, 2)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut8" name="ut7">12</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 2 - 4</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut9" name="ut8">12</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 3): 3 - 4</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut10" name="ut9">13</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;(p[0]);</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">12</td><td class="profile_line"><a href="indexD19.html#ut11" name="ut10">14</a></td><td><span class="linehit">&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(n&nbsp;==&nbsp;2&nbsp;||&nbsp;p[2]&nbsp;==&nbsp;0.0)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">14</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;1: T || _</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">14</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;2: F || T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">12</td><td class="profile_line">14</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;3: F || F</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut12" name="ut11">14</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 3, 2)" onmouseout="unhighlight(this, 3, 2)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut13" name="ut12">14</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 2 - 3</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut14" name="ut13">15</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;(p[0]&nbsp;+&nbsp;p[1]);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">16</td><td><span class="linehit">&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">17</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">18</td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;p01&nbsp;=&nbsp;p[0]&nbsp;+&nbsp;p[1];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">19</td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;p2&nbsp;=&nbsp;p[2];</span></td></tr>
+<tr><td class="profile">12</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut15" name="ut14">20</a></td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(4&nbsp;&lt;=&nbsp;n)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">21</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;p2&nbsp;+=&nbsp;p[3];</span></td></tr>
+<tr><td class="profile">10</td><td class="profile">2</td><td class="profile_line">22</td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(p01&nbsp;-&nbsp;p[0]&nbsp;==&nbsp;p[1])</span></td></tr>
+<tr><td class="profile">10</td><td class="profile"></td><td class="profile_line">23</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;(p01&nbsp;+&nbsp;p2);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">24</td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile">2</td><td class="profile"></td><td class="profile_line">25</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;(p[0]&nbsp;+&nbsp;(p[1]&nbsp;+&nbsp;p2));</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">26</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">27</td><td><a title="Function _Xp_getw_help()
+TER 43 % (9/21) structural, 79 % (11/14) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD19.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xprec.c">Top</a></td></tr>
+<tr><td class="profile"><a name="a24"></a>12</td><td class="profile"></td><td class="profile_line">28</td><td><span class="linehit"><span class="keyword">double</span>&nbsp;*_Xp_setw(<span class="keyword">double</span>&nbsp;*p,&nbsp;<span class="keyword">int</span>&nbsp;n,&nbsp;<span class="keyword">double</span>&nbsp;x)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">29</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">30</td><td><span class="linehit">&nbsp;<span class="keyword">double</span>&nbsp;x0&nbsp;=&nbsp;x;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">31</td><td><span class="linehit">&nbsp;<span class="keyword">short</span>&nbsp;errx,&nbsp;xexp;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">12</td><td class="profile_line"><a href="indexD19.html#ut16" name="ut15">32</a></td><td><span class="linehit">&nbsp;<span class="keyword">if</span>&nbsp;(n&nbsp;&lt;=&nbsp;0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">33</td><td><span class="linenhit">&nbsp;&nbsp;;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">12</td><td class="profile_line"><a href="indexD19.html#ut17" name="ut16">34</a></td><td><span class="linehit">&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(n&nbsp;==&nbsp;1&nbsp;||&nbsp;(errx&nbsp;=&nbsp;_Dunscale(&amp;xexp,&nbsp;&amp;x0))&nbsp;==&nbsp;0)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">34</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;1: T || _</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">34</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;2: F || T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">12</td><td class="profile_line">34</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;3: F || F</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut18" name="ut17">34</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 3, 2)" onmouseout="unhighlight(this, 3, 2)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut19" name="ut18">34</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 2 - 3</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">35</td><td><span class="linenhit">&nbsp;&nbsp;p[0]&nbsp;=&nbsp;x0;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">12</td><td class="profile_line"><a href="indexD19.html#ut20" name="ut19">36</a></td><td><span class="linehit">&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(0&nbsp;&lt;&nbsp;errx)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">37</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">38</td><td><span class="linenhit">&nbsp;&nbsp;p[0]&nbsp;=&nbsp;x0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">39</td><td><span class="linenhit">&nbsp;&nbsp;p[1]&nbsp;=&nbsp;0.0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">40</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">41</td><td><span class="linehit">&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">42</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">43</td><td><span class="linehit">&nbsp;&nbsp;_Dint(&amp;x0,&nbsp;(53&nbsp;/&nbsp;2));</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">44</td><td><span class="linehit">&nbsp;&nbsp;_Dscale(&amp;x0,&nbsp;xexp);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">45</td><td><span class="linehit">&nbsp;&nbsp;p[0]&nbsp;=&nbsp;x0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">46</td><td><span class="linehit">&nbsp;&nbsp;p[1]&nbsp;=&nbsp;x&nbsp;-&nbsp;x0;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">12</td><td class="profile_line"><a href="indexD19.html#ut21" name="ut20">47</a></td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;((53&nbsp;&amp;&nbsp;1)&nbsp;!=&nbsp;0&nbsp;&amp;&amp;&nbsp;2&nbsp;&lt;&nbsp;n&nbsp;&amp;&amp;&nbsp;p[1]&nbsp;!=&nbsp;0.0)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">47</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">47</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">12</td><td class="profile_line">47</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: T &amp;&amp; F &amp;&amp; _</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">47</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4: F &amp;&amp; _ &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 4, 1)" onmouseout="unhighlight(this, 4, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut22" name="ut21">47</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 4</span></td></tr>
+<tr onmouseover="highlight(this, 5, 3)" onmouseout="unhighlight(this, 5, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut23" name="ut22">47</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 6, 5)" onmouseout="unhighlight(this, 6, 5)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut24" name="ut23">47</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 3): 1 - 2</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">48</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">49</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;x&nbsp;=&nbsp;p[1];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">50</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Dunscale(&amp;xexp,&nbsp;&amp;p[1]);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">51</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Dint(&amp;p[1],&nbsp;(53&nbsp;/&nbsp;2));</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">52</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Dscale(&amp;p[1],&nbsp;xexp);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">53</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;p[2]&nbsp;=&nbsp;x&nbsp;-&nbsp;p[1];</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut25" name="ut24">54</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(3&nbsp;&lt;&nbsp;n&nbsp;&amp;&amp;&nbsp;p[2]&nbsp;!=&nbsp;0.0)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">54</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">54</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">54</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: F &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut26" name="ut25">54</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut27" name="ut26">54</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 2</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">55</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;p[3]&nbsp;=&nbsp;0.0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">56</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">12</td><td class="profile_line"><a href="indexD19.html#ut28" name="ut27">57</a></td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(2&nbsp;&lt;&nbsp;n)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">58</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;p[2]&nbsp;=&nbsp;0.0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">59</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile">12</td><td class="profile"></td><td class="profile_line">60</td><td><span class="linehit">&nbsp;<span class="keyword">return</span>&nbsp;(p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">61</td><td><a title="Function _Xp_setw()
+TER 33 % (7/21) structural, 50 % (12/24) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD19.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xprec.c">Top</a></td></tr>
+<tr><td class="profile"><a name="a25"></a>158</td><td class="profile"></td><td class="profile_line">62</td><td><span class="linehit"><span class="keyword">double</span>&nbsp;*_Xp_addh(<span class="keyword">double</span>&nbsp;*p,&nbsp;<span class="keyword">int</span>&nbsp;n,&nbsp;<span class="keyword">double</span>&nbsp;x0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">63</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">64</td><td><span class="linehit">&nbsp;<span class="keyword">double</span>&nbsp;xscaled&nbsp;=&nbsp;x0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">65</td><td><span class="linehit">&nbsp;<span class="keyword">short</span>&nbsp;errx,&nbsp;xexp;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">158</td><td class="profile_line"><a href="indexD19.html#ut29" name="ut28">66</a></td><td><span class="linehit">&nbsp;<span class="keyword">if</span>&nbsp;(n&nbsp;==&nbsp;0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">67</td><td><span class="linenhit">&nbsp;&nbsp;;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">158</td><td class="profile_line"><a href="indexD19.html#ut30" name="ut29">68</a></td><td><span class="linehit">&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(0&nbsp;&lt;&nbsp;(errx&nbsp;=&nbsp;_Dunscale(&amp;xexp,&nbsp;&amp;xscaled)))</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut31" name="ut30">69</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(errx&nbsp;==&nbsp;2&nbsp;||&nbsp;(errx&nbsp;=&nbsp;_Dtest(&amp;p[0]))&nbsp;&lt;=&nbsp;0)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">69</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T || _</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">69</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: F || T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">69</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: F || F</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut32" name="ut31">69</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 3, 2)" onmouseout="unhighlight(this, 3, 2)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut33" name="ut32">69</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 2 - 3</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">70</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;p[0]&nbsp;=&nbsp;x0;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut34" name="ut33">71</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(errx&nbsp;==&nbsp;2&nbsp;||&nbsp;((*_Pmsw(&amp;(x0)))&nbsp;&amp;&nbsp;((<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)0x8000))&nbsp;==&nbsp;((*_Pmsw(&amp;(p[0])))&nbsp;&amp;&nbsp;((<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)0x8000)))</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">71</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T || _</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">71</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: F || T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">71</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: F || F</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut35" name="ut34">71</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 3, 2)" onmouseout="unhighlight(this, 3, 2)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut36" name="ut35">71</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 2 - 3</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">72</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">73</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">74</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">75</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Feraise(0x01);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">76</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;p[0]&nbsp;=&nbsp;_Nan._Double;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut37" name="ut36">77</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(1&nbsp;&lt;&nbsp;n)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">78</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;p[1]&nbsp;=&nbsp;0.0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">79</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile">106</td><td class="profile">52</td><td class="profile_line">80</td><td><span class="linehit">&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(errx&nbsp;&lt;&nbsp;0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">81</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">82</td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">long</span>&nbsp;prevexp&nbsp;=&nbsp;(2&nbsp;*&nbsp;1024);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">83</td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">int</span>&nbsp;k;</span></td></tr>
+<tr><td class="profile">568</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut38" name="ut37">84</a></td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">for</span>&nbsp;(k&nbsp;=&nbsp;0;&nbsp;k&nbsp;&lt;&nbsp;n;&nbsp;)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">85</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">86</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;yscaled&nbsp;=&nbsp;p[k];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">87</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">int</span>&nbsp;mybits&nbsp;=&nbsp;(53&nbsp;/&nbsp;2);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">88</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">short</span>&nbsp;yexp;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">89</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">long</span>&nbsp;diff;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">568</td><td class="profile_line"><a href="indexD19.html#ut39" name="ut38">90</a></td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(0&nbsp;&lt;&nbsp;(errx&nbsp;=&nbsp;_Dunscale(&amp;yexp,&nbsp;&amp;yscaled)))</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut40" name="ut39">91</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">break</span>;</span></td></tr>
+<tr><td class="profile">88</td><td class="profile">480</td><td class="profile_line">92</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(errx&nbsp;==&nbsp;0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">93</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">94</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;p[k]&nbsp;=&nbsp;x0;</span></td></tr>
+<tr><td class="profile">72</td><td class="profile">16</td><td class="profile_line">95</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(k&nbsp;+&nbsp;1&nbsp;&lt;&nbsp;n)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">96</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p[k&nbsp;+&nbsp;1]&nbsp;=&nbsp;0.0;</span></td></tr>
+<tr><td class="profile">88</td><td class="profile"></td><td class="profile_line">97</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">break</span>;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">98</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">99</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;((diff&nbsp;=&nbsp;(<span class="keyword">long</span>)yexp&nbsp;-&nbsp;xexp)&nbsp;&lt;=&nbsp;-mybits</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">480</td><td class="profile_line"><a href="indexD19.html#ut41" name="ut40">100</a></td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&amp;&amp;&nbsp;x0&nbsp;!=&nbsp;0.0)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">100</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">74</td><td class="profile_line">100</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">406</td><td class="profile_line">100</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: F &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut42" name="ut41">100</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut43" name="ut42">100</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 2</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">101</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">102</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">int</span>&nbsp;j;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut44" name="ut43">103</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">for</span>&nbsp;(j&nbsp;=&nbsp;k;&nbsp;++j&nbsp;&lt;&nbsp;n&nbsp;&amp;&amp;&nbsp;p[j]&nbsp;!=&nbsp;0.0;&nbsp;)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">103</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">103</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">103</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: F &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut45" name="ut44">103</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut46" name="ut45">103</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 2</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">104</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut47" name="ut46">105</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(j&nbsp;&lt;&nbsp;n&nbsp;-&nbsp;1)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">106</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++j;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut48" name="ut47">107</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(j&nbsp;==&nbsp;n)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">108</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;--j;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut49" name="ut48">109</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">for</span>&nbsp;(;&nbsp;k&nbsp;&lt;&nbsp;j;&nbsp;--j)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">110</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;p[j]&nbsp;=&nbsp;p[j&nbsp;-&nbsp;1];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">111</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;p[k]&nbsp;=&nbsp;x0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">112</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;x0&nbsp;=&nbsp;0.0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">113</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile">204</td><td class="profile">276</td><td class="profile_line">114</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(mybits&nbsp;&lt;=&nbsp;diff&nbsp;&amp;&amp;&nbsp;x0&nbsp;!=&nbsp;0.0)</span></td></tr>
+<tr><td class="profile">204</td><td class="profile"></td><td class="profile_line">114</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">114</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">276</td><td class="profile_line">114</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: F &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_pass" colspan="2">+</td><td class="profile_line">114</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 + 3</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut50" name="ut49">114</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 2</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">115</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">116</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;prevexp&nbsp;=&nbsp;yexp;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">117</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;++k;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">118</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">119</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">120</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile">2</td><td class="profile">274</td><td class="profile_line">121</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;((p[k]&nbsp;+=&nbsp;x0)&nbsp;==&nbsp;0.0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">122</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile">10</td><td class="profile">2</td><td class="profile_line">123</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{<span class="keyword">int</span>&nbsp;m&nbsp;=&nbsp;k;&nbsp;<span class="keyword">for</span>&nbsp;(;&nbsp;++m&nbsp;&lt;&nbsp;n&nbsp;&amp;&amp;&nbsp;(p[m&nbsp;-&nbsp;1]&nbsp;=&nbsp;p[m])&nbsp;!=&nbsp;0.0;&nbsp;)&nbsp;;&nbsp;p[n&nbsp;-&nbsp;1]&nbsp;=&nbsp;0.0;}</span></td></tr>
+<tr><td class="profile">10</td><td class="profile"></td><td class="profile_line">123</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">123</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">2</td><td class="profile_line">123</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: F &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_pass" colspan="2">+</td><td class="profile_line">123</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 + 3</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut51" name="ut50">123</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 2</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">2</td><td class="profile_line"><a href="indexD19.html#ut52" name="ut51">124</a></td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(p[k]&nbsp;==&nbsp;0.0)</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut53" name="ut52">125</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">break</span>;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">126</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">127</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;x0&nbsp;=&nbsp;p[k];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">128</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;_Dunscale(&amp;xexp,&nbsp;&amp;x0);</span></td></tr>
+<tr><td class="profile">66</td><td class="profile">210</td><td class="profile_line">129</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(prevexp&nbsp;-&nbsp;mybits&nbsp;&lt;&nbsp;xexp)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">130</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">131</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_Dint(&amp;x0,&nbsp;(<span class="keyword">short</span>)(xexp&nbsp;-&nbsp;(prevexp&nbsp;-&nbsp;mybits)));</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">132</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_Dscale(&amp;x0,&nbsp;xexp);</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">66</td><td class="profile_line"><a href="indexD19.html#ut54" name="ut53">133</a></td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;((p[k]&nbsp;-=&nbsp;x0)&nbsp;==&nbsp;0.0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">134</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut55" name="ut54">135</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{<span class="keyword">int</span>&nbsp;m&nbsp;=&nbsp;k;&nbsp;<span class="keyword">for</span>&nbsp;(;&nbsp;++m&nbsp;&lt;&nbsp;n&nbsp;&amp;&amp;&nbsp;(p[m&nbsp;-&nbsp;1]&nbsp;=&nbsp;p[m])&nbsp;!=&nbsp;0.0;&nbsp;)&nbsp;;&nbsp;p[n&nbsp;-&nbsp;1]&nbsp;=&nbsp;0.0;}</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">135</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">135</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">135</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: F &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut56" name="ut55">135</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut57" name="ut56">135</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 2</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">136</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile">12</td><td class="profile">54</td><td class="profile_line">137</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(--k&nbsp;==&nbsp;0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">138</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;prevexp&nbsp;=&nbsp;(2&nbsp;*&nbsp;1024);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">139</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">140</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">141</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xscaled&nbsp;=&nbsp;p[k&nbsp;-&nbsp;1];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">142</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_Dunscale(&amp;yexp,&nbsp;&amp;xscaled);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">143</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;prevexp&nbsp;=&nbsp;yexp;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">144</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">145</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile">18</td><td class="profile">192</td><td class="profile_line">146</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(k&nbsp;+&nbsp;1&nbsp;==&nbsp;n)</span></td></tr>
+<tr><td class="profile">18</td><td class="profile"></td><td class="profile_line">147</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">break</span>;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">148</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">149</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">150</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;x0&nbsp;=&nbsp;p[k];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">151</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_Dunscale(&amp;yexp,&nbsp;&amp;p[k]);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">152</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_Dint(&amp;p[k],&nbsp;(53&nbsp;/&nbsp;2));</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">153</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_Dscale(&amp;p[k],&nbsp;yexp);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">154</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;x0&nbsp;-=&nbsp;p[k];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">155</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;prevexp&nbsp;=&nbsp;yexp;</span></td></tr>
+<tr><td class="profile">44</td><td class="profile">148</td><td class="profile_line">156</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;xscaled&nbsp;=&nbsp;x0&nbsp;!=&nbsp;0.0&nbsp;?&nbsp;x0&nbsp;:&nbsp;p[k];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">157</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;_Dunscale(&amp;xexp,&nbsp;&amp;xscaled);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">158</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++k;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">159</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">160</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">161</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">162</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile">158</td><td class="profile"></td><td class="profile_line">163</td><td><span class="linehit">&nbsp;<span class="keyword">return</span>&nbsp;(p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">164</td><td><a title="Function _Xp_addh()
+TER 47 % (33/70) structural, 63 % (55/87) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD19.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xprec.c">Top</a></td></tr>
+<tr><td class="profile"><a name="a26"></a>12</td><td class="profile"></td><td class="profile_line">165</td><td><span class="linehit"><span class="keyword">double</span>&nbsp;*_Xp_mulh(<span class="keyword">double</span>&nbsp;*p,&nbsp;<span class="keyword">int</span>&nbsp;n,&nbsp;<span class="keyword">double</span>&nbsp;x0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">166</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">167</td><td><span class="linehit">&nbsp;<span class="keyword">short</span>&nbsp;errx;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">168</td><td><span class="linehit">&nbsp;<span class="keyword">int</span>&nbsp;j,&nbsp;k;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">169</td><td><span class="linehit">&nbsp;<span class="keyword">double</span>&nbsp;buf[4];</span></td></tr>
+<tr><td class="profile">12</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut58" name="ut57">170</a></td><td><span class="linehit">&nbsp;<span class="keyword">if</span>&nbsp;(0&nbsp;&lt;&nbsp;n)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">171</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">172</td><td><span class="linehit">&nbsp;&nbsp;buf[0]&nbsp;=&nbsp;p[0]&nbsp;*&nbsp;x0;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">12</td><td class="profile_line"><a href="indexD19.html#ut59" name="ut58">173</a></td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(0&nbsp;&lt;=&nbsp;(errx&nbsp;=&nbsp;_Dtest(&amp;buf[0])))</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">174</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut60" name="ut59">175</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(errx&nbsp;==&nbsp;2)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">176</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;_Feraise(0x01);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">177</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;p[0]&nbsp;=&nbsp;buf[0];</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut61" name="ut60">178</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(0&nbsp;&lt;&nbsp;errx&nbsp;&amp;&amp;&nbsp;1&nbsp;&lt;&nbsp;n)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">178</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">178</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">178</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: F &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut62" name="ut61">178</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut63" name="ut62">178</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 2</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">179</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;p[1]&nbsp;=&nbsp;0.0;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut64" name="ut63">180</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;(p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">181</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">182</td><td><span class="linehit">&nbsp;&nbsp;p[0]&nbsp;=&nbsp;0.0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">183</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile">72</td><td class="profile">12</td><td class="profile_line">184</td><td><span class="linehit">&nbsp;<span class="keyword">for</span>&nbsp;(j&nbsp;=&nbsp;1,&nbsp;k&nbsp;=&nbsp;0;&nbsp;k&nbsp;&lt;&nbsp;n;&nbsp;++k,&nbsp;--j)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">185</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile">72</td><td class="profile">60</td><td class="profile_line">186</td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">for</span>&nbsp;(;&nbsp;j&nbsp;&lt;&nbsp;4;&nbsp;++j)</span></td></tr>
+<tr><td class="profile">60</td><td class="profile">12</td><td class="profile_line">187</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(k&nbsp;+&nbsp;j&nbsp;&lt;&nbsp;n&nbsp;&amp;&amp;&nbsp;p[k&nbsp;+&nbsp;j]&nbsp;!=&nbsp;0.0)</span></td></tr>
+<tr><td class="profile">60</td><td class="profile"></td><td class="profile_line">187</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">187</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">12</td><td class="profile_line">187</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: F &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_pass" colspan="2">+</td><td class="profile_line">187</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 + 3</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut65" name="ut64">187</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 2</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">188</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">189</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;buf[j]&nbsp;=&nbsp;p[k&nbsp;+&nbsp;j]&nbsp;*&nbsp;x0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">190</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;p[k&nbsp;+&nbsp;j]&nbsp;=&nbsp;0.0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">191</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">192</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">193</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">194</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;buf[j]&nbsp;=&nbsp;0.0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">195</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;j&nbsp;=&nbsp;2&nbsp;*&nbsp;4;</span></td></tr>
+<tr><td class="profile">12</td><td class="profile"></td><td class="profile_line">196</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">break</span>;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">197</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">72</td><td class="profile_line"><a href="indexD19.html#ut66" name="ut65">198</a></td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(buf[0]&nbsp;==&nbsp;0.0)</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut67" name="ut66">199</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">break</span>;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">200</td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">201</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">202</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">int</span>&nbsp;i&nbsp;=&nbsp;0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">203</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;y0&nbsp;=&nbsp;buf[0];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">204</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">short</span>&nbsp;xexp;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">205</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;_Dunscale(&amp;xexp,&nbsp;&amp;y0);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">206</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;_Dint(&amp;y0,&nbsp;(53&nbsp;/&nbsp;2));</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">207</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;_Dscale(&amp;y0,&nbsp;xexp);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">208</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;_Xp_addh(p,&nbsp;n,&nbsp;y0);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">209</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;_Xp_addh(p,&nbsp;n,&nbsp;buf[0]&nbsp;-&nbsp;y0);</span></td></tr>
+<tr><td class="profile">180</td><td class="profile">36</td><td class="profile_line">210</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;<span class="keyword">for</span>&nbsp;(;&nbsp;++i&nbsp;&lt;&nbsp;j;&nbsp;)</span></td></tr>
+<tr><td class="profile">36</td><td class="profile">144</td><td class="profile_line">211</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;((buf[i&nbsp;-&nbsp;1]&nbsp;=&nbsp;buf[i])&nbsp;==&nbsp;0.0)</span></td></tr>
+<tr><td class="profile">36</td><td class="profile"></td><td class="profile_line">212</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">break</span>;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">213</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">214</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile">12</td><td class="profile"></td><td class="profile_line">215</td><td><span class="linehit">&nbsp;<span class="keyword">return</span>&nbsp;(p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">216</td><td><a title="Function _Xp_mulh()
+TER 60 % (18/30) structural, 83 % (34/41) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD19.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xprec.c">Top</a></td></tr>
+<tr><td class="tcolnhit"><a name="a27"></a>0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut68" name="ut67">217</a></td><td><span class="linenhit"><span class="keyword">double</span>&nbsp;*_Xp_setn(<span class="keyword">double</span>&nbsp;*p,&nbsp;<span class="keyword">int</span>&nbsp;n,&nbsp;<span class="keyword">long</span>&nbsp;x)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">218</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">219</td><td><span class="linenhit">&nbsp;_Xp_setw(p,&nbsp;n,&nbsp;(<span class="keyword">double</span>)x);</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut69" name="ut68">220</a></td><td><span class="linenhit">&nbsp;<span class="keyword">return</span>&nbsp;(p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">221</td><td><a title="Function _Xp_setn()
+TER 0 % (0/2) structural, 0 % (0/2) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD19.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xprec.c">Top</a></td></tr>
+<tr><td class="tcolnhit"><a name="a28"></a>0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut70" name="ut69">222</a></td><td><span class="linenhit"><span class="keyword">double</span>&nbsp;*_Xp_movx(<span class="keyword">double</span>&nbsp;*p,&nbsp;<span class="keyword">int</span>&nbsp;n,&nbsp;<span class="keyword">const</span>&nbsp;<span class="keyword">double</span>&nbsp;*q)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">223</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">224</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;memcpy_HighTecARMImpl(p,&nbsp;q,&nbsp;n&nbsp;*&nbsp;<span class="keyword">sizeof</span>&nbsp;(<span class="keyword">double</span>));</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut71" name="ut70">225</a></td><td><span class="linenhit">&nbsp;<span class="keyword">return</span>&nbsp;(p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">226</td><td><a title="Function _Xp_movx()
+TER 0 % (0/2) structural, 0 % (0/2) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD19.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xprec.c">Top</a></td></tr>
+<tr><td class="profile"><a name="a29"></a>12</td><td class="profile"></td><td class="profile_line">227</td><td><span class="linehit"><span class="keyword">double</span>&nbsp;*_Xp_addx(<span class="keyword">double</span>&nbsp;*p,&nbsp;<span class="keyword">int</span>&nbsp;n,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">228</td><td><span class="linehit">&nbsp;<span class="keyword">const</span>&nbsp;<span class="keyword">double</span>&nbsp;*q,&nbsp;<span class="keyword">int</span>&nbsp;m)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">229</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">230</td><td><span class="linehit">&nbsp;<span class="keyword">int</span>&nbsp;k;</span></td></tr>
+<tr><td class="profile">14</td><td class="profile">12</td><td class="profile_line">231</td><td><span class="linehit">&nbsp;<span class="keyword">for</span>&nbsp;(k&nbsp;=&nbsp;0;&nbsp;k&nbsp;&lt;&nbsp;m&nbsp;&amp;&amp;&nbsp;q[k]&nbsp;!=&nbsp;0.0;&nbsp;++k)</span></td></tr>
+<tr><td class="profile">14</td><td class="profile"></td><td class="profile_line">231</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">10</td><td class="profile_line">231</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">2</td><td class="profile_line">231</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;3: F &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_pass" colspan="2">+</td><td class="profile_line">231</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 + 3</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_pass" colspan="2">+</td><td class="profile_line">231</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 + 2</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">232</td><td><span class="linehit">&nbsp;&nbsp;_Xp_addh(p,&nbsp;n,&nbsp;q[k]);</span></td></tr>
+<tr><td class="profile">12</td><td class="profile"></td><td class="profile_line">233</td><td><span class="linehit">&nbsp;<span class="keyword">return</span>&nbsp;(p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">234</td><td><a title="Function _Xp_addx()
+TER 100 % (6/6) structural, 100 % (6/6) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD19.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xprec.c">Top</a></td></tr>
+<tr><td class="tcolnhit"><a name="a30"></a>0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut72" name="ut71">235</a></td><td><span class="linenhit"><span class="keyword">double</span>&nbsp;*_Xp_subx(<span class="keyword">double</span>&nbsp;*p,&nbsp;<span class="keyword">int</span>&nbsp;n,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">236</td><td><span class="linenhit">&nbsp;<span class="keyword">const</span>&nbsp;<span class="keyword">double</span>&nbsp;*q,&nbsp;<span class="keyword">int</span>&nbsp;m)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">237</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">238</td><td><span class="linenhit">&nbsp;<span class="keyword">int</span>&nbsp;k;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut73" name="ut72">239</a></td><td><span class="linenhit">&nbsp;<span class="keyword">for</span>&nbsp;(k&nbsp;=&nbsp;0;&nbsp;k&nbsp;&lt;&nbsp;m&nbsp;&amp;&amp;&nbsp;q[k]&nbsp;!=&nbsp;0.0;&nbsp;++k)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">239</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">239</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">239</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;3: F &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut74" name="ut73">239</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut75" name="ut74">239</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 2</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">240</td><td><span class="linenhit">&nbsp;&nbsp;_Xp_addh(p,&nbsp;n,&nbsp;-q[k]);</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut76" name="ut75">241</a></td><td><span class="linenhit">&nbsp;<span class="keyword">return</span>&nbsp;(p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">242</td><td><a title="Function _Xp_subx()
+TER 0 % (0/6) structural, 0 % (0/6) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD19.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xprec.c">Top</a></td></tr>
+<tr><td class="tcolnhit"><a name="a31"></a>0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut77" name="ut76">243</a></td><td><span class="linenhit"><span class="keyword">double</span>&nbsp;*_Xp_ldexpx(<span class="keyword">double</span>&nbsp;*p,&nbsp;<span class="keyword">int</span>&nbsp;n,&nbsp;<span class="keyword">int</span>&nbsp;m)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">244</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">245</td><td><span class="linenhit">&nbsp;<span class="keyword">int</span>&nbsp;k;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut78" name="ut77">246</a></td><td><span class="linenhit">&nbsp;<span class="keyword">for</span>&nbsp;(k&nbsp;=&nbsp;0;&nbsp;k&nbsp;&lt;&nbsp;n;&nbsp;++k)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">247</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">248</td><td><span class="linenhit">&nbsp;&nbsp;p[k]&nbsp;=&nbsp;ldexp(p[k],&nbsp;m);</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut79" name="ut78">249</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(p[k]&nbsp;==&nbsp;0.0)</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut80" name="ut79">250</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">break</span>;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">251</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut81" name="ut80">252</a></td><td><span class="linenhit">&nbsp;<span class="keyword">return</span>&nbsp;(p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">253</td><td><a title="Function _Xp_ldexpx()
+TER 0 % (0/7) structural, 0 % (0/8) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD19.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xprec.c">Top</a></td></tr>
+<tr><td class="tcolnhit"><a name="a32"></a>0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut82" name="ut81">254</a></td><td><span class="linenhit"><span class="keyword">double</span>&nbsp;*_Xp_mulx(<span class="keyword">double</span>&nbsp;*p,&nbsp;<span class="keyword">int</span>&nbsp;n,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">255</td><td><span class="linenhit">&nbsp;<span class="keyword">const</span>&nbsp;<span class="keyword">double</span>&nbsp;*q,&nbsp;<span class="keyword">int</span>&nbsp;m,</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">256</td><td><span class="linenhit">&nbsp;<span class="keyword">double</span>&nbsp;*ptemp2)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">257</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut83" name="ut82">258</a></td><td><span class="linenhit">&nbsp;<span class="keyword">if</span>&nbsp;(n&nbsp;==&nbsp;0&nbsp;||&nbsp;m&nbsp;==&nbsp;0)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">258</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;1: T || _</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">258</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;2: F || T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">258</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;3: F || F</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut84" name="ut83">258</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 3, 2)" onmouseout="unhighlight(this, 3, 2)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut85" name="ut84">258</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 2 - 3</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">259</td><td><span class="linenhit">&nbsp;&nbsp;;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut86" name="ut85">260</a></td><td><span class="linenhit">&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(q[0]&nbsp;==&nbsp;0.0&nbsp;||&nbsp;q[1]&nbsp;==&nbsp;0.0)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">260</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;1: T || _</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">260</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;2: F || T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">260</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;3: F || F</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut87" name="ut86">260</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 3, 2)" onmouseout="unhighlight(this, 3, 2)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut88" name="ut87">260</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 2 - 3</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">261</td><td><span class="linenhit">&nbsp;&nbsp;_Xp_mulh(p,&nbsp;n,&nbsp;q[0]);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">262</td><td><span class="linenhit">&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">263</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">264</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;*px&nbsp;=&nbsp;ptemp2;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">265</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;*pac&nbsp;=&nbsp;ptemp2&nbsp;+&nbsp;n;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">266</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">int</span>&nbsp;j;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">267</td><td><span class="linenhit">&nbsp;&nbsp;_Xp_movx(px,&nbsp;n,&nbsp;p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">268</td><td><span class="linenhit">&nbsp;&nbsp;_Xp_mulh(p,&nbsp;n,&nbsp;q[0]);</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut89" name="ut88">269</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">for</span>&nbsp;(j&nbsp;=&nbsp;1;&nbsp;j&nbsp;&lt;&nbsp;m&nbsp;&amp;&amp;&nbsp;q[j]&nbsp;!=&nbsp;0.0;&nbsp;++j)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">269</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">269</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">269</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: F &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut90" name="ut89">269</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut91" name="ut90">269</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 2</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">270</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">271</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Xp_movx(pac,&nbsp;n,&nbsp;px);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">272</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Xp_mulh(pac,&nbsp;n,&nbsp;q[j]);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">273</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Xp_addx(p,&nbsp;n,&nbsp;pac,&nbsp;n);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">274</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">275</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut92" name="ut91">276</a></td><td><span class="linenhit">&nbsp;<span class="keyword">return</span>&nbsp;(p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">277</td><td><a title="Function _Xp_mulx()
+TER 0 % (0/14) structural, 0 % (0/16) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD19.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xprec.c">Top</a></td></tr>
+<tr><td class="tcolnhit"><a name="a33"></a>0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut93" name="ut92">278</a></td><td><span class="linenhit"><span class="keyword">double</span>&nbsp;*_Xp_invx(<span class="keyword">double</span>&nbsp;*p,&nbsp;<span class="keyword">int</span>&nbsp;n,&nbsp;<span class="keyword">double</span>&nbsp;*ptemp4)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">279</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">280</td><td><span class="linenhit">&nbsp;<span class="keyword">short</span>&nbsp;errx;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut94" name="ut93">281</a></td><td><span class="linenhit">&nbsp;<span class="keyword">if</span>&nbsp;(n&nbsp;==&nbsp;0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">282</td><td><span class="linenhit">&nbsp;&nbsp;;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut95" name="ut94">283</a></td><td><span class="linenhit">&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(0&nbsp;&lt;=&nbsp;(errx&nbsp;=&nbsp;_Dtest(&amp;p[0])))</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">284</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut96" name="ut95">285</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(errx&nbsp;==&nbsp;1)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">286</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;p[0]&nbsp;=&nbsp;0.0;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut97" name="ut96">287</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(errx&nbsp;==&nbsp;0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">288</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;p[0]&nbsp;=&nbsp;_Inf._Double;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">289</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">290</td><td><span class="linenhit">&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">291</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">292</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;*pac&nbsp;=&nbsp;ptemp4;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">293</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;*py&nbsp;=&nbsp;ptemp4&nbsp;+&nbsp;n;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">294</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;*ptemp2&nbsp;=&nbsp;py&nbsp;+&nbsp;n;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">295</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;x0&nbsp;=&nbsp;p[0];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">296</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">int</span>&nbsp;k;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">297</td><td><span class="linenhit">&nbsp;&nbsp;_Xp_movx(py,&nbsp;n,&nbsp;p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">298</td><td><span class="linenhit">&nbsp;&nbsp;_Xp_mulh(py,&nbsp;n,&nbsp;-1.0);</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut98" name="ut97">299</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(1&nbsp;&lt;&nbsp;n)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">300</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;x0&nbsp;+=&nbsp;p[1];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">301</td><td><span class="linenhit">&nbsp;&nbsp;_Xp_setw(p,&nbsp;n,&nbsp;(1.0&nbsp;/&nbsp;(x0)));</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut99" name="ut98">302</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">for</span>&nbsp;(k&nbsp;=&nbsp;1;&nbsp;k&nbsp;&lt;&nbsp;n;&nbsp;k&nbsp;&lt;&lt;=&nbsp;1)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">303</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">304</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Xp_movx(pac,&nbsp;n,&nbsp;p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">305</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Xp_mulx(pac,&nbsp;n,&nbsp;py,&nbsp;n,&nbsp;ptemp2);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">306</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Xp_addh(pac,&nbsp;n,&nbsp;1.0);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">307</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Xp_mulx(pac,&nbsp;n,&nbsp;p,&nbsp;n,&nbsp;ptemp2);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">308</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Xp_addx(p,&nbsp;n,&nbsp;pac,&nbsp;n);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">309</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">310</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut100" name="ut99">311</a></td><td><span class="linenhit">&nbsp;<span class="keyword">return</span>&nbsp;(p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">312</td><td><a title="Function _Xp_invx()
+TER 0 % (0/14) structural, 0 % (0/27) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD19.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xprec.c">Top</a></td></tr>
+<tr><td class="tcolnhit"><a name="a34"></a>0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut101" name="ut100">313</a></td><td><span class="linenhit"><span class="keyword">double</span>&nbsp;*_Xp_sqrtx(<span class="keyword">double</span>&nbsp;*p,&nbsp;<span class="keyword">int</span>&nbsp;n,&nbsp;<span class="keyword">double</span>&nbsp;*ptemp4)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">314</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut102" name="ut101">315</a></td><td><span class="linenhit">&nbsp;<span class="keyword">if</span>&nbsp;(n&nbsp;==&nbsp;0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">316</td><td><span class="linenhit">&nbsp;&nbsp;;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut103" name="ut102">317</a></td><td><span class="linenhit">&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(0&nbsp;&lt;=&nbsp;_Dtest(&amp;p[0])&nbsp;||&nbsp;p[0]&nbsp;&lt;&nbsp;0.0)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">317</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;1: T || _</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">317</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;2: F || T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">317</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;3: F || F</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut104" name="ut103">317</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 3, 2)" onmouseout="unhighlight(this, 3, 2)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD19.html#ut105" name="ut104">317</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 2 - 3</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">318</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut106" name="ut105">319</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(p[0]&nbsp;&lt;&nbsp;0.0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">320</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">321</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Feraise(0x01);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">322</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;p[0]&nbsp;=&nbsp;_Nan._Double;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">323</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">324</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">325</td><td><span class="linenhit">&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">326</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">327</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;*pac&nbsp;=&nbsp;ptemp4;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">328</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;*py&nbsp;=&nbsp;ptemp4&nbsp;+&nbsp;n;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">329</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;*ptemp2&nbsp;=&nbsp;py&nbsp;+&nbsp;n;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">330</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">double</span>&nbsp;x0&nbsp;=&nbsp;p[0];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">331</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">int</span>&nbsp;k;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut107" name="ut106">332</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(1&nbsp;&lt;&nbsp;n)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">333</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;x0&nbsp;+=&nbsp;p[1];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">334</td><td><span class="linenhit">&nbsp;&nbsp;_Xp_setw(py,&nbsp;n,&nbsp;(1.0&nbsp;/&nbsp;(sqrt(x0))));</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD19.html#ut108" name="ut107">335</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">for</span>&nbsp;(k&nbsp;=&nbsp;2;&nbsp;k&nbsp;&lt;&nbsp;n;&nbsp;k&nbsp;&lt;&lt;=&nbsp;1)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">336</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">337</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Xp_movx(pac,&nbsp;n,&nbsp;py);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">338</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Xp_mulh(pac,&nbsp;n,&nbsp;-0.5);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">339</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Xp_mulx(pac,&nbsp;n,&nbsp;p,&nbsp;n,&nbsp;ptemp2);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">340</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Xp_mulx(pac,&nbsp;n,&nbsp;py,&nbsp;n,&nbsp;ptemp2);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">341</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Xp_addh(pac,&nbsp;n,&nbsp;1.5);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">342</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;_Xp_mulx(py,&nbsp;n,&nbsp;pac,&nbsp;n,&nbsp;ptemp2);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">343</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">344</td><td><span class="linenhit">&nbsp;&nbsp;_Xp_mulx(p,&nbsp;n,&nbsp;py,&nbsp;n,&nbsp;ptemp2);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">345</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD19.html#ut109" name="ut108">346</a></td><td><span class="linenhit">&nbsp;<span class="keyword">return</span>&nbsp;(p);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">347</td><td><a title="Function _Xp_sqrtx()
+TER 0 % (0/14) structural, 0 % (0/25) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+</tbody>
+</table>
+<a name="ut109"></a>
+<span class="belowb">***TER</span><span class="belowb">35 % (73/209) of FILE xprec.c</span><br>
+<span class="terindent"></span><span class="belowb">46 % (118/259) statement</span><br><br>
+<span class="pages"><a href="indexF.html" target="_top">Directory Summary</a> | <a href="index.html" target="_top">Files Summary</a> | <a href="indexB1.html" target="_top">Functions Summary</a> | <a href="indexU.html" target="_top">Untested Code</a> | <a href="indexD1.html">Execution Profile</a><br>
+To files: <a href="indexD1.html">First</a> | <a href="indexD18.html">Previous</a> | <a href="indexD20.html">Next</a> | <a href="indexD22.html">Last</a> | <a href="indexD19.html">Top</a> | <a href="indexA.html#a19">Index</a> | <a href="indexD19.html" target="_top">No Index</a></span><br><br>
+</body>
+</html>

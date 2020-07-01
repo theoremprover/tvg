@@ -1,0 +1,195 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<title>CTC++ Coverage Report - Execution Profile - xdscale.c</title>
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<meta name="keyword" content="CTC++, Testwell, Test Coverage Analyzer">
+<meta name="date" content="Sat Jun 29 15:02:31 2019">
+<meta name="generator" content="Testwell CTC++ add-on utility ctc2html v5.4">
+<link href="index.html" rel="contents">
+<link href="ctc.css" rel="stylesheet" type="text/css">
+<script src="ctc.js" type="text/javascript"></script>
+<script src="sorttable.js" type="text/javascript"></script>
+<script src="own_javascript.js" type="text/javascript"></script>
+</head>
+<body>
+<span class="reportb">CTC++ Coverage Report</span><span class="report">- Execution Profile</span><span class="info">#14/22</span><br><br>
+<span class="pages"><a href="indexF.html" target="_top">Directory Summary</a> | <a href="index.html" target="_top">Files Summary</a> | <a href="indexB1.html" target="_top">Functions Summary</a> | <a href="indexU.html" target="_top">Untested Code</a> | <a href="indexD1.html">Execution Profile</a><br>
+To files: <a href="indexD1.html">First</a> | <a href="indexD13.html">Previous</a> | <a href="indexD15.html">Next</a> | <a href="indexD22.html">Last</a> | <a href="indexA.html#a14">Index</a> | <a href="indexD14.html" target="_top">No Index</a></span><br><br>
+<span class="infob">Source file:</span><span class="infob">E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xdscale.c</span><br>
+<span class="infob">Instrumentation mode:</span><span class="info">multicondition</span><span class="indent"></span><span class="infob">Reduced to:</span><span class="info">MC/DC coverage</span><br>
+<span class="infob">TER:</span><span class="below">11 % (8/71) structural,</span><span class="below">15 % (9/59) statement</span><br><br>
+<table class="execution">
+<thead>
+<tr><th>Hits/True</th><th>False</th><th><a href="indexD14.html#ut1" title="First untested">Line</a></th><th>Source</th></tr>
+</thead>
+<tbody>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">1</td><td><span class="lineplain"><span class="preproc">#include&nbsp;"defs.h"</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">2</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD14.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xdscale.c">Top</a></td></tr>
+<tr><td class="profile"><a name="a15"></a>342</td><td class="profile"></td><td class="profile_line">3</td><td><span class="linehit"><span class="keyword">short</span>&nbsp;_Dscale(<span class="keyword">double</span>&nbsp;*px,&nbsp;<span class="keyword">long</span>&nbsp;lexp)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">4</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="profile">342</td><td class="profile"></td><td class="profile_line">5</td><td><span class="linehit">&nbsp;<span class="keyword">return</span>&nbsp;(_Dscalex(px,&nbsp;lexp,&nbsp;4));</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">6</td><td><a title="Function _Dscale()
+TER 100 % (2/2) structural, 100 % (1/1) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">7</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="top" colspan="4"><a href="indexD14.html" title="E:\svn\qkithightecarm\trunk\Work\QKitExtension\Analysis\Coverage\sin\xdscale.c">Top</a></td></tr>
+<tr><td class="profile"><a name="a16"></a>342</td><td class="profile"></td><td class="profile_line">8</td><td><span class="linehit"><span class="keyword">short</span>&nbsp;_Dscalex(<span class="keyword">double</span>&nbsp;*px,&nbsp;<span class="keyword">long</span>&nbsp;lexp,&nbsp;<span class="keyword">int</span>&nbsp;round_mode)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">9</td><td><span class="lineplain">&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">10</td><td><span class="linehit">&nbsp;_Dval&nbsp;*ps&nbsp;=&nbsp;(_Dval&nbsp;*)(<span class="keyword">char</span>&nbsp;*)px;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">11</td><td><span class="linehit">&nbsp;<span class="keyword">short</span>&nbsp;xchar&nbsp;=&nbsp;(<span class="keyword">short</span>)((ps-&gt;_Sh[3]&nbsp;&amp;&nbsp;((<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)(0x7fff&nbsp;&amp;&nbsp;~((<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)((1&nbsp;&lt;&lt;&nbsp;4)&nbsp;-&nbsp;1)))))&nbsp;&gt;&gt;&nbsp;4);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">12</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">342</td><td class="profile_line"><a href="indexD14.html#ut2" name="ut1">13</a></td><td><span class="linehit">&nbsp;<span class="keyword">if</span>&nbsp;(xchar&nbsp;==&nbsp;((<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)((1&nbsp;&lt;&lt;&nbsp;(15&nbsp;-&nbsp;4))&nbsp;-&nbsp;1)))</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">14</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;((<span class="keyword">short</span>)((ps-&gt;_Sh[3]&nbsp;&amp;&nbsp;((<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)((1&nbsp;&lt;&lt;&nbsp;4)&nbsp;-&nbsp;1)))&nbsp;!=&nbsp;0&nbsp;||&nbsp;ps-&gt;_Sh[2]&nbsp;!=&nbsp;0</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut3" name="ut2">15</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;||&nbsp;ps-&gt;_Sh[1]&nbsp;!=&nbsp;0&nbsp;||&nbsp;ps-&gt;_Sh[0]&nbsp;!=&nbsp;0&nbsp;?&nbsp;2&nbsp;:&nbsp;1));</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD14.html#ut4" name="ut3">15</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;return ( ( short ) ( ( ps -&gt; _Sh [ 3 ] &amp; ( ( unsigned short ) ( ( 1 &lt;&lt; 4 ) - 1 ) ) ) != 0 || ps -&gt; _Sh [ 2 ] != 0 || ps -&gt; _Sh [ 1 ] != 0 || ps -&gt; _Sh [ 0 ] != 0 ? 2 : 1 ) )</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">342</td><td class="profile_line"><a href="indexD14.html#ut5" name="ut4">16</a></td><td><span class="linehit">&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(xchar&nbsp;==&nbsp;0&nbsp;&amp;&amp;&nbsp;0&nbsp;&lt;&nbsp;(xchar&nbsp;=&nbsp;_Dnorm(ps)))</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">16</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">16</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">342</td><td class="profile_line">16</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;3: F &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut6" name="ut5">16</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut7" name="ut6">16</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 2</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD14.html#ut8" name="ut7">17</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;(0);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">18</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile">342</td><td class="profile_line"><a href="indexD14.html#ut9" name="ut8">19</a></td><td><span class="linehit">&nbsp;<span class="keyword">if</span>&nbsp;(0&nbsp;&lt;&nbsp;lexp&nbsp;&amp;&amp;&nbsp;((<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)((1&nbsp;&lt;&lt;&nbsp;(15&nbsp;-&nbsp;4))&nbsp;-&nbsp;1))&nbsp;-&nbsp;xchar&nbsp;&lt;=&nbsp;lexp)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">19</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">24</td><td class="profile_line">19</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">318</td><td class="profile_line">19</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;3: F &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut10" name="ut9">19</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 4, 3)" onmouseout="unhighlight(this, 4, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut11" name="ut10">19</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 2</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">20</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut12" name="ut11">21</a></td><td><span class="linenhit">&nbsp;&nbsp;*px&nbsp;=&nbsp;ps-&gt;_Sh[3]&nbsp;&amp;&nbsp;((<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)0x8000)&nbsp;?&nbsp;-_Inf._Double&nbsp;:&nbsp;_Inf._Double;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD14.html#ut13" name="ut12">22</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;(1);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">23</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile">342</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut14" name="ut13">24</a></td><td><span class="linehit">&nbsp;<span class="keyword">else</span>&nbsp;<span class="keyword">if</span>&nbsp;(-xchar&nbsp;&lt;&nbsp;lexp)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">25</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">26</td><td><span class="linehit">&nbsp;&nbsp;ps-&gt;_Sh[3]&nbsp;=&nbsp;(<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)((ps-&gt;_Sh[3]&nbsp;&amp;&nbsp;~((<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)(0x7fff&nbsp;&amp;&nbsp;~((<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)((1&nbsp;&lt;&lt;&nbsp;4)&nbsp;-&nbsp;1)))))</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">27</td><td><span class="linehit">&nbsp;&nbsp;&nbsp;|&nbsp;(lexp&nbsp;+&nbsp;xchar)&nbsp;&lt;&lt;&nbsp;4);</span></td></tr>
+<tr><td class="profile">342</td><td class="profile"></td><td class="profile_line">28</td><td><span class="linehit">&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;((-1));</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">29</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">30</td><td><span class="linenhit">&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">31</td><td><span class="lineplain">&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">32</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>&nbsp;sign&nbsp;=&nbsp;(<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)(ps-&gt;_Sh[3]&nbsp;&amp;&nbsp;((<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)0x8000));</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">33</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">34</td><td><span class="linenhit">&nbsp;&nbsp;ps-&gt;_Sh[3]&nbsp;=&nbsp;(<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)(1&nbsp;&lt;&lt;&nbsp;4&nbsp;|&nbsp;(ps-&gt;_Sh[3]&nbsp;&amp;&nbsp;((<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)((1&nbsp;&lt;&lt;&nbsp;4)&nbsp;-&nbsp;1))));</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">35</td><td><span class="linenhit">&nbsp;&nbsp;lexp&nbsp;+=&nbsp;xchar&nbsp;-&nbsp;1;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut15" name="ut14">36</a></td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(lexp&nbsp;&lt;&nbsp;-(48&nbsp;+&nbsp;1&nbsp;+&nbsp;4)&nbsp;||&nbsp;0&nbsp;&lt;=&nbsp;lexp)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">36</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T || _</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">36</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: F || T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">36</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: F || F</span></td></tr>
+<tr onmouseover="highlight(this, 3, 1)" onmouseout="unhighlight(this, 3, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut16" name="ut15">36</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 3, 2)" onmouseout="unhighlight(this, 3, 2)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut17" name="ut16">36</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 2 - 3</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">37</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">38</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;ps-&gt;_Sh[3]&nbsp;=&nbsp;sign;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">39</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;ps-&gt;_Sh[2]&nbsp;=&nbsp;0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">40</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;ps-&gt;_Sh[1]&nbsp;=&nbsp;0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">41</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;ps-&gt;_Sh[0]&nbsp;=&nbsp;0;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD14.html#ut18" name="ut17">42</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;(0);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">43</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">44</td><td><span class="linenhit">&nbsp;&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">45</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">46</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">short</span>&nbsp;xexp&nbsp;=&nbsp;(<span class="keyword">short</span>)lexp;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">47</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>&nbsp;psx&nbsp;=&nbsp;0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">48</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut19" name="ut18">49</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">for</span>&nbsp;(;&nbsp;xexp&nbsp;&lt;=&nbsp;-16;&nbsp;xexp&nbsp;+=&nbsp;16)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">50</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut20" name="ut19">51</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;psx&nbsp;=&nbsp;ps-&gt;_Sh[0]&nbsp;|&nbsp;(psx&nbsp;!=&nbsp;0&nbsp;?&nbsp;1&nbsp;:&nbsp;0);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">52</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;ps-&gt;_Sh[0]&nbsp;=&nbsp;ps-&gt;_Sh[1];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">53</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;ps-&gt;_Sh[1]&nbsp;=&nbsp;ps-&gt;_Sh[2];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">54</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;ps-&gt;_Sh[2]&nbsp;=&nbsp;ps-&gt;_Sh[3];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">55</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;ps-&gt;_Sh[3]&nbsp;=&nbsp;0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">56</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut21" name="ut20">57</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;((xexp&nbsp;=&nbsp;(<span class="keyword">short</span>)-xexp)&nbsp;!=&nbsp;0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">58</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut22" name="ut21">59</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;psx&nbsp;=&nbsp;(ps-&gt;_Sh[0]&nbsp;&lt;&lt;&nbsp;(16&nbsp;-&nbsp;xexp))&nbsp;|&nbsp;(psx&nbsp;!=&nbsp;0&nbsp;?&nbsp;1&nbsp;:&nbsp;0);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">60</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;ps-&gt;_Sh[0]&nbsp;=&nbsp;(<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)(ps-&gt;_Sh[0]&nbsp;&gt;&gt;&nbsp;xexp</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">61</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;ps-&gt;_Sh[1]&nbsp;&lt;&lt;&nbsp;(16&nbsp;-&nbsp;xexp));</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">62</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;ps-&gt;_Sh[1]&nbsp;=&nbsp;(<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)(ps-&gt;_Sh[1]&nbsp;&gt;&gt;&nbsp;xexp</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">63</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;ps-&gt;_Sh[2]&nbsp;&lt;&lt;&nbsp;(16&nbsp;-&nbsp;xexp));</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">64</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;ps-&gt;_Sh[2]&nbsp;=&nbsp;(<span class="keyword">unsigned</span>&nbsp;<span class="keyword">short</span>)(ps-&gt;_Sh[2]&nbsp;&gt;&gt;&nbsp;xexp</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">65</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;|&nbsp;ps-&gt;_Sh[3]&nbsp;&lt;&lt;&nbsp;(16&nbsp;-&nbsp;xexp));</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">66</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;ps-&gt;_Sh[3]&nbsp;&gt;&gt;=&nbsp;xexp;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">67</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">68</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">69</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;ps-&gt;_Sh[3]&nbsp;|=&nbsp;sign;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut23" name="ut22">70</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(psx&nbsp;!=&nbsp;0)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">71</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">72</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">int</span>&nbsp;roundup&nbsp;=&nbsp;0;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">73</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut24" name="ut23">74</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(round_mode&nbsp;==&nbsp;4)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">75</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;round_mode&nbsp;=&nbsp;__builtin_flt_rounds;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">76</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="comment">//OS:&nbsp;used&nbsp;defined&nbsp;found&nbsp;somewhere&nbsp;instead&nbsp;of:&nbsp;round_mode&nbsp;=&nbsp;(__builtin_flt_rounds());</span></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">77</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">switch</span>&nbsp;(round_mode)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">78</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;{</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD14.html#ut25" name="ut24">79</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">case</span>&nbsp;0:</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD14.html#ut26" name="ut25">80</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">break</span>;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">81</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD14.html#ut27" name="ut26">82</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">case</span>&nbsp;2:</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut28" name="ut27">83</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(!sign)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">84</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;roundup&nbsp;=&nbsp;1;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD14.html#ut29" name="ut28">85</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">break</span>;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">86</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD14.html#ut30" name="ut29">87</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">case</span>&nbsp;3:</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut31" name="ut30">88</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(sign)</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">89</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;roundup&nbsp;=&nbsp;1;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD14.html#ut32" name="ut31">90</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">break</span>;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">91</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD14.html#ut33" name="ut32">92</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">default</span>:</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">93</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;((0x8000&nbsp;&lt;&nbsp;psx</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut34" name="ut33">94</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;||&nbsp;(0x8000&nbsp;==&nbsp;psx&nbsp;&amp;&amp;&nbsp;(ps-&gt;_Sh[0]&nbsp;&amp;&nbsp;0x0001)&nbsp;!=&nbsp;0)))</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">94</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: (T || (_ &amp;&amp; _))</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">94</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: (F || (T &amp;&amp; T))</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">94</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: (F || (T &amp;&amp; F))</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">94</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4: (F || (F &amp;&amp; _))</span></td></tr>
+<tr><td class="mcdc_fail" colspan="2" onmouseover="highlight(this, 4, 2)" onmouseout="unhighlight(this, 4, 2)">-</td><td class="profile_line"><a href="indexD14.html#ut35" name="ut34">94</a></td><td><span class="profile_descr" onmouseover="highlight(this, 4, 2)" onmouseout="unhighlight(this, 4, 2)">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 3,</span><span class="profile_descr" onmouseover="highlight(this, 4, 1)" onmouseout="unhighlight(this, 4, 1)"> 1 - 4</span></td></tr>
+<tr onmouseover="highlight(this, 4, 2)" onmouseout="unhighlight(this, 4, 2)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut36" name="ut35">94</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 2 - 4</span></td></tr>
+<tr onmouseover="highlight(this, 5, 4)" onmouseout="unhighlight(this, 5, 4)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut37" name="ut36">94</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 3): 2 - 3</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">95</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;roundup&nbsp;=&nbsp;1;</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD14.html#ut38" name="ut37">96</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">break</span>;</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">97</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">98</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">99</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(roundup</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">100</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;&amp;&nbsp;(++ps-&gt;_Sh[0]&nbsp;&amp;&nbsp;0xffff)&nbsp;==&nbsp;0</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">101</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;&amp;&nbsp;(++ps-&gt;_Sh[1]&nbsp;&amp;&nbsp;0xffff)&nbsp;==&nbsp;0</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut39" name="ut38">102</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&amp;&amp;&nbsp;(++ps-&gt;_Sh[2]&nbsp;&amp;&nbsp;0xffff)&nbsp;==&nbsp;0)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">102</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T &amp;&amp; T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">102</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; T &amp;&amp; T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">102</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: T &amp;&amp; T &amp;&amp; F &amp;&amp; _</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">102</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4: T &amp;&amp; F &amp;&amp; _ &amp;&amp; _</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">102</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;5: F &amp;&amp; _ &amp;&amp; _ &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 5, 1)" onmouseout="unhighlight(this, 5, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut40" name="ut39">102</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 5</span></td></tr>
+<tr onmouseover="highlight(this, 6, 3)" onmouseout="unhighlight(this, 6, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut41" name="ut40">102</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 4</span></td></tr>
+<tr onmouseover="highlight(this, 7, 5)" onmouseout="unhighlight(this, 7, 5)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut42" name="ut41">102</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 3): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 8, 7)" onmouseout="unhighlight(this, 8, 7)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut43" name="ut42">102</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 4): 1 - 2</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">103</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;++ps-&gt;_Sh[3];</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">104</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">105</td><td><span class="lineplain"></span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">106</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">if</span>&nbsp;(ps-&gt;_Sh[3]&nbsp;==&nbsp;sign</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">107</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&amp;&amp;&nbsp;ps-&gt;_Sh[2]&nbsp;==&nbsp;0</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">108</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&amp;&amp;&nbsp;ps-&gt;_Sh[1]&nbsp;==&nbsp;0</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="fcolnhit">0</td><td class="profile_line"><a href="indexD14.html#ut44" name="ut43">109</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;&amp;&amp;&nbsp;ps-&gt;_Sh[0]&nbsp;==&nbsp;0)</span></td></tr>
+<tr><td class="profile">0</td><td class="profile"></td><td class="profile_line">109</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;1: T &amp;&amp; T &amp;&amp; T &amp;&amp; T</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">109</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;2: T &amp;&amp; T &amp;&amp; T &amp;&amp; F</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">109</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;3: T &amp;&amp; T &amp;&amp; F &amp;&amp; _</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">109</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;4: T &amp;&amp; F &amp;&amp; _ &amp;&amp; _</span></td></tr>
+<tr><td class="profile"></td><td class="profile">0</td><td class="profile_line">109</td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;5: F &amp;&amp; _ &amp;&amp; _ &amp;&amp; _</span></td></tr>
+<tr onmouseover="highlight(this, 5, 1)" onmouseout="unhighlight(this, 5, 1)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut45" name="ut44">109</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 1): 1 - 5</span></td></tr>
+<tr onmouseover="highlight(this, 6, 3)" onmouseout="unhighlight(this, 6, 3)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut46" name="ut45">109</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 2): 1 - 4</span></td></tr>
+<tr onmouseover="highlight(this, 7, 5)" onmouseout="unhighlight(this, 7, 5)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut47" name="ut46">109</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 3): 1 - 3</span></td></tr>
+<tr onmouseover="highlight(this, 8, 7)" onmouseout="unhighlight(this, 8, 7)"><td class="mcdc_fail" colspan="2">-</td><td class="profile_line"><a href="indexD14.html#ut48" name="ut47">109</a></td><td><span class="profile_descr">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;MC/DC (cond 4): 1 - 2</span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD14.html#ut49" name="ut48">110</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;(0);</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">111</td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;<span class="keyword">else</span></span></td></tr>
+<tr><td class="tcolnhit">0</td><td class="profile"></td><td class="profile_line"><a href="indexD14.html#ut50" name="ut49">112</a></td><td><span class="linenhit">&nbsp;&nbsp;&nbsp;&nbsp;<span class="keyword">return</span>&nbsp;((-1));</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">113</td><td><span class="lineplain">&nbsp;&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">114</td><td><span class="lineplain">&nbsp;&nbsp;}</span></td></tr>
+<tr><td class="profile" colspan="2"></td><td class="profile_line">115</td><td><a title="Function _Dscalex()
+TER 9 % (6/69) structural, 14 % (8/58) statement"><span class="lineplain">&nbsp;}</span></a></td></tr>
+</tbody>
+</table>
+<a name="ut50"></a>
+<span class="belowb">***TER</span><span class="belowb">11 % (8/71) of FILE xdscale.c</span><br>
+<span class="terindent"></span><span class="belowb">15 % (9/59) statement</span><br><br>
+<span class="pages"><a href="indexF.html" target="_top">Directory Summary</a> | <a href="index.html" target="_top">Files Summary</a> | <a href="indexB1.html" target="_top">Functions Summary</a> | <a href="indexU.html" target="_top">Untested Code</a> | <a href="indexD1.html">Execution Profile</a><br>
+To files: <a href="indexD1.html">First</a> | <a href="indexD13.html">Previous</a> | <a href="indexD15.html">Next</a> | <a href="indexD22.html">Last</a> | <a href="indexD14.html">Top</a> | <a href="indexA.html#a14">Index</a> | <a href="indexD14.html" target="_top">No Index</a></span><br><br>
+</body>
+</html>
