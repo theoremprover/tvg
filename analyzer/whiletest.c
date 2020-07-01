@@ -8,10 +8,10 @@ int g(int x,int y)
     int erg = x;
     while(y>0)
     {
-        erg *= 2; //erg = erg << 1;
+        erg = erg << 1;
         y=y-1;
     }
-    if(erg<=1) { erg=100; } // should not be reported as dead
+    if(erg<=1) { erg=100; }
     return(erg);
 }
 
