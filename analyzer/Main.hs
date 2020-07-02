@@ -670,19 +670,24 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 			cond_var_ident = mkIdentWithCNodePos condexpr $ "cond_" ++ show l ++ "_" ++ show c
 			cond_var = CVar cond_var_ident cond_ni
 
+			filtercases = map $ \case
+				CBlockStmt (CCase _ stmt _) -> CBlockStmt stmt
+				CBlockStmt (CDefault stmt _) -> CBlockStmt stmt
+				cbi -> cbi
+
 			collect_stmts :: [CBlockItem] -> [CBlockItem]
 			collect_stmts [] = []
 			collect_stmts [ CBlockStmt (CDefault stmt _) ] = [CBlockStmt stmt]
 			collect_stmts (CBlockStmt (CCase caseexpr stmt case_ni) : rest) = [ CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr case_ni)
-				(CCompound [] (CBlockStmt stmt : rest) undefNode) (Just $ CCompound [] (collect_stmts rest) undefNode) case_ni ]
-			collect_stmts (other:rest) = other : collect_stmts rest
-			
-			ifcases_bis = collect_stmts cbis
+				(CCompound [] (CBlockStmt stmt : filtercases rest) undefNode) (Just $ CCompound [] (collect_stmts rest) undefNode) case_ni ]
+			collect_stmts (_:rest) = collect_stmts rest
 
+			case_replacement = collect_stmts cbis
+		printLogV 1 $ (render.pretty) case_replacement
 		unfoldTracesM mb_ret_type (length bstss : break_stack) envs trace ( (
 			CBlockDecl (CDecl [CTypeSpec $ CLongType cond_ni]
 				[(Just $ CDeclr (Just cond_var_ident) [] Nothing [] cond_ni, Just $ CInitExpr condexpr cond_ni, Nothing)] cond_ni) :
-			ifcases_bis ++
+			case_replacement ++
 			rest) : rest2 )
 
 	CBreak _ -> case break_stack of
@@ -884,7 +889,9 @@ unfoldTraces1M mb_ret_type break_stack (env:envs) trace ( (CBlockDecl (CDecl [CT
 	let (newenvs,newitems,initializerss) = unzip3 $ reverse new_env_items
 	unfoldTracesM mb_ret_type break_stack ((concat newenvs ++ env) : envs) (concat newitems ++ trace) ((concat initializerss ++ rest):rest2)
 
-unfoldTraces1M mb_ret_type break_stack (_:restenvs) trace ([]:rest2) = unfoldTracesM mb_ret_type break_stack restenvs trace rest2
+unfoldTraces1M mb_ret_type break_stack (_:restenvs) trace ([]:rest2) = do
+	let break_stack' = dropWhile (> (length rest2)) break_stack
+	unfoldTracesM mb_ret_type break_stack' restenvs trace rest2
 
 unfoldTraces1M _ _ _ trace [] = return trace
 
