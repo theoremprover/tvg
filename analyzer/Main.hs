@@ -1459,3 +1459,23 @@ checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution)) = do
 
 			printLog $ "checkSolutionM " ++ show traceid ++ " OK."
 			return resultdata
+
+{-
+(set-option :pp.fp_real_literals true)
+(declare-const i Int)
+(declare-const ar (Array Int Float32))
+
+(assert (<= 0 i))
+(assert (<= i 3))
+(assert (= (store ar 1 1.0) ar))
+(assert (= (store ar 2 4.0) ar))
+(assert (= (store ar 3 9.0) ar))
+
+(assert (>= (select ar i) (roundTowardZero (/ 5 1))))
+
+(check-sat)
+(get-model)
+(get-value (i))
+
+Data.SBV
+-}
