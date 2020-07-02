@@ -851,7 +851,6 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 									[ SExpr [SLeaf "minimize",SLeaf n_name] ]
 									[n_ident]
 									modelpath
---								printLogV 1 $ "Model is\n" ++ model_string
 								return $ case mb_sol of
 									Nothing                 -> (Nothing,"Found no solution for " ++ modelpath)
 									Just sol@[(_,IntVal n)] -> (Just n, "Found looping solution n = " ++ show sol)
