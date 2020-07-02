@@ -839,14 +839,14 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 									((n_ident,n_type) : map snd (concat envs))
 									(let
 										cond_n       = substituteBy ass_var (i_n n_var) cond
-										cond_nminus1 = substituteBy ass_var (i_n $ n_var − _𝟷) cond
-										cond_0       = substituteBy ass_var (i_n _𝟶) cond
+										cond_nminus1 = substituteBy ass_var (i_n $ n_var − ⅈ 1) cond
+										cond_0       = substituteBy ass_var (i_n (ⅈ 0)) cond
 										in
 										[
-											n_var ⩾ _𝟶,
-											not_c cond_0  ⋏  n_var ⩵ _𝟶
+											n_var ⩾ ⅈ 0,
+											not_c cond_0  ⋏  n_var ⩵ ⅈ 0
 												⋎
-												cond_nminus1 ⋏ n_var ⩾ _𝟷 ⋏ not_c cond_n
+												cond_nminus1 ⋏ n_var ⩾ ⅈ 1 ⋏ not_c cond_n
 										])
 									[ SExpr [SLeaf "minimize",SLeaf n_name] ]
 									[n_ident]
@@ -927,16 +927,11 @@ infixr 6 −
 (−) :: CExpr -> CExpr -> CExpr
 a − b = CBinary CMulOp a b undefNode
 
-
 not_c :: CExpr -> CExpr
 not_c e = CUnary CNegOp e undefNode
 
-int_c :: Integer -> CExpr
-int_c i = CConst $ CIntConst (cInteger i) undefNode
-
-_𝟶 = int_c 0
-
-_𝟷 = int_c 0
+ⅈ :: Integer -> CExpr
+ⅈ i = CConst $ CIntConst (cInteger i) undefNode
 
 fvar :: Data d => d -> [Ident]
 fvar expr = nub $ everything (++) (mkQ [] searchvar) expr
@@ -1196,15 +1191,13 @@ data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Double
 
 type Constraint = CExpr
 
--- ⩵ ⩾ ⋏ ⋎ ∗ − not_c _𝟶 _𝟷 ≠
-
 expr2SExpr :: TyEnv -> Expr -> SExpr
 expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 
 	where
 
 	neq0 :: Constraint -> Constraint
-	neq0 constr = not_c $ constr ⩵ _𝟶
+	neq0 constr = not_c $ constr ⩵ ⅈ 0
 
 	insert_eq0 :: Bool -> Constraint -> Constraint
 	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then neq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
