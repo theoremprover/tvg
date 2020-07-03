@@ -62,7 +62,8 @@ outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
-sameConditionThreshold = 1
+
+sameConditionThreshold = 100
 sameConditionThresholdExceptions = [] --[6,7,8,9,10,11,12,13,14,15,16]
 _UNROLLING_DEPTHS = [0..5]
 
@@ -77,7 +78,7 @@ printLog text = liftIO $ do
 	appendFile logFile (text++"\n")
 
 printLogV :: (MonadIO m) => Int -> String -> m ()
-printLogV verbosity text = when (verbosity>=outputVerbosity) $ printLog text
+printLogV verbosity text = when (verbosity<=outputVerbosity) $ printLog text
 
 myError :: (MonadIO m) => forall a . String -> m a
 myError txt = do
@@ -98,7 +99,7 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
@@ -106,7 +107,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
@@ -130,7 +131,7 @@ main = do
 							writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 	
 						(full_coverage,(testvectors,covered,alls)) <- evalStateT (covVectorsM filename opts) $
-							CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc
+							CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc Nothing
 	
 						printLog ""
 	
@@ -197,8 +198,10 @@ data CovVecState = CovVecState {
 	funNameCVS      :: String,
 	funStartEndCVS  :: ((Int,Int),(Int,Int)),
 	numTracesCVS    :: Int,
-	compilerCVS     :: String
+	compilerCVS     :: String,
+	solveFunCVS     :: Maybe (Bool -> Trace -> SolveFunRet)
 	}
+
 type CovVecM = StateT CovVecState IO
 
 data TraceElem =
@@ -207,7 +210,8 @@ data TraceElem =
 	NewDeclaration (Ident,Type) |
 	Return CExpr |
 	TraceOr [Trace] |
-	TraceAnd [Trace]
+	TraceAnd [Trace] |
+	CutOff
 	deriving Data
 
 data Branch = Then Location | Else Location
@@ -223,6 +227,7 @@ instance CNode TraceElem where
 	nodeInfo (Return expr)              = nodeInfo expr
 	nodeInfo (TraceOr (tr:_))           = nodeInfo $ head tr
 	nodeInfo (TraceAnd (tr:_))          = nodeInfo $ head tr
+	nodeInfo CutOff                     = undefNode
 
 instance Pretty NodeInfo where
 	pretty ni = text $ "line " ++ show line ++ ", col " ++ show col
@@ -250,6 +255,7 @@ instance Show TraceElem where
 		(Return exprs)             -> "RET  " ++ (render.pretty) exprs
 		(TraceOr traces)           -> "OR   " ++ show traces
 		(TraceAnd traces)          -> "AND  " ++ show traces
+		CutOff                     -> "CUT  "
 		) ++ "  (" ++ (render.pretty) (nodeInfo te) ++ ")"
 
 type Trace = [TraceElem]
@@ -292,7 +298,9 @@ int main(int argc, char* argv[])
 }
 |]
 
-covVectorsM :: String -> [String] -> CovVecM (Bool,([TraceAnalysisResult],Set.Set Branch,Set.Set Branch))
+type SolveFunRet = CovVecM (Bool,([TraceAnalysisResult],Set.Set Branch,Set.Set Branch))
+
+covVectorsM :: String -> [String] -> SolveFunRet
 covVectorsM filename opts = do
 	funname <- gets funNameCVS
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
@@ -337,13 +345,16 @@ covVectorsM filename opts = do
 			ExitFailure _ -> myError $ "Compilation failed:\n" ++ stderr
 			ExitSuccess -> modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
 
+	let solve_fun cutoff tr = runStateT (analyzeTreeM cutoff opts ret_type param_env [] [] tr) ([],Set.empty,Set.empty)
+	modify $ \ s -> s { solveFunCVS = Just solve_fun }
+
 	trace <- unfoldTracesM (Just ret_type') [] (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
 	when (False {-not don'tShowTraces-}) $ do
 		printLog $ "\n********** TRACE ***********\n" ++ showTrace 0 trace
 		printLog $ "****************************\n"
 
-	runStateT (analyzeTreeM (0,100) opts ret_type param_env [] [] trace) ([],Set.empty,Set.empty)
+	solve_fun False trace
 
 type Location = (Int,Int)
 
@@ -353,12 +364,9 @@ showLocation (l,c) = "line " ++ show l ++ ", col " ++ show c
 type AnalyzeTreeM a = StateT ([TraceAnalysisResult],Set.Set Branch,Set.Set Branch) CovVecM a
 -- Unfolds the tree to all execution paths, collecting the solutions and promoting them upwards.
 
-analyzeTreeM :: (Int,Int) -> [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> AnalyzeTreeM Bool
+analyzeTreeM :: Bool -> [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> AnalyzeTreeM Bool
 
-analyzeTreeM (pct_start,pct_end) opts ret_type param_env traceid res_line [] = do
-	printLog $ " #### " ++ show pct_start ++ " %"
-	printLog ""
-
+analyzeTreeM cutoff opts ret_type param_env traceid res_line [] = do
 	when (not don'tShowTraces) $ do
 		printLog $ "=== TRACE " ++ show traceid ++ " ========================\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
@@ -394,7 +402,7 @@ analyzeTreeM (pct_start,pct_end) opts ret_type param_env traceid res_line [] = d
 			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine res_trace_symbolic
 
-	resultdata@(model_string,mb_solution) <- lift $ solveTraceM ret_type param_env traceid res_trace_symbolic
+	resultdata@(model_string,mb_solution) <- lift $ solveTraceM cutoff ret_type param_env traceid res_trace_symbolic
 	when (not don'tShowTraces) $ printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++ model_string
 	funname <- lift $ gets funNameCVS
 	printLogV 1 $ "\n--- SOLUTION " ++ show traceid ++ " ----------------------\n" ++ show_solution funname mb_solution
@@ -409,20 +417,20 @@ analyzeTreeM (pct_start,pct_end) opts ret_type param_env traceid res_line [] = d
 	let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,resultdata)
 	case is_solution traceanalysisresult of
 		False -> do
-			printLogV 1  $ "### FALSE : " ++ show traceid ++ " no solution!"
+			printLogV 2  $ "### FALSE : " ++ show traceid ++ " no solution!"
 			modify $ \ (tas,covered,alls) -> (tas,covered,Set.union visible_trace alls)
 			return False
 		True  -> do
-			printLogV 1  $ "### TRUE : " ++ show traceid ++ " Is Solution"
-			lift $ checkSolutionM traceid resultdata
+			printLogV 2  $ "### TRUE : " ++ show traceid ++ " Is Solution"
+			when (not cutoff) $ lift $ checkSolutionM traceid resultdata >> return ()
 			modify $ \ (tas,covered,alls) -> case visible_trace `Set.isSubsetOf` covered of
 				False -> (traceanalysisresult:tas,Set.union visible_trace covered,Set.union visible_trace alls)
 				True  -> (tas,covered,alls)
 			return True
 
-analyzeTreeM pcts opts ret_type param_env traceid res_line (TraceOr traces : rest) = case rest of
+analyzeTreeM cutoff opts ret_type param_env traceid res_line (TraceOr traces : rest) = case rest of
 	[] -> do
-		printLogV 1 $ "### analyzeTreeM : TraceOr " ++ show traceid ++ " ..."
+		printLogV 2 $ "### analyzeTreeM : TraceOr " ++ show traceid ++ " ..."
 		try_traces (zip [1..] traces)
 			where
 			num_subtraces = length traces
@@ -430,31 +438,27 @@ analyzeTreeM pcts opts ret_type param_env traceid res_line (TraceOr traces : res
 			try_traces [] = return False
 			try_traces ((i,trace):rest) = do
 				let traceid' = (traceid++[i])
-				success <- analyzeTreeM (new_pcts pcts i num_subtraces) opts ret_type param_env traceid' res_line trace
+				success <- analyzeTreeM cutoff opts ret_type param_env traceid' res_line trace
 				case success of
 					True -> do
-						printLogV 1  $ "### analyzeTreeM : TraceOr " ++ show traceid' ++ " returned TRUE"
+						printLogV 2  $ "### analyzeTreeM : TraceOr " ++ show traceid' ++ " returned TRUE"
 						return True
 					False -> do
-						printLogV 1  $ "### analyzeTreeM : TraceOr " ++ show traceid' ++ " returned FALSE, trying the rest..."
+						printLogV 2  $ "### analyzeTreeM : TraceOr " ++ show traceid' ++ " returned FALSE, trying the rest..."
 						try_traces rest
 	_ -> myError $ "analyzeTreeM: TraceOr not last element in " ++ showTrace 1 res_line
 
-analyzeTreeM pcts opts ret_type param_env traceid res_line (TraceAnd traces : rest) = case rest of
+analyzeTreeM cutoff opts ret_type param_env traceid res_line (TraceAnd traces : rest) = case rest of
 	[] -> do
-		printLogV 1  $ "### analyzeTreeM : TraceAnd " ++ show traceid ++ " ..."
+		printLogV 2 $ "### analyzeTreeM : TraceAnd " ++ show traceid ++ " ..."
 		let num_subtraces = length traces
 		results <- forM (zip [1..] traces) $ \ (i,trace) -> do
-			analyzeTreeM (new_pcts pcts i num_subtraces) opts ret_type param_env (traceid++[i]) res_line trace
+			analyzeTreeM cutoff opts ret_type param_env (traceid++[i]) res_line trace
 		return $ all (==True) results
 	_ -> myError $ "analyzeTreeM: TraceAnd not last element in " ++ showTrace 1 res_line
 
-analyzeTreeM pcts opts ret_type param_env traceid res_line (te:rest) = do
-	analyzeTreeM pcts opts ret_type param_env traceid (te:res_line) rest
-
-new_pcts (pct_start,pct_end) i num_subtraces = (pct_start',pct_end') where
-	pct_start' = pct_start + div ((i-1)*(pct_end-pct_start)) num_subtraces
-	pct_end' = pct_start' + div (pct_end-pct_start) num_subtraces
+analyzeTreeM cutoff opts ret_type param_env traceid res_line (te:rest) = do
+	analyzeTreeM cutoff opts ret_type param_env traceid (te:res_line) rest
 
 is_solution :: TraceAnalysisResult -> Bool
 is_solution (_,_,(_,Just (_,_,solution))) = not $ null solution
@@ -752,7 +756,7 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 		transids TraceOr cond trace $ \ (cond',trace') -> do
 			unfoldTracesM mb_ret_type break_stack envs (Condition True cond' : trace') ( rest : rest2 )
 
- 	CWhile cond body False _ -> do
+ 	CWhile cond body False _ -> maybe_cutoff $ do
  		(mb_unrolling_depth,msg) <- infer_loopingsM cond body
  		printLogV 1 msg
 		let unrolling_depths = case mb_unrolling_depth of
@@ -774,7 +778,20 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 	_ -> myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 
 	where
-	
+
+	maybe_cutoff :: CovVecM Trace -> CovVecM Trace
+	maybe_cutoff cont = do
+		printLogV 1 $ "******* Probing CutOff..."
+		Just solve_fun <- gets solveFunCVS
+		(success,_) <- solve_fun True trace
+		case success of
+			False -> do
+				printLogV 1 $ "******** Cutting off."
+				return [CutOff]
+			True  -> do
+				printLogV 1 $ "******** Continuing..."
+				cont
+
 	num_reached :: (CNode cnode) => cnode -> Int
 	num_reached cnode = length $ filter ((== nodeInfo cnode).nodeInfo) trace
 	
@@ -858,9 +875,9 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 		conts :: [Trace] <- forM additional_expr_traces $ \ (expr',trace') -> do
 			cont (expr',trace'++trace)
 		case conts of
-			[] -> myError $ "transids Strange: conts empty!"
+			[]  -> myError $ "transids Strange: conts empty!"
 			[e] -> return e
-			_ -> return [ compose conts ]
+			_   -> return [ compose conts ]
 
 unfoldTraces1M mb_ret_type break_stack (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
@@ -971,8 +988,9 @@ translateExprM envs expr = do
 		let body' = replace_param_with_arg expanded_params_args body
 		funtrace <- unfoldTracesM Nothing [] envs [] [ [ CBlockStmt body' ] ]
 --		printLog $ "##### extract_traces_rets " ++ showTrace 0 (reverse funtrace) ++ "\n"
-		let funtraces = for (flattenTrace [] (reverse funtrace)) $ \case
-			Return retexpr : tr -> (tr,retexpr)
+		let funtraces = concat $ for (flattenTrace [] (reverse funtrace)) $ \case
+			CutOff : _ -> []
+			Return retexpr : tr -> [(tr,retexpr)]
 			tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace 0 tr
 --		printLog $ "#### = " ++ show (map (\(tr,cex) -> (tr,(render.pretty) cex)) funtraces) ++ "\n"
 		return (ni,funtraces) 
@@ -1306,22 +1324,22 @@ type Solution = [(String,SolutionVal)]
 
 data SolutionVal = IntVal Int | FloatVal Float | DoubleVal Double
 instance Eq SolutionVal where
-	IntVal i1   == IntVal i2   = i1==i2
-	FloatVal f1 == FloatVal f2 = f2-f1 <= floatTolerance
+	IntVal i1    == IntVal i2    = i1==i2
+	FloatVal f1  == FloatVal f2  = f2-f1 <= floatTolerance
 	DoubleVal f1 == DoubleVal f2 = f2-f1 <= doubleTolerance
 
 instance Show SolutionVal where
-	show (IntVal i) = show i
-	show (FloatVal f) = show f
+	show (IntVal i)    = show i
+	show (FloatVal f)  = show f
 	show (DoubleVal f) = show f
 
 makeAndSolveZ3ModelM :: TyEnv -> [CExpr] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpathfile = do
 --	printLog $ "tyenv=" ++ showTyEnv tyenv
-	printLogV 1 $ "output_idents = " ++ showIdents output_idents
+	printLogV 2 $ "output_idents = " ++ showIdents output_idents
 	let
 		constraints_vars = fvar constraints
-	printLogV 1 $ "constraints_vars = " ++ showIdents constraints_vars
+	printLogV 2 $ "constraints_vars = " ++ showIdents constraints_vars
 
 	let
 		varsZ3 = for (filter ((∈ (constraints_vars ++ output_idents)).fst) tyenv) $ \ (ident,ty) ->
@@ -1339,11 +1357,11 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 		model_string = unlines $ map show model
 		model_string_linenumbers = unlines $ map (\ (i,l) -> show i ++ ": " ++ l) (zip [1..] (lines model_string))
 	liftIO $ writeFile modelpathfile model_string
-	printLogV 1 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
+	printLogV 2 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
 	printLog $ "Running model " ++ takeFileName modelpathfile ++ "..."
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
 		readProcessWithExitCode z3FilePath ["-smt2","parallel.enable=true",takeFileName modelpathfile] ""
-	printLog output
+	printLogV 2 output
 	case lines output of
 		"unsat"   : _ -> return (model_string_linenumbers,Nothing)
 		"unknown" : _ -> return (model_string_linenumbers,Nothing)
@@ -1368,12 +1386,13 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 		_ -> myError $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ output
 
 
-solveTraceM :: Type -> Env -> [Int] -> Trace -> CovVecM ResultData
-solveTraceM ret_type param_env traceid trace = do
+solveTraceM :: Bool -> Type -> Env -> [Int] -> Trace -> CovVecM ResultData
+solveTraceM cutoff ret_type param_env traceid trace = do
 	let
 		tracename = show traceid
-
-	retval_env_exprs  <- createInterfaceM [(internalIdent returnval_var_name,ret_type)]
+	retval_env_exprs  <- case cutoff of
+		True  -> return []
+		False -> createInterfaceM [(internalIdent returnval_var_name,ret_type)]
 	let
 		retval_env = map fst retval_env_exprs
 		param_names = map (fst.snd) param_env
@@ -1389,7 +1408,7 @@ solveTraceM ret_type param_env traceid trace = do
 		constraints
 		(for param_names $ \ name -> SExpr [SLeaf "minimize",SLeaf (identToString name)])
 		(param_names ++ ret_names)
-		(analyzerPath </> "model_" ++ tracename ++ ".smtlib2")
+		(analyzerPath </> "models" </> "model_" ++ tracename ++ ".smtlib2")
 
 	return (model_string,case mb_sol of
 		Nothing -> Nothing
