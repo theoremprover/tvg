@@ -1661,13 +1661,21 @@ int main(int argc, char* argv[])
     int argb3 = atoi(argv[i++]); // int normal_exp;
     int argb4 = atoi(argv[i++]); // fractype ll; }
 
+    int argt0 = atoi(argv[i++]); // t
+    int argt1 = atoi(argv[i++]); // fp_class_type class;
+    int argt2 = atoi(argv[i++]); // unsigned int sign;
+    int argt3 = atoi(argv[i++]); // int normal_exp;
+    int argt4 = atoi(argv[i++]); // fractype ll; }
+
     fp_number_type a = { arga1, arga2, arga3, { arga4 } };
     fp_number_type b = { argb1, argb2, argb3, { argb4 } };
+    fp_number_type t = { argt1, argt2, argt3, { argt4 } };
 
-    fp_number_type* r = _fpdiv_parts(&a,&b);
-    printf("f(a=%i, a={ %i,%i,%i, fraction={%i} },   b=%i, b={ %i,%i,%i, fraction={%i} }) =\n%i %i %i %i %i\n",
+    fp_number_type* r = _fpmul_parts(&a,&b,&t);
+    printf("f(a=%i, a={ %i,%i,%i, fraction={%i} },   b=%i, b={ %i,%i,%i, fraction={%i} },  t=%i, t={ %i,%i,%i, fraction={%i} }) =\n%i %i %i %i %i\n",
         arga0,arga1,arga2,arga3,arga4,
         argb0,argb1,argb2,argb3,argb4,
+        argt0,argt1,argt2,argt3,argt4,
         r,r->class,r->sign,r->normal_exp,r->fraction.ll);
     return 0;
 }

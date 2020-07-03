@@ -50,15 +50,6 @@ for = flip map
 
 concatForM = flip concatMapM
 
-{--
-stack build :analyzer-exe
-stack exec analyzer-exe -- test.c
-stack build :analyzer-exe && stack exec analyzer-exe
-
-
-fp-bit.i: Function _fpdiv_parts, Zeile 1039
---}
-
 intSize = 32
 longIntSize = 64
 
@@ -72,11 +63,10 @@ floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
 sameConditionThreshold = 1
-sameConditionThresholdExceptions = [26,27,28,29,30,31]
+sameConditionThresholdExceptions = [] --[6,7,8,9,10,11,12,13,14,15,16]
+_UNROLLING_DEPTHS = [0..5]
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
-
-_UNROLLING_DEPTHS = [0..3]
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log.txt"
@@ -108,14 +98,15 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
@@ -1234,7 +1225,7 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 				CRmdOp -> (SLeaf $ unSigned "bvurem" "bvsrem",cur_ty,cur_ty)
 				CAddOp -> (SLeaf "bvadd",cur_ty,cur_ty)
 				CSubOp -> (SLeaf "bvsub",cur_ty,cur_ty)
-				CShlOp -> (SLeaf $ unSigned "bvlshl" "bvshl",cur_ty,cur_ty)
+				CShlOp -> (SLeaf $ unSigned "bvshl" "bvshl",cur_ty,cur_ty)
 				CShrOp -> (SLeaf $ unSigned "bvlshr" "bvashr",cur_ty,cur_ty)
 				CLeOp  -> (SLeaf $ unSigned "bvult" "bvslt",cur_ty,cur_ty)
 				CGrOp  -> (SLeaf $ unSigned "bvugt" "bvsgt",cur_ty,cur_ty)
