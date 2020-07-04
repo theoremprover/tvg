@@ -43,15 +43,15 @@ library:
   source-dirs: src
 
 executables:
-  tvg-exe:
-    main:                Main.hs
-    source-dirs:         app
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - tvg
+#  tvg-exe:
+#    main:                Main.hs
+#    source-dirs:         app
+#    ghc-options:
+#    - -threaded
+#    - -rtsopts
+#    - -with-rtsopts=-N
+#    dependencies:
+#    - tvg
 
   analyzer-exe:
     main:                Main.hs
@@ -61,35 +61,35 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
 
-  covreport-exe:
-    main:                Main.hs
-    source-dirs:         covreport
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - tvg
+#  covreport-exe:
+#    main:                Main.hs
+#    source-dirs:         covreport
+#    ghc-options:
+#    - -threaded
+#    - -rtsopts
+#    - -with-rtsopts=-N
+#    dependencies:
+#    - tvg
 
-  parsecpp-exe:
-    main:                Main.hs
-    source-dirs:         grammar
-    dependencies:
-    - html
-    - parsec
+#  parsecpp-exe:
+#    main:                Main.hs
+#    source-dirs:         grammar
+#    dependencies:
+#    - html
+#    - parsec
 
-  calltree-exe:
-    main:                Main.hs
-    source-dirs:         calltree
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
+#  calltree-exe:
+#    main:                Main.hs
+#    source-dirs:         calltree
+#    ghc-options:
+#    - -threaded
+#    - -rtsopts
+#    - -with-rtsopts=-N
 
-  prevent-exe:
-    main:                Main.hs
-    source-dirs:         prevent
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
+#  prevent-exe:
+#    main:                Main.hs
+#    source-dirs:         prevent
+#    ghc-options:
+#    - -threaded
+#    - -rtsopts
+#    - -with-rtsopts=-N

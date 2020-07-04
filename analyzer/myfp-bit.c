@@ -8,9 +8,6 @@
 #define FLOAT_BIT_ORDER_MISMATCH
 #define FLOAT
 
-#undef NO_DI_MODE
-#undef TFLOAT
-
 /* This is a software floating point library which can be used
    for targets without hardware floating point. 
    Copyright (C) 1994, 1995, 1996, 1997, 1998, 2000, 2001, 2002, 2003,
