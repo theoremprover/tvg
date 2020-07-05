@@ -66,7 +66,8 @@ cutOffs = True
 
 sameConditionThreshold = 100
 sameConditionThresholdExceptions = []
-_UNROLLING_DEPTHS = [0..10]
+_UNROLLING_DEPTHS = [0..32]
+sizeConditionChunks = 4
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
@@ -707,6 +708,7 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 				Nothing        -> unfoldTracesM mb_ret_type break_stack envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM mb_ret_type break_stack envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 
+{-
 		case num_reached cond of
 			num | num <= sameConditionThreshold || num ∈ sameConditionThresholdExceptions -> do
 				then_trace <- then_trace_m
@@ -717,7 +719,13 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 				case num `mod` 2 == 0 of
 					True  -> then_trace_m
 					False -> else_trace_m
-		
+-}
+
+		(if conditions_reached > 0 && conditions_reached `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
+			then_trace <- then_trace_m
+			else_trace <- else_trace_m
+			return [ (if isJust mb_ret_type then TraceAnd else TraceOr) [then_trace,else_trace] ]
+
 	CReturn Nothing _ -> return trace
 	CReturn (Just ret_expr) _ -> do
 		transids undefined ret_expr trace $ \ (ret_expr',trace') -> do
@@ -763,7 +771,7 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 		transids TraceOr cond trace $ \ (cond',trace') -> do
 			unfoldTracesM mb_ret_type break_stack envs (Condition True cond' : trace') ( rest : rest2 )
 
- 	CWhile cond body False _ -> maybe_cutoff $ do
+ 	CWhile cond body False _ -> do --maybe_cutoff $ do
  		(mb_unrolling_depth,msg) <- infer_loopingsM cond body
  		printLogV 2 msg
 		let unrolling_depths = case mb_unrolling_depth of
@@ -788,7 +796,7 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 
 	maybe_cutoff :: CovVecM Trace -> CovVecM Trace
 	maybe_cutoff cont | cutOffs = do
-		printLogV 1 $ "******* Probing CutOff..."
+		printLogV 1 $ "******* Probing for CutOff in depth " ++ show (length trace) ++ " ..."
 		Just solve_fun <- gets solveFunCVS
 		(success,_) <- solve_fun True trace
 		case success of
@@ -802,7 +810,12 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 
 	num_reached :: (CNode cnode) => cnode -> Int
 	num_reached cnode = length $ filter ((== nodeInfo cnode).nodeInfo) trace
-	
+
+	conditions_reached :: Int
+	conditions_reached = length $ filter is_condition trace where
+		is_condition (Condition _ _) = True
+		is_condition _ = False
+
 	infer_loopingsM :: CExpr -> CStat -> CovVecM (Maybe Int,String)
  	infer_loopingsM cond0 body = do
  		translateExprM envs cond0 >>= \case
