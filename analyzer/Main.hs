@@ -55,18 +55,18 @@ longIntSize = 64
 
 solveIt = True
 showOnlySolutions = True
-don'tShowTraces = True
+don'tShowTraces = False
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
 outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
-cutOffs = True
+cutOffs = False
 
-sameConditionThreshold = 100
-sameConditionThresholdExceptions = []
-_UNROLLING_DEPTHS = [0..32]
+sameConditionThreshold = 1
+sameConditionThresholdExceptions = [25..36]
+_UNROLLING_DEPTHS = [0..3]
 sizeConditionChunks = 4
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
@@ -101,8 +101,8 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
@@ -277,28 +277,6 @@ showTrace ind (te:trace) = indent ind ++ case te of
 type ResultData = (String,Maybe (Env,Env,Solution))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
 
-main_src :: String -> String
-main_src x = (prettyCompact.ppr) $ [cunit|
-#include <stdio.h>
-#include <stdlib.h>
-
-#include "myfp-bit.c"
-
-int main(int argc, char* argv[])
-{
-    int i = $x ;
-
-    struct fp_number_type a = { arga1, arga2, arga3, { arga4 } };
-    struct fp_number_type b = { argb1, argb2, argb3, { argb4 } };
-
-    struct fp_number_type* r = _fpdiv_parts(&a,&b);
-    printf("f(a=%i, a={ %i,%i,%i, fraction={%i} },   b=%i, b={ %i,%i,%i, fraction={%i} }) =\n%i %i %i %i %i\n",
-        arga0,arga1,arga2,arga3,arga4,
-        argb0,argb1,argb2,argb3,argb4,
-        r,r->class,r->sign,r->normal_exp,r->fraction.ll);
-    return 0;
-}
-|]
 
 type SolveFunRet = CovVecM (Bool,([TraceAnalysisResult],Set.Set Branch,Set.Set Branch))
 
@@ -708,7 +686,6 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 				Nothing        -> unfoldTracesM mb_ret_type break_stack envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM mb_ret_type break_stack envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 
-{-
 		case num_reached cond of
 			num | num <= sameConditionThreshold || num ∈ sameConditionThresholdExceptions -> do
 				then_trace <- then_trace_m
@@ -719,12 +696,13 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 				case num `mod` 2 == 0 of
 					True  -> then_trace_m
 					False -> else_trace_m
--}
 
+{-
 		(if conditions_reached > 0 && conditions_reached `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
 			then_trace <- then_trace_m
 			else_trace <- else_trace_m
 			return [ (if isJust mb_ret_type then TraceAnd else TraceOr) [then_trace,else_trace] ]
+-}
 
 	CReturn Nothing _ -> return trace
 	CReturn (Just ret_expr) _ -> do
@@ -842,19 +820,19 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 					intercalate " , " (map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") body_assigns)
 
 				case body_assigns of
-					[ (ass_var@(CVar ass_ident _),ass_expr) ] -> do
+					[ (counter_var@(CVar ass_ident _),ass_expr) ] -> do
 						let
 							is_ass_to_ass_var (Assignment (CVar ident _) _) | ident==ass_ident = True
 							is_ass_to_ass_var _ = False
 						case filter is_ass_to_ass_var trace of
-							[] -> return (Nothing,"infer_loopingsM: There is no assignment to the loop counter " ++ (render.pretty) ass_var ++ " prior to the loop")
+							[] -> return (Nothing,"infer_loopingsM: There is no assignment to the loop counter " ++ (render.pretty) counter_var ++ " prior to the loop")
 							ass@(Assignment _ i_0) : _ | null (fvar i_0)-> do
 								printLogV 1 $ "last assignment to loop counter is " ++ show ass
 								let i_n :: CExpr -> CExpr = case ass_expr of
 									-- for all binops where the following holds (Linearity?):
 									-- i_n = i_(n-1) `binop` c  =>  i_n = i_0 `binop` c
-									CBinary binop (CVar ident _) cconst@(CConst _) _ | ident==ass_ident && binop ∈ [CSubOp,CAddOp,CShrOp,CShlOp] ->
-										\ n_var -> CBinary binop i_0 (n_var ∗ cconst) undefNode
+									CBinary binop (CVar ident _) cconst@(CConst _) _ | ident ≡ ass_ident ∧ binop ∈ [CSubOp,CAddOp,CShrOp,CShlOp] ->
+										\ n_var → CBinary binop i_0 (n_var ∗ cconst) undefNode
 									_ -> error $ "infer_loopingsM: assignment " ++ (render.pretty) ass_ident ++ " := " ++ (render.pretty) ass_expr ++ " not implemented!"
 								let
 									n_name = "n_loopings"
@@ -862,14 +840,14 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 									n_var = CVar n_ident undefNode
 									modelpath = analyzerPath </> n_name ++ show (lineColNodeInfo cond) ++ ".smtlib2"
 								n_type <- case lookup ass_ident (map snd $ concat envs) of
-									Nothing -> myError $ "infer_loopingsM: Could not find type of " ++ (render.pretty) ass_var
+									Nothing -> myError $ "infer_loopingsM: Could not find type of " ++ (render.pretty) counter_var
 									Just ty -> return ty
 								(model_string,mb_sol) <- makeAndSolveZ3ModelM
 									((n_ident,n_type) : map snd (concat envs))
 									(let
-										cond_n       = substituteBy ass_var (i_n n_var) cond
-										cond_nminus1 = substituteBy ass_var (i_n $ n_var − ⅈ 1) cond
-										cond_0       = substituteBy ass_var (i_n (ⅈ 0)) cond
+										cond_n       = (counter_var `substituteBy` (i_n n_var)) cond
+										cond_nminus1 = (counter_var `substituteBy` (i_n $ n_var − ⅈ 1)) cond
+										cond_0       = (counter_var `substituteBy` (i_n (ⅈ 0))) cond
 										in
 										[
 											n_var ⩾ ⅈ 0,
