@@ -874,12 +874,25 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
 	transids expr trace cont = do
 		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM envs expr
-		conts <- forM additional_expr_traces $ \ (expr',trace') -> do
+		case mb_ret_type of
+			Nothing -> do
+				conts <- forM additional_expr_traces $ \ (expr',trace') -> do
+					cont (expr',trace'++trace)
+				return $ concat $ map fromLeft' conts
+			Just _ -> try_next additional_expr_traces where
+				try_next [] = return (False,[],Set.empty,Set.empty)
+				try_next ((expr',trace'):rest) = do
+					cont (expr',trace'++trace) >>= \case
+						cont_res@(Right (success,_,_,_)) -> case success of
+							True -> return cont_res
+							False -> try_next rest
+		
+{-
+		forM additional_expr_traces $ \ (expr',trace') -> do
 			cont (expr',trace'++trace)
 		return $ case partitionEithers conts of
 			(tracess,[]) -> Left $ concat tracess
 			([],solverets) -> foldSolveRets_Or solverets
-{-
 		case catMaybes conts of
 			[]  -> return Nothing --myError $ "transids Strange: conts empty!"
 			[e] -> return $ Just e
@@ -911,10 +924,6 @@ unfoldTraces1M _ _ _ trace [] = return $ Just trace
 
 unfoldTraces1M _ _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
---type SolveFunRet = (Bool,[TraceAnalysisResult],Set.Set Branch,Set.Set Branch)
-foldSolveRets_Or :: [SolveFunRet] -> SolveFunRet
-foldSolveRets_Or sfrs = foldl fold_or (False,[],Set.empty,Set.empty) sfrs where
-	fold_or 
 
 -- ⩵ ⩾ ⋏ ⋎ ∗ − not_c _𝟶 _𝟷 ≠
 
