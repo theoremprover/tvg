@@ -622,7 +622,7 @@ createInterfaceFromExprM expr ty = do
 			rest <- rest_m
 			return $ ((srcident,(srcident,ty')),expr) : rest
 
-type UnfoldTracesRet = Either Trace SolveFunRet
+type UnfoldTracesRet = Either [Trace] SolveFunRet
 --type SolveFunRet = (Bool,[TraceAnalysisResult],Set.Set Branch,Set.Set Branch)
 
 unfoldTracesM :: Maybe Type -> [Int] -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
@@ -869,14 +869,16 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 				
 			_ -> return (Nothing,"condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!")
 
-	--type UnfoldTracesRet = Either Trace SolveFunRet
+	--type UnfoldTracesRet = Either [Trace] SolveFunRet
 	--type SolveFunRet = (Bool,[TraceAnalysisResult],Set.Set Branch,Set.Set Branch)
 	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
 	transids expr trace cont = do
 		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM envs expr
-		conts :: [UnfoldTracesRet] <- forM additional_expr_traces $ \ (expr',trace') -> do
+		conts <- forM additional_expr_traces $ \ (expr',trace') -> do
 			cont (expr',trace'++trace)
-		return $ fold_UnfoldTracesRets_Or conts
+		return $ case partitionEithers conts of
+			(tracess,[]) -> Left $ concat tracess
+			([],solverets) -> foldSolveRets_Or solverets
 {-
 		case catMaybes conts of
 			[]  -> return Nothing --myError $ "transids Strange: conts empty!"
@@ -909,9 +911,10 @@ unfoldTraces1M _ _ _ trace [] = return $ Just trace
 
 unfoldTraces1M _ _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
-
-fold_UnfoldTracesRets_Or :: [UnfoldTracesRet] -> UnfoldTracesRet
-fold_UnfoldTracesRets_Or utrs = 
+--type SolveFunRet = (Bool,[TraceAnalysisResult],Set.Set Branch,Set.Set Branch)
+foldSolveRets_Or :: [SolveFunRet] -> SolveFunRet
+foldSolveRets_Or sfrs = foldl fold_or (False,[],Set.empty,Set.empty) sfrs where
+	fold_or 
 
 -- ⩵ ⩾ ⋏ ⋎ ∗ − not_c _𝟶 _𝟷 ≠
 
