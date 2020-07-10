@@ -38,6 +38,7 @@ dependencies:
 - regex-tdfa
 - language-c-quote
 - mainland-pretty
+- containers-unicode-symbols
 
 library:
   source-dirs: src
