@@ -762,32 +762,35 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 -}
 
 		(if conditions_reached > 0 && conditions_reached `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
-			then_success <- then_trace_m
-			else_success <- else_trace_m
-			return $ case mb_ret_type of
-				Nothing -> then_success || else_success
-				Just _  -> then_success && else_success
+			either_then <- then_trace_m
+			either_else <- else_trace_m
+			return $ case (either_then,either_else) of
+				(Left then_traces,Left else_traces) -> Left $ then_traces ++ else_traces
+				(Right then_success,Right else_success) -> case mb_ret_type of
+					Nothing -> Right $ then_success || else_success
+					Just _  -> Right $ then_success && else_success
 
-	CReturn Nothing _ -> return $ case mb_ret_type of
-		Nothing -> Left [trace]
-		Just _  -> analyzeTraceM cutoff ret_type traceid trace
+	CReturn Nothing _ -> case mb_ret_type of
+		Nothing       -> return $ Left [trace]
+		Just ret_type -> analyzeTraceM False ret_type traceid trace >>= return.Right
 
 	CReturn (Just ret_expr) _ -> do
-		transids ret_expr trace $ \ (ret_expr',trace') -> do
-			ret_trace <- case mb_ret_type of
-				Nothing -> return []
+		transids ret_expr trace $ \ret_type (ret_expr',trace') -> do
+			case mb_ret_type of
+				Nothing -> return $ Left []
 				Just ret_type -> do
 					ret_var_expr <- createInterfaceM [(internalIdent returnval_var_name,ret_type)]
 					ret_env_expr <- createInterfaceFromExprM ret_expr' ret_type
 					when (length ret_var_expr /= length ret_env_expr) $ error "unfoldTraces1M CReturn: length ret_var_expr /= length ret_env_expr !"
-					return $ concat $ for (zip ret_var_expr ret_env_expr) $
+					let ret_trace = concat $ for (zip ret_var_expr ret_env_expr) $
 						\ ( ((_,(ret_var_ident,ret_var_ty)),_) , (_,ret_member_expr)) -> [
 							Condition True $ CBinary CEqOp
 								(CVar ret_var_ident (nodeInfo ret_var_ident))
 								ret_member_expr
 								(nodeInfo ret_member_expr),
 							NewDeclaration (ret_var_ident,ret_var_ty) ]
-			analyzeTraceM cutoff ret_type traceid (Return ret_expr' : (ret_trace ++ trace'))
+					analyzeTraceM False traceid (Return ret_expr' : (ret_trace ++ trace'))
+						>>= return.Right
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
@@ -809,7 +812,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 		unaryops = [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
 
 	CExpr (Just expr) _ -> do
-		myError $ ("unfoldTraces: " ++ (render.pretty) stmt ++ " not implemented yet."
+		myError $ "unfoldTraces: " ++ (render.pretty) stmt ++ " not implemented yet."
 
 	-- That's cheating: Insert condition into trace (for loop unrolling)
 	CGotoPtr cond _ -> do
@@ -819,22 +822,17 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
  	CWhile cond body False _ -> do --maybe_cutoff $ do
  		(mb_unrolling_depth,msg) <- infer_loopingsM cond body
  		printLogV 2 msg
-		let unrolling_depths = case mb_unrolling_depth of
- 			Nothing -> _UNROLLING_DEPTHS
- 			Just n -> [n]
- 
- 		unroll_loopM 0
- {-
-		unrolleds <- forM unrolling_depths $ \ n ->
-			unfoldTracesM mb_ret_type break_stack envs traceid trace ((unroll cond n ++ rest) : rest2 )
-		return $ any unrolleds
--}
+ 		unroll_loopM $ case mb_unrolling_depth of
+			Nothing -> [0..mAX_UNROLLING_DEPTH]
+			Just n  -> [n]
+
 		where
 
-		unroll_loopM depth = do
-			success <- unfoldTracesM mb_ret_type break_stack envs traceid trace ((unroll cond n ++ rest) : rest2 )
+		unroll_loopM :: [Int] -> CovVecM Bool
+		unroll_loopM (depth:depths) = do
+			success <- unfoldTracesM mb_ret_type break_stack envs traceid trace ((unroll cond depth ++ rest) : rest2 )
 			case success of
-				False -> unroll_loopM (depth+1)
+				False -> unroll_loopM depths
 				True  -> return True
 
 		unroll :: CExpr -> Int -> [CBlockItem]
@@ -852,7 +850,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 		case success of
 			False -> do
 				printLogV 1 $ "******** Cutting off."
-				return Nothing
+				return $ Right False
 			True  -> do
 				printLogV 1 $ "******** Continuing..."
 				cont
@@ -998,6 +996,7 @@ unfoldTraces1M _ _ _ traceid trace [] = return $ case mb_ret_type of
 
 unfoldTraces1M _ _ _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
+{-
 --type UnfoldTracesRet = Either [Trace] SolveFunRet
 --type SolveFunRet = (Bool,[TraceAnalysisResult],Set.Set Branch,Set.Set Branch)
 combineUnfoldTracesRets :: UnfoldTracesRet -> UnfoldTracesRet -> UnfoldTracesRet
@@ -1008,6 +1007,7 @@ combineUnfoldTracesRets r1@(Right (success1,(tars1,covered1,alls1))) r2@(Right (
 		(False,True)  -> r2
 		(True,False)  -> r1
 		(False,False) -> Right (False, ([],Set.empty,Set.empty))
+-}
 
 infix 4 ⩵
 (⩵) :: CExpr -> CExpr -> CExpr
