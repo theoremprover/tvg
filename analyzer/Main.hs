@@ -72,9 +72,10 @@ doubleTolerance = 1e-10 :: Double
 showBuiltins = False
 cutOffs = True
 
---sameConditionThreshold = 1000
---sameConditionThresholdExceptions = []
-mAX_UNROLLING_DEPTH = 32
+uNROLLING_STRATEGY = [0,1,2,3,4]
+--[0..32]
+--[0,32,1,31,2,30,3,29,4,28,5,27,6,26,7,25,8,24,9,23,10,22,11,21,12,20,13,19,14,18,15,17,16]
+
 sizeConditionChunks = 4
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
@@ -109,7 +110,8 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
@@ -712,7 +714,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
  		(mb_unrolling_depth,msg) <- infer_loopingsM cond body
  		printLogV 2 msg
  		unroll_loopM $ case mb_unrolling_depth of
-			Nothing -> [0..mAX_UNROLLING_DEPTH]
+			Nothing -> uNROLLING_STRATEGY --[0..mAX_UNROLLING_DEPTH]
 			Just n  -> [n]
 
 		where
@@ -722,6 +724,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 			Nothing -> return $ Left []
 			Just _  -> return $ Right False
 		unroll_loopM (depth:depths) = do
+			printLogV 1 $ "unroll_loopM " ++ show depth
 			unfoldTracesM mb_ret_type break_stack envs (traceid++[depth])
 				trace ((unroll cond depth ++ rest) : rest2 ) >>= \case
 					Right False -> unroll_loopM depths
@@ -737,13 +740,13 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 
 	maybe_cutoff :: CovVecM UnfoldTracesRet -> CovVecM UnfoldTracesRet
 	maybe_cutoff cont | cutOffs = do
-		printLogV 1 $ "******* Probing for CutOff in depth " ++ show (length trace) ++ " ..."
+		printLogV 2 $ "******* Probing for CutOff in depth " ++ show (length trace) ++ " ..."
 		analyzeTraceM Nothing traceid trace >>= \case
 			False -> do
-				printLogV 1 $ "******** Cutting off."
+				printLogV 2 $ "******** Cutting off."
 				return $ Right False
 			True  -> do
-				printLogV 1 $ "******** Continuing..."
+				printLogV 2 $ "******** Continuing..."
 				cont
 	maybe_cutoff cont = cont
 
