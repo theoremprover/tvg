@@ -18,6 +18,8 @@ int f(int x,int y)
                 a=a+20;
                 switch(y)
                 {
+                    case 0:
+                        a=a; // dead!
                     case 1:
                         a=a+100;
                     case 2:

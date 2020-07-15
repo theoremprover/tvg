@@ -109,14 +109,14 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST"]
@@ -269,7 +269,7 @@ covVectorsM = do
 	let
 		def2stmt :: IdentDecl -> CovVecM [CBlockItem]
 		def2stmt (EnumeratorDef (Enumerator ident expr _ ni)) = return $
-			[ CBlockStmt (CExpr (Just $ CAssign CAssignOp (CVar ident (nodeInfo ident)) expr ni) ni) ]
+			[ CBlockStmt (CExpr (Just $ (CVar ident (nodeInfo ident)) ≔ expr) ni) ]
 		def2stmt (ObjectDef (ObjDef (VarDecl (VarName ident _) _ ty) (Just initializer) ni)) = do
 			ty' <- elimTypeDefsM ty
 			cinitializer2blockitems (CVar ident ni) ty' initializer
@@ -287,7 +287,7 @@ covVectorsM = do
 		searchcondpoint :: CStat -> [Branch]
 		searchcondpoint (CWhile cond _ _ _) = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
 		searchcondpoint (CCase expr _ _) = [ Then (lineColNodeInfo expr) ]
-		searchcondpoint (CDefault _ ni) = [ Then (lineColNodeInfo ni) ]
+		searchcondpoint (CDefault stmt _) = [ Then (lineColNodeInfo stmt) ]
 		searchcondpoint (CFor _ (Just cond) _ _ _) = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
 		searchcondpoint (CIf cond _ _ _) = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
 		searchcondpoint _ = []
@@ -315,7 +315,7 @@ covVectorsM = do
 		absolute_filename <- liftIO $ makeAbsolute filename
 		gcc <- gets compilerCVS
 		(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
-			readProcessWithExitCode gcc ["-o",chkexefilename,"-DCALC",srcfilename] ""
+			readProcessWithExitCode gcc ["-Wno-builtin-declaration-mismatch","-o",chkexefilename,"-DCALC",srcfilename] ""
 		case exitcode of
 			ExitFailure _ -> myError $ "Compilation failed:\n" ++ stderr
 			ExitSuccess -> modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
@@ -624,9 +624,10 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 
 			collect_stmts :: [CBlockItem] -> [CBlockItem]
 			collect_stmts [] = []
-			collect_stmts [ CBlockStmt (CDefault stmt _) ] = [CBlockStmt stmt]
-			collect_stmts (CBlockStmt (CCase caseexpr stmt case_ni) : rest) = [ CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr case_ni)
-				(CCompound [] (CBlockStmt stmt : filtercases rest) undefNode) (Just $ CCompound [] (collect_stmts rest) undefNode) case_ni ]
+			collect_stmts [ CBlockStmt (CDefault stmt _) ] = [
+				CBlockStmt $ CGotoPtr (CConst $ CIntConst (cInteger 1) (nodeInfo stmt)) undefNode, CBlockStmt stmt ]
+			collect_stmts (CBlockStmt (CCase caseexpr stmt _) : rest) = [ CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr (nodeInfo caseexpr))
+				(CCompound [] (CBlockStmt stmt : filtercases rest) undefNode) (Just $ CCompound [] (collect_stmts rest) undefNode) undefNode ]
 			collect_stmts (_:rest) = collect_stmts rest
 
 			case_replacement = collect_stmts cbis
@@ -668,20 +669,14 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 	CReturn (Just ret_expr) _ -> do
 		transids ret_expr trace $ \ (ret_expr',trace') -> do
 			case mb_ret_type of
-				Nothing -> do
-					printLogV 2 $ "CReturn returns Left"
-					return $ Left [Return ret_expr' : trace']
+				Nothing -> return $ Left [Return ret_expr' : trace']
 				Just ret_type -> do
-					printLogV 2 $ "CReturn ret_type =  " ++ (render.pretty) ret_type
 					ret_var_expr <- createInterfaceM [(internalIdent returnval_var_name,ret_type)]
 					ret_env_expr <- createInterfaceFromExprM ret_expr' ret_type
 					when (length ret_var_expr /= length ret_env_expr) $ error "unfoldTraces1M CReturn: length ret_var_expr /= length ret_env_expr !"
 					let ret_trace = concat $ for (zip ret_var_expr ret_env_expr) $
 						\ ( ((_,(ret_var_ident,ret_var_ty)),_) , (_,ret_member_expr)) -> [
-							Condition True $ CBinary CEqOp
-								(CVar ret_var_ident (nodeInfo ret_var_ident))
-								ret_member_expr
-								(nodeInfo ret_member_expr),
+							Condition True $ CVar ret_var_ident undefNode ⩵ ret_member_expr,
 							NewDeclaration (ret_var_ident,ret_var_ty) ]
 					analyzeTraceM (Just ret_type) traceid (Return ret_expr' : (ret_trace ++ trace'))
 						>>= return.Right
@@ -701,7 +696,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 	CExpr (Just (CUnary unaryop expr ni_op)) ni | unaryop `elem` (map fst unaryops) -> do
 		unfoldTracesM mb_ret_type break_stack envs traceid trace ( (CBlockStmt stmt' : rest) : rest2 )
 		where
-		stmt' = CExpr (Just $ CAssign assignop expr (CConst $ CIntConst (cInteger 1) ni_op) ni) ni
+		stmt' = CExpr (Just $ CAssign assignop expr (ⅈ 1) ni) ni
 		Just assignop = lookup unaryop unaryops
 		unaryops = [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
 
@@ -713,7 +708,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 		transids cond trace $ \ (cond',trace') -> do
 			unfoldTracesM mb_ret_type break_stack envs traceid (Condition True cond' : trace') ( rest : rest2 )
 
- 	CWhile cond body False _ -> do --maybe_cutoff $ do
+ 	CWhile cond body False _ -> do
  		(mb_unrolling_depth,msg) <- infer_loopingsM cond body
  		printLogV 2 msg
  		unroll_loopM $ case mb_unrolling_depth of
@@ -734,7 +729,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 
 		unroll :: CExpr -> Int -> [CBlockItem]
 		unroll while_cond n = concat ( replicate n [ CBlockStmt (CGotoPtr while_cond undefNode), CBlockStmt body ] ) ++
-			[ CBlockStmt $ CGotoPtr (CUnary CNegOp while_cond undefNode) undefNode ]
+			[ CBlockStmt $ CGotoPtr (not_c while_cond) undefNode ]
 
 	_ -> myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 
@@ -912,6 +907,11 @@ not_c e = CUnary CNegOp e undefNode
 ⅈ :: Integer -> CExpr
 ⅈ i = CConst $ CIntConst (cInteger i) undefNode
 
+infix 1 ≔
+(≔) :: CExpr -> CExpr -> CExpr
+ass ≔ expr = CAssign CAssignOp ass expr undefNode
+
+
 fvar :: Data d => d -> [Ident]
 fvar expr = nub $ everything (++) (mkQ [] searchvar) expr
 	where
@@ -923,7 +923,7 @@ cinitializer2blockitems :: CExpr -> Type -> CInit -> CovVecM [CBlockItem]
 cinitializer2blockitems lexpr ty initializer =
 	case initializer of
 		CInitExpr expr ni_init -> return [ CBlockStmt $ CExpr (
-			Just $ CAssign CAssignOp lexpr expr ni_init) ni_init ]
+			Just $ lexpr ≔ expr ) ni_init ]
 		CInitList initlist _ -> case ty of
 			DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 				memberidentstypes <- getMembersM sueref
@@ -1166,7 +1166,7 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 	neq0 constr = not_c $ constr ⩵ ⅈ 0
 
 	insert_eq0 :: Bool -> Constraint -> Constraint
-	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then neq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
+--	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then neq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
 	insert_eq0 must_be_bool (CUnary unop expr ni) = case unop of
 		CNegOp -> CUnary CNegOp (insert_eq0 True expr) ni
 		unop   -> (if must_be_bool then neq0 else id) $ CUnary unop (insert_eq0 False expr) ni
@@ -1386,8 +1386,8 @@ checkSolutionM traceid resultdata@(_,Just (_,_,[])) = do
 	printLog $ "Empty solution cannot be checked for " ++ show traceid
 	return resultdata
 checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution)) = do
-	printLogV 1 $ "checkSolution param_env =\n" ++ showEnv param_env
-	printLogV 1 $ "checkSolution ret_env =\n" ++ showEnv ret_env
+	printLogV 2 $ "checkSolution param_env =\n" ++ showEnv param_env
+	printLogV 2 $ "checkSolution ret_env =\n" ++ showEnv ret_env
 	srcfilename <- gets srcFilenameCVS
 	Just filename <- gets checkExeNameCVS
 	absolute_filename <- liftIO $ makeAbsolute srcfilename
