@@ -63,14 +63,14 @@ longIntSize = 64
 
 solveIt = True
 showOnlySolutions = True
-don'tShowTraces = False
+don'tShowTraces = True
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
-outputVerbosity = 1
+outputVerbosity = 2
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
-cutOffs = False
+cutOffs = True
 
 sameConditionThreshold = 1000
 sameConditionThresholdExceptions = []
@@ -109,14 +109,14 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST"]
@@ -310,8 +310,7 @@ covVectorsM = do
 	modify $ \ s -> s { solveFunCVS = Just solve_fun }
 -}
 
---type SolveFunRet = (Bool,([TraceAnalysisResult],Set.Set Branch,Set.Set Branch))
-	Right all_covered <- unfoldTracesM (Just ret_type') [] (param_env:[glob_env]) [1] decls [ defs ++ [ CBlockStmt body ] ]
+	Right all_covered <- unfoldTracesM (Just ret_type') [] (param_env:[glob_env]) [] decls [ defs ++ [ CBlockStmt body ] ]
 	return all_covered
 
 {-
@@ -334,13 +333,14 @@ showLocation (l,c) = "line " ++ show l ++ ", col " ++ show c
 -- In case of a cutoff, mb_ret_type is Nothing.
 analyzeTraceM :: Maybe Type -> [Int] -> [TraceElem] -> CovVecM Bool
 analyzeTraceM mb_ret_type traceid res_line = do
-
+	let trace = reverse res_line
+	
 	when (not don'tShowTraces) $ do
 		printLog $ "=== TRACE " ++ show traceid ++ " ========================\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_line
+		printLog $ showLine trace
 
-	res_trace_elim_inds <- elimInds res_line
+	res_trace_elim_inds <- elimInds trace
 	when (not don'tShowTraces) $ do
 		printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
@@ -369,13 +369,6 @@ analyzeTraceM mb_ret_type traceid res_line = do
 		printLog $ "\n--- TRACE after createSymbolicVarsM " ++ show traceid ++ " -----------\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine res_trace_symbolic
-
---type SolveFunRet = (Bool,([TraceAnalysisResult],Set.Set Branch,Set.Set Branch))
---type ResultData = (String,Maybe (Env,Env,Solution))
---type TraceAnalysisResult = ([Int],Trace,ResultData)
---solveTraceM :: Bool -> Type -> [Int] -> Trace -> CovVecM ResultData
---type Solution = [(String,SolutionVal)]
---type UnfoldTracesRet = Either [Trace] SolveFunRet
 
 	either_resultdata <- solveTraceM mb_ret_type traceid res_trace_symbolic
 	case either_resultdata of
@@ -407,107 +400,7 @@ analyzeTraceM mb_ret_type traceid res_line = do
 							False -> (traceanalysisresult:tas,Set.union visible_trace covered,Set.union visible_trace alls)
 							True  -> (tas,covered,alls) }
 			return $ is_solution traceanalysisresult
-{-
-type AnalyzeTreeM a = StateT ([TraceAnalysisResult],Set.Set Branch,Set.Set Branch) CovVecM a
--- Unfolds the tree to all execution paths, collecting the solutions and promoting them upwards.
 
-analyzeTreeM :: Bool -> [String] -> Type -> Env -> [Int] -> [TraceElem] -> Trace -> AnalyzeTreeM Bool
-
-analyzeTreeM cutoff opts ret_type param_env traceid res_line [] = do
-	when (not don'tShowTraces) $ do
-		printLog $ "=== TRACE " ++ show traceid ++ " ========================\n" ++
-			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_line
-
-	res_trace_elim_inds <- lift $ elimInds res_line
-	when (not don'tShowTraces) $ do
-		printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n" ++
-			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_trace_elim_inds
-
-	res_trace_simplified1 <- lift $ simplifyTraceM res_trace_elim_inds
-	when (not don'tShowTraces) $ do
-		printLog $ "\n--- TRACE after simplifyTraceM 1 " ++ show traceid ++ " -----------\n" ++
-			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_trace_simplified1
-
-	res_trace_elim'd_assigns <- lift $ elimAssignmentsM res_trace_simplified1
-	when (not don'tShowTraces) $ do
-		printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n" ++
-			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_trace_elim'd_assigns
-
-	res_trace_simplified2 <- lift $ simplifyTraceM res_trace_elim'd_assigns
-	when (not don'tShowTraces) $ do
-		printLog $ "\n--- TRACE after simplifyTraceM 2 " ++ show traceid ++ " -----------\n" ++
-			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_trace_simplified2
-
-	res_trace_symbolic <- lift $ createSymbolicVarsM [] (map fst $ createTyEnv res_trace_simplified2) res_trace_simplified2
-	when (not don'tShowTraces) $ do
-		printLog $ "\n--- TRACE after createSymbolicVarsM " ++ show traceid ++ " -----------\n" ++
-			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_trace_symbolic
-
-	resultdata@(model_string,mb_solution) <- lift $ solveTraceM cutoff ret_type param_env traceid res_trace_symbolic
-	when (not don'tShowTraces) $ printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++ model_string
-	funname <- lift $ gets funNameCVS
-	printLogV 1 $ "--- TRACE " ++ show traceid ++ " ----------------------\n" ++
-		show_solution funname mb_solution ++ "\n"
-
-	startend <- lift $ gets funStartEndCVS
-	let visible_trace = Set.fromList $ concatMap to_branch res_line
-		where
-		to_branch cond@(Condition b _) | is_visible_traceelem startend cond =
-			[ (if b then Then else Else) (lineColNodeInfo cond) ]
-		to_branch _ = []
-
-	let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,resultdata)
-	case is_solution traceanalysisresult of
-		False -> do
-			printLogV 2  $ "### FALSE : " ++ show traceid ++ " no solution!"
-			modify $ \ (tas,covered,alls) -> (tas,covered,Set.union visible_trace alls)
-			return False
-		True  -> do
-			printLogV 2  $ "### TRUE : " ++ show traceid ++ " Is Solution"
-			when (not cutoff) $ lift $ checkSolutionM traceid resultdata >> return ()
-			modify $ \ (tas,covered,alls) -> case visible_trace `Set.isSubsetOf` covered of
-				False -> (traceanalysisresult:tas,Set.union visible_trace covered,Set.union visible_trace alls)
-				True  -> (tas,covered,alls)
-			return True
-
-analyzeTreeM cutoff opts ret_type param_env traceid res_line (TraceOr traces : rest) = case rest of
-	[] -> do
-		printLogV 2 $ "### analyzeTreeM : TraceOr " ++ show traceid ++ " ..."
-		try_traces (zip [1..] traces)
-			where
-			num_subtraces = length traces
-			try_traces :: [(Int,Trace)] -> AnalyzeTreeM Bool
-			try_traces [] = return False
-			try_traces ((i,trace):rest) = do
-				let traceid' = (traceid++[i])
-				success <- analyzeTreeM cutoff opts ret_type param_env traceid' res_line trace
-				case success of
-					True -> do
-						printLogV 2  $ "### analyzeTreeM : TraceOr " ++ show traceid' ++ " returned TRUE"
-						return True
-					False -> do
-						printLogV 2  $ "### analyzeTreeM : TraceOr " ++ show traceid' ++ " returned FALSE, trying the rest..."
-						try_traces rest
-	_ -> myError $ "analyzeTreeM: TraceOr not last element in " ++ showTrace res_line
-
-analyzeTreeM cutoff opts ret_type param_env traceid res_line (TraceAnd traces : rest) = case rest of
-	[] -> do
-		printLogV 2 $ "### analyzeTreeM : TraceAnd " ++ show traceid ++ " ..."
-		let num_subtraces = length traces
-		results <- forM (zip [1..] traces) $ \ (i,trace) -> do
-			analyzeTreeM cutoff opts ret_type param_env (traceid++[i]) res_line trace
-		return $ all (==True) results
-	_ -> myError $ "analyzeTreeM: TraceAnd not last element in " ++ showTrace res_line
-
-analyzeTreeM cutoff opts ret_type param_env traceid res_line (te:rest) = do
-	analyzeTreeM cutoff opts ret_type param_env traceid (te:res_line) rest
--}
 
 is_solution :: TraceAnalysisResult -> Bool
 is_solution (_,_,(_,Just (_,_,solution))) = not $ null solution
@@ -693,9 +586,8 @@ createInterfaceFromExprM expr ty = do
 
 unfoldTracesM :: Maybe Type -> [Int] -> [Env] -> [Int] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
 unfoldTracesM mb_ret_type break_stack envs traceid trace cbss = do
-	cbss_txt <- case cbss of
-		[] -> return "[]"
-		(l : _) -> return $ "[ " ++ (intercalate " , " (map (render.pretty) l)) ++ " ] : _"
+	printLogV 2 $ "unfoldTracesM " ++ (maybe "Nothing" (render.pretty) mb_ret_type) ++ " " ++ show break_stack ++ " " ++
+		" .. " ++ show traceid -- ++ " " ++ showTrace trace
 	unfoldTraces1M mb_ret_type break_stack envs traceid trace cbss
 
 unfoldTraces1M :: Maybe Type -> [Int] -> [Env] -> [Int] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
@@ -747,19 +639,6 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 				Nothing        -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 
-{-
-		case num_reached cond of
-			num | num <= sameConditionThreshold || num ∈ sameConditionThresholdExceptions -> do
-				then_trace <- then_trace_m
-				else_trace <- else_trace_m
-				return [ (if isJust mb_ret_type then TraceAnd else TraceOr) [then_trace,else_trace] ]
-			num -> do
---				printLogV 1 $ "Condition at " ++ (render.pretty) (nodeInfo cond) ++ " already reached " ++ show num ++ " times, cutting off one branch."
-				case num `mod` 2 == 0 of
-					True  -> then_trace_m
-					False -> else_trace_m
--}
-
 		(if conditions_reached > 0 && conditions_reached `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
 			either_then <- then_trace_m
 			either_else <- else_trace_m
@@ -776,8 +655,11 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 	CReturn (Just ret_expr) _ -> do
 		transids ret_expr trace $ \ (ret_expr',trace') -> do
 			case mb_ret_type of
-				Nothing -> return $ Left []
+				Nothing -> do
+					printLogV 2 $ "CReturn returns Left"
+					return $ Left [Return ret_expr' : trace']
 				Just ret_type -> do
+					printLogV 2 $ "CReturn ret_type =  " ++ (render.pretty) ret_type
 					ret_var_expr <- createInterfaceM [(internalIdent returnval_var_name,ret_type)]
 					ret_env_expr <- createInterfaceFromExprM ret_expr' ret_type
 					when (length ret_var_expr /= length ret_env_expr) $ error "unfoldTraces1M CReturn: length ret_var_expr /= length ret_env_expr !"
@@ -955,18 +837,6 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 							True -> return $ Right True
 							False -> try_next rest
 
-{-
-		forM additional_expr_traces $ \ (expr',trace') -> do
-			cont (expr',trace'++trace)
-		return $ case partitionEithers conts of
-			(tracess,[]) -> Left $ concat tracess
-			([],solverets) -> foldSolveRets_Or solverets
-		case catMaybes conts of
-			[]  -> return Nothing --myError $ "transids Strange: conts empty!"
-			[e] -> return $ Just e
-			ts  -> return $ Just [ compose ts ]
--}
-
 unfoldTraces1M mb_ret_type break_stack (env:envs) traceid trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
 	new_env_items <- forM triples $ \case
@@ -994,18 +864,6 @@ unfoldTraces1M mb_ret_type _ _ traceid trace [] = case mb_ret_type of
 
 unfoldTraces1M _ _ _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
-{-
---type UnfoldTracesRet = Either [Trace] SolveFunRet
---type SolveFunRet = (Bool,[TraceAnalysisResult],Set.Set Branch,Set.Set Branch)
-combineUnfoldTracesRets :: UnfoldTracesRet -> UnfoldTracesRet -> UnfoldTracesRet
-combineUnfoldTracesRets (Left traces1) (Left traces2) = Left $ traces1 ++ traces2
-combineUnfoldTracesRets r1@(Right (success1,(tars1,covered1,alls1))) r2@(Right (success2,(tars2,covered2,alls2))) = 
-	case (success1,success2) of
-		(True,True)   -> Right (True, (tars1 ++ tars2, covered1 ∪ covered1, alls1 ∪ alls2 ))
-		(False,True)  -> r2
-		(True,False)  -> r1
-		(False,False) -> Right (False, ([],Set.empty,Set.empty))
--}
 
 infix 4 ⩵
 (⩵) :: CExpr -> CExpr -> CExpr
@@ -1087,13 +945,12 @@ translateExprM envs traceid expr = do
 		FunDef (VarDecl _ _ (FunctionType (FunType _ paramdecls False) _)) body _ <- lookupFunM funident
 		expanded_params_args <- expand_params_argsM paramdecls args
 		let body' = replace_param_with_arg expanded_params_args body
---unfoldTracesM mb_ret_type break_stack envs traceid trace cbss = do
+		printLogV 2 $ "body'= " ++ (render.pretty) body'
 		Left funtraces <- unfoldTracesM Nothing [] envs traceid [] [ [ CBlockStmt body' ] ]
---		printLog $ "##### extract_traces_rets " ++ showTrace 0 (reverse funtrace) ++ "\n"
+		forM_ funtraces $ \ tr -> printLogV 2 $ "funtrace = " ++ showTrace tr
 		let funtraces_rets = concat $ for funtraces $ \case
 			Return retexpr : tr -> [(tr,retexpr)]
 			tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
---		printLog $ "#### = " ++ show (map (\(tr,cex) -> (tr,(render.pretty) cex)) funtraces) ++ "\n"
 		return (ni,funtraces_rets) 
 
 	combs <- create_combinations expr'' [] funcalls_traces
@@ -1133,20 +990,6 @@ translateExprM envs traceid expr = do
 		substparamarg (CVar ident _) | ident==srcident = arg
 		substparamarg expr = expr
 
-
-{-
--- Flattens the trace tree to a list of all paths through the tree
-
-flattenTrace :: Trace -> Trace -> [Trace]
-flattenTrace traceelems [] = [traceelems]
-flattenTrace traceelems (TraceOr traces : rest) = case rest of
-	[] -> concat $ for (map reverse traces) (flattenTrace traceelems)
-	_ -> error $ "extract_traces_rets: TraceOr not last element " ++ showTrace 0 traceelems
-flattenTrace traceelems (TraceAnd traces : rest) = case rest of
-	[] -> concat $ for (map reverse traces) (flattenTrace traceelems)
-	_ -> error $ "extract_traces_rets: TraceAnd not last element " ++ showTrace 0 traceelems
-flattenTrace traceelems (te : rest) = flattenTrace (te:traceelems) rest
--}
 
 -- Renames Variables to unique names
 
