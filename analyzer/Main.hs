@@ -63,14 +63,14 @@ longIntSize = 64
 
 solveIt = True
 showOnlySolutions = True
-don'tShowTraces = True
+don'tShowTraces = False
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
 outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
-cutOffs = True
+cutOffs = False
 
 sameConditionThreshold = 1000
 sameConditionThresholdExceptions = []
@@ -867,7 +867,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 
 	infer_loopingsM :: CExpr -> CStat -> CovVecM (Maybe Int,String)
  	infer_loopingsM cond0 body = do
- 		translateExprM envs cond0 >>= \case
+ 		translateExprM envs traceid cond0 >>= \case
  			[(cond,[])] -> do
 				let
 					-- get all variables used in the condition
@@ -940,7 +940,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 
 	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
 	transids expr trace cont = do
-		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM envs expr
+		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM envs traceid expr
 		case mb_ret_type of
 			Nothing -> do
 				conts :: [UnfoldTracesRet] <- forM additional_expr_traces $ \ (expr',trace') -> do
@@ -1065,8 +1065,8 @@ cinitializer2blockitems lexpr ty initializer =
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
 
-translateExprM :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
-translateExprM envs expr = do
+translateExprM :: [Env] -> [Int] -> CExpr -> CovVecM [(CExpr,Trace)]
+translateExprM envs traceid expr = do
 	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		-- eliminate casts
@@ -1092,7 +1092,7 @@ translateExprM envs expr = do
 --		printLog $ "##### extract_traces_rets " ++ showTrace 0 (reverse funtrace) ++ "\n"
 		let funtraces_rets = concat $ for funtraces $ \case
 			Return retexpr : tr -> [(tr,retexpr)]
-			tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace 0 tr
+			tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
 --		printLog $ "#### = " ++ show (map (\(tr,cex) -> (tr,(render.pretty) cex)) funtraces) ++ "\n"
 		return (ni,funtraces_rets) 
 
@@ -1496,7 +1496,7 @@ solveTraceM mb_ret_type traceid trace = do
 	retval_env_exprs  <- case mb_ret_type of
 		Nothing  -> return []
 		Just ret_type -> createInterfaceM [(internalIdent returnval_var_name,ret_type)]
-	param_env <- gets paramEnvCVS
+	Just param_env <- gets paramEnvCVS
 	let
 		retval_env  = map fst retval_env_exprs
 		param_names = map (fst.snd) param_env
@@ -1504,7 +1504,6 @@ solveTraceM mb_ret_type traceid trace = do
 		constraints = concatMap traceitem2constr trace where
 		traceitem2constr (Condition _ expr) = [expr]
 		traceitem2constr _ = []
-		
 		tyenv = createTyEnv trace
 
 	(model_string,mb_sol) <- makeAndSolveZ3ModelM
@@ -1514,9 +1513,10 @@ solveTraceM mb_ret_type traceid trace = do
 		(param_names ++ ret_names)
 		(analyzerPath </> "models" </> "model_" ++ tracename ++ ".smtlib2")
 
-	return $ case cutoff of
-		True -> isJust mb_sol
-		False -> (model_string,case mb_sol of
+--type ResultData = (String,Maybe (Env,Env,Solution))
+	return $ case mb_ret_type of
+		Nothing -> Left $ isJust mb_sol
+		Just _ -> Right (model_string,case mb_sol of
 			Nothing -> Nothing
 			Just sol -> Just (param_env,retval_env,sol))
 
@@ -1551,7 +1551,7 @@ checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution)) = do
 			let
 				outputs = words $ last $ lines stdout
 				-- get all solution vars that are in the ret_env
-				ret_solution = filter ((∈ map (identToString.fst) ret_env).fst) solution
+				ret_solution = filter ((`elem` (map (identToString.fst) ret_env)).fst) solution
 			when (length ret_env /= length outputs || length outputs /= length ret_solution) $
 				myError $ "checkSolutionM: lengths of ret_env, solution, outputs differ:\n" ++
 					"ret_env = " ++ showEnv ret_env ++ "\n" ++
