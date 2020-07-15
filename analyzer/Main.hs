@@ -50,7 +50,7 @@ type Trace = [TraceElem]
 type ResultData = (String,Maybe (Env,Env,Solution))
 type TraceAnalysisResult = ([Int],Trace,ResultData)
 type UnfoldTracesRet = Either [Trace] Bool
-type SolveFunRet = (Bool,([TraceAnalysisResult],Set.Set Branch,Set.Set Branch))
+type SolveFunRet = (Bool,([TraceAnalysisResult],Set.Set Branch))
 
 
 for :: [a] -> (a -> b) -> [b]
@@ -66,14 +66,14 @@ showOnlySolutions = True
 don'tShowTraces = True
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
-outputVerbosity = 2
+outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
 cutOffs = True
 
-sameConditionThreshold = 1000
-sameConditionThresholdExceptions = []
+--sameConditionThreshold = 1000
+--sameConditionThresholdExceptions = []
 mAX_UNROLLING_DEPTH = 32
 sizeConditionChunks = 4
 
@@ -141,8 +141,10 @@ main = do
 							writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 	
 						(full_coverage,s) <- runStateT covVectorsM $
-							CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc opts Nothing ([],Set.empty,Set.empty)
-						let (testvectors,covered,alls) = analysisStateCVS s
+							CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc opts Nothing ([],Set.empty) Set.empty
+						let
+							(testvectors,covered) = analysisStateCVS s
+							alls = allCondPointsCVS s
 	
 						printLog ""
 	
@@ -212,7 +214,8 @@ data CovVecState = CovVecState {
 	compilerCVS      :: String,
 	optsCVS          :: [String],
 	paramEnvCVS      :: Maybe Env,
-	analysisStateCVS :: ([TraceAnalysisResult],Set.Set Branch,Set.Set Branch)
+	analysisStateCVS :: ([TraceAnalysisResult],Set.Set Branch),
+	allCondPointsCVS :: Set.Set Branch
 	}
 
 type CovVecM = StateT CovVecState IO
@@ -278,6 +281,18 @@ covVectorsM = do
 		lookupFunM (builtinIdent funname)
 	ret_type' <- elimTypeDefsM ret_type
 
+	let condition_points = Set.fromList $ everything (++) (mkQ [] searchcondpoint) body
+		where
+		n2loc node = nodeInfo node
+		searchcondpoint :: CStat -> [Branch]
+		searchcondpoint (CWhile cond _ _ _) = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
+		searchcondpoint (CCase expr _ _) = [ Then (lineColNodeInfo expr) ]
+		searchcondpoint (CDefault _ ni) = [ Then (lineColNodeInfo ni) ]
+		searchcondpoint (CFor _ (Just cond) _ _ _) = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
+		searchcondpoint (CIf cond _ _ _) = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
+		searchcondpoint _ = []
+	modify $ \ s -> s { allCondPointsCVS = condition_points }
+	
 	let
 		fun_lc = lineColNodeInfo fundef_ni
 		next_lc = case sort $ filter (> lineColNodeInfo fundef_ni) $ map lineColNodeInfo globdecls of
@@ -390,15 +405,13 @@ analyzeTraceM mb_ret_type traceid res_line = do
 			case is_solution traceanalysisresult of
 				False -> do
 					printLogV 2  $ "### FALSE : " ++ show traceid ++ " no solution!"
-					modify $ \ s -> s { analysisStateCVS = let (tas,covered,alls) = analysisStateCVS s in
-						(tas,covered,Set.union visible_trace alls) }
 				True  -> do
 					printLogV 2  $ "### TRUE : " ++ show traceid ++ " Is Solution"
 					when (isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
-					modify $ \ s -> s { analysisStateCVS = let (tas,covered,alls) = analysisStateCVS s in
-						case visible_trace `Set.isSubsetOf` covered of
-							False -> (traceanalysisresult:tas,Set.union visible_trace covered,Set.union visible_trace alls)
-							True  -> (tas,covered,alls) }
+					modify $ \ s -> s { analysisStateCVS = let (tas,covered) = analysisStateCVS s in
+						case visible_trace ⊆ covered of
+							False -> (traceanalysisresult:tas,visible_trace ∪ covered)
+							True  -> (tas,covered) }
 			return $ is_solution traceanalysisresult
 
 
