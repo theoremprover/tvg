@@ -938,7 +938,7 @@ cinitializer2blockitems lexpr ty initializer =
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
-
+-- It needs to keep the original NodeInfos, because of the coverage information with is derived from the original source tree.
 translateExprM :: [Env] -> [Int] -> CExpr -> CovVecM [(CExpr,Trace)]
 translateExprM envs traceid expr = do
 	let	
@@ -969,11 +969,7 @@ translateExprM envs traceid expr = do
 			tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
 		return (ni,funtraces_rets) 
 
-	combs <- create_combinations expr'' [] funcalls_traces
-
---	printLog $ "===== END OF translateExpr " ++ (render.pretty) expr ++ " ===============================\n"
-
-	return combs
+	create_combinations expr'' [] funcalls_traces
 	
 	where
 
@@ -984,9 +980,13 @@ translateExprM envs traceid expr = do
 			let VarDecl (VarName srcident _) _ arg_ty = getVarDecl paramdecl
 			return [(srcident,arg)]
 
+	set_node_info :: CExpr -> CExpr
+	set_node_info cexpr = everywhere (mkT subst_ni) cexpr where
+		subst_ni :: NodeInfo -> NodeInfo
+		subst_ni _ = nodeInfo expr
 
 	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExpr)])] -> CovVecM [(CExpr,Trace)]
-	create_combinations expr trace [] = return [(expr,trace)]
+	create_combinations expr trace [] = return [(set_node_info expr,trace)]
 	create_combinations expr trace ((ni,tes):rest) = do
 		concatForM tes $ \ (fun_trace,ret_expr) -> do
 			let
