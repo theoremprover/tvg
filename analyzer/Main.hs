@@ -71,8 +71,9 @@ floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
 cutOffs = True
+logToFile = False
 
-uNROLLING_STRATEGY = [0,1,2,3,4]
+uNROLLING_STRATEGY = [0,1,2,3,4,5,6,7,8,9]
 --[0..32]
 --[0,32,1,31,2,30,3,29,4,28,5,27,6,26,7,25,8,24,9,23,10,22,11,21,12,20,13,19,14,18,15,17,16]
 
@@ -86,7 +87,7 @@ logFile = analyzerPath </> "log.txt"
 printLog :: (MonadIO m) => String -> m ()
 printLog text = liftIO $ do
 	putStrLn text
-	appendFile logFile (text++"\n")
+	when logToFile $ appendFile logFile (text++"\n")
 
 printLogV :: (MonadIO m) => Int -> String -> m ()
 printLogV verbosity text = when (verbosity<=outputVerbosity) $ printLog text
@@ -110,8 +111,8 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
@@ -143,7 +144,8 @@ main = do
 							writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 	
 						(full_coverage,s) <- runStateT covVectorsM $
-							CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc opts Nothing ([],Set.empty) Set.empty
+							CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc opts
+								Nothing ([],Set.empty) Set.empty intialStats
 						let
 							(testvectors,covered) = analysisStateCVS s
 							alls = allCondPointsCVS s
@@ -217,8 +219,19 @@ data CovVecState = CovVecState {
 	optsCVS          :: [String],
 	paramEnvCVS      :: Maybe Env,
 	analysisStateCVS :: ([TraceAnalysisResult],Set.Set Branch),
-	allCondPointsCVS :: Set.Set Branch
+	allCondPointsCVS :: Set.Set Branch,
+	statsCVS         :: Stats
 	}
+
+data Stats = Stats { cutoffTries :: Int, cutoffsS :: Int }
+	deriving (Show)
+intialStats = Stats 0 0
+incCutoffTriesM :: CovVecM ()
+incCutoffTriesM = modify $ \ s -> s { statsCVS = (statsCVS s) { cutoffTries = cutoffTries (statsCVS s) + 1 } }
+incCutoffsM :: CovVecM ()
+incCutoffsM = modify $ \ s -> s { statsCVS = (statsCVS s) { cutoffsS = cutoffsS (statsCVS s) + 1 } }
+printStatsM :: CovVecM ()
+printStatsM = gets statsCVS >>= (printLogV 1) . show 
 
 type CovVecM = StateT CovVecState IO
 
@@ -740,10 +753,12 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 
 	maybe_cutoff :: CovVecM UnfoldTracesRet -> CovVecM UnfoldTracesRet
 	maybe_cutoff cont | cutOffs = do
+		incCutoffTriesM
 		printLogV 2 $ "******* Probing for CutOff in depth " ++ show (length trace) ++ " ..."
 		analyzeTraceM Nothing traceid trace >>= \case
 			False -> do
 				printLogV 2 $ "******** Cutting off."
+				incCutoffsM
 				return $ Right False
 			True  -> do
 				printLogV 2 $ "******** Continuing..."
@@ -1317,11 +1332,12 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 			outputvarsZ3
 		model_string = unlines $ map show model
 		model_string_linenumbers = unlines $ map (\ (i,l) -> show i ++ ": " ++ l) (zip [1..] (lines model_string))
-	liftIO $ writeFile modelpathfile model_string
+--	liftIO $ writeFile modelpathfile model_string
 	printLogV 2 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
-	printLog $ "Running model " ++ takeFileName modelpathfile ++ "..."
+	printStatsM
+	printLogV 1 $ "Running model " ++ takeFileName modelpathfile ++ "..."
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
-		readProcessWithExitCode z3FilePath ["-smt2","parallel.enable=true",takeFileName modelpathfile] ""
+		readProcessWithExitCode z3FilePath ["-smt2","-in","parallel.enable=true"] model_string
 	printLogV 2 output
 	case lines output of
 		"unsat"   : _ -> return (model_string_linenumbers,Nothing)
@@ -1372,7 +1388,6 @@ solveTraceM mb_ret_type traceid trace = do
 		(param_names ++ ret_names)
 		(analyzerPath </> "models" </> "model_" ++ tracename ++ ".smtlib2")
 
---type ResultData = (String,Maybe (Env,Env,Solution))
 	return $ case mb_ret_type of
 		Nothing -> Left $ isJust mb_sol
 		Just _ -> Right (model_string,case mb_sol of
