@@ -864,6 +864,9 @@ _fpmul_parts ( fp_number_type *  a,
 	  low |= FRACHIGH;
 	}
       high >>= 1;
+#ifdef CALC
+//printf("FIRST LOOP: high=%i\n",high);
+#endif
     }
   while (high < IMPLICIT_1)
     {
@@ -873,6 +876,9 @@ _fpmul_parts ( fp_number_type *  a,
       if (low & FRACHIGH)
 	high |= 1;
       low <<= 1;
+#ifdef CALC
+//printf("SECOND LOOP: high=%i\n",high);
+#endif
     }
 
   if (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB)

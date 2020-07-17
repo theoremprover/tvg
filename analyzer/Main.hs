@@ -73,7 +73,10 @@ showBuiltins = False
 cutOffs = True
 logToFile = False
 
-uNROLLING_STRATEGY = [0,1,2,3,4,5,6,7,8,9]
+uNROLLING_STRATEGY = [0,29]
+uNROLLING_FIXED = [(885,0),(871,29)]
+sKIP_DECISIONS = [11..34]
+
 --[0..32]
 --[0,32,1,31,2,30,3,29,4,28,5,27,6,26,7,25,8,24,9,23,10,22,11,21,12,20,13,19,14,18,15,17,16]
 
@@ -667,15 +670,19 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 			case mb_else_stmt of
 				Nothing        -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
-
-		(if conditions_reached > 0 && conditions_reached `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
-			either_then <- then_trace_m
-			either_else <- else_trace_m
-			return $ case (either_then,either_else) of
-				(Left then_traces,Left else_traces) -> Left $ then_traces ++ else_traces
-				(Right then_success,Right else_success) -> case mb_ret_type of
-					Nothing -> Right $ then_success || else_success
-					Just _  -> Right $ then_success && else_success
+		case conditions_reached `elem` sKIP_DECISIONS of
+			True -> do
+				printLogV 1 $ "Skipping decision " ++ show conditions_reached
+				then_trace_m
+			False -> do
+				(if conditions_reached > 0 && conditions_reached `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
+					either_then <- then_trace_m
+					either_else <- else_trace_m
+					return $ case (either_then,either_else) of
+						(Left then_traces,Left else_traces) -> Left $ then_traces ++ else_traces
+						(Right then_success,Right else_success) -> case mb_ret_type of
+							Nothing -> Right $ then_success || else_success
+							Just _  -> Right $ then_success && else_success
 
 	CReturn Nothing _ -> case mb_ret_type of
 		Nothing       -> return $ Left [trace]
@@ -774,6 +781,8 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 		is_condition _ = False
 
 	infer_loopingsM :: CExpr -> CStat -> CovVecM (Maybe Int,String)
+	infer_loopingsM cond0 _ | Just n <- lookup (fst (lineColNodeInfo cond0)) uNROLLING_FIXED = do
+		return (Just n,"Took value from uNROLLING_FIXED")
  	infer_loopingsM cond0 body = do
  		translateExprM envs traceid cond0 >>= \case
  			[(cond,[])] -> do
