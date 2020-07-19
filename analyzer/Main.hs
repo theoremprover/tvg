@@ -73,9 +73,9 @@ showBuiltins = False
 cutOffs = True
 logToFile = False
 
-uNROLLING_STRATEGY = [0,29]
-uNROLLING_FIXED = [(885,0),(871,29)]
-sKIP_DECISIONS = [11..34]
+mAX_UNROLLS = 33
+uNROLLING_STRATEGY = [0..mAX_UNROLLS]
+--sKIP_DECISIONS = [11,12,14,15,17,18,20,21,23,24,26,27,29,30,32,33]
 
 --[0..32]
 --[0,32,1,31,2,30,3,29,4,28,5,27,6,26,7,25,8,24,9,23,10,22,11,21,12,20,13,19,14,18,15,17,16]
@@ -663,20 +663,27 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 			unfoldTracesM mb_ret_type rest (drop through_compounds envs) traceid trace (drop through_compounds bstss)
 
 	CIf cond then_stmt mb_else_stmt ni -> do
-		let then_trace_m = transids cond trace $ \ (cond',trace') -> do
+		let then_trace_m real_cond = transids real_cond trace $ \ (cond',trace') -> do
 			unfoldTracesM mb_ret_type break_stack envs (traceid++[1]) (Condition True cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
-		let else_trace_m = transids cond trace $ \ (cond',trace') -> do
-			let not_cond = Condition False (CUnary CNegOp cond' (nodeInfo cond'))
-			case mb_else_stmt of
-				Nothing        -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( rest : rest2 )
-				Just else_stmt -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
-		case conditions_reached `elem` sKIP_DECISIONS of
-			True -> do
-				printLogV 1 $ "Skipping decision " ++ show conditions_reached
-				then_trace_m
-			False -> do
+		case recognizeAnnotation cond of
+			(real_cond,Just (n,num_reached)) | (num_reached `mod` n) /= 0 -> do
+				printLogV 1 $ "Recognized IF annoation to " ++ (render.pretty) real_cond ++ " and reached " ++ show num_reached ++ " times."
+				then_trace_m real_cond
+			(real_cond,_) -> do
+				let else_trace_m = transids real_cond trace $ \ (cond',trace') -> do
+					let not_cond = Condition False (CUnary CNegOp cond' (nodeInfo cond'))
+					case mb_else_stmt of
+						Nothing        -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( rest : rest2 )
+						Just else_stmt -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
+{-
+				case conditions_reached `elem` sKIP_DECISIONS of
+					True -> do
+						printLogV 1 $ "Skipping decision " ++ show conditions_reached
+						then_trace_m real_cond
+					False -> do
+-}
 				(if conditions_reached > 0 && conditions_reached `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
-					either_then <- then_trace_m
+					either_then <- then_trace_m real_cond
 					either_else <- else_trace_m
 					return $ case (either_then,either_else) of
 						(Left then_traces,Left else_traces) -> Left $ then_traces ++ else_traces
@@ -732,7 +739,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 
  	CWhile cond body False _ -> do
  		(mb_unrolling_depth,msg) <- infer_loopingsM cond body
- 		printLogV 2 msg
+ 		printLogV 1 msg
  		unroll_loopM $ case mb_unrolling_depth of
 			Nothing -> uNROLLING_STRATEGY --[0..mAX_UNROLLING_DEPTH]
 			Just n  -> [n]
@@ -758,6 +765,15 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 
 	where
 
+	recognizeAnnotation :: CExpr -> (CExpr,Maybe (Int,Int))
+	recognizeAnnotation (CBinary CLndOp (CBinary CEqOp
+		(CConst (CIntConst (CInteger i1 _ _) _))
+		(CConst (CIntConst (CInteger i2 _ _) _)) _) real_cond ni) | i1==i2 = (real_cond,Just (fromIntegral i1,num_reached)) where
+			num_reached = length $ filter is_this_cond trace
+			is_this_cond (Condition _ c) | nodeInfo c == nodeInfo real_cond = True
+			is_this_cond _ = False
+	recognizeAnnotation real_cond = (real_cond,Nothing)
+
 	maybe_cutoff :: CovVecM UnfoldTracesRet -> CovVecM UnfoldTracesRet
 	maybe_cutoff cont | cutOffs = do
 		incCutoffTriesM
@@ -772,8 +788,8 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 				cont
 	maybe_cutoff cont = cont
 
-	num_reached :: (CNode cnode) => cnode -> Int
-	num_reached cnode = length $ filter ((== nodeInfo cnode).nodeInfo) trace
+--	num_reached :: (CNode cnode) => cnode -> Int
+--	num_reached cnode = length $ filter ((== nodeInfo cnode).nodeInfo) trace
 
 	conditions_reached :: Int
 	conditions_reached = length $ filter is_condition trace where
@@ -781,79 +797,80 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 		is_condition _ = False
 
 	infer_loopingsM :: CExpr -> CStat -> CovVecM (Maybe Int,String)
-	infer_loopingsM cond0 _ | Just n <- lookup (fst (lineColNodeInfo cond0)) uNROLLING_FIXED = do
-		return (Just n,"Took value from uNROLLING_FIXED")
  	infer_loopingsM cond0 body = do
- 		translateExprM envs traceid cond0 >>= \case
- 			[(cond,[])] -> do
-				let
-					-- get all variables used in the condition
-					cond_idents = fvar cond
-				-- unfold body to all body traces and filter for all Assignments to variables from the condition
- 				Left body_traces <- unfoldTracesM Nothing [] envs [999] [] [[CBlockStmt body]]
-				let
-					body_traces_ass = map (concatMap from_ass) body_traces where
-						from_ass (Assignment a@(CVar i _) b) | i `elem` cond_idents = [(a,b)]
-						from_ass _ = []
-				printLogV 2 $ "body_traces_ass =\n" ++
-					(unlines $ for body_traces_ass $ \ bta ->
-						intercalate " , " (map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") bta))
-
-				-- Filter for all assignments that occur exactly once in every body trace
-				let
-					body_assigns = foldl1 intersect (map (exists_once) body_traces_ass)
-					exists_once l = filter (\ e -> length (filter (==e) l) == 1) l
-				printLogV 2 $ "body_assigns = \n" ++
-					intercalate " , " (map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") body_assigns)
-
-				case body_assigns of
-					[ (counter_var@(CVar ass_ident _),ass_expr) ] -> do
+		case recognizeAnnotation cond0 of
+			(real_cond,Just (n,_)) -> return (Just n,"Recognized LOOP annoation to " ++ (render.pretty) cond0)
+			(real_cond,Nothing) -> do
+				translateExprM envs traceid real_cond >>= \case
+					[(cond,[])] -> do
 						let
-							is_ass_to_ass_var (Assignment (CVar ident _) _) | ident==ass_ident = True
-							is_ass_to_ass_var _ = False
-						case filter is_ass_to_ass_var trace of
-							[] -> return (Nothing,"infer_loopingsM: There is no assignment to the loop counter " ++ (render.pretty) counter_var ++ " prior to the loop")
-							ass@(Assignment _ i_0) : _ | null (fvar i_0)-> do
-								printLogV 1 $ "last assignment to loop counter is " ++ show ass
-								let i_n :: CExpr -> CExpr = case ass_expr of
-									-- for all binops where the following holds (Linearity?):
-									-- i_n = i_(n-1) `binop` c  =>  i_n = i_0 `binop` c
-									CBinary binop (CVar ident _) cconst@(CConst _) _ | ident == ass_ident ∧ binop `elem` [CSubOp,CAddOp,CShrOp,CShlOp] ->
-										\ n_var → CBinary binop i_0 (n_var ∗ cconst) undefNode
-									_ -> error $ "infer_loopingsM: assignment " ++ (render.pretty) ass_ident ++ " := " ++ (render.pretty) ass_expr ++ " not implemented!"
+							-- get all variables used in the condition
+							cond_idents = fvar cond
+						-- unfold body to all body traces and filter for all Assignments to variables from the condition
+						Left body_traces <- unfoldTracesM Nothing [] envs [999] [] [[CBlockStmt body]]
+						let
+							body_traces_ass = map (concatMap from_ass) body_traces where
+								from_ass (Assignment a@(CVar i _) b) | i `elem` cond_idents = [(a,b)]
+								from_ass _ = []
+						printLogV 2 $ "body_traces_ass =\n" ++
+							(unlines $ for body_traces_ass $ \ bta ->
+								intercalate " , " (map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") bta))
+		
+						-- Filter for all assignments that occur exactly once in every body trace
+						let
+							body_assigns = foldl1 intersect (map (exists_once) body_traces_ass)
+							exists_once l = filter (\ e -> length (filter (==e) l) == 1) l
+						printLogV 2 $ "body_assigns = \n" ++
+							intercalate " , " (map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") body_assigns)
+		
+						case body_assigns of
+							[ (counter_var@(CVar ass_ident _),ass_expr) ] -> do
 								let
-									n_name = "n_loopings"
-									n_ident = internalIdent n_name
-									n_var = CVar n_ident undefNode
-									modelpath = analyzerPath </> n_name ++ show (lineColNodeInfo cond) ++ ".smtlib2"
-								n_type <- case lookup ass_ident (map snd $ concat envs) of
-									Nothing -> myError $ "infer_loopingsM: Could not find type of " ++ (render.pretty) counter_var
-									Just ty -> return ty
-								(model_string,mb_sol) <- makeAndSolveZ3ModelM
-									((n_ident,n_type) : map snd (concat envs))
-									(let
-										cond_n       = (counter_var `substituteBy` (i_n n_var)) cond
-										cond_nminus1 = (counter_var `substituteBy` (i_n $ n_var − ⅈ 1)) cond
-										cond_0       = (counter_var `substituteBy` (i_n (ⅈ 0))) cond
-										in
-										[
-											n_var ⩾ ⅈ 0,
-											not_c cond_0  ⋏  n_var ⩵ ⅈ 0
-												⋎
-												cond_nminus1 ⋏ n_var ⩾ ⅈ 1 ⋏ not_c cond_n
-										])
-									[ SExpr [SLeaf "minimize",SLeaf n_name] ]
-									[n_ident]
-									modelpath
-								return $ case mb_sol of
-									Nothing                 -> (Nothing,"Found no solution for " ++ modelpath)
-									Just sol@[(_,IntVal n)] -> (Just n, "Found looping solution n = " ++ show sol)
-									_                       -> (Nothing,"n_looping: Strange mb_sol=" ++ show mb_sol)
-							ass -> return (Nothing,"infer_loopingsM: " ++ show ass ++ " is not assigning a constant.")
-					other -> return (Nothing,"body contains not exactly one assignment of a variable from the condition " ++ (render.pretty) cond ++ ":\n" ++
-						unlines (map (\(ass_var,_) -> (render.pretty) ass_var) other))
-				
-			_ -> return (Nothing,"condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!")
+									is_ass_to_ass_var (Assignment (CVar ident _) _) | ident==ass_ident = True
+									is_ass_to_ass_var _ = False
+								case filter is_ass_to_ass_var trace of
+									[] -> return (Nothing,"infer_loopingsM: There is no assignment to the loop counter " ++ (render.pretty) counter_var ++ " prior to the loop")
+									ass@(Assignment _ i_0) : _ | null (fvar i_0)-> do
+										printLogV 1 $ "last assignment to loop counter is " ++ show ass
+										let i_n :: CExpr -> CExpr = case ass_expr of
+											-- for all binops where the following holds (Linearity?):
+											-- i_n = i_(n-1) `binop` c  =>  i_n = i_0 `binop` c
+											CBinary binop (CVar ident _) cconst@(CConst _) _ | ident == ass_ident ∧ binop `elem` [CSubOp,CAddOp,CShrOp,CShlOp] ->
+												\ n_var → CBinary binop i_0 (n_var ∗ cconst) undefNode
+											_ -> error $ "infer_loopingsM: assignment " ++ (render.pretty) ass_ident ++ " := " ++ (render.pretty) ass_expr ++ " not implemented!"
+										let
+											n_name = "n_loopings"
+											n_ident = internalIdent n_name
+											n_var = CVar n_ident undefNode
+											modelpath = analyzerPath </> n_name ++ show (lineColNodeInfo cond) ++ ".smtlib2"
+										n_type <- case lookup ass_ident (map snd $ concat envs) of
+											Nothing -> myError $ "infer_loopingsM: Could not find type of " ++ (render.pretty) counter_var
+											Just ty -> return ty
+										(model_string,mb_sol) <- makeAndSolveZ3ModelM
+											((n_ident,n_type) : map snd (concat envs))
+											(let
+												cond_n       = (counter_var `substituteBy` (i_n n_var)) cond
+												cond_nminus1 = (counter_var `substituteBy` (i_n $ n_var − ⅈ 1)) cond
+												cond_0       = (counter_var `substituteBy` (i_n (ⅈ 0))) cond
+												in
+												[
+													n_var ⩾ ⅈ 0,
+													not_c cond_0  ⋏  n_var ⩵ ⅈ 0
+														⋎
+														cond_nminus1 ⋏ n_var ⩾ ⅈ 1 ⋏ not_c cond_n
+												])
+											[ SExpr [SLeaf "minimize",SLeaf n_name] ]
+											[n_ident]
+											modelpath
+										return $ case mb_sol of
+											Nothing                 -> (Nothing,"Found no solution for " ++ modelpath)
+											Just sol@[(_,IntVal n)] -> (Just n, "Found looping solution n = " ++ show sol)
+											_                       -> (Nothing,"n_looping: Strange mb_sol=" ++ show mb_sol)
+									ass -> return (Nothing,"infer_loopingsM: " ++ show ass ++ " is not assigning a constant.")
+							other -> return (Nothing,"body contains not exactly one assignment of a variable from the condition " ++ (render.pretty) cond ++ ":\n" ++
+								unlines (map (\(ass_var,_) -> (render.pretty) ass_var) other))
+						
+					_ -> return (Nothing,"condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!")
 
 	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
 	transids expr trace cont = do

@@ -854,11 +854,11 @@ _fpmul_parts ( fp_number_type *  a,
 
   tmp->normal_exp = a->normal_exp + b->normal_exp
     + FRAC_NBITS - (FRACBITS + NGARDS);
-  tmp->sign = 1&(~((a->sign)&(b->sign) | (~(a->sign) & ~(b->sign)))); //a->sign != b->sign ;
-  while (high >= IMPLICIT_2)
+  tmp->sign = 1&((a->sign)^(b->sign)); //a->sign != b->sign ;
+  while (0==0 && high >= IMPLICIT_2)
     {
       tmp->normal_exp++;
-      if (high & 1)
+      if (3==3 && high & 1)
 	{
 	  low >>= 1;
 	  low |= FRACHIGH;
@@ -868,13 +868,12 @@ _fpmul_parts ( fp_number_type *  a,
 //printf("FIRST LOOP: high=%i\n",high);
 #endif
     }
-  while (high < IMPLICIT_1)
+  while (29==29 && high < IMPLICIT_1)
     {
       tmp->normal_exp--;
 
       high <<= 1;
-      if (low & FRACHIGH)
-	high |= 1;
+      if (3==3 && low & FRACHIGH) high |= 1;
       low <<= 1;
 #ifdef CALC
 //printf("SECOND LOOP: high=%i\n",high);
