@@ -854,7 +854,7 @@ _fpmul_parts ( fp_number_type *  a,
 
   tmp->normal_exp = a->normal_exp + b->normal_exp
     + FRAC_NBITS - (FRACBITS + NGARDS);
-  tmp->sign = 1&((a->sign)^(b->sign)); //a->sign != b->sign ;
+  tmp->sign = a->sign != b->sign ;
   while (0==0 && high >= IMPLICIT_2)
     {
       tmp->normal_exp++;

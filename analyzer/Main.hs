@@ -73,8 +73,8 @@ showBuiltins = False
 cutOffs = True
 logToFile = False
 
-mAX_UNROLLS = 33
-uNROLLING_STRATEGY = [0..mAX_UNROLLS]
+mAX_UNROLLS = 30
+uNROLLING_STRATEGY = [mAX_UNROLLS,(mAX_UNROLLS-1)..0]
 --sKIP_DECISIONS = [11,12,14,15,17,18,20,21,23,24,26,27,29,30,32,33]
 
 --[0..32]
@@ -1206,6 +1206,8 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 
 	where
 
+	bool_result_ops = [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp]
+
 	neq0 :: Constraint -> Constraint
 	neq0 constr = not_c $ constr ⩵ ⅈ 0
 
@@ -1217,6 +1219,8 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 	insert_eq0 must_be_bool (CCast _ expr _) = insert_eq0 must_be_bool expr
 	insert_eq0 must_be_bool cvar@(CVar ident ni) = (if must_be_bool then neq0 else id) cvar
 	insert_eq0 must_be_bool const@(CConst _) = (if must_be_bool then neq0 else id) const
+	insert_eq0 False cond@(CBinary binop expr1 expr2 ni) | binop `elem` bool_result_ops =
+		CCond (insert_eq0 True cond) (Just $ ⅈ 1) (ⅈ 0) ni
 	insert_eq0 must_be_bool (CBinary binop expr1 expr2 ni) = mb_eq0 $
 		CBinary binop (insert_eq0 must_be_bool' expr1) (insert_eq0 must_be_bool' expr2) ni
 		where
@@ -1266,6 +1270,9 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 				(Nothing, Nothing) -> signed
 --				other -> myError $ "unSigned " ++ (render.pretty) expr1 ++ " " ++ (render.pretty) expr2 ++ " yielded " ++ show other
 
+		CCond cond (Just then_expr) else_expr _ ->
+			SExpr [ SLeaf "ite", expr2sexpr cur_ty then_expr, expr2sexpr cur_ty else_expr ]
+
 		CVar ident _ -> SLeaf $ (render.pretty) ident
 		CConst cconst -> SLeaf $ case cconst of
 			CIntConst intconst _ -> let i = getCInteger intconst in
@@ -1285,6 +1292,12 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 		Just ty -> Just $ ty2Z3Type ty
 	infer_type (CConst _) = Nothing
 	infer_type (CUnary _ expr _) = infer_type expr
+{-
+	infer_type (CBinary binop expr1 expr2 _) | binop `elem` bool_result_ops =
+		Just $ ty2Z3Type $ DirectType (TyIntegral TyInt) noTypeQuals noAttributes
+-}
+	-- Strictly speaking, the return type of boolean operators is "int", not the operands' type.
+	-- But we are avoiding the automatic casting back to the operands' type here...
 	infer_type expr@(CBinary _ expr1 expr2 _) = case [infer_type expr1, infer_type expr2] of
 		[Nothing,Nothing] -> Nothing
 		[Just t1,Just t2] | t1/=t2 -> error $ "infer_type " ++ (render.pretty) expr ++ " yields different types for operands: " ++ show t1 ++ " and " ++ show t2
