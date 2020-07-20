@@ -70,15 +70,11 @@ outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
-cutOffs = True
+cutOffs = False
 logToFile = False
 
 mAX_UNROLLS = 30
 uNROLLING_STRATEGY = [mAX_UNROLLS,(mAX_UNROLLS-1)..0]
---sKIP_DECISIONS = [11,12,14,15,17,18,20,21,23,24,26,27,29,30,32,33]
-
---[0..32]
---[0,32,1,31,2,30,3,29,4,28,5,27,6,26,7,25,8,24,9,23,10,22,11,21,12,20,13,19,14,18,15,17,16]
 
 sizeConditionChunks = 4
 
@@ -114,7 +110,7 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
@@ -665,26 +661,21 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 	CIf cond then_stmt mb_else_stmt ni -> do
 		let then_trace_m real_cond = transids real_cond trace $ \ (cond',trace') -> do
 			unfoldTracesM mb_ret_type break_stack envs (traceid++[1]) (Condition True cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
+		let else_trace_m real_cond = transids real_cond trace $ \ (cond',trace') -> do
+			let not_cond = Condition False (CUnary CNegOp cond' (nodeInfo cond'))
+			case mb_else_stmt of
+				Nothing        -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( rest : rest2 )
+				Just else_stmt -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 		case recognizeAnnotation cond of
-			(real_cond,Just (n,num_reached)) | (num_reached `mod` n) /= 0 -> do
-				printLogV 1 $ "Recognized IF annoation to " ++ (render.pretty) real_cond ++ " and reached " ++ show num_reached ++ " times."
-				then_trace_m real_cond
+			(real_cond,Just (ns,num_reached)) -> do
+				printLogV 1 $ "Recognized IF annoation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond
+				case ns!!num_reached of
+					1 -> then_trace_m real_cond
+					2 -> else_trace_m real_cond
 			(real_cond,_) -> do
-				let else_trace_m = transids real_cond trace $ \ (cond',trace') -> do
-					let not_cond = Condition False (CUnary CNegOp cond' (nodeInfo cond'))
-					case mb_else_stmt of
-						Nothing        -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( rest : rest2 )
-						Just else_stmt -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
-{-
-				case conditions_reached `elem` sKIP_DECISIONS of
-					True -> do
-						printLogV 1 $ "Skipping decision " ++ show conditions_reached
-						then_trace_m real_cond
-					False -> do
--}
 				(if conditions_reached > 0 && conditions_reached `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
 					either_then <- then_trace_m real_cond
-					either_else <- else_trace_m
+					either_else <- else_trace_m real_cond
 					return $ case (either_then,either_else) of
 						(Left then_traces,Left else_traces) -> Left $ then_traces ++ else_traces
 						(Right then_success,Right else_success) -> case mb_ret_type of
@@ -742,7 +733,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
  		printLogV 1 msg
  		unroll_loopM $ case mb_unrolling_depth of
 			Nothing -> uNROLLING_STRATEGY --[0..mAX_UNROLLING_DEPTH]
-			Just n  -> [n]
+			Just ns  -> ns
 
 		where
 
@@ -765,13 +756,13 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 
 	where
 
-	recognizeAnnotation :: CExpr -> (CExpr,Maybe (Int,Int))
-	recognizeAnnotation (CBinary CLndOp (CBinary CEqOp
-		(CConst (CIntConst (CInteger i1 _ _) _))
-		(CConst (CIntConst (CInteger i2 _ _) _)) _) real_cond ni) | i1==i2 = (real_cond,Just (fromIntegral i1,num_reached)) where
+	recognizeAnnotation :: CExpr -> (CExpr,Maybe ([Int],Int))
+	recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond _) =
+		(real_cond,Just (map arg2int args,num_reached)) where
 			num_reached = length $ filter is_this_cond trace
 			is_this_cond (Condition _ c) | nodeInfo c == nodeInfo real_cond = True
 			is_this_cond _ = False
+			arg2int (CConst (CIntConst (CInteger i _ _) _)) = fromIntegral i
 	recognizeAnnotation real_cond = (real_cond,Nothing)
 
 	maybe_cutoff :: CovVecM UnfoldTracesRet -> CovVecM UnfoldTracesRet
@@ -796,10 +787,10 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 		is_condition (Condition _ _) = True
 		is_condition _ = False
 
-	infer_loopingsM :: CExpr -> CStat -> CovVecM (Maybe Int,String)
+	infer_loopingsM :: CExpr -> CStat -> CovVecM (Maybe [Int],String)
  	infer_loopingsM cond0 body = do
 		case recognizeAnnotation cond0 of
-			(real_cond,Just (n,_)) -> return (Just n,"Recognized LOOP annoation to " ++ (render.pretty) cond0)
+			(real_cond,Just (ns,_)) -> return (Just ns,"Recognized LOOP annoation to " ++ (render.pretty) cond0)
 			(real_cond,Nothing) -> do
 				translateExprM envs traceid real_cond >>= \case
 					[(cond,[])] -> do
@@ -864,7 +855,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 											modelpath
 										return $ case mb_sol of
 											Nothing                 -> (Nothing,"Found no solution for " ++ modelpath)
-											Just sol@[(_,IntVal n)] -> (Just n, "Found looping solution n = " ++ show sol)
+											Just sol@[(_,IntVal n)] -> (Just [n], "Found looping solution n = " ++ show sol)
 											_                       -> (Nothing,"n_looping: Strange mb_sol=" ++ show mb_sol)
 									ass -> return (Nothing,"infer_loopingsM: " ++ show ass ++ " is not assigning a constant.")
 							other -> return (Nothing,"body contains not exactly one assignment of a variable from the condition " ++ (render.pretty) cond ++ ":\n" ++
@@ -988,6 +979,7 @@ translateExprM envs traceid expr = do
 		to_call (CCast _ cexpr _) = return cexpr
 		to_call (CCall funexpr args ni) = case funexpr of
 			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
+			CVar (Ident "solver_pragma" _ _) _ -> return $ ⅈ 1
 			CVar funident _ -> do
 				modify ( (funident,args,ni): )
 				return $ CConst $ CStrConst undefined ni
@@ -1271,7 +1263,7 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 --				other -> myError $ "unSigned " ++ (render.pretty) expr1 ++ " " ++ (render.pretty) expr2 ++ " yielded " ++ show other
 
 		CCond cond (Just then_expr) else_expr _ ->
-			SExpr [ SLeaf "ite", expr2sexpr cur_ty then_expr, expr2sexpr cur_ty else_expr ]
+			SExpr [ SLeaf "ite", expr2sexpr cur_ty cond, expr2sexpr cur_ty then_expr, expr2sexpr cur_ty else_expr ]
 
 		CVar ident _ -> SLeaf $ (render.pretty) ident
 		CConst cconst -> SLeaf $ case cconst of
@@ -1291,11 +1283,10 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 			(unlines $ map (\(a,b) -> (render.pretty) a ++ " |-> " ++ (render.pretty) b) tyenv)
 		Just ty -> Just $ ty2Z3Type ty
 	infer_type (CConst _) = Nothing
+	infer_type (CCond cond (Just expr1) expr2 _) = case infer_type expr1 of
+		Nothing -> infer_type expr2
+		Just ty -> Just ty
 	infer_type (CUnary _ expr _) = infer_type expr
-{-
-	infer_type (CBinary binop expr1 expr2 _) | binop `elem` bool_result_ops =
-		Just $ ty2Z3Type $ DirectType (TyIntegral TyInt) noTypeQuals noAttributes
--}
 	-- Strictly speaking, the return type of boolean operators is "int", not the operands' type.
 	-- But we are avoiding the automatic casting back to the operands' type here...
 	infer_type expr@(CBinary _ expr1 expr2 _) = case [infer_type expr1, infer_type expr2] of
@@ -1350,6 +1341,7 @@ instance Show SolutionVal where
 
 makeAndSolveZ3ModelM :: TyEnv -> [CExpr] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpathfile = do
+	opts <- gets optsCVS
 --	printLog $ "tyenv=" ++ showTyEnv tyenv
 	printLogV 2 $ "output_idents = " ++ showIdents output_idents
 	let
@@ -1371,7 +1363,7 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 			outputvarsZ3
 		model_string = unlines $ map show model
 		model_string_linenumbers = unlines $ map (\ (i,l) -> show i ++ ": " ++ l) (zip [1..] (lines model_string))
---	liftIO $ writeFile modelpathfile model_string
+	when ("-writeModels" `elem` opts) $ liftIO $ writeFile modelpathfile model_string
 	printLogV 2 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
 	printStatsM
 	printLogV 1 $ "Running model " ++ takeFileName modelpathfile ++ "..."

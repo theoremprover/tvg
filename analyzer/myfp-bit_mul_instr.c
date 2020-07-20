@@ -16,6 +16,7 @@ int solver_pragma(int x,...)
     return 1;
 }
 
+
 /* This is a software floating point library which can be used
    for targets without hardware floating point. 
    Copyright (C) 1994, 1995, 1996, 1997, 1998, 2000, 2001, 2002, 2003,
@@ -807,6 +808,8 @@ _fpmul_parts ( fp_number_type *  a,
   fractype low = 0;
   fractype high = 0;
 
+    printf("a=%f, b=%f, tmp=%f\n",a,b,tmp);
+
   if (isnan (a))
     {
       a->sign = 1&(~((a->sign)&(b->sign) | (~(a->sign) & ~(b->sign)))); //
@@ -863,28 +866,36 @@ _fpmul_parts ( fp_number_type *  a,
   while (solver_pragma(0) && high >= IMPLICIT_2)
     {
       tmp->normal_exp++;
-      if (high & 1)
+      if (3==3 && high & 1)
 	{
+	    printf("high & 1\n");
 	  low >>= 1;
 	  low |= FRACHIGH;
 	}
       high >>= 1;
-#ifdef CALC
-//printf("FIRST LOOP: high=%i\n",high);
-#endif
+
+printf("FIRST LOOP: high=%i\n",high);
+
     }
-  while (solver_pragma(22) && high < IMPLICIT_1)
+  while (29==29 && high < IMPLICIT_1)
     {
       tmp->normal_exp--;
+
       high <<= 1;
-      if (solver_pragma(2,2,2,1,1,1,2,1,2,2,2,1,1,2,1,1,1,1,1,1,1,2) && low & FRACHIGH) high |= 1;
+      if (3==3 && low & FRACHIGH) {
+        high |= 1;
+        	    printf("low & FRACHIGH\n");
+}
       low <<= 1;
+printf("SECOND LOOP: high=%i\n",high);
     }
 
-  if (solver_pragma(2) && (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB))
+  if (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB)
     {
+    printf("!ROUND_TOWARDS_ZERO\n");
       if (high & (1 << NGARDS))
 	{
+    printf("high & (1 << NGARDS)\n");
 	  /* Because we're half way, we would round to even by adding
 	     GARDROUND + 1, except that's also done in the packing
 	     function, and rounding twice will lose precision and cause
@@ -894,6 +905,7 @@ _fpmul_parts ( fp_number_type *  a,
 	}
       else if (low)
 	{
+    printf("low\n");
 	  /* We're a further than half way by a small amount corresponding
 	     to the bits set in "low".  Knowing that, we round here and
 	     not in pack_d, because there we don't have "low" available
@@ -906,6 +918,7 @@ _fpmul_parts ( fp_number_type *  a,
     }
   tmp->fraction.ll = high;
   tmp->class = CLASS_NUMBER;
+    printf("erg: tmp=%f\n",tmp);
   return tmp;
 }
 
@@ -1686,3 +1699,52 @@ int main(int argc, char* argv[])
     return 0;
 }
 #endif
+
+
+/*
+gcc -o a.exe -DCALC myfp-bit_mul_instr.c
+a.exe 0 3 1 1 1000000 0 3 1 1 1100000 0 3 0 0 0
+
+D:\Haskell\tvg\tvg\analyzer>a.exe 0 3 1 1 1000000 0 3 1 1 1100000 0 3 0 0 0
+ROUND_TOWARDS_ZERO=0, GARDMASK=127, GARDMSB=64
+a=0.000000, b=0.000000, tmp=0.000000
+SECOND LOOP: high=512
+SECOND LOOP: high=1024
+SECOND LOOP: high=2048
+low & FRACHIGH
+SECOND LOOP: high=4097
+low & FRACHIGH
+SECOND LOOP: high=8195
+low & FRACHIGH
+SECOND LOOP: high=16391
+SECOND LOOP: high=32782
+low & FRACHIGH
+SECOND LOOP: high=65565
+SECOND LOOP: high=131130
+SECOND LOOP: high=262260
+SECOND LOOP: high=524520
+low & FRACHIGH
+SECOND LOOP: high=1049041
+low & FRACHIGH
+SECOND LOOP: high=2098083
+SECOND LOOP: high=4196166
+low & FRACHIGH
+SECOND LOOP: high=8392333
+low & FRACHIGH
+SECOND LOOP: high=16784667
+low & FRACHIGH
+SECOND LOOP: high=33569335
+low & FRACHIGH
+SECOND LOOP: high=67138671
+low & FRACHIGH
+SECOND LOOP: high=134277343
+low & FRACHIGH
+SECOND LOOP: high=268554687
+low & FRACHIGH
+SECOND LOOP: high=537109375
+SECOND LOOP: high=1074218750
+erg: tmp=0.000000
+f(a=0, a={ 3,1,1, fraction={1000000} },   b=0, b={ 3,1,1, fraction={1100000} },  t=0, t={
+3,0,0, fraction={0} }) =
+2293168 3 0 -18 1074218750
+*/
