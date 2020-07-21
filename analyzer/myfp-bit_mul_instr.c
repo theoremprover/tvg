@@ -882,8 +882,9 @@ printf("FIRST LOOP: high=%i\n",high);
       tmp->normal_exp--;
 
       high <<= 1;
-      if (3==3 && low & FRACHIGH) {
+      if (low & FRACHIGH) {
         high |= 1;
+        printf("low & FRACHIGH\n");
 }
       low <<= 1;
 printf("SECOND LOOP: high=%i\n",high);
@@ -1745,30 +1746,30 @@ _fpmul_parts ( a = 0 , a_ARROW_class = 3 , a_ARROW_sign = 0 , a_ARROW_normal_exp
 
 
 
-D:\Haskell\tvg\tvg\analyzer>my1.exe 0 3 0 0 1 0 3 0 0 488372224 0 0 0 0 0
+D:\Haskell\tvg\tvg\analyzer>m1.exe 0 3 0 0 1 0 3 0 0 488372224 0 0 0 0 0
 ROUND_TOWARDS_ZERO=0, GARDMASK=127, GARDMSB=64
 a=0.000000, b=0.000000, tmp=0.000000
 SECOND LOOP: high=0
 SECOND LOOP: high=0
 SECOND LOOP: high=0
-SECOND LOOP: high=1
-SECOND LOOP: high=3
-SECOND LOOP: high=7
+low & FRACHIGH
+low & FRACHIGH
+low & FRACHIGH
 SECOND LOOP: high=14
-SECOND LOOP: high=29
+low & FRACHIGH
 SECOND LOOP: high=58
 SECOND LOOP: high=116
 SECOND LOOP: high=232
-SECOND LOOP: high=465
-SECOND LOOP: high=931
+low & FRACHIGH
+low & FRACHIGH
 SECOND LOOP: high=1862
-SECOND LOOP: high=3725
-SECOND LOOP: high=7451
-SECOND LOOP: high=14903
-SECOND LOOP: high=29807
-SECOND LOOP: high=59615
-SECOND LOOP: high=119231
-SECOND LOOP: high=238463
+low & FRACHIGH
+low & FRACHIGH
+low & FRACHIGH
+low & FRACHIGH
+low & FRACHIGH
+low & FRACHIGH
+low & FRACHIGH
 SECOND LOOP: high=476926
 SECOND LOOP: high=953852
 SECOND LOOP: high=1907704
