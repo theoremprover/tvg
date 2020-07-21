@@ -749,8 +749,8 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 					r -> return r
 
 		unroll :: CExpr -> Int -> [CBlockItem]
-		unroll while_cond n = concat ( replicate n [ CBlockStmt (CGotoPtr while_cond undefNode), CBlockStmt body ] ) ++
-			[ CBlockStmt $ CGotoPtr (not_c while_cond) undefNode ]
+		unroll while_cond n = --[ CBlockStmt $ CGotoPtr (not_c while_cond) undefNode ] ++
+			concat ( replicate n [ CBlockStmt body, CBlockStmt (CGotoPtr while_cond undefNode) ] )
 
 	_ -> myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 

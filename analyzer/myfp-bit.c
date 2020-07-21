@@ -801,19 +801,19 @@ _fpmul_parts ( fp_number_type *  a,
 
   if (isnan (a))
     {
-      a->sign = 1&(~((a->sign)&(b->sign) | (~(a->sign) & ~(b->sign)))); //
+      a->sign = a->sign != b->sign;
       return a;
     }
   if (isnan (b))
     {
-      b->sign = 1&(~((a->sign)&(b->sign) | (~(a->sign) & ~(b->sign)))); //
+      b->sign = a->sign != b->sign;
       return b;
     }
   if (isinf (a))
     {
       if (iszero (b))
 	return nan ();
-      a->sign = 1&(~((a->sign)&(b->sign) | (~(a->sign) & ~(b->sign)))); //
+      a->sign = a->sign != b->sign;
       return a;
     }
   if (isinf (b))
@@ -822,17 +822,17 @@ _fpmul_parts ( fp_number_type *  a,
 	{
 	  return nan ();
 	}
-      b->sign = 1&(~((a->sign)&(b->sign) | (~(a->sign) & ~(b->sign)))); //
+      b->sign = a->sign != b->sign;
       return b;
     }
   if (iszero (a))
     {
-      a->sign = 1&(~((a->sign)&(b->sign) | (~(a->sign) & ~(b->sign)))); //a->sign != b->sign;
+      a->sign = a->sign != b->sign;
       return a;
     }
   if (iszero (b))
     {
-      b->sign = 1&(~((a->sign)&(b->sign) | (~(a->sign) & ~(b->sign)))); // a->sign != b->sign;
+      b->sign = a->sign != b->sign;
       return b;
     }
 
