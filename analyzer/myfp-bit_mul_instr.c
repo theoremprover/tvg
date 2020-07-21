@@ -812,19 +812,19 @@ _fpmul_parts ( fp_number_type *  a,
 
   if (isnan (a))
     {
-      a->sign = 1&(~((a->sign)&(b->sign) | (~(a->sign) & ~(b->sign)))); //
+      a->sign = a->sign != b->sign;
       return a;
     }
   if (isnan (b))
     {
-      b->sign = 1&(~((a->sign)&(b->sign) | (~(a->sign) & ~(b->sign)))); //
+      b->sign = a->sign != b->sign;
       return b;
     }
   if (isinf (a))
     {
       if (iszero (b))
 	return nan ();
-      a->sign = 1&(~((a->sign)&(b->sign) | (~(a->sign) & ~(b->sign)))); //
+      a->sign = a->sign != b->sign;
       return a;
     }
   if (isinf (b))
@@ -833,17 +833,17 @@ _fpmul_parts ( fp_number_type *  a,
 	{
 	  return nan ();
 	}
-      b->sign = 1&(~((a->sign)&(b->sign) | (~(a->sign) & ~(b->sign)))); //
+      b->sign = a->sign != b->sign;
       return b;
     }
   if (iszero (a))
     {
-      a->sign = 1&(~((a->sign)&(b->sign) | (~(a->sign) & ~(b->sign)))); //a->sign != b->sign;
+      a->sign = a->sign != b->sign;
       return a;
     }
   if (iszero (b))
     {
-      b->sign = 1&(~((a->sign)&(b->sign) | (~(a->sign) & ~(b->sign)))); // a->sign != b->sign;
+      b->sign = a->sign != b->sign;
       return b;
     }
 
@@ -863,10 +863,10 @@ _fpmul_parts ( fp_number_type *  a,
   tmp->normal_exp = a->normal_exp + b->normal_exp
     + FRAC_NBITS - (FRACBITS + NGARDS);
   tmp->sign = a->sign != b->sign ;
-  while (solver_pragma(0) && high >= IMPLICIT_2)
+  while (high >= IMPLICIT_2)
     {
       tmp->normal_exp++;
-      if (3==3 && high & 1)
+      if (high & 1)
 	{
 	    printf("high & 1\n");
 	  low >>= 1;
@@ -884,7 +884,6 @@ printf("FIRST LOOP: high=%i\n",high);
       high <<= 1;
       if (3==3 && low & FRACHIGH) {
         high |= 1;
-        	    printf("low & FRACHIGH\n");
 }
       low <<= 1;
 printf("SECOND LOOP: high=%i\n",high);
@@ -1705,46 +1704,86 @@ int main(int argc, char* argv[])
 gcc -o a.exe -DCALC myfp-bit_mul_instr.c
 a.exe 0 3 1 1 1000000 0 3 1 1 1100000 0 3 0 0 0
 
-D:\Haskell\tvg\tvg\analyzer>a.exe 0 3 1 1 1000000 0 3 1 1 1100000 0 3 0 0 0
+--- TRACE [2,2,2,2,2,2,0,22,2,2,2,1,1,1,2,1,2,2,2,1,1,2,1,1,1,1,1,1,1,2,2] ----------------------
+[("a",0),("a_ARROW_class",3),("a_ARROW_sign",0),("a_ARROW_normal_exp",0),
+("a_ARROW_fraction_DOT_ll",1),("b",0),("b_ARROW_class",3),
+("b_ARROW_sign",0),
+("b_ARROW_normal_exp",0),("b_ARROW_fraction_DOT_ll",488372224),
+("tmp",0),("tmp_ARROW_class",0),("tmp_ARROW_sign",0),
+("tmp_ARROW_normal_exp",0),("tmp_ARROW_fraction_DOT_ll",0),
+("return_val",0),
+("return_val_ARROW_class",3),("return_val_ARROW_sign",0),
+("return_val_ARROW_normal_exp",-20),
+("return_val_ARROW_fraction_DOT_ll",476926),
+
+
+("solver_debug_high_2_1",0),
+("solver_debug_high_2_2",0),
+("solver_debug_high_2_3",0),
+("solver_debug_high_2_4",1),
+("solver_debug_high_2_5",3),
+("solver_debug_high_2_6",7),
+("solver_debug_high_2_7",14),
+("solver_debug_high_2_8",29),
+("solver_debug_high_2_9",58),
+("solver_debug_high_2_10",116),
+("solver_debug_high_2_11",232),
+("solver_debug_high_2_12",465),
+("solver_debug_high_2_13",931),
+("solver_debug_high_2_14",1862),
+("solver_debug_high_2_15",3725),
+("solver_debug_high_2_16",7451),
+("solver_debug_high_2_17",14903),
+("solver_debug_high_2_18",29807),
+("solver_debug_high_2_19",59615),
+("solver_debug_high_2_20",119231),
+("solver_debug_high_2_21",238463),
+("solver_debug_high_2_22",476926)]
+
+_fpmul_parts ( a = 0 , a_ARROW_class = 3 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_ll = 1 , b = 0 , b_ARROW_class = 3 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_ll = 488372224 , tmp = 0 , tmp_ARROW_class = 0 , tmp_ARROW_sign = 0 , tmp_ARROW_normal_exp = 0 , tmp_ARROW_fraction_DOT_ll = 0 )
+    = return_val = 0 , return_val_ARROW_class = 3 , return_val_ARROW_sign = 0 , return_val_ARROW_normal_exp = -20 , return_val_ARROW_fraction_DOT_ll = 476926
+
+
+
+D:\Haskell\tvg\tvg\analyzer>my1.exe 0 3 0 0 1 0 3 0 0 488372224 0 0 0 0 0
 ROUND_TOWARDS_ZERO=0, GARDMASK=127, GARDMSB=64
 a=0.000000, b=0.000000, tmp=0.000000
-SECOND LOOP: high=512
-SECOND LOOP: high=1024
-SECOND LOOP: high=2048
-low & FRACHIGH
-SECOND LOOP: high=4097
-low & FRACHIGH
-SECOND LOOP: high=8195
-low & FRACHIGH
-SECOND LOOP: high=16391
-SECOND LOOP: high=32782
-low & FRACHIGH
-SECOND LOOP: high=65565
-SECOND LOOP: high=131130
-SECOND LOOP: high=262260
-SECOND LOOP: high=524520
-low & FRACHIGH
-SECOND LOOP: high=1049041
-low & FRACHIGH
-SECOND LOOP: high=2098083
-SECOND LOOP: high=4196166
-low & FRACHIGH
-SECOND LOOP: high=8392333
-low & FRACHIGH
-SECOND LOOP: high=16784667
-low & FRACHIGH
-SECOND LOOP: high=33569335
-low & FRACHIGH
-SECOND LOOP: high=67138671
-low & FRACHIGH
-SECOND LOOP: high=134277343
-low & FRACHIGH
-SECOND LOOP: high=268554687
-low & FRACHIGH
-SECOND LOOP: high=537109375
-SECOND LOOP: high=1074218750
+SECOND LOOP: high=0
+SECOND LOOP: high=0
+SECOND LOOP: high=0
+SECOND LOOP: high=1
+SECOND LOOP: high=3
+SECOND LOOP: high=7
+SECOND LOOP: high=14
+SECOND LOOP: high=29
+SECOND LOOP: high=58
+SECOND LOOP: high=116
+SECOND LOOP: high=232
+SECOND LOOP: high=465
+SECOND LOOP: high=931
+SECOND LOOP: high=1862
+SECOND LOOP: high=3725
+SECOND LOOP: high=7451
+SECOND LOOP: high=14903
+SECOND LOOP: high=29807
+SECOND LOOP: high=59615
+SECOND LOOP: high=119231
+SECOND LOOP: high=238463
+SECOND LOOP: high=476926
+SECOND LOOP: high=953852
+SECOND LOOP: high=1907704
+SECOND LOOP: high=3815408
+SECOND LOOP: high=7630816
+SECOND LOOP: high=15261632
+SECOND LOOP: high=30523264
+SECOND LOOP: high=61046528
+SECOND LOOP: high=122093056
+SECOND LOOP: high=244186112
+SECOND LOOP: high=488372224
+SECOND LOOP: high=976744448
+SECOND LOOP: high=1953488896
 erg: tmp=0.000000
-f(a=0, a={ 3,1,1, fraction={1000000} },   b=0, b={ 3,1,1, fraction={1100000} },  t=0, t={
-3,0,0, fraction={0} }) =
-2293168 3 0 -18 1074218750
+f(a=0, a={ 3,0,0, fraction={1} },   b=0, b={ 3,0,0, fraction={488372224} },  t=0, t={ 0,0,
+0, fraction={0} }) =
+2293168 3 0 -32 1953488896
 */

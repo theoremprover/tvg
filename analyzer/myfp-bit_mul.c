@@ -15,6 +15,9 @@ int solver_pragma(int x,...)
 {
     return 1;
 }
+void solver_debug(void* x)
+{
+}
 
 /* This is a software floating point library which can be used
    for targets without hardware floating point. 
@@ -876,6 +879,7 @@ _fpmul_parts ( fp_number_type *  a,
       high <<= 1;
       if (solver_pragma(2,2,2,1,1,1,2,1,2,2,2,1,1,2,1,1,1,1,1,1,1,2) && low & FRACHIGH) high |= 1;
       low <<= 1;
+      solver_debug(high);
     }
 
   if (solver_pragma(2) && (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB))

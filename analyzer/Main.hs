@@ -238,7 +238,8 @@ data TraceElem =
 	Assignment CExpr CExpr |
 	Condition Bool CExpr |
 	NewDeclaration (Ident,Type) |
-	Return CExpr
+	Return CExpr |
+	DebugOutput String (CExpr,Type)
 	deriving Data
 
 data Branch = Then Location | Else Location
@@ -252,6 +253,7 @@ instance CNode TraceElem where
 	nodeInfo (Condition _ expr)         = nodeInfo expr
 	nodeInfo (NewDeclaration (ident,_)) = nodeInfo ident
 	nodeInfo (Return expr)              = nodeInfo expr
+	nodeInfo (DebugOutput _ _)          = undefNode
 
 instance Pretty NodeInfo where
 	pretty ni = text $ "line " ++ show line ++ ", col " ++ show col
@@ -267,6 +269,7 @@ instance Show TraceElem where
 		(Condition b expr)         -> "COND " ++ (if b then "(THEN) " else "(ELSE) ") ++ (render.pretty) expr
 		(NewDeclaration (lval,ty)) -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
 		(Return exprs)             -> "RET  " ++ (render.pretty) exprs
+		(DebugOutput varname (expr,_)) -> "DBGOUT " ++ varname ++ " " ++ (render.pretty) expr
 		) ++ "  (" ++ (render.pretty) (nodeInfo te) ++ ")"
 
 showTrace :: Trace -> String
@@ -701,6 +704,11 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 					analyzeTraceM (Just ret_type) traceid (Return ret_expr' : (ret_trace ++ trace'))
 						>>= return.Right
 
+	CExpr (Just (CCall (CVar (Ident "solver_debug" _ _) _) args ni)) _ -> do
+		let vars = for args $ \ (CVar ident _) -> fromJust $ lookup ident (concat envs)
+		unfoldTracesM mb_ret_type break_stack envs traceid (map to_dbg_output (reverse vars) ++ trace) (rest:rest2) where
+			to_dbg_output (name_id,ty) = DebugOutput ("solver_debug_" ++ identToString name_id) (CVar name_id undefNode,ty)
+
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
 			transids lexpr trace' $ \ (lexpr',trace'') -> do
@@ -733,7 +741,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
  		printLogV 1 msg
  		unroll_loopM $ case mb_unrolling_depth of
 			Nothing -> uNROLLING_STRATEGY --[0..mAX_UNROLLING_DEPTH]
-			Just ns  -> ns
+			Just ns -> ns
 
 		where
 
@@ -1410,13 +1418,19 @@ solveTraceM mb_ret_type traceid trace = do
 		constraints = concatMap traceitem2constr trace where
 		traceitem2constr (Condition _ expr) = [expr]
 		traceitem2constr _ = []
-		tyenv = createTyEnv trace
+		debug_outputs = concatMap is_debug_output trace where
+			is_debug_output (DebugOutput name (expr,ty)) = [(name,expr,ty)]
+			is_debug_output _ = []
+		(debug_idents,debug_constraints,debug_tyenv) = unzip3 $ for (zip [1..] debug_outputs) $ \ (i,(name,expr,ty)) ->
+			let name_id = internalIdent (name ++ "_" ++ show i) in (name_id,CVar name_id undefNode ⩵ expr,(name_id,ty))
+
+		tyenv = createTyEnv trace ++ debug_tyenv
 
 	(model_string,mb_sol) <- makeAndSolveZ3ModelM
 		tyenv
-		constraints
+		(constraints ++ debug_constraints)
 		(for param_names $ \ name -> SExpr [SLeaf "minimize",SLeaf (identToString name)])
-		(param_names ++ ret_names)
+		(param_names ++ ret_names ++ debug_idents)
 		(analyzerPath </> "models" </> "model_" ++ tracename ++ ".smtlib2")
 
 	return $ case mb_ret_type of
