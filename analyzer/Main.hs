@@ -71,7 +71,7 @@ floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
 cutOffs = False
-logToFile = False
+logToFile = True
 
 mAX_UNROLLS = 30
 uNROLLING_STRATEGY = [mAX_UNROLLS,(mAX_UNROLLS-1)..0]
@@ -101,7 +101,7 @@ showLine trace = unlines $ map show (filter isnotbuiltin trace)
 
 show_solution _ Nothing = "No solution"
 show_solution _ (Just (_,_,[])) = "Empty solution"
-show_solution funname (Just v@(_,_,solution)) = unlines [ show solution, showTestVector funname v ]
+show_solution funname (Just v@(_,_,solution)) = unlines $ map show solution ++ [ showTestVector funname v ]
 
 main :: IO ()
 main = do
@@ -757,7 +757,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 					r -> return r
 
 		unroll :: CExpr -> Int -> [CBlockItem]
-		unroll while_cond n = --[ CBlockStmt $ CGotoPtr (not_c while_cond) undefNode ] ++
+		unroll while_cond n = [ CBlockStmt $ CGotoPtr (not_c while_cond) undefNode ] ++
 			concat ( replicate n [ CBlockStmt body, CBlockStmt (CGotoPtr while_cond undefNode) ] )
 
 	_ -> myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"

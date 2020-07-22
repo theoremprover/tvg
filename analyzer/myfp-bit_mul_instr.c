@@ -807,6 +807,7 @@ _fpmul_parts ( fp_number_type *  a,
 {
   fractype low = 0;
   fractype high = 0;
+  int c=0;
 
     printf("a=%f, b=%f, tmp=%f\n",a,b,tmp);
 
@@ -877,8 +878,9 @@ _fpmul_parts ( fp_number_type *  a,
 printf("FIRST LOOP: high=%i\n",high);
 
     }
-  while (29==29 && high < IMPLICIT_1)
+  while (high < IMPLICIT_1)
     {
+    c++;
       tmp->normal_exp--;
 
       high <<= 1;
@@ -887,7 +889,7 @@ printf("FIRST LOOP: high=%i\n",high);
         printf("low & FRACHIGH\n");
 }
       low <<= 1;
-printf("SECOND LOOP: high=%i\n",high);
+printf("SECOND LOOP %i: high=%i\n",c,high);
     }
 
   if (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB)
@@ -1662,10 +1664,11 @@ tf_to_sf (TFtype arg_a)
 #ifdef CALC
 int main(int argc, char* argv[])
 {
-    //printf("IMPLICIT_1=%i\n",IMPLICIT_1);
-    //printf("FRACBITS=%i, NGARDS=%i\n",FRACBITS,NGARDS);
-    // FRACBITS=23, NGARDS=7
-    printf("ROUND_TOWARDS_ZERO=%i, GARDMASK=%i, GARDMSB=%i\n",ROUND_TOWARDS_ZERO,GARDMASK,GARDMSB);
+    printf("FRACBITS=%i, NGARDS=%i\n",FRACBITS,NGARDS);
+    printf("ROUND_TOWARDS_ZERO=%i, GARDMASK=%i, GARDMSB=%i, IMPLICIT_1=%x, IMPLICIT2=%x\n",
+        ROUND_TOWARDS_ZERO,GARDMASK,GARDMSB,IMPLICIT_1,IMPLICIT_2);
+    printf("sizeof(int)=%i, sizeof(fractype)=%i, sizeof(unsigned int)=%i\n",
+        sizeof(int),sizeof(fractype),sizeof(unsigned int));
 
     int i = 1 ;
     int arga0 = atoi(argv[i++]); // a
@@ -1705,44 +1708,49 @@ int main(int argc, char* argv[])
 gcc -o a.exe -DCALC myfp-bit_mul_instr.c
 a.exe 0 3 1 1 1000000 0 3 1 1 1100000 0 3 0 0 0
 
+Recognized LOOP annoation to solver_pragma(0) && high >= (fractype) 1 << 23 + 1 + 7L
+unroll_loopM 0
+Recognized LOOP annoation to solver_pragma(22) && high < (fractype) 1 << 23 + 7L
+unroll_loopM 22
+Recognized IF annoation 2 to low & 0x80000000L
+Recognized IF annoation 2 to low & 0x80000000L
+Recognized IF annoation 2 to low & 0x80000000L
+Recognized IF annoation 1 to low & 0x80000000L
+Recognized IF annoation 1 to low & 0x80000000L
+Recognized IF annoation 1 to low & 0x80000000L
+Recognized IF annoation 2 to low & 0x80000000L
+Recognized IF annoation 1 to low & 0x80000000L
+Recognized IF annoation 2 to low & 0x80000000L
+Recognized IF annoation 2 to low & 0x80000000L
+Recognized IF annoation 2 to low & 0x80000000L
+Recognized IF annoation 1 to low & 0x80000000L
+Recognized IF annoation 1 to low & 0x80000000L
+Recognized IF annoation 2 to low & 0x80000000L
+Recognized IF annoation 1 to low & 0x80000000L
+Recognized IF annoation 1 to low & 0x80000000L
+Recognized IF annoation 1 to low & 0x80000000L
+Recognized IF annoation 1 to low & 0x80000000L
+Recognized IF annoation 1 to low & 0x80000000L
+Recognized IF annoation 1 to low & 0x80000000L
+Recognized IF annoation 1 to low & 0x80000000L
+Recognized IF annoation 2 to low & 0x80000000L
+Recognized IF annoation 2 to !0 && (high & 0x7f) == 0x40
+Stats {cutoffTries = 0, cutoffsS = 0}
+Running model model_[2,2,2,2,2,2,0,22,2,2,2,1,1,1,2,1,2,2,2,1,1,2,1,1,1,1,1,1,1,2,2].smtlib2...
 --- TRACE [2,2,2,2,2,2,0,22,2,2,2,1,1,1,2,1,2,2,2,1,1,2,1,1,1,1,1,1,1,2,2] ----------------------
-[("a",0),("a_ARROW_class",3),("a_ARROW_sign",0),("a_ARROW_normal_exp",0),
-("a_ARROW_fraction_DOT_ll",1),("b",0),("b_ARROW_class",3),
-("b_ARROW_sign",0),
-("b_ARROW_normal_exp",0),("b_ARROW_fraction_DOT_ll",488372224),
-("tmp",0),("tmp_ARROW_class",0),("tmp_ARROW_sign",0),
-("tmp_ARROW_normal_exp",0),("tmp_ARROW_fraction_DOT_ll",0),
-("return_val",0),
-("return_val_ARROW_class",3),("return_val_ARROW_sign",0),
-("return_val_ARROW_normal_exp",-20),
-("return_val_ARROW_fraction_DOT_ll",476926),
-
-
-("solver_debug_high_2_1",0),
-("solver_debug_high_2_2",0),
-("solver_debug_high_2_3",0),
-("solver_debug_high_2_4",1),
-("solver_debug_high_2_5",3),
-("solver_debug_high_2_6",7),
-("solver_debug_high_2_7",14),
-("solver_debug_high_2_8",29),
-("solver_debug_high_2_9",58),
-("solver_debug_high_2_10",116),
-("solver_debug_high_2_11",232),
-("solver_debug_high_2_12",465),
-("solver_debug_high_2_13",931),
-("solver_debug_high_2_14",1862),
-("solver_debug_high_2_15",3725),
-("solver_debug_high_2_16",7451),
-("solver_debug_high_2_17",14903),
-("solver_debug_high_2_18",29807),
-("solver_debug_high_2_19",59615),
-("solver_debug_high_2_20",119231),
-("solver_debug_high_2_21",238463),
-("solver_debug_high_2_22",476926)]
-
+[("a",0),("a_ARROW_class",3),("a_ARROW_sign",0),("a_ARROW_normal_exp",0),("a_ARROW_fraction_DOT_ll",1),("b",0),("b_ARROW_class",3),("b_ARROW_sign",0),("b_ARROW_normal_exp",0),("b_ARROW_fraction_DOT_ll",488372224),("tmp",0),("tmp_ARROW_class",0),("tmp_ARROW_sign",0),("tmp_ARROW_normal_exp",0),("tmp_ARROW_fraction_DOT_ll",0),("return_val",0),("return_val_ARROW_class",3),("return_val_ARROW_sign",0),("return_val_ARROW_normal_exp",-20),("return_val_ARROW_fraction_DOT_ll",476926),("solver_debug_high_2_1",0),("solver_debug_high_2_2",0),("solver_debug_high_2_3",0),("solver_debug_high_2_4",1),("solver_debug_high_2_5",3),("solver_debug_high_2_6",7),("solver_debug_high_2_7",14),("solver_debug_high_2_8",29),("solver_debug_high_2_9",58),("solver_debug_high_2_10",116),("solver_debug_high_2_11",232),("solver_debug_high_2_12",465),("solver_debug_high_2_13",931),("solver_debug_high_2_14",1862),("solver_debug_high_2_15",3725),("solver_debug_high_2_16",7451),("solver_debug_high_2_17",14903),("solver_debug_high_2_18",29807),("solver_debug_high_2_19",59615),("solver_debug_high_2_20",119231),("solver_debug_high_2_21",238463),("solver_debug_high_2_22",476926)]
 _fpmul_parts ( a = 0 , a_ARROW_class = 3 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_ll = 1 , b = 0 , b_ARROW_class = 3 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_ll = 488372224 , tmp = 0 , tmp_ARROW_class = 0 , tmp_ARROW_sign = 0 , tmp_ARROW_normal_exp = 0 , tmp_ARROW_fraction_DOT_ll = 0 )
     = return_val = 0 , return_val_ARROW_class = 3 , return_val_ARROW_sign = 0 , return_val_ARROW_normal_exp = -20 , return_val_ARROW_fraction_DOT_ll = 476926
+
+
+ERROR in [2,2,2,2,2,2,0,22,2,2,2,1,1,1,2,1,2,2,2,1,1,2,1,1,1,1,1,1,1,2,2] for return_val_ARROW_normal_exp : exec_val=-32 /= predicted_result=-20
+analyzer-exe.EXE: ERROR in [2,2,2,2,2,2,0,22,2,2,2,1,1,1,2,1,2,2,2,1,1,2,1,1,1,1,1,1,1,2,2] for return_val_ARROW_normal_exp : exec_val=-32 /= predicted_result=-20
+CallStack (from HasCallStack):
+  error, called at analyzer\Main.hs:97:9 in main:Main
+Received ExitFailure 1 when running
+Raw command: "D:\\Haskell\\tvg\\tvg\\.stack-work\\install\\1d314db0\\bin\\analyzer-exe.EXE"
+
+
 
 
 
