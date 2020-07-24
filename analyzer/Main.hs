@@ -146,7 +146,8 @@ main = do
 							CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc opts
 								Nothing ([],Set.empty) Set.empty intialStats
 						let
-							(testvectors,covered) = analysisStateCVS s
+							(testvectors_rev,covered) = analysisStateCVS s
+							testvectors = reverse testvectors_rev
 							alls = allCondPointsCVS s
 	
 						printLog ""
