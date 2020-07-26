@@ -1,6 +1,5 @@
 #ifdef CALC
 #include <stdio.h>
-#include <stdlib.h>
 #endif
 
 #define FLOAT_ONLY
@@ -810,6 +809,9 @@ _fpmul_parts ( fp_number_type *  a,
   fractype low = 0;
   fractype high = 0;
 
+//    a->fraction.ll = -727379968;
+//    b->fraction.ll = 1100000000;
+
   if (isnan (a))
     {
       a->sign = a->sign != b->sign;
@@ -873,11 +875,11 @@ _fpmul_parts ( fp_number_type *  a,
 	}
       high >>= 1;
     }
-  while (solver_pragma(22) && high < IMPLICIT_1)
+  while (solver_pragma(1) && high < IMPLICIT_1)
     {
       tmp->normal_exp--;
       high <<= 1;
-      if (solver_pragma(2,2,2,1,1,1,2,1,2,2,2,1,1,2,1,1,1,1,1,1,1,2) && low & FRACHIGH) high |= 1;
+      if (solver_pragma(2) && low & FRACHIGH) high |= 1;
       low <<= 1;
       solver_debug(high);
     }
@@ -1656,30 +1658,31 @@ int main(int argc, char* argv[])
     printf("ROUND_TOWARDS_ZERO=%i, GARDMASK=%i, GARDMSB=%i\n",ROUND_TOWARDS_ZERO,GARDMASK,GARDMSB);
 
     int i = 1 ;
-    int arga0 = atoi(argv[i++]); // a
-    int arga1 = atoi(argv[i++]); // fp_class_type class;
-    int arga2 = atoi(argv[i++]); // unsigned int sign;
-    int arga3 = atoi(argv[i++]); // int normal_exp;
-    int arga4 = atoi(argv[i++]); // fractype ll; }
 
-    int argb0 = atoi(argv[i++]); // b
-    int argb1 = atoi(argv[i++]); // fp_class_type class;
-    int argb2 = atoi(argv[i++]); // unsigned int sign;
-    int argb3 = atoi(argv[i++]); // int normal_exp;
-    int argb4 = atoi(argv[i++]); // fractype ll; }
+    struct fp_number_type * arga0; sscanf(argv[i++],"%p",&arga0); // a
+    int arga1; sscanf(argv[i++],"%i",&arga1); // fp_class_type class;
+    unsigned int arga2; sscanf(argv[i++],"%u",&arga2); // unsigned int sign;
+    int arga3; sscanf(argv[i++],"%i",&arga3); // int normal_exp;
+    unsigned int arga4; sscanf(argv[i++],"%u",&arga4); // fractype ll; }
 
-    int argt0 = atoi(argv[i++]); // t
-    int argt1 = atoi(argv[i++]); // fp_class_type class;
-    int argt2 = atoi(argv[i++]); // unsigned int sign;
-    int argt3 = atoi(argv[i++]); // int normal_exp;
-    int argt4 = atoi(argv[i++]); // fractype ll; }
+    struct fp_number_type * argb0; sscanf(argv[i++],"%p",&argb0); // a
+    int argb1; sscanf(argv[i++],"%i",&argb1); // fp_class_type class;
+    unsigned int argb2; sscanf(argv[i++],"%u",&argb2); // unsigned int sign;
+    int argb3; sscanf(argv[i++],"%i",&argb3); // int normal_exp;
+    unsigned int argb4; sscanf(argv[i++],"%u",&argb4); // fractype ll; }
+
+    struct fp_number_type * argt0; sscanf(argv[i++],"%p",&argt0); // a
+    int argt1; sscanf(argv[i++],"%i",&argt1); // fp_class_type class;
+    unsigned int argt2; sscanf(argv[i++],"%u",&argt2); // unsigned int sign;
+    int argt3; sscanf(argv[i++],"%i",&argt3); // int normal_exp;
+    unsigned int argt4; sscanf(argv[i++],"%u",&argt4); // fractype ll; }
 
     fp_number_type a = { arga1, arga2, arga3, { arga4 } };
     fp_number_type b = { argb1, argb2, argb3, { argb4 } };
     fp_number_type t = { argt1, argt2, argt3, { argt4 } };
 
     fp_number_type* r = _fpmul_parts(&a,&b,&t);
-    printf("f(a=%i, a={ %i,%i,%i, fraction={%i} },   b=%i, b={ %i,%i,%i, fraction={%i} },  t=%i, t={ %i,%i,%i, fraction={%i} }) =\n%i %i %i %i %i\n",
+    printf("f(a=%p, a={ %i,%u,%i, fraction={%u} },   b=%p, b={ %i,%u,%i, fraction={%u} },  t=%p, t={ %i,%u,%i, fraction={%u} }) =\n%p %i %u %i %u\n",
         arga0,arga1,arga2,arga3,arga4,
         argb0,argb1,argb2,argb3,argb4,
         argt0,argt1,argt2,argt3,argt4,

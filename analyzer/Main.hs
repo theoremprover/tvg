@@ -333,7 +333,8 @@ covVectorsM = do
 		absolute_filename <- liftIO $ makeAbsolute filename
 		gcc <- gets compilerCVS
 		(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
-			readProcessWithExitCode gcc ["-Wno-builtin-declaration-mismatch","-o",chkexefilename,"-DCALC",srcfilename] ""
+			readProcessWithExitCode gcc ["-Wno-builtin-declaration-mismatch","-Wno-int-conversion","-o",
+				chkexefilename,"-DCALC",srcfilename] ""
 		case exitcode of
 			ExitFailure _ -> myError $ "Compilation failed:\n" ++ stderr
 			ExitSuccess -> modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
@@ -672,7 +673,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 				Just else_stmt -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 		case recognizeAnnotation cond of
 			(real_cond,Just (ns,num_reached)) -> do
-				printLogV 1 $ "Recognized IF annoation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond
+				printLogV 1 $ "Recognized IF annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond
 				case ns!!num_reached of
 					1 -> then_trace_m real_cond
 					2 -> else_trace_m real_cond

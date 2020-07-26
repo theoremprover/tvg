@@ -1,6 +1,5 @@
 #ifdef CALC
 #include <stdio.h>
-#include <stdlib.h>
 #endif
 
 #define FLOAT_ONLY
@@ -1667,34 +1666,35 @@ int main(int argc, char* argv[])
     printf("FRACBITS=%i, NGARDS=%i\n",FRACBITS,NGARDS);
     printf("ROUND_TOWARDS_ZERO=%i, GARDMASK=%i, GARDMSB=%i, IMPLICIT_1=%x, IMPLICIT2=%x\n",
         ROUND_TOWARDS_ZERO,GARDMASK,GARDMSB,IMPLICIT_1,IMPLICIT_2);
-    printf("sizeof(int)=%i, sizeof(fractype)=%i, sizeof(unsigned int)=%i\n",
-        sizeof(int),sizeof(fractype),sizeof(unsigned int));
+    printf("sizeof(int)=%i, sizeof(fractype)=%i, sizeof(UDItype)=%i\n",
+        sizeof(int),sizeof(fractype),sizeof(UDItype));
 
     int i = 1 ;
-    int arga0 = atoi(argv[i++]); // a
-    int arga1 = atoi(argv[i++]); // fp_class_type class;
-    int arga2 = atoi(argv[i++]); // unsigned int sign;
-    int arga3 = atoi(argv[i++]); // int normal_exp;
-    int arga4 = atoi(argv[i++]); // fractype ll; }
 
-    int argb0 = atoi(argv[i++]); // b
-    int argb1 = atoi(argv[i++]); // fp_class_type class;
-    int argb2 = atoi(argv[i++]); // unsigned int sign;
-    int argb3 = atoi(argv[i++]); // int normal_exp;
-    int argb4 = atoi(argv[i++]); // fractype ll; }
+    struct fp_number_type * arga0; sscanf(argv[i++],"%p",&arga0); // a
+    int arga1; sscanf(argv[i++],"%i",&arga1); // fp_class_type class;
+    unsigned int arga2; sscanf(argv[i++],"%u",&arga2); // unsigned int sign;
+    int arga3; sscanf(argv[i++],"%i",&arga3); // int normal_exp;
+    unsigned int arga4; sscanf(argv[i++],"%u",&arga4); // fractype ll; }
 
-    int argt0 = atoi(argv[i++]); // t
-    int argt1 = atoi(argv[i++]); // fp_class_type class;
-    int argt2 = atoi(argv[i++]); // unsigned int sign;
-    int argt3 = atoi(argv[i++]); // int normal_exp;
-    int argt4 = atoi(argv[i++]); // fractype ll; }
+    struct fp_number_type * argb0; sscanf(argv[i++],"%p",&argb0); // a
+    int argb1; sscanf(argv[i++],"%i",&argb1); // fp_class_type class;
+    unsigned int argb2; sscanf(argv[i++],"%u",&argb2); // unsigned int sign;
+    int argb3; sscanf(argv[i++],"%i",&argb3); // int normal_exp;
+    unsigned int argb4; sscanf(argv[i++],"%u",&argb4); // fractype ll; }
+
+    struct fp_number_type * argt0; sscanf(argv[i++],"%p",&argt0); // a
+    int argt1; sscanf(argv[i++],"%i",&argt1); // fp_class_type class;
+    unsigned int argt2; sscanf(argv[i++],"%u",&argt2); // unsigned int sign;
+    int argt3; sscanf(argv[i++],"%i",&argt3); // int normal_exp;
+    unsigned int argt4; sscanf(argv[i++],"%u",&argt4); // fractype ll; }
 
     fp_number_type a = { arga1, arga2, arga3, { arga4 } };
     fp_number_type b = { argb1, argb2, argb3, { argb4 } };
     fp_number_type t = { argt1, argt2, argt3, { argt4 } };
 
     fp_number_type* r = _fpmul_parts(&a,&b,&t);
-    printf("f(a=%i, a={ %i,%i,%i, fraction={%i} },   b=%i, b={ %i,%i,%i, fraction={%i} },  t=%i, t={ %i,%i,%i, fraction={%i} }) =\n%i %i %i %i %i\n",
+    printf("f(a=%i, a={ %i,%u,%i, fraction={%u} },   b=%i, b={ %i,%u,%i, fraction={%u} },  t=%i, t={ %i,%u,%i, fraction={%u} }) =\n%i %i %u %i %u\n",
         arga0,arga1,arga2,arga3,arga4,
         argb0,argb1,argb2,argb3,argb4,
         argt0,argt1,argt2,argt3,argt4,
@@ -1805,3 +1805,16 @@ erg: tmp=0.000000
 f(a=0, a={ 3,0,0, fraction={1} },   b=0, b={ 3,0,0, fraction={488372224} },  t=0, t={ 0,0,0, fraction={0} }) =
 6487408 3 0 -32 1953488896
 */
+
+
+/*
+D:\Haskell\tvg\tvg\analyzer>a2.exe 0 3 1 1 1000000000000 0 3 1 1 1100000000 0 3 0 0 0
+FRACBITS=23, NGARDS=7
+ROUND_TOWARDS_ZERO=0, GARDMASK=127, GARDMSB=64, IMPLICIT_1=40000000, IMPLICIT2=80000000
+sizeof(int)=4, sizeof(fractype)=4, sizeof(unsigned int)=4
+a=0.000000, b=0.000000, tmp=0.000000
+SECOND LOOP 1: high=1827416038
+erg: tmp=0.000000
+f(a=0, a={ 3,1,1, fraction={3567587328} },   b=0, b={ 3,1,1, fraction={1100000000} },  t=0
+, t={ 3,0,0, fraction={0} }) =
+2293072 3 0 3 1827416038*/
