@@ -985,8 +985,6 @@ translateExprM :: [Env] -> [Int] -> CExpr -> CovVecM [(CExpr,Trace)]
 translateExprM envs traceid expr = do
 	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
-		-- eliminate casts
-		to_call (CCast _ cexpr _) = return cexpr
 		to_call (CCall funexpr args ni) = case funexpr of
 			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
 			CVar (Ident "solver_pragma" _ _) _ -> return $ ⅈ 1
@@ -1214,11 +1212,10 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 	neq0 constr = not_c $ constr ⩵ ⅈ 0
 
 	insert_eq0 :: Bool -> Constraint -> Constraint
---	insert_eq0 must_be_bool (CUnary CCompOp expr ni) = (if must_be_bool then neq0 else id) $ CUnary CCompOp (insert_eq0 False expr) ni
 	insert_eq0 must_be_bool (CUnary unop expr ni) = case unop of
 		CNegOp -> CUnary CNegOp (insert_eq0 True expr) ni
 		unop   -> (if must_be_bool then neq0 else id) $ CUnary unop (insert_eq0 False expr) ni
-	insert_eq0 must_be_bool (CCast _ expr _) = insert_eq0 must_be_bool expr
+	insert_eq0 must_be_bool (CCast ty expr ni) = CCast ty (insert_eq0 must_be_bool expr) ni
 	insert_eq0 must_be_bool cvar@(CVar ident ni) = (if must_be_bool then neq0 else id) cvar
 	insert_eq0 must_be_bool const@(CConst _) = (if must_be_bool then neq0 else id) const
 	insert_eq0 False cond@(CBinary binop expr1 expr2 ni) | binop `elem` bool_result_ops =
@@ -1236,6 +1233,10 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 
 	expr2sexpr :: Maybe Z3_Type -> CExpr -> SExpr
 	expr2sexpr cur_ty expr = case expr of
+		CCast ty subexpr _ -> case ty==cur_ty of
+			False -> myError $ "expr2sexpr: ty /= cur_ty in " ++ (render.pretty) expr
+			True  -> case infer_type subexpr of
+				Nothing -> 
 		CUnary CPlusOp expr _ -> expr2sexpr cur_ty expr
 		CUnary op expr _ -> SExpr [ SLeaf op_str , expr2sexpr cur_ty expr ] where
 			op_str = case op of
@@ -1287,18 +1288,15 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 		ccall@(CCall _ _ _) ->error $ "expr2SExpr " ++ (render.pretty) ccall ++ " should not occur!"
 		expr -> error $ "expr2SExpr " ++ (render.pretty) expr ++ " not implemented" 
 
-	infer_type :: CExpr -> Maybe Z3_Type
+	infer_type :: CExpr -> Z3_Type
 	infer_type (CVar ident _) = case lookup ident tyenv of
 		Nothing -> error $ "infer_type: " ++ (render.pretty) ident ++ " not found in tyenv\n" ++
 			(unlines $ map (\(a,b) -> (render.pretty) a ++ " |-> " ++ (render.pretty) b) tyenv)
-		Just ty -> Just $ ty2Z3Type ty
+		Just ty -> ty2Z3Type ty
 	infer_type (CConst _) = Nothing
-	infer_type (CCond cond (Just expr1) expr2 _) = case infer_type expr1 of
-		Nothing -> infer_type expr2
-		Just ty -> Just ty
+	infer_type (CCast ty _ _) = ty
+	infer_type (CCond cond (Just expr1) expr2 _) = infer_type expr1
 	infer_type (CUnary _ expr _) = infer_type expr
-	-- Strictly speaking, the return type of boolean operators is "int", not the operands' type.
-	-- But we are avoiding the automatic casting back to the operands' type here...
 	infer_type expr@(CBinary _ expr1 expr2 _) = case [infer_type expr1, infer_type expr2] of
 		[Nothing,Nothing] -> Nothing
 		[Just t1,Just t2] | t1/=t2 -> error $ "infer_type " ++ (render.pretty) expr ++ " yields different types for operands: " ++ show t1 ++ " and " ++ show t2
