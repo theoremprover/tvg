@@ -79,14 +79,6 @@ executables:
 #    - html
 #    - parsec
 
-#  calltree-exe:
-#    main:                Main.hs
-#    source-dirs:         calltree
-#    ghc-options:
-#    - -threaded
-#    - -rtsopts
-#    - -with-rtsopts=-N
-
 #  prevent-exe:
 #    main:                Main.hs
 #    source-dirs:         prevent
