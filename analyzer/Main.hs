@@ -823,7 +823,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 							exists_once l = filter (\ e -> length (filter (==e) l) == 1) l
 						printLogV 2 $ "body_assigns = \n" ++
 							intercalate " , " (map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") body_assigns)
-		
+
 						case body_assigns of
 							[ (counter_var@(CVar ass_ident _),ass_expr) ] -> do
 								let
@@ -1201,11 +1201,13 @@ data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Double
 
 type Constraint = CExpr
 
-expr2SExpr :: TyEnv -> Expr -> SExpr
-expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
+expr2SExpr :: TyEnv -> Expr -> CovVecM SExpr
+expr2SExpr tyenv expr = do
+	ty <- infer_type expr
+	expr2sexpr ty (insert_eq0 True expr)
 
 	where
-
+	
 	bool_result_ops = [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp]
 
 	neq0 :: Constraint -> Constraint
@@ -1231,77 +1233,119 @@ expr2SExpr tyenv expr = expr2sexpr (infer_type expr) (insert_eq0 True expr)
 	insert_eq0 must_be_bool cmember@(CMember _ _ _ _) = (if must_be_bool then neq0 else id) cmember
 	insert_eq0 _ expr = error $ "insert_eq0 " ++ (render.pretty) expr ++ " not implemented yet."
 
-	expr2sexpr :: Maybe Z3_Type -> CExpr -> SExpr
+	expr2sexpr :: Z3_Type -> CExpr -> CovVecM SExpr
 	expr2sexpr cur_ty expr = case expr of
-		CCast ty subexpr _ -> case ty==cur_ty of
-			False -> myError $ "expr2sexpr: ty /= cur_ty in " ++ (render.pretty) expr
-			True  -> case infer_type subexpr of
-				Nothing -> 
+		CCast (CDecl [CTypeSpec ctypespec] [] _) subexpr _ -> do
+			ty <- tyspec2TypeM ctypespec >>= elimTypeDefsM >>= return . ty2Z3Type
+			case ty == cur_ty of
+				False -> myError $ "expr2sexpr: ty /= cur_ty in " ++ (render.pretty) expr
+				True  -> do
+					subexprty <- infer_type subexpr
+					cast_expr subexpr subexprty ty where
+						cast_expr :: CExpr -> Z3_Type -> Z3_Type -> CovVecM SExpr
+						-- cast expression of type t to type ty
+						cast_expr expr z3t z3ty = case (z3t,z3ty) of
+							(z3t, z3ty) | z3t == z3ty -> expr2sexpr cur_ty expr
+							(Z3_BitVector size_from False,Z3_BitVector size_to False) -> do
+								sexpr <- expr2sexpr z3t expr
+								return $ case size_from <= size_to of
+									True  -> SExpr [ SLeaf "concat", SExpr [SLeaf "_",SLeaf "bv0",SLeaf (show $ size_to-size_from)], sexpr ]
+									False -> SExpr [ SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0", sexpr ]
+							_ -> error $ "cast_expr " ++ (render.pretty) expr ++ " " ++
+								show z3t ++ " " ++ show z3ty ++ " not implemented!"
 		CUnary CPlusOp expr _ -> expr2sexpr cur_ty expr
-		CUnary op expr _ -> SExpr [ SLeaf op_str , expr2sexpr cur_ty expr ] where
+		CUnary op expr _ -> do
+			sexpr' <- expr2sexpr cur_ty expr
+			return $ SExpr [ SLeaf op_str , sexpr' ]
+			where
 			op_str = case op of
 				CMinOp  -> "bvneg"
 				CCompOp -> "bvnot"
 				CNegOp  -> "not"
 				_       -> error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
 		CBinary CNeqOp expr1 expr2 _ -> expr2sexpr cur_ty $ expr1 !⩵ expr2
-		CBinary op expr1 expr2 _ -> SExpr [ op_sexpr , expr2sexpr subtype1 expr1 , expr2sexpr subtype2 expr2 ] where
-			(op_sexpr,subtype1,subtype2) = case op of
-				CMulOp -> (SLeaf "bvmul",cur_ty,cur_ty)
-				CDivOp -> (SLeaf "bvdiv",cur_ty,cur_ty)
-				CRmdOp -> (SLeaf $ unSigned "bvurem" "bvsrem",cur_ty,cur_ty)
-				CAddOp -> (SLeaf "bvadd",cur_ty,cur_ty)
-				CSubOp -> (SLeaf "bvsub",cur_ty,cur_ty)
-				CShlOp -> (SLeaf $ unSigned "bvshl" "bvshl",cur_ty,cur_ty)
-				CShrOp -> (SLeaf $ unSigned "bvlshr" "bvashr",cur_ty,cur_ty)
-				CLeOp  -> (SLeaf $ unSigned "bvult" "bvslt",cur_ty,cur_ty)
-				CGrOp  -> (SLeaf $ unSigned "bvugt" "bvsgt",cur_ty,cur_ty)
-				CLeqOp -> (SLeaf $ unSigned "bvule" "bvsle",cur_ty,cur_ty)
-				CGeqOp -> (SLeaf $ unSigned "bvuge" "bvsge",cur_ty,cur_ty)
-				CEqOp  -> (SLeaf "=",infer_type expr,infer_type expr)
-				CAndOp -> (SLeaf "bvand",cur_ty,cur_ty)
-				COrOp  -> (SLeaf "bvor",cur_ty,cur_ty)
-				CXorOp -> (SLeaf "bvxor",cur_ty,cur_ty)
-				CLndOp -> (SLeaf "and",cur_ty,cur_ty)
-				CLorOp -> (SLeaf "or",cur_ty,cur_ty)
+		CBinary op expr1 expr2 _ -> do
+			t1 <- infer_type expr1
+			sexpr1 <- expr2sexpr t1 expr1
+			t2 <- infer_type expr2
+			when (t1/=t2) $ myError $ "expr2sexpr " ++ (render.pretty) expr ++ " yielded different operand's types: " ++
+				show t1 ++ " /= " ++ show t2
+			sexpr2 <- expr2sexpr t2 expr2
+			return $ SExpr [ op_sexpr t1 t2, sexpr1 , sexpr2 ]
+			where
+			op_sexpr t1 t2 = case op of
+				CMulOp -> SLeaf "bvmul"
+				CDivOp -> SLeaf "bvdiv"
+				CAddOp -> SLeaf "bvadd"
+				CSubOp -> SLeaf "bvsub"
+				CRmdOp -> SLeaf $ unSigned t1 t2 "bvurem" "bvsrem"
+				CShlOp -> SLeaf $ unSigned t1 t2 "bvshl" "bvshl"
+				CShrOp -> SLeaf $ unSigned t1 t2 "bvlshr" "bvashr"
+				CLeOp  -> SLeaf $ unSigned t1 t2 "bvult" "bvslt"
+				CGrOp  -> SLeaf $ unSigned t1 t2 "bvugt" "bvsgt"
+				CLeqOp -> SLeaf $ unSigned t1 t2 "bvule" "bvsle"
+				CGeqOp -> SLeaf $ unSigned t1 t2 "bvuge" "bvsge"
+				CEqOp  -> SLeaf "="
+				CAndOp -> SLeaf "bvand"
+				COrOp  -> SLeaf "bvor"
+				CXorOp -> SLeaf "bvxor"
+				CLndOp -> SLeaf "and"
+				CLorOp -> SLeaf "or"
 
-			unSigned unsigned signed = case (infer_type expr1,infer_type expr2) of
-				(Just (Z3_BitVector _ is_signed1), Just (Z3_BitVector _ is_signed2)) | is_signed1==is_signed2 ->
+			unSigned t1 t2 unsigned signed = case (t1,t2) of
+				(Z3_BitVector _ is_signed1, Z3_BitVector _ is_signed2) | is_signed1==is_signed2 ->
 					if is_signed1 then signed else unsigned
-				(Just (Z3_BitVector _ is_signed), Nothing) -> if is_signed then signed else unsigned
-				(Nothing, Just (Z3_BitVector _ is_signed)) -> if is_signed then signed else unsigned
-				(Nothing, Nothing) -> signed
---				other -> myError $ "unSigned " ++ (render.pretty) expr1 ++ " " ++ (render.pretty) expr2 ++ " yielded " ++ show other
+				_ -> error $ "unSigned: infer_type's yielded " ++ (render.pretty) expr1 ++ " and " ++ (render.pretty) expr2 ++ ": not implemented! "
 
-		CCond cond (Just then_expr) else_expr _ ->
-			SExpr [ SLeaf "ite", expr2sexpr cur_ty cond, expr2sexpr cur_ty then_expr, expr2sexpr cur_ty else_expr ]
+		CCond cond (Just then_expr) else_expr _ -> do
+			cond_sexpr <- expr2sexpr cur_ty cond
+			then_sexpr <- expr2sexpr cur_ty then_expr
+			else_sexpr <- expr2sexpr cur_ty else_expr
+			return $ SExpr [ SLeaf "ite", cond_sexpr, then_sexpr, else_sexpr ]
 
-		CVar ident _ -> SLeaf $ (render.pretty) ident
-		CConst cconst -> SLeaf $ case cconst of
-			CIntConst intconst _ -> let i = getCInteger intconst in
-				case cur_ty of
-					Just (Z3_BitVector size _) -> printf "#x%*.*x" (size `div` 4) (size `div` 4) i
-					Nothing -> printf "#x%*.*x" (32 `div` 4 :: Int) (32 `div` 4 :: Int) i
-					_ -> error $ "expr2SExpr: cur_ty " ++ show cur_ty
-			_ -> (render.pretty) cconst
+		CVar ident _ -> return $ SLeaf $ (render.pretty) ident
+		CConst cconst -> do
+			let Z3_BitVector size _ = cur_ty
+			return $ SLeaf $ case cconst of
+				CIntConst intconst _ -> printf "#x%*.*x" (size `div` 4) (size `div` 4) (getCInteger intconst)
+				_ -> (render.pretty) cconst
 		cmember@(CMember _ _ _ _) -> error $ "expr2SExpr " ++ (render.pretty) cmember ++ " should not occur!"
 		ccall@(CCall _ _ _) ->error $ "expr2SExpr " ++ (render.pretty) ccall ++ " should not occur!"
 		expr -> error $ "expr2SExpr " ++ (render.pretty) expr ++ " not implemented" 
 
-	infer_type :: CExpr -> Z3_Type
+	infer_sem_type :: CExpr -> CovVecM Type
+	infer_sem_type expr = 
+	infer_type :: CExpr -> CovVecM Z3_Type
 	infer_type (CVar ident _) = case lookup ident tyenv of
-		Nothing -> error $ "infer_type: " ++ (render.pretty) ident ++ " not found in tyenv\n" ++
+		Nothing -> myError $ "infer_type: " ++ (render.pretty) ident ++ " not found in tyenv\n" ++
 			(unlines $ map (\(a,b) -> (render.pretty) a ++ " |-> " ++ (render.pretty) b) tyenv)
-		Just ty -> ty2Z3Type ty
-	infer_type (CConst _) = Nothing
-	infer_type (CCast ty _ _) = ty
+		Just ty -> return $ ty2Z3Type ty
+	infer_type (CConst cconst) = return $ ty2Z3Type $ case cconst of
+		CIntConst (CInteger _ _ flags) _ -> DirectType (TyIntegral intty) undefined undefined where
+			intty = case map ($ flags) (map testFlag [FlagUnsigned,FlagLong,FlagLongLong,FlagImag]) of
+				[False,False,False,False] -> TyUInt
+				[False,True, False,False] -> TyULong
+				[False,False,True, False] -> TyULLong
+				[True, False,False,False] -> TyInt
+				[True, True, False,False] -> TyLong
+				[True, False,True, False] -> TyLLong
+				_ -> error $ "infer_type: Strange flags in " ++ (render.pretty) cconst
+		CCharConst cchar _ -> DirectType (TyIntegral TyChar) undefined undefined
+		CFloatConst cfloat _ -> DirectType (TyFloating TyDouble) undefined undefined
+		CStrConst cstr _ -> PtrType undefined undefined undefined
+	infer_type (CCast (CDecl [CTypeSpec ctypespec] [] _) _ _) =
+		tyspec2TypeM ctypespec >>= elimTypeDefsM >>= return . ty2Z3Type
 	infer_type (CCond cond (Just expr1) expr2 _) = infer_type expr1
 	infer_type (CUnary _ expr _) = infer_type expr
-	infer_type expr@(CBinary _ expr1 expr2 _) = case [infer_type expr1, infer_type expr2] of
-		[Nothing,Nothing] -> Nothing
-		[Just t1,Just t2] | t1/=t2 -> error $ "infer_type " ++ (render.pretty) expr ++ " yields different types for operands: " ++ show t1 ++ " and " ++ show t2
-		res -> maximum res
-	infer_type other = error $ "infer_type " ++ (render.pretty) other ++ " not implemented!"
+	infer_type expr@(CBinary _ expr1 expr2 _) = do
+		t1 <- infer_type expr1
+		t2 <- infer_type expr2
+		when (t1 /= t2) $ myError $ "infer_type " ++ (render.pretty) expr ++ " yields different types for operands: " ++ show t1 ++ " and " ++ show t2
+		return t1
+	infer_type (CMember expr member True _) = do
+		PtrType target_ty _ _ <- infer_sem_type expr
+		getMemberTypeM target_ty member
+	infer_type other = myError $ "infer_type " ++ (render.pretty) other ++ " not implemented!"
 
 ty2Z3Type :: Type -> Z3_Type
 ty2Z3Type ty = case ty of
@@ -1359,7 +1403,10 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 	let
 		varsZ3 = for (filter ((`elem` (constraints_vars ++ output_idents)).fst) tyenv) $ \ (ident,ty) ->
 			SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
-		constraintsZ3 = for constraints $ \ expr -> SExpr [SLeaf "assert", expr2SExpr tyenv expr]
+	constraintsZ3 <- forM constraints $ \ expr -> do
+		assert_sexpr <- expr2SExpr tyenv expr
+		return $ SExpr [SLeaf "assert", assert_sexpr]
+	let
 		outputvarsZ3 = for output_idents $ \ ident -> SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
 		model = [
 			SExpr [SLeaf "set-option", SLeaf ":smt.relevancy", SLeaf "0"],
