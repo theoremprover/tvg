@@ -1313,14 +1313,15 @@ expr2SExpr tyenv expr = do
 		ccall@(CCall _ _ _) ->error $ "expr2SExpr " ++ (render.pretty) ccall ++ " should not occur!"
 		expr -> error $ "expr2SExpr " ++ (render.pretty) expr ++ " not implemented" 
 
-	infer_sem_type :: CExpr -> CovVecM Type
-	infer_sem_type expr = 
 	infer_type :: CExpr -> CovVecM Z3_Type
-	infer_type (CVar ident _) = case lookup ident tyenv of
+	infer_type expr = infer_sem_type expr >>= return . ty2Z3Type
+
+	infer_sem_type :: CExpr -> CovVecM Type
+	infer_sem_type (CVar ident _) = case lookup ident tyenv of
 		Nothing -> myError $ "infer_type: " ++ (render.pretty) ident ++ " not found in tyenv\n" ++
 			(unlines $ map (\(a,b) -> (render.pretty) a ++ " |-> " ++ (render.pretty) b) tyenv)
-		Just ty -> return $ ty2Z3Type ty
-	infer_type (CConst cconst) = return $ ty2Z3Type $ case cconst of
+		Just ty -> return ty
+	infer_sem_type (CConst cconst) = return $ case cconst of
 		CIntConst (CInteger _ _ flags) _ -> DirectType (TyIntegral intty) undefined undefined where
 			intty = case map ($ flags) (map testFlag [FlagUnsigned,FlagLong,FlagLongLong,FlagImag]) of
 				[False,False,False,False] -> TyUInt
@@ -1333,19 +1334,23 @@ expr2SExpr tyenv expr = do
 		CCharConst cchar _ -> DirectType (TyIntegral TyChar) undefined undefined
 		CFloatConst cfloat _ -> DirectType (TyFloating TyDouble) undefined undefined
 		CStrConst cstr _ -> PtrType undefined undefined undefined
-	infer_type (CCast (CDecl [CTypeSpec ctypespec] [] _) _ _) =
-		tyspec2TypeM ctypespec >>= elimTypeDefsM >>= return . ty2Z3Type
-	infer_type (CCond cond (Just expr1) expr2 _) = infer_type expr1
-	infer_type (CUnary _ expr _) = infer_type expr
-	infer_type expr@(CBinary _ expr1 expr2 _) = do
-		t1 <- infer_type expr1
-		t2 <- infer_type expr2
-		when (t1 /= t2) $ myError $ "infer_type " ++ (render.pretty) expr ++ " yields different types for operands: " ++ show t1 ++ " and " ++ show t2
+	infer_sem_type (CCast (CDecl [CTypeSpec ctypespec] [] _) _ _) =
+		tyspec2TypeM ctypespec >>= elimTypeDefsM
+	infer_sem_type (CCond cond (Just expr1) expr2 _) = infer_sem_type expr1
+	infer_sem_type (CUnary _ expr _) = infer_sem_type expr
+	infer_sem_type expr@(CBinary _ expr1 expr2 _) = do
+		t1 <- infer_sem_type expr1
+		t2 <- infer_sem_type expr2
+		when (ty2Z3Type t1 /= ty2Z3Type t2) $ myError $ "infer_type " ++ (render.pretty) expr ++ " yields different types for operands: " ++
+			show (ty2Z3Type t1) ++ " and " ++ show (ty2Z3Type t2)
 		return t1
-	infer_type (CMember expr member True _) = do
+	infer_sem_type (CMember expr member True _) = do
 		PtrType target_ty _ _ <- infer_sem_type expr
 		getMemberTypeM target_ty member
-	infer_type other = myError $ "infer_type " ++ (render.pretty) other ++ " not implemented!"
+	infer_sem_type (CMember expr member False _) = do
+		struct_ty <- infer_sem_type expr
+		getMemberTypeM struct_ty member
+	infer_sem_type other = myError $ "infer_type " ++ (render.pretty) other ++ " not implemented!"
 
 ty2Z3Type :: Type -> Z3_Type
 ty2Z3Type ty = case ty of
