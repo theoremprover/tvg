@@ -1,7 +1,7 @@
 {-# LANGUAGE PackageImports,TypeOperators,FlexibleInstances,FlexibleContexts,ScopedTypeVariables #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
-module DataTree (genericToHTMLString,dataTreeToHTMLString,DataTree(..)) where
+module DataTree (genericToHTMLString,genericToString,dataTreeToHTMLString,DataTree(..)) where
 
 import GHC.Generics
 import "language-c" Language.C
@@ -63,11 +63,19 @@ instance (DataTreeNode f1,DataTreeNode f2) => DataTreeNode (f1 :+: f2) where
 toDataTree :: (Generic a,DataTreeNode (Rep a)) => a -> [DataTree]
 toDataTree x = dataTree None (from x)
 
+dataTreeToString ind (Leaf s) = indent ind ++ s ++ "\n" where
+	indent x = concat $ replicate ind "|   "
+dataTreeToString ind (DataTree s subtrees) = dataTreeToString ind (Leaf s) ++
+	concatMap (dataTreeToString (ind+1)) subtrees
+
 dataTreeToHtml (Leaf s) = li (stringToHtml s)
 dataTreeToHtml (DataTree s subtrees) = (li ! [identifier "myUL"]) ((thespan ! [myclass]) (stringToHtml s) +++
 	(ulist ! [theclass "nested"]) (concatHtml $ map dataTreeToHtml subtrees))
 	where
 	myclass = theclass $ if null subtrees then "leaf" else "caret"
+
+genericToString :: (Generic a,DataTreeNode (Rep a)) => a -> String
+genericToString x = concatMap (dataTreeToString 0) (toDataTree x)
 
 genericToHTMLString :: (Generic a,DataTreeNode (Rep a)) => a -> String
 genericToHTMLString x = dataTreeToHTMLString $ toDataTree x

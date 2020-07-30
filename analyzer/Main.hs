@@ -339,11 +339,6 @@ covVectorsM = do
 			ExitFailure _ -> myError $ "Compilation failed:\n" ++ stderr
 			ExitSuccess -> modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
 
-{-
-	let solve_fun cutoff tr = runStateT (analyzeTreeM cutoff opts ret_type' param_env [] [] tr) ([],Set.empty,Set.empty)
-	modify $ \ s -> s { solveFunCVS = Just solve_fun }
--}
-
 	Right all_covered <- unfoldTracesM (Just ret_type') [] (param_env:[glob_env]) [] decls [ defs ++ [ CBlockStmt body ] ]
 	return all_covered
 
@@ -374,30 +369,35 @@ analyzeTraceM mb_ret_type traceid res_line = do
 			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine trace
 
+	-- Eliminate/Expand all assignments to pointers in the later code
 	res_trace_elim_inds <- elimInds trace
 	when (not don'tShowTraces) $ do
 		printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine res_trace_elim_inds
 
+	-- Eliminate (*&), & and * in members
 	res_trace_simplified1 <- simplifyTraceM res_trace_elim_inds
 	when (not don'tShowTraces) $ do
 		printLog $ "\n--- TRACE after simplifyTraceM 1 " ++ show traceid ++ " -----------\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine res_trace_simplified1
 
+	-- Eliminate Assignments
 	res_trace_elim'd_assigns <- elimAssignmentsM res_trace_simplified1
 	when (not don'tShowTraces) $ do
 		printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine res_trace_elim'd_assigns
 
+	-- Eliminate (*&), & and * in members
 	res_trace_simplified2 <- simplifyTraceM res_trace_elim'd_assigns
 	when (not don'tShowTraces) $ do
 		printLog $ "\n--- TRACE after simplifyTraceM 2 " ++ show traceid ++ " -----------\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine res_trace_simplified2
 
+	-- Create variables for leftover p->m, a.m, &a
 	res_trace_symbolic <- createSymbolicVarsM [] (map fst $ createTyEnv res_trace_simplified2) res_trace_simplified2
 	when (not don'tShowTraces) $ do
 		printLog $ "\n--- TRACE after createSymbolicVarsM " ++ show traceid ++ " -----------\n" ++
@@ -1130,7 +1130,10 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
 
 
--- Simplify
+-- Simplify:
+-- *(&x)  ~> x
+-- &s->m  ~> s.m
+-- (*p).m ~> p->m
 
 simplifyTraceM :: Trace -> CovVecM Trace
 simplifyTraceM trace = everywhereM (mkM simplify) trace where
@@ -1235,6 +1238,8 @@ expr2SExpr tyenv expr = do
 
 	expr2sexpr :: Z3_Type -> CExpr -> CovVecM SExpr
 	expr2sexpr cur_ty expr = case expr of
+--		CCast (CDecl [CTypeSpec ctypespec] [(Just (CDeclr Nothing [CPtrDeclr [] _] Nothing [] _),Nothing,Nothing)] _) subexpr _ -> do
+--			expr2sexpr subexpr
 		CCast (CDecl [CTypeSpec ctypespec] [] _) subexpr _ -> do
 			ty <- tyspec2TypeM ctypespec >>= elimTypeDefsM >>= return . ty2Z3Type
 			case ty == cur_ty of
@@ -1336,6 +1341,9 @@ expr2SExpr tyenv expr = do
 		CStrConst cstr _ -> PtrType undefined undefined undefined
 	infer_sem_type (CCast (CDecl [CTypeSpec ctypespec] [] _) _ _) =
 		tyspec2TypeM ctypespec >>= elimTypeDefsM
+	infer_sem_type (CCast (CDecl [CTypeSpec ctypespec] [(Just (CDeclr Nothing [CPtrDeclr [] _] Nothing [] _),Nothing,Nothing)] _) _ _) = do
+		spec_ty <- tyspec2TypeM ctypespec >>= elimTypeDefsM
+		return $ PtrType spec_ty undefined undefined
 	infer_sem_type (CCond cond (Just expr1) expr2 _) = infer_sem_type expr1
 	infer_sem_type (CUnary _ expr _) = infer_sem_type expr
 	infer_sem_type expr@(CBinary _ expr1 expr2 _) = do
@@ -1350,7 +1358,8 @@ expr2SExpr tyenv expr = do
 	infer_sem_type (CMember expr member False _) = do
 		struct_ty <- infer_sem_type expr
 		getMemberTypeM struct_ty member
-	infer_sem_type other = myError $ "infer_type " ++ (render.pretty) other ++ " not implemented!"
+	infer_sem_type other = myError $ "infer_sem_type " ++ (render.pretty) other ++ " not implemented! AST is:\n" ++
+		genericToString other
 
 ty2Z3Type :: Type -> Z3_Type
 ty2Z3Type ty = case ty of
