@@ -60,6 +60,7 @@ concatForM = flip concatMapM
 
 intSize = 32
 longIntSize = 64
+longLongIntSize = 64
 
 solveIt = True
 showOnlySolutions = True
@@ -1205,12 +1206,93 @@ instance Show SExpr where
 	show (SLeaf s) = s
 	show (SExpr sexprs) = "(" ++ intercalate " " (map show sexprs) ++ ")"
 
-data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Double
+data Z3_Type = Z3_Bool | Z3_BitVector Int Bool | Z3_Float | Z3_Double
 	deriving (Show,Eq,Ord)
+-- the derived ordering intentionally coincides with the type casting hierarchy :-)
 
 type Constraint = CExpr
 
 expr2SExpr :: TyEnv -> Expr -> CovVecM SExpr
+expr2SExpr tyenv expr = return $ fst $ expr2sexpr expr
+
+	where
+
+	make_intconstant :: Int -> Integer -> SExpr
+	make_intconstant size const = SLeaf (printf "#x%*.*x" (size `div` 4) (size `div` 4) const)
+
+	expr2sexpr :: CExpr -> (SExpr,Z3_Type)
+
+	expr2sexpr (CConst cconst) = case cconst of
+		CIntConst intconst@(CInteger _ _ flags) _ -> ( const_sexpr, ty2Z3Type $ DirectType (TyIntegral intty) undefined undefined )
+			where
+			const_sexpr = make_intconstant int_size (getCInteger intconst)
+			(intty,int_size) = case map ($ flags) (map testFlag [FlagUnsigned,FlagLong,FlagLongLong,FlagImag]) of
+				[False,False,False,False] -> (TyUInt,intSize)
+				[False,True, False,False] -> (TyULong,longIntSize)
+				[False,False,True, False] -> (TyULLong,longLongIntSize)
+				[True, False,False,False] -> (TyInt,intSize)
+				[True, True, False,False] -> (TyLong,longIntSize)
+				[True, False,True, False] -> (TyLLong,longLongIntSize)
+				_ -> error $ "infer_type: Strange flags in " ++ (render.pretty) cconst
+		CCharConst cchar _   -> ( SLeaf $ (render.pretty) cconst, ty2Z3Type $ DirectType (TyIntegral TyChar) undefined undefined )
+		CFloatConst cfloat _ -> ( SLeaf $ (render.pretty) cconst, ty2Z3Type $ DirectType (TyFloating TyDouble) undefined undefined )
+		CStrConst cstr _     -> ( SLeaf $ (render.pretty) cconst, ty2Z3Type $ PtrType undefined undefined undefined )
+
+	expr2sexpr (CVar ident _) = ( SLeaf $ (render.pretty) ident, ty2Z3Type $ fromJust $ lookup ident tyenv )
+
+	expr2sexpr (CUnary CPlusOp expr _) = expr2sexpr expr
+	expr2sexpr (CUnary op expr _) = ( SExpr [ SLeaf op_str, sexpr ], ty )
+		where
+		(sexpr,ty) = expr2sexpr expr
+		op_str = case op of
+			CMinOp  -> "bvneg"
+			CCompOp -> "bvnot"
+			CNegOp  -> "not"
+			_ -> error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
+
+	expr2sexpr (CBinary CNeqOp expr1 expr2 _) = expr2sexpr (CUnary CNegOp (CBinary CEqOp expr1 expr2 undefNode) undefNode)
+	expr2sexpr expr@(CBinary op expr1 expr2 _) =
+		( SExpr [ op_sexpr, mb_cast sexpr1 ty1 target_ty, mb_cast sexpr2 ty2 target_ty ], target_ty )
+		where
+		(sexpr1,ty1) = expr2sexpr expr1
+		(sexpr2,ty2) = expr2sexpr expr2
+		(op_sexpr,target_ty) = case op of
+			CMulOp -> (SLeaf "bvmul",max ty1 ty2)
+			CDivOp -> (SLeaf "bvdiv",max ty1 ty2)
+			CAddOp -> (SLeaf "bvadd",max ty1 ty2)
+			CSubOp -> (SLeaf "bvsub",max ty1 ty2)
+			CRmdOp -> (unSigned "bvurem" "bvsrem",max ty1 ty2)
+			CShlOp -> (unSigned "bvshl" "bvshl",max ty1 ty2)
+			CShrOp -> (unSigned "bvlshr" "bvashr",max ty1 ty2)
+			CLeOp  -> (unSigned "bvult" "bvslt",Z3_Bool)
+			CGrOp  -> (unSigned "bvugt" "bvsgt",Z3_Bool)
+			CLeqOp -> (unSigned "bvule" "bvsle",Z3_Bool)
+			CGeqOp -> (unSigned "bvuge" "bvsge",Z3_Bool)
+			CEqOp  -> (SLeaf "=",Z3_Bool)
+			CAndOp -> (SLeaf "bvand",max ty1 ty2)
+			COrOp  -> (SLeaf "bvor",max ty1 ty2)
+			CXorOp -> (SLeaf "bvxor",max ty1 ty2)
+			CLndOp -> (SLeaf "and",Z3_Bool)
+			CLorOp -> (SLeaf "or",Z3_Bool)
+			_ -> error $ "expr2sexpr " ++ (render.pretty) expr ++ " : operand not implemented!"
+
+		unSigned unsigned signed = case target_ty of
+			Z3_BitVector _ is_unsigned -> SLeaf $ if is_unsigned then unsigned else signed
+			_ -> error $ "unSigned: target_ty of " ++ (render.pretty) expr ++ " is no bitvector!"
+
+		mb_cast :: SExpr -> Z3_Type -> Z3_Type -> SExpr
+		mb_cast sexpr from_ty to_ty | from_ty == to_ty = sexpr
+		mb_cast sexpr from_ty to_ty = case (from_ty,to_ty) of
+			( Z3_BitVector size_from _, Z3_Bool) -> SExpr [ SLeaf "ite", cond_sexpr, SLeaf "false",SLeaf "true" ]
+				where
+				cond_sexpr = SExpr [ SLeaf "=", sexpr, make_intconstant size_from 0 ]
+			( Z3_BitVector size_from True, Z3_BitVector size_to True ) -> case size_from <= size_to of
+				True  -> SExpr [ SLeaf "concat", SExpr [SLeaf "_",SLeaf "bv0",SLeaf (show $ size_to-size_from)], sexpr ]
+				False -> SExpr [ SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0", sexpr ]
+			_ -> error $ "cast_expr " ++ (render.pretty) expr ++ " " ++
+				show from_ty ++ " " ++ show to_ty ++ " not implemented!"
+
+{-
 expr2SExpr tyenv expr = do
 	mb_ty <- infer_type expr
 	expr2sexpr mb_ty (insert_eq0 True expr)
@@ -1253,7 +1335,7 @@ expr2SExpr tyenv expr = do
 				cast_expr expr Nothing _ = expr2sexpr cur_ty expr
 				cast_expr expr (Just z3t) z3ty = case (z3t,z3ty) of
 					(z3t, z3ty) | z3t == z3ty -> expr2sexpr cur_ty expr
-					(Z3_BitVector size_from False,Z3_BitVector size_to False) -> do
+					(Z3_BitVector size_from False,Z3_BitVector size_to True) -> do
 						sexpr <- expr2sexpr (Just z3t) expr
 						return $ case size_from <= size_to of
 							True  -> SExpr [ SLeaf "concat", SExpr [SLeaf "_",SLeaf "bv0",SLeaf (show $ size_to-size_from)], sexpr ]
@@ -1282,8 +1364,8 @@ expr2SExpr tyenv expr = do
 					return t1
 				(Nothing,Just t2) -> return t2
 				(Just t1,Nothing) -> return t1
-			sexpr1 <- expr2sexpr mb_t1 expr1
-			sexpr2 <- expr2sexpr mb_t2 expr2
+			sexpr1 <- expr2sexpr (Just t) expr1
+			sexpr2 <- expr2sexpr (Just t) expr2
 			return $ SExpr [ op_sexpr t t, sexpr1 , sexpr2 ]
 			where
 			op_sexpr t1 t2 = case op of
@@ -1351,50 +1433,55 @@ expr2SExpr tyenv expr = do
 		CStrConst cstr _ -> PtrType undefined undefined undefined
 -}
 	infer_sem_type (CCast (CDecl [CTypeSpec ctypespec] [] _) _ _) =
-		tyspec2TypeM ctypespec >>= elimTypeDefsM
+		tyspec2TypeM ctypespec >>= elimTypeDefsM >>= return.Just
 	infer_sem_type (CCast (CDecl [CTypeSpec ctypespec] [(Just (CDeclr Nothing [CPtrDeclr [] _] Nothing [] _),Nothing,Nothing)] _) _ _) = do
 		spec_ty <- tyspec2TypeM ctypespec >>= elimTypeDefsM
-		return $ PtrType spec_ty undefined undefined
+		return $ Just $  PtrType spec_ty undefined undefined
 	infer_sem_type (CCond cond (Just expr1) expr2 _) = infer_sem_type expr1
 	infer_sem_type (CUnary _ expr _) = infer_sem_type expr
 	infer_sem_type expr@(CBinary _ expr1 expr2 _) = do
-		t1 <- infer_sem_type expr1
-		t2 <- infer_sem_type expr2
-		when (ty2Z3Type t1 /= ty2Z3Type t2) $ myError $ "infer_type " ++ (render.pretty) expr ++ " yields different types for operands: " ++
-			show (ty2Z3Type t1) ++ " and " ++ show (ty2Z3Type t2)
-		return t1
+		mb_t1 <- infer_sem_type expr1
+		mb_t2 <- infer_sem_type expr2
+		case (mb_t1,mb_t2) of
+			(Just t1,Just t2) -> do
+				when (ty2Z3Type t1 /= ty2Z3Type t2) $ myError $ "infer_sem_type " ++ (render.pretty) expr ++ " yields different types for operands: " ++
+					show (ty2Z3Type t1) ++ " and " ++ show (ty2Z3Type t2)
+				return mb_t1
+			(Nothing,_) -> return mb_t2
+			(_,Nothing) -> return mb_t1
 	infer_sem_type (CMember expr member True _) = do
-		PtrType target_ty _ _ <- infer_sem_type expr
-		getMemberTypeM target_ty member
+		Just (PtrType target_ty _ _) <- infer_sem_type expr
+		getMemberTypeM target_ty member >>= return.Just
 	infer_sem_type (CMember expr member False _) = do
-		struct_ty <- infer_sem_type expr
-		getMemberTypeM struct_ty member
+		Just struct_ty <- infer_sem_type expr
+		getMemberTypeM struct_ty member >>= return.Just
 	infer_sem_type other = myError $ "infer_sem_type " ++ (render.pretty) other ++ " not implemented! AST is:\n" ++
 		genericToString other
+-}
 
 ty2Z3Type :: Type -> Z3_Type
 ty2Z3Type ty = case ty of
-	DirectType (TyComp (CompTypeRef _ _ _)) _ _ -> Z3_BitVector 4 False
+	DirectType (TyComp (CompTypeRef _ _ _)) _ _ -> Z3_BitVector 4 True
 	DirectType tyname _ _ -> case tyname of
 		TyIntegral intty -> case intty of
-			TyChar   -> Z3_BitVector 8 False
-			TySChar  -> Z3_BitVector 8 True
-			TyUChar  -> Z3_BitVector 8 False
-			TyShort  -> Z3_BitVector 16 True
-			TyUShort -> Z3_BitVector 16 False
-			TyInt    -> Z3_BitVector intSize True
-			TyUInt   -> Z3_BitVector intSize False
-			TyLong   -> Z3_BitVector longIntSize True
-			TyULong  -> Z3_BitVector longIntSize False
-			TyLLong  -> Z3_BitVector 64 True
-			TyULLong -> Z3_BitVector 64 False
+			TyChar   -> Z3_BitVector 8 True
+			TySChar  -> Z3_BitVector 8 False
+			TyUChar  -> Z3_BitVector 8 True
+			TyShort  -> Z3_BitVector 16 False
+			TyUShort -> Z3_BitVector 16 True
+			TyInt    -> Z3_BitVector intSize False
+			TyUInt   -> Z3_BitVector intSize True
+			TyLong   -> Z3_BitVector longIntSize False
+			TyULong  -> Z3_BitVector longIntSize True
+			TyLLong  -> Z3_BitVector 64 False
+			TyULLong -> Z3_BitVector 64 True
 			other    -> error $ "ty2Z3Type " ++ show other ++ " not implemented!"
-		TyFloating TyFloat -> Z3_Float
+		TyFloating TyFloat  -> Z3_Float
 		TyFloating TyDouble -> Z3_Double
-		TyEnum _ -> Z3_BitVector intSize False
-		TyComp _ -> Z3_BitVector 16 False
+		TyEnum _ -> Z3_BitVector intSize True
+		TyComp _ -> Z3_BitVector 16 True
 		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
-	PtrType _ _ _ -> Z3_BitVector 16 False
+	PtrType _ _ _ -> Z3_BitVector 16 True
 	_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
 
 ty2SExpr :: Type -> SExpr
@@ -1460,13 +1547,13 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 					(_,_,_,[val_string]) -> case lookup ident tyenv of
 						Nothing -> myError $ "Parsing z3 output: Could not find type of " ++ is
 						Just ty -> return (is, case ty2Z3Type ty of
-							Z3_BitVector size signed -> let
+							Z3_BitVector size unsigned -> let
 								'#':'x':hexdigits = val_string
 								[(i :: Integer,"")] = readHex hexdigits
 								in
-								IntVal $ case signed of
-									False -> fromIntegral i
-									True  -> fromIntegral $ if i < 2^(size-1) then i else i - 2^size
+								IntVal $ case unsigned of
+									True -> fromIntegral i
+									False  -> fromIntegral $ if i < 2^(size-1) then i else i - 2^size
 							Z3_Float -> FloatVal (read val_string :: Float) )
 
 					_ -> myError $ "Parsing z3 output: Could not find " ++ is
