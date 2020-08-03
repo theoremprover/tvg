@@ -1227,7 +1227,7 @@ expr2SExpr tyenv expr = expr2sexpr (insert_eq0 True expr) >>= return.fst
 		( Z3_BitVector size_from _, Z3_Bool ) -> SExpr [ SLeaf "ite", cond_sexpr, SLeaf "false", SLeaf "true" ]
 			where
 			cond_sexpr = SExpr [ SLeaf "=", sexpr, make_intconstant size_from 0 ]
-		( Z3_BitVector size_from _, Z3_BitVector size_to True ) -> case size_from <= size_to of
+		( Z3_BitVector size_from _, Z3_BitVector size_to True ) -> case size_from < size_to of
 			True  -> SExpr [ SLeaf "concat", SExpr [SLeaf "_",SLeaf "bv0",SLeaf (show $ size_to-size_from)], sexpr ]
 			False -> SExpr [ SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0", sexpr ]
 		_ -> error $ "cast_expr " ++ (render.pretty) expr ++ " " ++
@@ -1311,18 +1311,18 @@ expr2SExpr tyenv expr = expr2sexpr (insert_eq0 True expr) >>= return.fst
 			CAddOp -> (SLeaf "bvadd",target_ty)
 			CSubOp -> (SLeaf "bvsub",target_ty)
 			CRmdOp -> (unSigned target_ty "bvurem" "bvsrem",target_ty)
-			CShlOp -> (unSigned target_ty "bvshl" "bvshl",target_ty)
+			CShlOp -> (unSigned target_ty "bvshl"  "bvshl", target_ty)
 			CShrOp -> (unSigned target_ty "bvlshr" "bvashr",target_ty)
-			CLeOp  -> (unSigned target_ty "bvult" "bvslt",Z3_Bool)
-			CGrOp  -> (unSigned target_ty "bvugt" "bvsgt",Z3_Bool)
-			CLeqOp -> (unSigned target_ty "bvule" "bvsle",Z3_Bool)
-			CGeqOp -> (unSigned target_ty "bvuge" "bvsge",Z3_Bool)
-			CEqOp  -> (SLeaf "=",Z3_Bool)
-			CAndOp -> (SLeaf "bvand",target_ty)
-			COrOp  -> (SLeaf "bvor",target_ty)
-			CXorOp -> (SLeaf "bvxor",target_ty)
+			CLeOp  -> (unSigned target_ty "bvult"  "bvslt", Z3_Bool)
+			CGrOp  -> (unSigned target_ty "bvugt"  "bvsgt", Z3_Bool)
+			CLeqOp -> (unSigned target_ty "bvule"  "bvsle", Z3_Bool)
+			CGeqOp -> (unSigned target_ty "bvuge"  "bvsge", Z3_Bool)
 			CLndOp -> (SLeaf "and",Z3_Bool)
-			CLorOp -> (SLeaf "or",Z3_Bool)
+			CLorOp -> (SLeaf "or", Z3_Bool)
+			CEqOp  -> (SLeaf "=",  Z3_Bool)
+			CAndOp -> (SLeaf "bvand",target_ty)
+			COrOp  -> (SLeaf "bvor", target_ty)
+			CXorOp -> (SLeaf "bvxor",target_ty)
 			_ -> error $ "expr2sexpr " ++ (render.pretty) expr ++ " : operand not implemented!"
 			where
 			target_ty = max ty1 ty2
