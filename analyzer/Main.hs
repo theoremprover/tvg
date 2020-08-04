@@ -62,12 +62,13 @@ intSize = 32
 longIntSize = 64
 longLongIntSize = 64
 
+showInitialTrace = True
 solveIt = True
 showOnlySolutions = True
-don'tShowTraces = False
+don'tShowTraces = True
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
-outputVerbosity = 2
+outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
@@ -75,7 +76,7 @@ cutOffs = False
 logToFile = True
 
 mAX_UNROLLS = 30
-uNROLLING_STRATEGY = [mAX_UNROLLS,(mAX_UNROLLS-1)..0]
+uNROLLING_STRATEGY = [0..mAX_UNROLLS] --[mAX_UNROLLS,(mAX_UNROLLS-1)..0]
 
 sizeConditionChunks = 4
 
@@ -340,20 +341,8 @@ covVectorsM = do
 			ExitFailure _ -> myError $ "Compilation failed:\n" ++ stderr
 			ExitSuccess -> modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
 
-	Right all_covered <- unfoldTracesM (Just ret_type') [] (param_env:[glob_env]) [] decls [ defs ++ [ CBlockStmt body ] ]
+	Right all_covered <- unfoldTracesM (Just ret_type') [] (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	return all_covered
-
-{-
-	case mb_trace of
-		Nothing -> return (False,([],Set.empty,Set.empty))
-		Just trace -> do
-			when ("-writeTree" ∈ opts) $ liftIO $ writeFile (filename ++ "_tree" <.> "html") $ traceToHTMLString trace
-			when (False {-not don'tShowTraces-}) $ do
-				printLog $ "\n********** TRACE ***********\n" ++ showTrace 0 trace
-				printLog $ "****************************\n"
-		
-			solve_fun False trace
--}
 
 type Location = (Int,Int)
 
@@ -361,11 +350,15 @@ showLocation :: Location -> String
 showLocation (l,c) = "line " ++ show l ++ ", col " ++ show c
 
 -- In case of a cutoff, mb_ret_type is Nothing.
-analyzeTraceM :: Maybe Type -> [Int] -> [TraceElem] -> CovVecM Bool
-analyzeTraceM mb_ret_type traceid res_line = do
-	let trace = reverse res_line
-	
-	when (not don'tShowTraces) $ do
+analyzeTraceM :: Maybe Type -> [TraceElem] -> CovVecM Bool
+analyzeTraceM mb_ret_type res_line = do
+	let
+		trace = reverse res_line
+		traceid = concatMap extract_conds trace where
+			extract_conds (Condition b _) = [ if b then 1 else 2 ]
+			extract_conds _ = []
+
+	when showInitialTrace $ do
 		printLog $ "=== TRACE " ++ show traceid ++ " ========================\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine trace
@@ -620,18 +613,16 @@ createInterfaceFromExprM expr ty = do
 			rest <- rest_m
 			return $ ((srcident,(srcident,ty')),expr) : rest
 
-unfoldTracesM :: Maybe Type -> [Int] -> [Env] -> [Int] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
-unfoldTracesM mb_ret_type break_stack envs traceid trace cbss = do
-	printLogV 2 $ "unfoldTracesM " ++ (maybe "Nothing" (render.pretty) mb_ret_type) ++ " " ++ show break_stack ++ " " ++
-		" .. " ++ show traceid -- ++ " " ++ showTrace trace
-	unfoldTraces1M mb_ret_type break_stack envs traceid trace cbss
+unfoldTracesM :: Maybe Type -> [Int] -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
+unfoldTracesM mb_ret_type break_stack envs trace cbss = do
+	unfoldTraces1M mb_ret_type break_stack envs trace cbss
 
-unfoldTraces1M :: Maybe Type -> [Int] -> [Env] -> [Int] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
-unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stmt : rest) : rest2) = case stmt of
+unfoldTraces1M :: Maybe Type -> [Int] -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
+unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest) : rest2) = case stmt of
 
-	CLabel _ cstat _ _ -> unfoldTracesM mb_ret_type break_stack envs traceid trace ((CBlockStmt cstat : rest) : rest2)
+	CLabel _ cstat _ _ -> unfoldTracesM mb_ret_type break_stack envs trace ((CBlockStmt cstat : rest) : rest2)
 
-	CCompound _ cbis _ -> unfoldTracesM mb_ret_type break_stack ([]:envs) traceid trace (cbis : (rest : rest2))
+	CCompound _ cbis _ -> unfoldTracesM mb_ret_type break_stack ([]:envs) trace (cbis : (rest : rest2))
 
 	CSwitch condexpr (CCompound [] cbis _) switch_ni -> do
 		let
@@ -655,7 +646,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 
 			case_replacement = collect_stmts cbis
 		printLogV 1 $ (render.pretty) case_replacement
-		unfoldTracesM mb_ret_type (length bstss : break_stack) envs traceid trace ( (
+		unfoldTracesM mb_ret_type (length bstss : break_stack) envs trace ( (
 			CBlockDecl (CDecl [CTypeSpec $ CLongType cond_ni]
 				[(Just $ CDeclr (Just cond_var_ident) [] Nothing [] cond_ni, Just $ CInitExpr condexpr cond_ni, Nothing)] cond_ni) :
 			case_replacement ++
@@ -665,16 +656,16 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 		[] -> error $ "unfoldTraces1M " ++ (render.pretty) stmt ++ " : empty break stack!"
 		(b:rest) -> do
 			let through_compounds = length bstss - b
-			unfoldTracesM mb_ret_type rest (drop through_compounds envs) traceid trace (drop through_compounds bstss)
+			unfoldTracesM mb_ret_type rest (drop through_compounds envs) trace (drop through_compounds bstss)
 
 	CIf cond then_stmt mb_else_stmt ni -> do
 		let then_trace_m real_cond = transids real_cond trace $ \ (cond',trace') -> do
-			unfoldTracesM mb_ret_type break_stack envs (traceid++[1]) (Condition True cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
+			unfoldTracesM mb_ret_type break_stack envs (Condition True cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
 		let else_trace_m real_cond = transids real_cond trace $ \ (cond',trace') -> do
 			let not_cond = Condition False (CUnary CNegOp cond' (nodeInfo cond'))
 			case mb_else_stmt of
-				Nothing        -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( rest : rest2 )
-				Just else_stmt -> unfoldTracesM mb_ret_type break_stack envs (traceid++[2]) (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
+				Nothing        -> unfoldTracesM mb_ret_type break_stack envs (not_cond : trace') ( rest : rest2 )
+				Just else_stmt -> unfoldTracesM mb_ret_type break_stack envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 		case recognizeAnnotation cond of
 			(real_cond,Just (ns,num_reached)) -> do
 				printLogV 1 $ "Recognized IF annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond
@@ -693,7 +684,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 
 	CReturn Nothing _ -> case mb_ret_type of
 		Nothing       -> return $ Left [trace]
-		Just ret_type -> analyzeTraceM (Just ret_type) traceid trace >>= return.Right
+		Just ret_type -> analyzeTraceM (Just ret_type) trace >>= return.Right
 
 	CReturn (Just ret_expr) _ -> do
 		transids ret_expr trace $ \ (ret_expr',trace') -> do
@@ -707,18 +698,18 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 						\ ( ((_,(ret_var_ident,ret_var_ty)),_) , (_,ret_member_expr)) -> [
 							Condition True $ CVar ret_var_ident undefNode ⩵ ret_member_expr,
 							NewDeclaration (ret_var_ident,ret_var_ty) ]
-					analyzeTraceM (Just ret_type) traceid (Return ret_expr' : (ret_trace ++ trace'))
+					analyzeTraceM (Just ret_type) (Return ret_expr' : (ret_trace ++ trace'))
 						>>= return.Right
 
 	CExpr (Just (CCall (CVar (Ident "solver_debug" _ _) _) args ni)) _ -> do
 		let vars = for args $ \ (CVar ident _) -> fromJust $ lookup ident (concat envs)
-		unfoldTracesM mb_ret_type break_stack envs traceid (map to_dbg_output (reverse vars) ++ trace) (rest:rest2) where
+		unfoldTracesM mb_ret_type break_stack envs (map to_dbg_output (reverse vars) ++ trace) (rest:rest2) where
 			to_dbg_output (name_id,ty) = DebugOutput ("solver_debug_" ++ identToString name_id) (CVar name_id undefNode,ty)
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
 			transids lexpr trace' $ \ (lexpr',trace'') -> do
-				unfoldTracesM mb_ret_type break_stack envs traceid (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
+				unfoldTracesM mb_ret_type break_stack envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -728,7 +719,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 			Just binop -> CBinary binop lexpr assigned_expr ni
 
 	CExpr (Just (CUnary unaryop expr ni_op)) ni | unaryop `elem` (map fst unaryops) -> do
-		unfoldTracesM mb_ret_type break_stack envs traceid trace ( (CBlockStmt stmt' : rest) : rest2 )
+		unfoldTracesM mb_ret_type break_stack envs trace ( (CBlockStmt stmt' : rest) : rest2 )
 		where
 		stmt' = CExpr (Just $ CAssign assignop expr (ⅈ 1) ni) ni
 		Just assignop = lookup unaryop unaryops
@@ -738,11 +729,11 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 		myError $ "unfoldTraces: " ++ (render.pretty) stmt ++ " not implemented yet."
 
 	-- That's cheating: Insert condition into trace (for loop unrolling)
-	CGotoPtr cond _ -> do
+	CGotoPtr cond ni -> do
 		transids cond trace $ \ (cond',trace') -> do
-			unfoldTracesM mb_ret_type break_stack envs traceid (Condition True cond' : trace') ( rest : rest2 )
+			unfoldTracesM mb_ret_type break_stack envs (Condition (isUndefNode ni) cond' : trace') ( rest : rest2 )
 
- 	CWhile cond body False _ -> do
+ 	CWhile cond body False ni -> do
  		(mb_unrolling_depth,msg) <- infer_loopingsM cond body
  		printLogV 1 msg
  		unroll_loopM $ case mb_unrolling_depth of
@@ -757,13 +748,12 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 			Just _  -> return $ Right False
 		unroll_loopM (depth:depths) = do
 			printLogV 1 $ "unroll_loopM " ++ show depth
-			unfoldTracesM mb_ret_type break_stack envs (traceid++[depth])
-				trace ((unroll cond depth ++ rest) : rest2 ) >>= \case
-					Right False -> unroll_loopM depths
-					r -> return r
+			unfoldTracesM mb_ret_type break_stack envs trace ((unroll cond depth ++ rest) : rest2 ) >>= \case
+				Right False -> unroll_loopM depths
+				r -> return r
 
 		unroll :: CExpr -> Int -> [CBlockItem]
-		unroll while_cond n = [ CBlockStmt $ CGotoPtr (not_c while_cond) undefNode ] ++
+		unroll while_cond n = [ CBlockStmt $ CGotoPtr (not_c while_cond) ni ] ++
 			concat ( replicate n [ CBlockStmt body, CBlockStmt (CGotoPtr while_cond undefNode) ] )
 
 	_ -> myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
@@ -783,7 +773,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 	maybe_cutoff cont | cutOffs = do
 		incCutoffTriesM
 		printLogV 2 $ "******* Probing for CutOff in depth " ++ show (length trace) ++ " ..."
-		analyzeTraceM Nothing traceid trace >>= \case
+		analyzeTraceM Nothing trace >>= \case
 			False -> do
 				printLogV 2 $ "******** Cutting off."
 				incCutoffsM
@@ -806,13 +796,13 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 		case recognizeAnnotation cond0 of
 			(real_cond,Just (ns,_)) -> return (Just ns,"Recognized LOOP annoation to " ++ (render.pretty) cond0)
 			(real_cond,Nothing) -> do
-				translateExprM envs traceid real_cond >>= \case
+				translateExprM envs real_cond >>= \case
 					[(cond,[])] -> do
 						let
 							-- get all variables used in the condition
 							cond_idents = fvar cond
 						-- unfold body to all body traces and filter for all Assignments to variables from the condition
-						Left body_traces <- unfoldTracesM Nothing [] envs [999] [] [[CBlockStmt body]]
+						Left body_traces <- unfoldTracesM Nothing [] envs [] [[CBlockStmt body]]
 						let
 							body_traces_ass = map (concatMap from_ass) body_traces where
 								from_ass (Assignment a@(CVar i _) b) | i `elem` cond_idents = [(a,b)]
@@ -879,7 +869,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 
 	transids :: CExpr -> Trace -> ((CExpr,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
 	transids expr trace cont = do
-		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM envs traceid expr
+		additional_expr_traces :: [(CExpr,Trace)] <- translateExprM envs expr
 		case mb_ret_type of
 			Nothing -> do
 				conts :: [UnfoldTracesRet] <- forM additional_expr_traces $ \ (expr',trace') -> do
@@ -894,7 +884,7 @@ unfoldTraces1M mb_ret_type break_stack envs traceid trace bstss@((CBlockStmt stm
 							True -> return $ Right True
 							False -> try_next rest
 
-unfoldTraces1M mb_ret_type break_stack (env:envs) traceid trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
+unfoldTraces1M mb_ret_type break_stack (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
 	ty <- tyspec2TypeM typespec
 	new_env_items <- forM triples $ \case
 		(Just (CDeclr (Just ident) derivdeclrs _ _ ni),mb_init,Nothing) -> do
@@ -909,17 +899,17 @@ unfoldTraces1M mb_ret_type break_stack (env:envs) traceid trace ( (CBlockDecl (C
 			return (newenvitems,newdecls,initializers)
 		triple -> myError $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 	let (newenvs,newitems,initializerss) = unzip3 $ reverse new_env_items
-	unfoldTracesM mb_ret_type break_stack ((concat newenvs ++ env) : envs) traceid (concat newitems ++ trace) ((concat initializerss ++ rest):rest2)
+	unfoldTracesM mb_ret_type break_stack ((concat newenvs ++ env) : envs) (concat newitems ++ trace) ((concat initializerss ++ rest):rest2)
 
-unfoldTraces1M mb_ret_type break_stack (_:restenvs) traceid trace ([]:rest2) = do
+unfoldTraces1M mb_ret_type break_stack (_:restenvs) trace ([]:rest2) = do
 	let break_stack' = dropWhile (> (length rest2)) break_stack
-	unfoldTracesM mb_ret_type break_stack' restenvs traceid trace rest2
+	unfoldTracesM mb_ret_type break_stack' restenvs trace rest2
 
-unfoldTraces1M mb_ret_type _ _ traceid trace [] = case mb_ret_type of
+unfoldTraces1M mb_ret_type _ _ trace [] = case mb_ret_type of
 	Nothing       -> return $ Left [trace]
-	Just ret_type -> analyzeTraceM (Just ret_type) traceid trace >>= return.Right
+	Just ret_type -> analyzeTraceM (Just ret_type) trace >>= return.Right
 
-unfoldTraces1M _ _ _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
+unfoldTraces1M _ _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
 
 infix 4 ⩵
@@ -985,8 +975,8 @@ cinitializer2blockitems lexpr ty initializer =
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
 -- It needs to keep the original NodeInfos, because of the coverage information with is derived from the original source tree.
-translateExprM :: [Env] -> [Int] -> CExpr -> CovVecM [(CExpr,Trace)]
-translateExprM envs traceid expr = do
+translateExprM :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
+translateExprM envs expr = do
 	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
@@ -1007,7 +997,7 @@ translateExprM envs traceid expr = do
 		expanded_params_args <- expand_params_argsM paramdecls args
 		let body' = replace_param_with_arg expanded_params_args body
 		printLogV 2 $ "body'= " ++ (render.pretty) body'
-		Left funtraces <- unfoldTracesM Nothing [] envs traceid [] [ [ CBlockStmt body' ] ]
+		Left funtraces <- unfoldTracesM Nothing [] envs [] [ [ CBlockStmt body' ] ]
 		forM_ funtraces $ \ tr -> printLogV 2 $ "funtrace = " ++ showTrace tr
 		let funtraces_rets = concat $ for funtraces $ \case
 			Return retexpr : tr -> [(tr,retexpr)]
@@ -1564,7 +1554,6 @@ instance Show SolutionVal where
 makeAndSolveZ3ModelM :: TyEnv -> [CExpr] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpathfile = do
 	opts <- gets optsCVS
---	printLog $ "tyenv=" ++ showTyEnv tyenv
 	printLogV 2 $ "output_idents = " ++ showIdents output_idents
 	let
 		constraints_vars = fvar constraints
