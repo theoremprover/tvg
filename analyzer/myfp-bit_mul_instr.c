@@ -1808,13 +1808,15 @@ f(a=0, a={ 3,0,0, fraction={1} },   b=0, b={ 3,0,0, fraction={488372224} },  t=0
 
 
 /*
-D:\Haskell\tvg\tvg\analyzer>a2.exe 0 3 1 1 1000000000000 0 3 1 1 1100000000 0 3 0 0 0
+
+C:\Data\tvg\analyzer>a.exe 0 3 1 1 1000000000000 0 3 1 1 1100000000 0 3 0 0 0
 FRACBITS=23, NGARDS=7
 ROUND_TOWARDS_ZERO=0, GARDMASK=127, GARDMSB=64, IMPLICIT_1=40000000, IMPLICIT2=80000000
-sizeof(int)=4, sizeof(fractype)=4, sizeof(unsigned int)=4
+sizeof(int)=4, sizeof(fractype)=4, sizeof(UDItype)=8
 a=0.000000, b=0.000000, tmp=0.000000
 SECOND LOOP 1: high=1827416038
 erg: tmp=0.000000
-f(a=0, a={ 3,1,1, fraction={3567587328} },   b=0, b={ 3,1,1, fraction={1100000000} },  t=0
-, t={ 3,0,0, fraction={0} }) =
-2293072 3 0 3 1827416038*/
+f(a=0, a={ 3,1,1, fraction={3567587328} },   b=0, b={ 3,1,1, fraction={1100000000} },  t=0, t={ 3,0,0, fraction={0} }) =
+6487328 3 0 3 1827416038
+
+*/

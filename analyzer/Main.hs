@@ -64,10 +64,10 @@ longLongIntSize = 64
 
 solveIt = True
 showOnlySolutions = True
-don'tShowTraces = True
+don'tShowTraces = False
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
-outputVerbosity = 1
+outputVerbosity = 2
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
@@ -110,8 +110,8 @@ main = do
 	hSetBuffering stdout NoBuffering
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
@@ -120,7 +120,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
@@ -1201,10 +1201,11 @@ createTyEnv trace = concatMap traceitem2tyenv trace
 	traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
 	traceitem2tyenv _ = []
 
-data SExpr = SExpr [SExpr] | SLeaf String
+data SExpr = SExpr [SExpr] | SLeaf String | SComment String
 instance Show SExpr where
 	show (SLeaf s) = s
 	show (SExpr sexprs) = "(" ++ intercalate " " (map show sexprs) ++ ")"
+	show (SComment s) = "; " ++ s
 
 data Z3_Type = Z3_Bool | Z3_BitVector Int Bool | Z3_Float | Z3_Double
 	deriving (Show,Eq,Ord)
@@ -1213,8 +1214,11 @@ z3Int = Z3_BitVector intSize False
 
 type Constraint = CExpr
 
-expr2SExpr :: TyEnv -> Expr -> CovVecM SExpr
-expr2SExpr tyenv expr = expr2sexpr (insert_eq0 True expr) >>= return.fst
+expr2SExpr :: TyEnv -> Expr -> CovVecM (SExpr,CExpr)
+expr2SExpr tyenv expr = do
+	let expr_inseq0 = insert_eq0 True expr
+	(sexpr,_) <- expr2sexpr expr_inseq0
+	return (sexpr,expr_inseq0)
 
 	where
 
@@ -1229,7 +1233,7 @@ expr2SExpr tyenv expr = expr2sexpr (insert_eq0 True expr) >>= return.fst
 			cond_sexpr = SExpr [ SLeaf "=", sexpr, make_intconstant size_from 0 ]
 		( Z3_BitVector size_from _, Z3_BitVector size_to True ) -> case size_from < size_to of
 			True  -> SExpr [ SLeaf "concat", SExpr [SLeaf "_",SLeaf "bv0",SLeaf (show $ size_to-size_from)], sexpr ]
-			False -> SExpr [ SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0", sexpr ]
+			False -> SExpr [ SExpr [ SLeaf "_", SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0"], sexpr ]
 		_ -> error $ "cast_expr " ++ (render.pretty) expr ++ " " ++
 			show from_ty ++ " " ++ show to_ty ++ " not implemented!"
 
@@ -1302,32 +1306,33 @@ expr2SExpr tyenv expr = expr2sexpr (insert_eq0 True expr) >>= return.fst
 	expr2sexpr expr@(CBinary op expr1 expr2 _) = do
 		(sexpr1,ty1) <- expr2sexpr expr1
 		(sexpr2,ty2) <- expr2sexpr expr2
-		let (op_sexpr,target_ty) = opexpr_ty ty1 ty2
-		return ( SExpr [ op_sexpr, mb_cast sexpr1 ty1 target_ty, mb_cast sexpr2 ty2 target_ty ], target_ty )
+		let (op_sexpr,operand_target_ty,expr_target_ty) = opexpr_ty ty1 ty2
+		return ( SExpr [ op_sexpr, mb_cast sexpr1 ty1 operand_target_ty, mb_cast sexpr2 ty2 operand_target_ty ], expr_target_ty )
 		where
 		opexpr_ty ty1 ty2 = case op of
-			CMulOp -> (SLeaf "bvmul",target_ty)
-			CDivOp -> (SLeaf "bvdiv",target_ty)
-			CAddOp -> (SLeaf "bvadd",target_ty)
-			CSubOp -> (SLeaf "bvsub",target_ty)
-			CRmdOp -> (unSigned target_ty "bvurem" "bvsrem",target_ty)
-			CShlOp -> (unSigned target_ty "bvshl"  "bvshl", target_ty)
-			CShrOp -> (unSigned target_ty "bvlshr" "bvashr",target_ty)
-			CLeOp  -> (unSigned target_ty "bvult"  "bvslt", Z3_Bool)
-			CGrOp  -> (unSigned target_ty "bvugt"  "bvsgt", Z3_Bool)
-			CLeqOp -> (unSigned target_ty "bvule"  "bvsle", Z3_Bool)
-			CGeqOp -> (unSigned target_ty "bvuge"  "bvsge", Z3_Bool)
-			CLndOp -> (SLeaf "and",Z3_Bool)
-			CLorOp -> (SLeaf "or", Z3_Bool)
-			CEqOp  -> (SLeaf "=",  Z3_Bool)
-			CAndOp -> (SLeaf "bvand",target_ty)
-			COrOp  -> (SLeaf "bvor", target_ty)
-			CXorOp -> (SLeaf "bvxor",target_ty)
+		--            (function,     operands' types,  operation's result type)
+			CMulOp -> (SLeaf "bvmul",operand_target_ty,operand_target_ty)
+			CDivOp -> (SLeaf "bvdiv",operand_target_ty,operand_target_ty)
+			CAddOp -> (SLeaf "bvadd",operand_target_ty,operand_target_ty)
+			CSubOp -> (SLeaf "bvsub",operand_target_ty,operand_target_ty)
+			CRmdOp -> (unSigned operand_target_ty "bvurem" "bvsrem",operand_target_ty,operand_target_ty)
+			CShlOp -> (unSigned operand_target_ty "bvshl"  "bvshl", operand_target_ty,operand_target_ty)
+			CShrOp -> (unSigned operand_target_ty "bvlshr" "bvashr",operand_target_ty,operand_target_ty)
+			CLeOp  -> (unSigned operand_target_ty "bvult"  "bvslt", operand_target_ty,Z3_Bool)
+			CGrOp  -> (unSigned operand_target_ty "bvugt"  "bvsgt", operand_target_ty,Z3_Bool)
+			CLeqOp -> (unSigned operand_target_ty "bvule"  "bvsle", operand_target_ty,Z3_Bool)
+			CGeqOp -> (unSigned operand_target_ty "bvuge"  "bvsge", operand_target_ty,Z3_Bool)
+			CLndOp -> (SLeaf "and",Z3_Bool,Z3_Bool)
+			CLorOp -> (SLeaf "or", Z3_Bool,Z3_Bool)
+			CEqOp  -> (SLeaf "=",    operand_target_ty,Z3_Bool)
+			CAndOp -> (SLeaf "bvand",operand_target_ty,operand_target_ty)
+			COrOp  -> (SLeaf "bvor", operand_target_ty,operand_target_ty)
+			CXorOp -> (SLeaf "bvxor",operand_target_ty,operand_target_ty)
 			_ -> error $ "expr2sexpr " ++ (render.pretty) expr ++ " : operand not implemented!"
 			where
-			target_ty = max ty1 ty2
+			operand_target_ty = max ty1 ty2
 
-		unSigned target_ty unsigned signed = case target_ty of
+		unSigned op_ty unsigned signed = case op_ty of
 			Z3_BitVector _ is_unsigned -> SLeaf $ if is_unsigned then unsigned else signed
 			_ -> error $ "unSigned: target_ty of " ++ (render.pretty) expr ++ " is no bitvector!"
 
@@ -1568,9 +1573,9 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 	let
 		varsZ3 = for (filter ((`elem` (constraints_vars ++ output_idents)).fst) tyenv) $ \ (ident,ty) ->
 			SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
-	constraintsZ3 <- forM constraints $ \ expr -> do
-		assert_sexpr <- expr2SExpr tyenv expr
-		return $ SExpr [SLeaf "assert", assert_sexpr]
+	constraintsZ3 <- concatForM constraints $ \ expr -> do
+		(assert_sexpr,real_expr) <- expr2SExpr tyenv expr
+		return [ SComment ((render.pretty) real_expr), SExpr [SLeaf "assert", assert_sexpr] ]
 	let
 		outputvarsZ3 = for output_idents $ \ ident -> SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
 		model = [
@@ -1611,7 +1616,8 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 
 					_ -> myError $ "Parsing z3 output: Could not find " ++ is
 			return (model_string_linenumbers,Just sol_params)
-		_ -> myError $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ output
+		_ -> myError $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ output ++ "\n\n" ++
+			"Model is\n" ++ model_string_linenumbers
 
 
 -- In case of a cutoff, mb_ret_type is Nothing.
