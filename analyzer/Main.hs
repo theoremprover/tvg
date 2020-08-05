@@ -111,7 +111,7 @@ main = do
 	hSetBuffering stdout NoBuffering
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
@@ -121,7 +121,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST"]
 --		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
@@ -239,7 +239,7 @@ type CovVecM = StateT CovVecState IO
 
 data TraceElem =
 	Assignment CExpr CExpr |
-	Condition Bool CExpr |
+	Condition (Maybe Bool) CExpr |
 	NewDeclaration (Ident,Type) |
 	Return CExpr |
 	DebugOutput String (CExpr,Type)
@@ -269,7 +269,7 @@ instance (Pretty a) => Pretty [a] where
 instance Show TraceElem where
 	show te = ( case te of
 		(Assignment lvalue expr)   -> "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
-		(Condition b expr)         -> "COND " ++ (if b then "(THEN) " else "(ELSE) ") ++ (render.pretty) expr
+		(Condition mb_b expr)      -> "COND " ++ maybe "" (\b->if b then "(THEN) " else "(ELSE) ") mb_b ++ (render.pretty) expr
 		(NewDeclaration (lval,ty)) -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
 		(Return exprs)             -> "RET  " ++ (render.pretty) exprs
 		(DebugOutput varname (expr,_)) -> "DBGOUT " ++ varname ++ " " ++ (render.pretty) expr
@@ -355,7 +355,7 @@ analyzeTraceM mb_ret_type res_line = do
 	let
 		trace = reverse res_line
 		traceid = concatMap extract_conds trace where
-			extract_conds (Condition b _) = [ if b then 1 else 2 ]
+			extract_conds (Condition (Just b) _) = [ if b then 1 else 2 ]
 			extract_conds _ = []
 
 	when showInitialTrace $ do
@@ -413,7 +413,7 @@ analyzeTraceM mb_ret_type res_line = do
 			startend <- gets funStartEndCVS
 			let visible_trace = Set.fromList $ concatMap to_branch res_line
 				where
-				to_branch cond@(Condition b _) | is_visible_traceelem startend cond =
+				to_branch cond@(Condition (Just b) _) | is_visible_traceelem startend cond =
 					[ (if b then Then else Else) (lineColNodeInfo cond) ]
 				to_branch _ = []
 		
@@ -660,9 +660,9 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 
 	CIf cond then_stmt mb_else_stmt ni -> do
 		let then_trace_m real_cond = transids real_cond trace $ \ (cond',trace') -> do
-			unfoldTracesM mb_ret_type break_stack envs (Condition True cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
+			unfoldTracesM mb_ret_type break_stack envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
 		let else_trace_m real_cond = transids real_cond trace $ \ (cond',trace') -> do
-			let not_cond = Condition False (CUnary CNegOp cond' (nodeInfo cond'))
+			let not_cond = Condition (Just False) (CUnary CNegOp cond' (nodeInfo cond'))
 			case mb_else_stmt of
 				Nothing        -> unfoldTracesM mb_ret_type break_stack envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM mb_ret_type break_stack envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
@@ -696,7 +696,7 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 					when (length ret_var_expr /= length ret_env_expr) $ error "unfoldTraces1M CReturn: length ret_var_expr /= length ret_env_expr !"
 					let ret_trace = concat $ for (zip ret_var_expr ret_env_expr) $
 						\ ( ((_,(ret_var_ident,ret_var_ty)),_) , (_,ret_member_expr)) -> [
-							Condition True $ CVar ret_var_ident undefNode ⩵ ret_member_expr,
+							Condition Nothing $ CVar ret_var_ident undefNode ⩵ ret_member_expr,
 							NewDeclaration (ret_var_ident,ret_var_ty) ]
 					analyzeTraceM (Just ret_type) (Return ret_expr' : (ret_trace ++ trace'))
 						>>= return.Right
@@ -731,13 +731,13 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 	-- That's cheating: Insert condition into trace (for loop unrolling)
 	CGotoPtr cond ni -> do
 		transids cond trace $ \ (cond',trace') -> do
-			unfoldTracesM mb_ret_type break_stack envs (Condition (isUndefNode ni) cond' : trace') ( rest : rest2 )
+			unfoldTracesM mb_ret_type break_stack envs (Condition (Just $ isUndefNode ni) cond' : trace') ( rest : rest2 )
 
  	CWhile cond body False ni -> do
  		(mb_unrolling_depth,msg) <- infer_loopingsM cond body
  		printLogV 1 msg
  		unroll_loopM $ case mb_unrolling_depth of
-			Nothing -> uNROLLING_STRATEGY --[0..mAX_UNROLLING_DEPTH]
+			Nothing -> uNROLLING_STRATEGY
 			Just ns -> ns
 
 		where
@@ -749,12 +749,16 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 		unroll_loopM (depth:depths) = do
 			printLogV 1 $ "unroll_loopM " ++ show depth
 			unfoldTracesM mb_ret_type break_stack envs trace ((unroll cond depth ++ rest) : rest2 ) >>= \case
+				Right True  -> return $ Right True
 				Right False -> unroll_loopM depths
-				r -> return r
+				Left traces -> do
+					Left traces' <- unroll_loopM depths
+					return $ Left $ traces ++ traces'
 
 		unroll :: CExpr -> Int -> [CBlockItem]
-		unroll while_cond n = [ CBlockStmt $ CGotoPtr (not_c while_cond) ni ] ++
-			concat ( replicate n [ CBlockStmt body, CBlockStmt (CGotoPtr while_cond undefNode) ] )
+		unroll while_cond n = 
+			concat ( replicate n [ CBlockStmt (CGotoPtr while_cond undefNode), CBlockStmt body ] ) ++
+			[ CBlockStmt $ CGotoPtr (not_c while_cond) ni ]
 
 	_ -> myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 
@@ -1340,172 +1344,6 @@ expr2SExpr tyenv expr = do
 	
 	expr2sexpr expr = myError $ "expr2SExpr " ++ (render.pretty) expr ++ " not implemented" 
 
-{-
-expr2SExpr tyenv expr = do
-	mb_ty <- infer_type expr
-	expr2sexpr mb_ty (insert_eq0 True expr)
-
-	where
-	
-	bool_result_ops = [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp]
-
-	neq0 :: Constraint -> Constraint
-	neq0 constr = not_c $ constr ⩵ ⅈ 0
-
-	insert_eq0 :: Bool -> Constraint -> Constraint
-	insert_eq0 must_be_bool (CUnary unop expr ni) = case unop of
-		CNegOp -> CUnary CNegOp (insert_eq0 True expr) ni
-		unop   -> (if must_be_bool then neq0 else id) $ CUnary unop (insert_eq0 False expr) ni
-	insert_eq0 must_be_bool (CCast ty expr ni) = CCast ty (insert_eq0 must_be_bool expr) ni
-	insert_eq0 must_be_bool cvar@(CVar ident ni) = (if must_be_bool then neq0 else id) cvar
-	insert_eq0 must_be_bool const@(CConst _) = (if must_be_bool then neq0 else id) const
-	insert_eq0 False cond@(CBinary binop expr1 expr2 ni) | binop `elem` bool_result_ops =
-		CCond (insert_eq0 True cond) (Just $ ⅈ 1) (ⅈ 0) ni
-	insert_eq0 must_be_bool (CBinary binop expr1 expr2 ni) = mb_eq0 $
-		CBinary binop (insert_eq0 must_be_bool' expr1) (insert_eq0 must_be_bool' expr2) ni
-		where
-		(must_be_bool',mb_eq0) = case must_be_bool of
-			_ | binop `elem` [CLndOp,CLorOp] -> (True,id)
-			_ | binop `elem` [CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp] -> (False,id)
-			True -> (False,neq0)
-			_ -> (False,id)
-	insert_eq0 must_be_bool cmember@(CMember _ _ _ _) = (if must_be_bool then neq0 else id) cmember
-	insert_eq0 _ expr = error $ "insert_eq0 " ++ (render.pretty) expr ++ " not implemented yet."
-
-	expr2sexpr :: Maybe Z3_Type -> CExpr -> CovVecM SExpr
-	expr2sexpr cur_ty expr = case expr of
-		CCast (CDecl [CTypeSpec ctypespec] [] _) subexpr _ -> do
-			ty <- tyspec2TypeM ctypespec >>= elimTypeDefsM >>= return . ty2Z3Type
-			mb_subexprty <- infer_type subexpr
-			cast_expr subexpr mb_subexprty ty where
-				cast_expr :: CExpr -> Maybe Z3_Type -> Z3_Type -> CovVecM SExpr
-				-- cast expression of type t to type ty
-				cast_expr expr Nothing _ = expr2sexpr cur_ty expr
-				cast_expr expr (Just z3t) z3ty = case (z3t,z3ty) of
-					(z3t, z3ty) | z3t == z3ty -> expr2sexpr cur_ty expr
-					(Z3_BitVector size_from False,Z3_BitVector size_to True) -> do
-						sexpr <- expr2sexpr (Just z3t) expr
-						return $ case size_from <= size_to of
-							True  -> SExpr [ SLeaf "concat", SExpr [SLeaf "_",SLeaf "bv0",SLeaf (show $ size_to-size_from)], sexpr ]
-							False -> SExpr [ SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0", sexpr ]
-					_ -> error $ "cast_expr " ++ (render.pretty) expr ++ " " ++
-						show z3t ++ " " ++ show z3ty ++ " not implemented!"
-		CUnary CPlusOp expr _ -> expr2sexpr cur_ty expr
-		CUnary op expr _ -> do
-			sexpr' <- expr2sexpr cur_ty expr
-			return $ SExpr [ SLeaf op_str , sexpr' ]
-			where
-			op_str = case op of
-				CMinOp  -> "bvneg"
-				CCompOp -> "bvnot"
-				CNegOp  -> "not"
-				_       -> error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
-		CBinary CNeqOp expr1 expr2 _ -> expr2sexpr cur_ty $ expr1 !⩵ expr2
-		CBinary op expr1 expr2 _ -> do
-			mb_t1 <- infer_type expr1
-			mb_t2 <- infer_type expr2
-			t <- case (mb_t1,mb_t2) of
-				(Nothing,Nothing) -> myError $ "expr2sexpr " ++ (render.pretty) expr ++ " : infer_type yielded Nothing type for both operands"
-				(Just t1,Just t2) -> do
-					when (t1/=t2) $ myError $ "expr2sexpr " ++ (render.pretty) expr ++ " yielded different operand's types: " ++
-						show t1 ++ " /= " ++ show t2
-					return t1
-				(Nothing,Just t2) -> return t2
-				(Just t1,Nothing) -> return t1
-			sexpr1 <- expr2sexpr (Just t) expr1
-			sexpr2 <- expr2sexpr (Just t) expr2
-			return $ SExpr [ op_sexpr t t, sexpr1 , sexpr2 ]
-			where
-			op_sexpr t1 t2 = case op of
-				CMulOp -> SLeaf "bvmul"
-				CDivOp -> SLeaf "bvdiv"
-				CAddOp -> SLeaf "bvadd"
-				CSubOp -> SLeaf "bvsub"
-				CRmdOp -> SLeaf $ unSigned t1 t2 "bvurem" "bvsrem"
-				CShlOp -> SLeaf $ unSigned t1 t2 "bvshl" "bvshl"
-				CShrOp -> SLeaf $ unSigned t1 t2 "bvlshr" "bvashr"
-				CLeOp  -> SLeaf $ unSigned t1 t2 "bvult" "bvslt"
-				CGrOp  -> SLeaf $ unSigned t1 t2 "bvugt" "bvsgt"
-				CLeqOp -> SLeaf $ unSigned t1 t2 "bvule" "bvsle"
-				CGeqOp -> SLeaf $ unSigned t1 t2 "bvuge" "bvsge"
-				CEqOp  -> SLeaf "="
-				CAndOp -> SLeaf "bvand"
-				COrOp  -> SLeaf "bvor"
-				CXorOp -> SLeaf "bvxor"
-				CLndOp -> SLeaf "and"
-				CLorOp -> SLeaf "or"
-
-			unSigned t1 t2 unsigned signed = case (t1,t2) of
-				(Z3_BitVector _ is_signed1, Z3_BitVector _ is_signed2) | is_signed1==is_signed2 ->
-					if is_signed1 then signed else unsigned
-				_ -> error $ "unSigned: infer_type's yielded " ++ (render.pretty) expr1 ++ " and " ++ (render.pretty) expr2 ++ ": not implemented! "
-
-		CVar ident _ -> return $ SLeaf $ (render.pretty) ident
-		CConst cconst -> do
-			let Just (Z3_BitVector size _) = cur_ty
-			return $ SLeaf $ case cconst of
-				CIntConst intconst _ -> printf "#x%*.*x" (size `div` 4) (size `div` 4) (getCInteger intconst)
-				_ -> (render.pretty) cconst
-		CCond cond (Just then_expr) else_expr _ -> do
-			cond_sexpr <- expr2sexpr cur_ty cond
-			then_sexpr <- expr2sexpr cur_ty then_expr
-			else_sexpr <- expr2sexpr cur_ty else_expr
-			return $ SExpr [ SLeaf "ite", cond_sexpr, then_sexpr, else_sexpr ]
-
-		cmember@(CMember _ _ _ _) -> error $ "expr2SExpr " ++ (render.pretty) cmember ++ " should not occur!"
-		ccall@(CCall _ _ _) ->error $ "expr2SExpr " ++ (render.pretty) ccall ++ " should not occur!"
-		expr -> error $ "expr2SExpr " ++ (render.pretty) expr ++ " not implemented" 
-
-	infer_type :: CExpr -> CovVecM (Maybe Z3_Type)
-	infer_type expr = infer_sem_type expr >>= return . fmap ty2Z3Type
-
-	infer_sem_type :: CExpr -> CovVecM (Maybe Type)
-	infer_sem_type (CVar ident _) = case lookup ident tyenv of
-		Nothing -> myError $ "infer_type: " ++ (render.pretty) ident ++ " not found in tyenv\n" ++
-			(unlines $ map (\(a,b) -> (render.pretty) a ++ " |-> " ++ (render.pretty) b) tyenv)
-		Just ty -> return $ Just ty
-	infer_sem_type (CConst cconst) = return Nothing
-{-
-	$ ccase cconst of
-		CIntConst (CInteger _ _ flags) _ -> DirectType (TyIntegral intty) undefined undefined where
-			intty = case map ($ flags) (map testFlag [FlagUnsigned,FlagLong,FlagLongLong,FlagImag]) of
-				[False,False,False,False] -> TyUInt
-				[False,True, False,False] -> TyULong
-				[False,False,True, False] -> TyULLong
-				[True, False,False,False] -> TyInt
-				[True, True, False,False] -> TyLong
-				[True, False,True, False] -> TyLLong
-				_ -> error $ "infer_type: Strange flags in " ++ (render.pretty) cconst
-		CCharConst cchar _ -> DirectType (TyIntegral TyChar) undefined undefined
-		CFloatConst cfloat _ -> DirectType (TyFloating TyDouble) undefined undefined
-		CStrConst cstr _ -> PtrType undefined undefined undefined
--}
-	infer_sem_type (CCast (CDecl [CTypeSpec ctypespec] [] _) _ _) =
-		tyspec2TypeM ctypespec >>= elimTypeDefsM >>= return.Just
-	infer_sem_type (CCast (CDecl [CTypeSpec ctypespec] [(Just (CDeclr Nothing [CPtrDeclr [] _] Nothing [] _),Nothing,Nothing)] _) _ _) = do
-		spec_ty <- tyspec2TypeM ctypespec >>= elimTypeDefsM
-		return $ Just $  PtrType spec_ty undefined undefined
-	infer_sem_type (CCond cond (Just expr1) expr2 _) = infer_sem_type expr1
-	infer_sem_type (CUnary _ expr _) = infer_sem_type expr
-	infer_sem_type expr@(CBinary _ expr1 expr2 _) = do
-		mb_t1 <- infer_sem_type expr1
-		mb_t2 <- infer_sem_type expr2
-		case (mb_t1,mb_t2) of
-			(Just t1,Just t2) -> do
-				when (ty2Z3Type t1 /= ty2Z3Type t2) $ myError $ "infer_sem_type " ++ (render.pretty) expr ++ " yields different types for operands: " ++
-					show (ty2Z3Type t1) ++ " and " ++ show (ty2Z3Type t2)
-				return mb_t1
-			(Nothing,_) -> return mb_t2
-			(_,Nothing) -> return mb_t1
-	infer_sem_type (CMember expr member True _) = do
-		Just (PtrType target_ty _ _) <- infer_sem_type expr
-		getMemberTypeM target_ty member >>= return.Just
-	infer_sem_type (CMember expr member False _) = do
-		Just struct_ty <- infer_sem_type expr
-		getMemberTypeM struct_ty member >>= return.Just
-	infer_sem_type other = myError $ "infer_sem_type " ++ (render.pretty) other ++ " not implemented! AST is:\n" ++
-		genericToString other
--}
 
 ty2Z3Type :: Type -> Z3_Type
 ty2Z3Type ty = case ty of

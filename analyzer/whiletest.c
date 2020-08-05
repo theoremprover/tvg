@@ -3,11 +3,20 @@
 #include <stdlib.h>
 #endif
 
+int solver_pragma(int x,...)
+{
+    return 1;
+}
+void solver_debug(void* x)
+{
+}
+
 int g(int x,int y)
 {
     int erg = x;
     while(y>0)
     {
+        solver_debug(y);
         erg = erg << 1;
         y=y-1;
     }
