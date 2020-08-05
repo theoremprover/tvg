@@ -1706,117 +1706,17 @@ int main(int argc, char* argv[])
 
 /*
 gcc -o a.exe -DCALC myfp-bit_mul_instr.c
-a.exe 0 3 1 1 1000000 0 3 1 1 1100000 0 3 0 0 0
 
-Recognized LOOP annoation to solver_pragma(0) && high >= (fractype) 1 << 23 + 1 + 7L
-unroll_loopM 0
-Recognized LOOP annoation to solver_pragma(22) && high < (fractype) 1 << 23 + 7L
-unroll_loopM 22
-Recognized IF annoation 2 to low & 0x80000000L
-Recognized IF annoation 2 to low & 0x80000000L
-Recognized IF annoation 2 to low & 0x80000000L
-Recognized IF annoation 1 to low & 0x80000000L
-Recognized IF annoation 1 to low & 0x80000000L
-Recognized IF annoation 1 to low & 0x80000000L
-Recognized IF annoation 2 to low & 0x80000000L
-Recognized IF annoation 1 to low & 0x80000000L
-Recognized IF annoation 2 to low & 0x80000000L
-Recognized IF annoation 2 to low & 0x80000000L
-Recognized IF annoation 2 to low & 0x80000000L
-Recognized IF annoation 1 to low & 0x80000000L
-Recognized IF annoation 1 to low & 0x80000000L
-Recognized IF annoation 2 to low & 0x80000000L
-Recognized IF annoation 1 to low & 0x80000000L
-Recognized IF annoation 1 to low & 0x80000000L
-Recognized IF annoation 1 to low & 0x80000000L
-Recognized IF annoation 1 to low & 0x80000000L
-Recognized IF annoation 1 to low & 0x80000000L
-Recognized IF annoation 1 to low & 0x80000000L
-Recognized IF annoation 1 to low & 0x80000000L
-Recognized IF annoation 2 to low & 0x80000000L
-Recognized IF annoation 2 to !0 && (high & 0x7f) == 0x40
-Stats {cutoffTries = 0, cutoffsS = 0}
-Running model model_[2,2,2,2,2,2,0,22,2,2,2,1,1,1,2,1,2,2,2,1,1,2,1,1,1,1,1,1,1,2,2].smtlib2...
---- TRACE [2,2,2,2,2,2,0,22,2,2,2,1,1,1,2,1,2,2,2,1,1,2,1,1,1,1,1,1,1,2,2] ----------------------
-[("a",0),("a_ARROW_class",3),("a_ARROW_sign",0),("a_ARROW_normal_exp",0),("a_ARROW_fraction_DOT_ll",1),("b",0),("b_ARROW_class",3),("b_ARROW_sign",0),("b_ARROW_normal_exp",0),("b_ARROW_fraction_DOT_ll",488372224),("tmp",0),("tmp_ARROW_class",0),("tmp_ARROW_sign",0),("tmp_ARROW_normal_exp",0),("tmp_ARROW_fraction_DOT_ll",0),("return_val",0),("return_val_ARROW_class",3),("return_val_ARROW_sign",0),("return_val_ARROW_normal_exp",-20),("return_val_ARROW_fraction_DOT_ll",476926),("solver_debug_high_2_1",0),("solver_debug_high_2_2",0),("solver_debug_high_2_3",0),("solver_debug_high_2_4",1),("solver_debug_high_2_5",3),("solver_debug_high_2_6",7),("solver_debug_high_2_7",14),("solver_debug_high_2_8",29),("solver_debug_high_2_9",58),("solver_debug_high_2_10",116),("solver_debug_high_2_11",232),("solver_debug_high_2_12",465),("solver_debug_high_2_13",931),("solver_debug_high_2_14",1862),("solver_debug_high_2_15",3725),("solver_debug_high_2_16",7451),("solver_debug_high_2_17",14903),("solver_debug_high_2_18",29807),("solver_debug_high_2_19",59615),("solver_debug_high_2_20",119231),("solver_debug_high_2_21",238463),("solver_debug_high_2_22",476926)]
-_fpmul_parts ( a = 0 , a_ARROW_class = 3 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_ll = 1 , b = 0 , b_ARROW_class = 3 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_ll = 488372224 , tmp = 0 , tmp_ARROW_class = 0 , tmp_ARROW_sign = 0 , tmp_ARROW_normal_exp = 0 , tmp_ARROW_fraction_DOT_ll = 0 )
-    = return_val = 0 , return_val_ARROW_class = 3 , return_val_ARROW_sign = 0 , return_val_ARROW_normal_exp = -20 , return_val_ARROW_fraction_DOT_ll = 476926
+a.exe 0 3 1 1 3567587328 0 3 1 1 1100000000 0 3 0 0 0
 
-
-ERROR in [2,2,2,2,2,2,0,22,2,2,2,1,1,1,2,1,2,2,2,1,1,2,1,1,1,1,1,1,1,2,2] for return_val_ARROW_normal_exp : exec_val=-32 /= predicted_result=-20
-analyzer-exe.EXE: ERROR in [2,2,2,2,2,2,0,22,2,2,2,1,1,1,2,1,2,2,2,1,1,2,1,1,1,1,1,1,1,2,2] for return_val_ARROW_normal_exp : exec_val=-32 /= predicted_result=-20
-CallStack (from HasCallStack):
-  error, called at analyzer\Main.hs:97:9 in main:Main
-Received ExitFailure 1 when running
-Raw command: "D:\\Haskell\\tvg\\tvg\\.stack-work\\install\\1d314db0\\bin\\analyzer-exe.EXE"
-
-FRACBITS=23, NGARDS=7
-ROUND_TOWARDS_ZERO=0, GARDMASK=127, GARDMSB=64, IMPLICIT_1=40000000, IMPLICIT2=80000000
-sizeof(int)=4, sizeof(fractype)=4, sizeof(unsigned int)=4
-a=0.000000, b=0.000000, tmp=0.000000
-SECOND LOOP 1: high=0
-SECOND LOOP 2: high=0
-SECOND LOOP 3: high=0
-low & FRACHIGH
-SECOND LOOP 4: high=1
-low & FRACHIGH
-SECOND LOOP 5: high=3
-low & FRACHIGH
-SECOND LOOP 6: high=7
-SECOND LOOP 7: high=14
-low & FRACHIGH
-SECOND LOOP 8: high=29
-SECOND LOOP 9: high=58
-SECOND LOOP 10: high=116
-SECOND LOOP 11: high=232
-low & FRACHIGH
-SECOND LOOP 12: high=465
-low & FRACHIGH
-SECOND LOOP 13: high=931
-SECOND LOOP 14: high=1862
-low & FRACHIGH
-SECOND LOOP 15: high=3725
-low & FRACHIGH
-SECOND LOOP 16: high=7451
-low & FRACHIGH
-SECOND LOOP 17: high=14903
-low & FRACHIGH
-SECOND LOOP 18: high=29807
-low & FRACHIGH
-SECOND LOOP 19: high=59615
-low & FRACHIGH
-SECOND LOOP 20: high=119231
-low & FRACHIGH
-SECOND LOOP 21: high=238463
-SECOND LOOP 22: high=476926
-SECOND LOOP 23: high=953852
-SECOND LOOP 24: high=1907704
-SECOND LOOP 25: high=3815408
-SECOND LOOP 26: high=7630816
-SECOND LOOP 27: high=15261632
-SECOND LOOP 28: high=30523264
-SECOND LOOP 29: high=61046528
-SECOND LOOP 30: high=122093056
-SECOND LOOP 31: high=244186112
-SECOND LOOP 32: high=488372224
-SECOND LOOP 33: high=976744448
-SECOND LOOP 34: high=1953488896
-erg: tmp=0.000000
-f(a=0, a={ 3,0,0, fraction={1} },   b=0, b={ 3,0,0, fraction={488372224} },  t=0, t={ 0,0,0, fraction={0} }) =
-6487408 3 0 -32 1953488896
-*/
-
-
-/*
-
-C:\Data\tvg\analyzer>a.exe 0 3 1 1 1000000000000 0 3 1 1 1100000000 0 3 0 0 0
+D:\Haskell\tvg\tvg\analyzer>a.exe 0 3 1 1 3567587328 0 3 1 1 1100000000 0 3 0 0 0
 FRACBITS=23, NGARDS=7
 ROUND_TOWARDS_ZERO=0, GARDMASK=127, GARDMSB=64, IMPLICIT_1=40000000, IMPLICIT2=80000000
 sizeof(int)=4, sizeof(fractype)=4, sizeof(UDItype)=8
 a=0.000000, b=0.000000, tmp=0.000000
 SECOND LOOP 1: high=1827416038
 erg: tmp=0.000000
-f(a=0, a={ 3,1,1, fraction={3567587328} },   b=0, b={ 3,1,1, fraction={1100000000} },  t=0, t={ 3,0,0, fraction={0} }) =
-6487328 3 0 3 1827416038
-
+f(a=0, a={ 3,1,1, fraction={3567587328} },   b=0, b={ 3,1,1, fraction={1100000000} },  t=0
+, t={ 3,0,0, fraction={0} }) =
+2293072 3 0 3 1827416038
 */

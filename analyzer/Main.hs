@@ -61,6 +61,7 @@ concatForM = flip concatMapM
 intSize = 32
 longIntSize = 64
 longLongIntSize = 64
+--modeList = [ ("QI",8),("HI",16),("SI",32),("DI",64),("SF",32),("DF",64) ]
 
 showInitialTrace = True
 solveIt = True
@@ -508,7 +509,12 @@ lookupTypeDefM :: Ident -> CovVecM Type
 lookupTypeDefM ident = do
 	typedefs <- gets (gTypeDefs.globDeclsCVS)
 	case Map.lookup ident typedefs of
-		Just (TypeDef _ ty _ _) -> return ty
+		Just (TypeDef _ ty attrs _) -> return $ case ty of
+			DirectType tyname tyquals tyattrs    -> DirectType tyname tyquals (tyattrs++attrs)
+			PtrType ty tyquals tyattrs           -> PtrType ty tyquals (tyattrs++attrs)
+			ArrayType ty size tyquals tyattrs    -> ArrayType ty size tyquals (tyattrs++attrs)
+			FunctionType ty tyattrs              -> FunctionType ty (tyattrs++attrs)
+			TypeDefType tydefref tyquals tyattrs -> TypeDefType tydefref tyquals (tyattrs++attrs)
 		Nothing -> myError $ "TypeDef " ++ (show ident) ++ " not found"
 
 lookupTagM :: SUERef -> CovVecM TagDef
@@ -945,7 +951,7 @@ infixr 6 −
 a − b = CBinary CSubOp a b undefNode
 
 not_c :: CExpr -> CExpr
-not_c e = CUnary CNegOp e undefNode
+not_c e = CUnary CNegOp e (nodeInfo e)
 
 ⅈ :: Integer -> CExpr
 ⅈ i = CConst $ CIntConst (cInteger i) undefNode
@@ -1260,7 +1266,7 @@ expr2SExpr tyenv expr = do
 	expr2sexpr :: CExpr -> CovVecM (SExpr,Z3_Type)
 
 	expr2sexpr (CConst cconst) = return $ case cconst of
-		CIntConst intconst@(CInteger _ _ flags) _ -> ( const_sexpr, ty2Z3Type $ DirectType (TyIntegral intty) undefined undefined )
+		CIntConst intconst@(CInteger _ _ flags) _ -> ( const_sexpr, ty2Z3Type $ DirectType (TyIntegral intty) noTypeQuals noAttributes )
 			where
 			const_sexpr = make_intconstant int_size (getCInteger intconst)
 			(intty,int_size) = case map ($ flags) (map testFlag [FlagUnsigned,FlagLong,FlagLongLong,FlagImag]) of
@@ -1271,16 +1277,23 @@ expr2SExpr tyenv expr = do
 				[True, True, False,False] -> (TyLong,longIntSize)
 				[True, False,True, False] -> (TyLLong,longLongIntSize)
 				_ -> error $ "infer_type: Strange flags in " ++ (render.pretty) cconst
-		CCharConst cchar _   -> ( SLeaf $ (render.pretty) cconst, ty2Z3Type $ DirectType (TyIntegral TyChar) undefined undefined )
-		CFloatConst cfloat _ -> ( SLeaf $ (render.pretty) cconst, ty2Z3Type $ DirectType (TyFloating TyDouble) undefined undefined )
-		CStrConst cstr _     -> ( SLeaf $ (render.pretty) cconst, ty2Z3Type $ PtrType undefined undefined undefined )
+		CCharConst cchar _   -> ( SLeaf $ (render.pretty) cconst, ty2Z3Type $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes )
+		CFloatConst cfloat _ -> ( SLeaf $ (render.pretty) cconst, ty2Z3Type $ DirectType (TyFloating TyDouble) noTypeQuals noAttributes )
+		CStrConst cstr _     -> ( SLeaf $ (render.pretty) cconst, ty2Z3Type $ PtrType undefined noTypeQuals noAttributes )
 
 	expr2sexpr (CVar ident _) =
 		return ( SLeaf $ (render.pretty) ident, ty2Z3Type $ fromJust $ lookup ident tyenv )
 
-	expr2sexpr (CCast (CDecl [CTypeSpec ctypespec] [] _) subexpr _) = do
+	expr2sexpr ccast@(CCast (CDecl [CTypeSpec ctypespec] [] _) subexpr _) = do
 		(subsexpr,from_ty) <- expr2sexpr subexpr
-		to_ty <- tyspec2TypeM ctypespec >>= elimTypeDefsM >>= return . ty2Z3Type
+		ty_m <- tyspec2TypeM ctypespec
+		ty_elimd <- elimTypeDefsM ty_m
+		let to_ty = ty2Z3Type ty_elimd
+		printLogV 0 $ "#### expr2sexpr " ++ (render.pretty) ccast ++ " : subsexpr=" ++ show subsexpr
+		printLogV 0 $ "####            ctypespec=" ++ (render.pretty) ctypespec
+		printLogV 0 $ "####            ty_m=" ++ (render.pretty) ty_m
+		printLogV 0 $ "####            ty_elimd=" ++ (render.pretty) ty_elimd
+		printLogV 0 $ "####            from_ty=" ++ show from_ty ++ " , to_ty=" ++ show to_ty
 		return (mb_cast subsexpr from_ty to_ty,to_ty)
 
 	expr2sexpr (CUnary CPlusOp expr _) = expr2sexpr expr
@@ -1299,6 +1312,7 @@ expr2SExpr tyenv expr = do
 	expr2sexpr (CBinary CNeqOp expr1 expr2 _) = expr2sexpr (CUnary CNegOp (CBinary CEqOp expr1 expr2 undefNode) undefNode)
 	expr2sexpr expr@(CBinary op expr1 expr2 _) = do
 		(sexpr1,ty1) <- expr2sexpr expr1
+		printLogV 0 $ "#### expr2sexpr " ++ (render.pretty) expr ++ " sexpr1=" ++ show sexpr1
 		(sexpr2,ty2) <- expr2sexpr expr2
 		let (op_sexpr,operand_target_ty,expr_target_ty) = opexpr_ty ty1 ty2
 		return ( SExpr [ op_sexpr, mb_cast sexpr1 ty1 operand_target_ty, mb_cast sexpr2 ty2 operand_target_ty ], expr_target_ty )
@@ -1348,25 +1362,32 @@ expr2SExpr tyenv expr = do
 ty2Z3Type :: Type -> Z3_Type
 ty2Z3Type ty = case ty of
 	DirectType (TyComp (CompTypeRef _ _ _)) _ _ -> Z3_BitVector 4 True
-	DirectType tyname _ _ -> case tyname of
-		TyIntegral intty -> case intty of
-			TyChar   -> Z3_BitVector 8 True
-			TySChar  -> Z3_BitVector 8 False
-			TyUChar  -> Z3_BitVector 8 True
-			TyShort  -> Z3_BitVector 16 False
-			TyUShort -> Z3_BitVector 16 True
-			TyInt    -> Z3_BitVector intSize False
-			TyUInt   -> Z3_BitVector intSize True
-			TyLong   -> Z3_BitVector longIntSize False
-			TyULong  -> Z3_BitVector longIntSize True
-			TyLLong  -> Z3_BitVector 64 False
-			TyULLong -> Z3_BitVector 64 True
-			other    -> error $ "ty2Z3Type " ++ show other ++ " not implemented!"
+	DirectType tyname _ attrs -> case tyname of
+		TyIntegral intty -> case (intty,map to_mode attrs) of
+			(TyChar,[])   -> Z3_BitVector 8 True
+			(TySChar,[])  -> Z3_BitVector 8 False
+			(TyUChar,[]) -> Z3_BitVector 8 True
+			(TyShort,[]) -> Z3_BitVector 16 False
+			(TyUShort,[]) -> Z3_BitVector 16 True
+			(TyInt,[])   -> Z3_BitVector intSize False
+			(TyInt,["SI"])   -> Z3_BitVector 32 False
+			(TyInt,["DI"])   -> Z3_BitVector 64 False
+			(TyUInt,[])  -> Z3_BitVector intSize True
+			(TyUInt,["SI"])  -> Z3_BitVector 32 True
+			(TyUInt,["DI"])  -> Z3_BitVector 64 True
+			(TyLong,[])  -> Z3_BitVector longIntSize False
+			(TyULong,[])  -> Z3_BitVector longIntSize True
+			(TyLLong,[])  -> Z3_BitVector 64 False
+			(TyULLong,[]) -> Z3_BitVector 64 True
+			other         -> error $ "ty2Z3Type " ++ show other ++ " not implemented!"
 		TyFloating TyFloat  -> Z3_Float
 		TyFloating TyDouble -> Z3_Double
 		TyEnum _ -> Z3_BitVector intSize True
 		TyComp _ -> Z3_BitVector 16 True
 		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
+		where
+		to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
+		to_mode attr = error $ "unknown attr " ++ (render.pretty) attr
 	PtrType _ _ _ -> Z3_BitVector 16 True
 	_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
 
