@@ -865,7 +865,7 @@ _fpmul_parts ( fp_number_type *  a,
   tmp->normal_exp = a->normal_exp + b->normal_exp
     + FRAC_NBITS - (FRACBITS + NGARDS);
   tmp->sign = a->sign != b->sign ;
-  while (solver_pragma(0) && high >= IMPLICIT_2)
+  while (solver_pragma(0,1,2) && high >= IMPLICIT_2)
     {
       tmp->normal_exp++;
       if (high & 1)
@@ -875,16 +875,16 @@ _fpmul_parts ( fp_number_type *  a,
 	}
       high >>= 1;
     }
-  while (solver_pragma(1) && high < IMPLICIT_1)
+  while (solver_pragma(0,1,2) && high < IMPLICIT_1)
     {
       tmp->normal_exp--;
       high <<= 1;
-      if (solver_pragma(2) && low & FRACHIGH) high |= 1;
+      if (low & FRACHIGH) high |= 1;
       low <<= 1;
       solver_debug(high);
     }
 
-  if (solver_pragma(2) && (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB))
+  if (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB)
     {
       if (high & (1 << NGARDS))
 	{

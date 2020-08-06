@@ -61,9 +61,8 @@ concatForM = flip concatMapM
 intSize = 32
 longIntSize = 64
 longLongIntSize = 64
---modeList = [ ("QI",8),("HI",16),("SI",32),("DI",64),("SF",32),("DF",64) ]
 
-showInitialTrace = True
+showInitialTrace = False
 solveIt = True
 showOnlySolutions = True
 don'tShowTraces = True
@@ -1289,11 +1288,11 @@ expr2SExpr tyenv expr = do
 		ty_m <- tyspec2TypeM ctypespec
 		ty_elimd <- elimTypeDefsM ty_m
 		let to_ty = ty2Z3Type ty_elimd
-		printLogV 0 $ "#### expr2sexpr " ++ (render.pretty) ccast ++ " : subsexpr=" ++ show subsexpr
-		printLogV 0 $ "####            ctypespec=" ++ (render.pretty) ctypespec
-		printLogV 0 $ "####            ty_m=" ++ (render.pretty) ty_m
-		printLogV 0 $ "####            ty_elimd=" ++ (render.pretty) ty_elimd
-		printLogV 0 $ "####            from_ty=" ++ show from_ty ++ " , to_ty=" ++ show to_ty
+		printLogV 10 $ "#### expr2sexpr " ++ (render.pretty) ccast ++ " : subsexpr=" ++ show subsexpr
+		printLogV 10 $ "####            ctypespec=" ++ (render.pretty) ctypespec
+		printLogV 10 $ "####            ty_m=" ++ (render.pretty) ty_m
+		printLogV 10 $ "####            ty_elimd=" ++ (render.pretty) ty_elimd
+		printLogV 10 $ "####            from_ty=" ++ show from_ty ++ " , to_ty=" ++ show to_ty
 		return (mb_cast subsexpr from_ty to_ty,to_ty)
 
 	expr2sexpr (CUnary CPlusOp expr _) = expr2sexpr expr
@@ -1312,7 +1311,7 @@ expr2SExpr tyenv expr = do
 	expr2sexpr (CBinary CNeqOp expr1 expr2 _) = expr2sexpr (CUnary CNegOp (CBinary CEqOp expr1 expr2 undefNode) undefNode)
 	expr2sexpr expr@(CBinary op expr1 expr2 _) = do
 		(sexpr1,ty1) <- expr2sexpr expr1
-		printLogV 0 $ "#### expr2sexpr " ++ (render.pretty) expr ++ " sexpr1=" ++ show sexpr1
+		printLogV 10 $ "#### expr2sexpr " ++ (render.pretty) expr ++ " sexpr1=" ++ show sexpr1
 		(sexpr2,ty2) <- expr2sexpr expr2
 		let (op_sexpr,operand_target_ty,expr_target_ty) = opexpr_ty ty1 ty2
 		return ( SExpr [ op_sexpr, mb_cast sexpr1 ty1 operand_target_ty, mb_cast sexpr2 ty2 operand_target_ty ], expr_target_ty )
