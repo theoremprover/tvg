@@ -916,9 +916,8 @@ _fpmul_parts ( fp_number_type *  a,
 	}
     }
   tmp->fraction.ll = high;
-  tmp->class = CLASS_NUMBER;
-  tmp->class = found;
-  tmp->
+  tmp->sign = loop1;
+  tmp->normal_exp = loop2;
   return tmp;
 }
 
@@ -1691,23 +1690,23 @@ int main(int argc, char* argv[])
     unsigned int argt4; sscanf(argv[i++],"%u",&argt4); // fractype ll; }
 */
 
-    printf("Start\n\n");
+    printf("Start\n");
 
     for(unsigned int ll1=0;;ll1++) {
     for(unsigned int ll2=0;ll2<1000;ll2++) {
 
-    fp_number_type a = { 3, 0, 0, { ll1 } };
-    fp_number_type b = { 3, 0, 0, { ll2 } };
+    fp_number_type a = { 3, 1, 1, { ll1 } };
+    fp_number_type b = { 3, 1, 1, { ll2 } };
     fp_number_type t = { 0, 0, 0, { 0 } };
 
     printf("%i\n",n++);
     fp_number_type* r = _fpmul_parts(&a,&b,&t);
     if(r->class>0)
     {
-    printf("f(a={ %i,%u,%i, fraction={%u} },  b={ %i,%u,%i, fraction={%u} }}) =\n%i %i\n",
+    printf("f(a={ %i,%u,%i, fraction={%u} },  b={ %i,%u,%i, fraction={%u} }}) =\nloop1=%i loop2=%i\n",
         a.class,a.sign,a.normal_exp,a.fraction.ll,
         b.class,b.sign,b.normal_exp,b.fraction.ll,
-        r->class,r->sign);
+        r->sign,r->normal_exp);
     }
 
     } }
