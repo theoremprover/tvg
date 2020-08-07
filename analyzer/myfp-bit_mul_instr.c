@@ -806,9 +806,7 @@ _fpmul_parts ( fp_number_type *  a,
 {
   fractype low = 0;
   fractype high = 0;
-  int c=0;
-
-    printf("a=%f, b=%f, tmp=%f\n",a,b,tmp);
+  int loop1=0,loop2=0,found=0;
 
   if (isnan (a))
     {
@@ -865,38 +863,38 @@ _fpmul_parts ( fp_number_type *  a,
   tmp->sign = a->sign != b->sign ;
   while (high >= IMPLICIT_2)
     {
+      loop1++;
       tmp->normal_exp++;
       if (high & 1)
 	{
-	    printf("high & 1\n");
+//	    printf("high & 1\n");
 	  low >>= 1;
 	  low |= FRACHIGH;
 	}
       high >>= 1;
 
-printf("FIRST LOOP: high=%i\n",high);
 
     }
+
+
   while (high < IMPLICIT_1)
     {
-    c++;
+    loop2++;
       tmp->normal_exp--;
 
       high <<= 1;
       if (low & FRACHIGH) {
         high |= 1;
-        printf("low & FRACHIGH\n");
 }
       low <<= 1;
-printf("SECOND LOOP %i: high=%i\n",c,high);
     }
 
   if (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB)
     {
-    printf("!ROUND_TOWARDS_ZERO\n");
+//    printf("!ROUND_TOWARDS_ZERO\n");
       if (high & (1 << NGARDS))
 	{
-    printf("high & (1 << NGARDS)\n");
+//    printf("high & (1 << NGARDS)\n");
 	  /* Because we're half way, we would round to even by adding
 	     GARDROUND + 1, except that's also done in the packing
 	     function, and rounding twice will lose precision and cause
@@ -906,7 +904,7 @@ printf("SECOND LOOP %i: high=%i\n",c,high);
 	}
       else if (low)
 	{
-    printf("low\n");
+    found=1;
 	  /* We're a further than half way by a small amount corresponding
 	     to the bits set in "low".  Knowing that, we round here and
 	     not in pack_d, because there we don't have "low" available
@@ -919,7 +917,8 @@ printf("SECOND LOOP %i: high=%i\n",c,high);
     }
   tmp->fraction.ll = high;
   tmp->class = CLASS_NUMBER;
-    printf("erg: tmp=%f\n",tmp);
+  tmp->class = found;
+  tmp->
   return tmp;
 }
 
@@ -1663,6 +1662,8 @@ tf_to_sf (TFtype arg_a)
 #ifdef CALC
 int main(int argc, char* argv[])
 {
+    int n=0;
+/*
     printf("FRACBITS=%i, NGARDS=%i\n",FRACBITS,NGARDS);
     printf("ROUND_TOWARDS_ZERO=%i, GARDMASK=%i, GARDMSB=%i, IMPLICIT_1=%x, IMPLICIT2=%x\n",
         ROUND_TOWARDS_ZERO,GARDMASK,GARDMSB,IMPLICIT_1,IMPLICIT_2);
@@ -1688,17 +1689,28 @@ int main(int argc, char* argv[])
     unsigned int argt2; sscanf(argv[i++],"%u",&argt2); // unsigned int sign;
     int argt3; sscanf(argv[i++],"%i",&argt3); // int normal_exp;
     unsigned int argt4; sscanf(argv[i++],"%u",&argt4); // fractype ll; }
+*/
 
-    fp_number_type a = { arga1, arga2, arga3, { arga4 } };
-    fp_number_type b = { argb1, argb2, argb3, { argb4 } };
-    fp_number_type t = { argt1, argt2, argt3, { argt4 } };
+    printf("Start\n\n");
 
+    for(unsigned int ll1=0;;ll1++) {
+    for(unsigned int ll2=0;ll2<1000;ll2++) {
+
+    fp_number_type a = { 3, 0, 0, { ll1 } };
+    fp_number_type b = { 3, 0, 0, { ll2 } };
+    fp_number_type t = { 0, 0, 0, { 0 } };
+
+    printf("%i\n",n++);
     fp_number_type* r = _fpmul_parts(&a,&b,&t);
-    printf("f(a=%i, a={ %i,%u,%i, fraction={%u} },   b=%i, b={ %i,%u,%i, fraction={%u} },  t=%i, t={ %i,%u,%i, fraction={%u} }) =\n%i %i %u %i %u\n",
-        arga0,arga1,arga2,arga3,arga4,
-        argb0,argb1,argb2,argb3,argb4,
-        argt0,argt1,argt2,argt3,argt4,
-        r,r->class,r->sign,r->normal_exp,r->fraction.ll);
+    if(r->class>0)
+    {
+    printf("f(a={ %i,%u,%i, fraction={%u} },  b={ %i,%u,%i, fraction={%u} }}) =\n%i %i\n",
+        a.class,a.sign,a.normal_exp,a.fraction.ll,
+        b.class,b.sign,b.normal_exp,b.fraction.ll,
+        r->class,r->sign);
+    }
+
+    } }
     return 0;
 }
 #endif

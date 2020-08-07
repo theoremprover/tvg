@@ -1577,5 +1577,8 @@ checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution)) = do
 (get-model)
 (get-value (i))
 
-Data.SBV
+int a[10];
+a[2] = 7;
+a[2] = a[2] + 1;
+
 -}

@@ -875,11 +875,11 @@ _fpmul_parts ( fp_number_type *  a,
 	}
       high >>= 1;
     }
-  while (solver_pragma(0,1,14,15,16) && high < IMPLICIT_1)
+  while (solver_pragma(0,1) && high < IMPLICIT_1)
     {
       tmp->normal_exp--;
       high <<= 1;
-      if (solver_pragma(12,12,1,2,1,2,1,2,1,2,1,12,12,12,12,12) && (low & FRACHIGH)) high |= 1;
+      if (low & FRACHIGH) high |= 1;
       low <<= 1;
       solver_debug(high);
     }
