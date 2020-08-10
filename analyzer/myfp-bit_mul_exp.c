@@ -809,43 +809,6 @@ _fpmul_parts ( fp_number_type *  a,
   fractype low = 0;
   fractype high = 0;
 
-  if (isnan (a))
-    {
-      a->sign = a->sign != b->sign;
-      return a;
-    }
-  if (isnan (b))
-    {
-      b->sign = a->sign != b->sign;
-      return b;
-    }
-  if (isinf (a))
-    {
-      if (iszero (b))
-	return nan ();
-      a->sign = a->sign != b->sign;
-      return a;
-    }
-  if (isinf (b))
-    {
-      if (iszero (a))
-	{
-	  return nan ();
-	}
-      b->sign = a->sign != b->sign;
-      return b;
-    }
-  if (iszero (a))
-    {
-      a->sign = a->sign != b->sign;
-      return a;
-    }
-  if (iszero (b))
-    {
-      b->sign = a->sign != b->sign;
-      return b;
-    }
-
   /* Calculate the mantissa by multiplying both numbers to get a
      twice-as-wide number.  */
   {
@@ -862,29 +825,33 @@ _fpmul_parts ( fp_number_type *  a,
   tmp->normal_exp = a->normal_exp + b->normal_exp
     + FRAC_NBITS - (FRACBITS + NGARDS);
   tmp->sign = a->sign != b->sign ;
-  while (solver_pragma(0,1) && high >= IMPLICIT_2)
+  while (solver_pragma(2) && high < IMPLICIT_1)
     {
-      tmp->normal_exp++;
-      if (high & 1)
-	{
-	  low >>= 1;
-	  low |= FRACHIGH;
-	}
-      high >>= 1;
-    }
-  while (solver_pragma(0,1,2) && high < IMPLICIT_1)
-    {
-      tmp->normal_exp--;
+#ifdef CALC
+        printf("high < IMPLICIT_1\n");
+#endif
+     tmp->normal_exp--;
       high <<= 1;
-      if (low & FRACHIGH) high |= 1;
+      if (low & FRACHIGH) {
+        high |= 1;
+#ifdef CALC
+       printf("low & FRACHIGH\n");
+#endif
+      }
       low <<= 1;
       solver_debug(high);
     }
 
-  if ((!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB))
+  if (solver_pragma(1) && (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB))
     {
-      if ((high & (1 << NGARDS)))
+#ifdef CALC
+        printf("!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB\n");
+#endif
+      if (solver_pragma(2) && (high & (1 << NGARDS)))
 	{
+#ifdef CALC
+        printf("high & (1 << NGARDS)\n");
+#endif
 	  /* Because we're half way, we would round to even by adding
 	     GARDROUND + 1, except that's also done in the packing
 	     function, and rounding twice will lose precision and cause
@@ -892,8 +859,11 @@ _fpmul_parts ( fp_number_type *  a,
 	     bit patterns 0xfff * 0x3f800400 ~= 0xfff (less than 0.5ulp
 	     off), not 0x1000 (more than 0.5ulp off).  */
 	}
-      else if ((low))
+      else  { if (solver_pragma(2) && (low))
 	{
+#ifdef CALC
+       printf("low\n");
+#endif
 	  /* We're a further than half way by a small amount corresponding
 	     to the bits set in "low".  Knowing that, we round here and
 	     not in pack_d, because there we don't have "low" available
@@ -902,8 +872,12 @@ _fpmul_parts ( fp_number_type *  a,
 
 	  /* Avoid further rounding in pack_d.  */
 	  high &= ~(fractype) GARDMASK;
-    }
-    }
+    } else {
+#ifdef CALC
+  printf("GOTIT!\n");
+#endif
+ }
+    } }
   tmp->fraction.ll = high;
   tmp->class = CLASS_NUMBER;
   return tmp;
@@ -1005,6 +979,7 @@ _fpdiv_parts (fp_number_type * a,
       {
 	if (quotient & (1 << NGARDS))
 	  {
+	    printf("quotient & (1 << NGARDS)\n");
 	    /* Because we're half way, we would round to even by adding
 	       GARDROUND + 1, except that's also done in the packing
 	       function, and rounding twice will lose precision and cause
@@ -1012,6 +987,7 @@ _fpdiv_parts (fp_number_type * a,
 	  }
 	else if (numerator)
 	  {
+	    printf("numerator\n");
 #ifdef CALC
 	    printf("GOTIT!\n");
 #endif

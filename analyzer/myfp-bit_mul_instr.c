@@ -1,5 +1,6 @@
 #ifdef CALC
 #include <stdio.h>
+#include <stdlib.h>
 #endif
 
 #define FLOAT_ONLY
@@ -852,7 +853,8 @@ _fpmul_parts ( fp_number_type *  a,
     /* Multiplying two USIs to get a UDI, we're safe.  */
     {
       UDItype answer = (UDItype)a->fraction.ll * (UDItype)b->fraction.ll;
-      
+   //printf("answer=%u, BITS_PER_SI=%u\n",answer,BITS_PER_SI);
+
       high = answer >> BITS_PER_SI;
       low = answer;
     }
@@ -861,9 +863,12 @@ _fpmul_parts ( fp_number_type *  a,
   tmp->normal_exp = a->normal_exp + b->normal_exp
     + FRAC_NBITS - (FRACBITS + NGARDS);
   tmp->sign = a->sign != b->sign ;
+  //printf("high=%u, IMPLICIT_2=%u\n",high,IMPLICIT_2);
+
   while (high >= IMPLICIT_2)
     {
       loop1++;
+      //printf("loop1=%i\n",loop1);
       tmp->normal_exp++;
       if (high & 1)
 	{
@@ -880,12 +885,14 @@ _fpmul_parts ( fp_number_type *  a,
   while (high < IMPLICIT_1)
     {
     loop2++;
+      //printf("loop2=%i\n",loop2);
+      if(loop2>30) exit(0);
       tmp->normal_exp--;
 
       high <<= 1;
       if (low & FRACHIGH) {
         high |= 1;
-}
+        }
       low <<= 1;
     }
 
@@ -904,7 +911,6 @@ _fpmul_parts ( fp_number_type *  a,
 	}
       else if (low)
 	{
-    found=1;
 	  /* We're a further than half way by a small amount corresponding
 	     to the bits set in "low".  Knowing that, we round here and
 	     not in pack_d, because there we don't have "low" available
@@ -914,10 +920,13 @@ _fpmul_parts ( fp_number_type *  a,
 	  /* Avoid further rounding in pack_d.  */
 	  high &= ~(fractype) GARDMASK;
 	}
+	else     found=1;
+
     }
-  tmp->fraction.ll = high;
+  tmp->class = found;
   tmp->sign = loop1;
   tmp->normal_exp = loop2;
+  tmp->fraction.ll = high;
   return tmp;
 }
 
@@ -1692,21 +1701,21 @@ int main(int argc, char* argv[])
 
     printf("Start\n");
 
-    for(unsigned int ll1=0;;ll1++) {
-    for(unsigned int ll2=0;ll2<1000;ll2++) {
+    for(unsigned int ll1=1000000000;;ll1++) {
+    for(unsigned int ll2=1000000000;ll2<10000000000;ll2++) {
 
     fp_number_type a = { 3, 1, 1, { ll1 } };
     fp_number_type b = { 3, 1, 1, { ll2 } };
-    fp_number_type t = { 0, 0, 0, { 0 } };
+    fp_number_type t = { 3, 1, 1, { 0 } };
 
-    printf("%i\n",n++);
-    fp_number_type* r = _fpmul_parts(&a,&b,&t);
-    if(r->class>0)
+ //   printf("%i  \r\n\b",n++);
+    _fpmul_parts(&a,&b,&t);
+    if(t.class>0)
     {
     printf("f(a={ %i,%u,%i, fraction={%u} },  b={ %i,%u,%i, fraction={%u} }}) =\nloop1=%i loop2=%i\n",
         a.class,a.sign,a.normal_exp,a.fraction.ll,
         b.class,b.sign,b.normal_exp,b.fraction.ll,
-        r->sign,r->normal_exp);
+        t.sign,t.normal_exp);
     }
 
     } }
@@ -1730,4 +1739,8 @@ erg: tmp=0.000000
 f(a=0, a={ 3,1,1, fraction={3567587328} },   b=0, b={ 3,1,1, fraction={1100000000} },  t=0
 , t={ 3,0,0, fraction={0} }) =
 2293072 3 0 3 1827416038
+
+f(a={ 3,1,1, fraction={1000000000} },  b={ 3,1,1, fraction={1207959552} }}) =
+loop1=0 loop2=2
+
 */

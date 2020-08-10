@@ -62,7 +62,7 @@ intSize = 32
 longIntSize = 64
 longLongIntSize = 64
 
-showInitialTrace = False
+showInitialTrace = True
 solveIt = True
 showOnlySolutions = True
 don'tShowTraces = True
@@ -76,7 +76,7 @@ cutOffs = False
 logToFile = True
 
 mAX_UNROLLS = 30
-uNROLLING_STRATEGY = [0..mAX_UNROLLS] --[mAX_UNROLLS,(mAX_UNROLLS-1)..0]
+uNROLLING_STRATEGY = [0..mAX_UNROLLS]
 
 sizeConditionChunks = 4
 
@@ -111,7 +111,8 @@ main = do
 	hSetBuffering stdout NoBuffering
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul_exp.c") : "_fpmul_parts" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]

@@ -1,0 +1,130 @@
+(set-option :smt.relevancy 0)
+(set-option :produce-models true)
+(declare-const a (_ BitVec 16))
+(declare-const a_ARROW_class (_ BitVec 32))
+(declare-const a_ARROW_sign (_ BitVec 32))
+(declare-const a_ARROW_normal_exp (_ BitVec 32))
+(declare-const a_ARROW_fraction_DOT_ll (_ BitVec 32))
+(declare-const b (_ BitVec 16))
+(declare-const b_ARROW_class (_ BitVec 32))
+(declare-const b_ARROW_sign (_ BitVec 32))
+(declare-const b_ARROW_normal_exp (_ BitVec 32))
+(declare-const b_ARROW_fraction_DOT_ll (_ BitVec 32))
+(declare-const tmp (_ BitVec 16))
+(declare-const tmp_ARROW_class (_ BitVec 32))
+(declare-const tmp_ARROW_sign (_ BitVec 32))
+(declare-const tmp_ARROW_normal_exp (_ BitVec 32))
+(declare-const tmp_ARROW_fraction_DOT_ll (_ BitVec 32))
+(declare-const return_val_ARROW_fraction_DOT_ll (_ BitVec 32))
+(declare-const return_val_ARROW_normal_exp (_ BitVec 32))
+(declare-const return_val_ARROW_sign (_ BitVec 32))
+(declare-const return_val_ARROW_class (_ BitVec 32))
+(declare-const return_val (_ BitVec 16))
+(declare-const solver_debug_high_2_1 (_ BitVec 32))
+(declare-const solver_debug_high_2_2 (_ BitVec 32))
+
+
+; line 828
+; !(1 == 0) && (UDItype) a_ARROW_fraction_DOT_ll * (UDItype) b_ARROW_fraction_DOT_ll >> 4 * 8 < (fractype) 1 << 23 + 7L
+(assert (and (not (= #x00000001 #x00000000)) (bvult (bvlshr (bvmul (concat (_ bv0 32) a_ARROW_fraction_DOT_ll) (concat (_ bv0 32) b_ARROW_fraction_DOT_ll)) (concat (_ bv0 32) (bvmul #x00000004 #x00000008))) (bvshl (concat (_ bv0 32) #x00000001) (bvadd (concat (_ bv0 32) #x00000017) #x0000000000000007)))))
+
+; line 835
+; ! (!(((UDItype) a_ARROW_fraction_DOT_ll * (UDItype) b_ARROW_fraction_DOT_ll & 0x80000000L) == 0))
+(assert (not (not (= (bvand (bvmul (concat (_ bv0 32) a_ARROW_fraction_DOT_ll) (concat (_ bv0 32) b_ARROW_fraction_DOT_ll)) #x0000000080000000) (concat (_ bv0 32) #x00000000)))))
+
+; line 828
+; !(1 == 0) && (UDItype) a_ARROW_fraction_DOT_ll * (UDItype) b_ARROW_fraction_DOT_ll >> 4 * 8 << 1 < (fractype) 1 << 23 + 7L
+(assert (and (not (= #x00000001 #x00000000)) (bvult (bvshl (bvlshr (bvmul (concat (_ bv0 32) a_ARROW_fraction_DOT_ll) (concat (_ bv0 32) b_ARROW_fraction_DOT_ll)) (concat (_ bv0 32) (bvmul #x00000004 #x00000008))) (concat (_ bv0 32) #x00000001)) (bvshl (concat (_ bv0 32) #x00000001) (bvadd (concat (_ bv0 32) #x00000017) #x0000000000000007)))))
+
+; line 835
+; ! (!(((UDItype) a_ARROW_fraction_DOT_ll * (UDItype) b_ARROW_fraction_DOT_ll << 1 & 0x80000000L) == 0))
+(assert (not (not (= (bvand (bvshl (bvmul (concat (_ bv0 32) a_ARROW_fraction_DOT_ll) (concat (_ bv0 32) b_ARROW_fraction_DOT_ll)) (concat (_ bv0 32) #x00000001)) #x0000000080000000) (concat (_ bv0 32) #x00000000)))))
+
+; line 828 (neg)
+; !(!(1 == 0) && (UDItype) a_ARROW_fraction_DOT_ll * (UDItype) b_ARROW_fraction_DOT_ll >> 4 * 8 << 1 << 1 < (fractype) 1 << 23 + 7L)
+(assert (not (and (not (= #x00000001 #x00000000)) (bvult (bvshl (bvshl (bvlshr (bvmul (concat (_ bv0 32) a_ARROW_fraction_DOT_ll) (concat (_ bv0 32) b_ARROW_fraction_DOT_ll)) (concat (_ bv0 32) (bvmul #x00000004 #x00000008))) (concat (_ bv0 32) #x00000001)) (concat (_ bv0 32) #x00000001)) (bvshl (concat (_ bv0 32) #x00000001) (bvadd (concat (_ bv0 32) #x00000017) #x0000000000000007))))))
+
+; line 845
+; ! (!(0 == 0)) && ((UDItype) a_ARROW_fraction_DOT_ll * (UDItype) b_ARROW_fraction_DOT_ll >> 4 * 8 << 1 << 1 & 0x7f) == 0x40
+(assert (and (not (not (= #x00000000 #x00000000))) (= (bvand (bvshl (bvshl (bvlshr (bvmul (concat (_ bv0 32) a_ARROW_fraction_DOT_ll) (concat (_ bv0 32) b_ARROW_fraction_DOT_ll)) (concat (_ bv0 32) (bvmul #x00000004 #x00000008))) (concat (_ bv0 32) #x00000001)) (concat (_ bv0 32) #x00000001)) (concat (_ bv0 32) #x0000007f)) (concat (_ bv0 32) #x00000040))))
+
+; line 850
+; ! (!(((UDItype) a_ARROW_fraction_DOT_ll * (UDItype) b_ARROW_fraction_DOT_ll >> 4 * 8 << 1 << 1 & 1 << 7L) == 0))
+(assert (not (not (= (bvand (bvshl (bvshl (bvlshr (bvmul (concat (_ bv0 32) a_ARROW_fraction_DOT_ll) (concat (_ bv0 32) b_ARROW_fraction_DOT_ll)) (concat (_ bv0 32) (bvmul #x00000004 #x00000008))) (concat (_ bv0 32) #x00000001)) (concat (_ bv0 32) #x00000001)) (bvshl (concat (_ bv0 32) #x00000001) #x0000000000000007)) (concat (_ bv0 32) #x00000000)))))
+
+; line 862
+; ! (!(((UDItype) a_ARROW_fraction_DOT_ll * (UDItype) b_ARROW_fraction_DOT_ll << 1 << 1) == 0))
+(assert (not
+	(not (=
+		(bvshl
+			(bvshl
+				(bvmul
+					(concat (_ bv0 32) a_ARROW_fraction_DOT_ll)
+					(concat (_ bv0 32) b_ARROW_fraction_DOT_ll))
+				(concat (_ bv0 32) #x00000001))
+			(concat (_ bv0 32) #x00000001))
+		(concat (_ bv0 32) #x00000000)
+		))
+))
+
+
+
+; return_val_ARROW_fraction_DOT_ll == (UDItype) a_ARROW_fraction_DOT_ll * (UDItype) b_ARROW_fraction_DOT_ll >> 4 * 8 << 1 << 1
+(assert (= (concat (_ bv0 32) return_val_ARROW_fraction_DOT_ll) (bvshl (bvshl (bvlshr (bvmul (concat (_ bv0 32) a_ARROW_fraction_DOT_ll) (concat (_ bv0 32) b_ARROW_fraction_DOT_ll)) (concat (_ bv0 32) (bvmul #x00000004 #x00000008))) (concat (_ bv0 32) #x00000001)) (concat (_ bv0 32) #x00000001))))
+
+; return_val_ARROW_normal_exp == a_ARROW_normal_exp + b_ARROW_normal_exp + 32 - (23 + 7L) - 1 - 1
+(assert (= (concat (_ bv0 32) return_val_ARROW_normal_exp) (bvsub (bvsub (bvsub (concat (_ bv0 32) (bvadd ((_ extract 31 0) (bvadd a_ARROW_normal_exp b_ARROW_normal_exp)) #x00000020)) (bvadd (concat (_ bv0 32) #x00000017) #x0000000000000007)) (concat (_ bv0 32) #x00000001)) (concat (_ bv0 32) #x00000001))))
+
+; return_val_ARROW_sign == (a_ARROW_sign != b_ARROW_sign ? 1 : 0)
+(assert (= return_val_ARROW_sign (ite (not (= a_ARROW_sign b_ARROW_sign)) #x00000001 #x00000000)))
+
+; return_val_ARROW_class == 3
+(assert (= return_val_ARROW_class #x00000003))
+
+; return_val == tmp
+(assert (= return_val tmp))
+
+; solver_debug_high_2_1 == (UDItype) a_ARROW_fraction_DOT_ll * (UDItype) b_ARROW_fraction_DOT_ll >> 4 * 8 << 1
+(assert (= (concat (_ bv0 32) solver_debug_high_2_1) (bvshl (bvlshr (bvmul (concat (_ bv0 32) a_ARROW_fraction_DOT_ll) (concat (_ bv0 32) b_ARROW_fraction_DOT_ll)) (concat (_ bv0 32) (bvmul #x00000004 #x00000008))) (concat (_ bv0 32) #x00000001))))
+
+; solver_debug_high_2_2 == (UDItype) a_ARROW_fraction_DOT_ll * (UDItype) b_ARROW_fraction_DOT_ll >> 4 * 8 << 1 << 1
+(assert (= (concat (_ bv0 32) solver_debug_high_2_2) (bvshl (bvshl (bvlshr (bvmul (concat (_ bv0 32) a_ARROW_fraction_DOT_ll) (concat (_ bv0 32) b_ARROW_fraction_DOT_ll)) (concat (_ bv0 32) (bvmul #x00000004 #x00000008))) (concat (_ bv0 32) #x00000001)) (concat (_ bv0 32) #x00000001))))
+
+(minimize a)
+(minimize a_ARROW_class)
+(minimize a_ARROW_sign)
+(minimize a_ARROW_normal_exp)
+(minimize a_ARROW_fraction_DOT_ll)
+(minimize b)
+(minimize b_ARROW_class)
+(minimize b_ARROW_sign)
+(minimize b_ARROW_normal_exp)
+(minimize b_ARROW_fraction_DOT_ll)
+(minimize tmp)
+(minimize tmp_ARROW_class)
+(minimize tmp_ARROW_sign)
+(minimize tmp_ARROW_normal_exp)
+(minimize tmp_ARROW_fraction_DOT_ll)
+(check-sat)
+(get-value (a))
+(get-value (a_ARROW_class))
+(get-value (a_ARROW_sign))
+(get-value (a_ARROW_normal_exp))
+(get-value (a_ARROW_fraction_DOT_ll))
+(get-value (b))
+(get-value (b_ARROW_class))
+(get-value (b_ARROW_sign))
+(get-value (b_ARROW_normal_exp))
+(get-value (b_ARROW_fraction_DOT_ll))
+(get-value (tmp))
+(get-value (tmp_ARROW_class))
+(get-value (tmp_ARROW_sign))
+(get-value (tmp_ARROW_normal_exp))
+(get-value (tmp_ARROW_fraction_DOT_ll))
+(get-value (return_val))
+(get-value (return_val_ARROW_class))
+(get-value (return_val_ARROW_sign))
+(get-value (return_val_ARROW_normal_exp))
+(get-value (return_val_ARROW_fraction_DOT_ll))
+(get-value (solver_debug_high_2_1))
+(get-value (solver_debug_high_2_2))
