@@ -818,14 +818,26 @@ _fpmul_parts ( fp_number_type *  a,
       UDItype answer = (UDItype)a->fraction.ll * (UDItype)b->fraction.ll;
       
       high = answer >> BITS_PER_SI;
-      low = answer;
+      low = (fractype)answer;
     }
   }
 
   tmp->normal_exp = a->normal_exp + b->normal_exp
     + FRAC_NBITS - (FRACBITS + NGARDS);
   tmp->sign = a->sign != b->sign ;
-  while (solver_pragma(2) && high < IMPLICIT_1)
+
+  while (solver_pragma(0,1) && high >= IMPLICIT_2)
+    {
+      tmp->normal_exp++;
+      if (high & 1)
+	{
+	  low >>= 1;
+	  low |= FRACHIGH;
+	}
+      high >>= 1;
+    }
+
+  while (solver_pragma(0,1,2) && high < IMPLICIT_1)
     {
 #ifdef CALC
         printf("high < IMPLICIT_1\n");
@@ -842,12 +854,12 @@ _fpmul_parts ( fp_number_type *  a,
       solver_debug(high);
     }
 
-  if (solver_pragma(1) && (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB))
+  if ((!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB))
     {
 #ifdef CALC
         printf("!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB\n");
 #endif
-      if (solver_pragma(2) && (high & (1 << NGARDS)))
+      if ((high & (1 << NGARDS)))
 	{
 #ifdef CALC
         printf("high & (1 << NGARDS)\n");
@@ -859,7 +871,7 @@ _fpmul_parts ( fp_number_type *  a,
 	     bit patterns 0xfff * 0x3f800400 ~= 0xfff (less than 0.5ulp
 	     off), not 0x1000 (more than 0.5ulp off).  */
 	}
-      else  { if (solver_pragma(2) && (low))
+      else  { if (low)
 	{
 #ifdef CALC
        printf("low\n");
@@ -875,6 +887,7 @@ _fpmul_parts ( fp_number_type *  a,
     } else {
 #ifdef CALC
   printf("GOTIT!\n");
+  printf("low=%u\n",low);
 #endif
  }
     } }

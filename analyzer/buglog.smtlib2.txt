@@ -44,11 +44,11 @@
 ; !(!(1 == 0) && (UDItype) a_ARROW_fraction_DOT_ll * (UDItype) b_ARROW_fraction_DOT_ll >> 4 * 8 << 1 << 1 < (fractype) 1 << 23 + 7L)
 (assert (not (and (not (= #x00000001 #x00000000)) (bvult (bvshl (bvshl (bvlshr (bvmul (concat (_ bv0 32) a_ARROW_fraction_DOT_ll) (concat (_ bv0 32) b_ARROW_fraction_DOT_ll)) (concat (_ bv0 32) (bvmul #x00000004 #x00000008))) (concat (_ bv0 32) #x00000001)) (concat (_ bv0 32) #x00000001)) (bvshl (concat (_ bv0 32) #x00000001) (bvadd (concat (_ bv0 32) #x00000017) #x0000000000000007))))))
 
-; line 845
+; line 845 : !ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB
 ; ! (!(0 == 0)) && ((UDItype) a_ARROW_fraction_DOT_ll * (UDItype) b_ARROW_fraction_DOT_ll >> 4 * 8 << 1 << 1 & 0x7f) == 0x40
 (assert (and (not (not (= #x00000000 #x00000000))) (= (bvand (bvshl (bvshl (bvlshr (bvmul (concat (_ bv0 32) a_ARROW_fraction_DOT_ll) (concat (_ bv0 32) b_ARROW_fraction_DOT_ll)) (concat (_ bv0 32) (bvmul #x00000004 #x00000008))) (concat (_ bv0 32) #x00000001)) (concat (_ bv0 32) #x00000001)) (concat (_ bv0 32) #x0000007f)) (concat (_ bv0 32) #x00000040))))
 
-; line 850
+; line 850 : high & (1 << NGARDS)
 ; ! (!(((UDItype) a_ARROW_fraction_DOT_ll * (UDItype) b_ARROW_fraction_DOT_ll >> 4 * 8 << 1 << 1 & 1 << 7L) == 0))
 (assert (not (not (= (bvand (bvshl (bvshl (bvlshr (bvmul (concat (_ bv0 32) a_ARROW_fraction_DOT_ll) (concat (_ bv0 32) b_ARROW_fraction_DOT_ll)) (concat (_ bv0 32) (bvmul #x00000004 #x00000008))) (concat (_ bv0 32) #x00000001)) (concat (_ bv0 32) #x00000001)) (bvshl (concat (_ bv0 32) #x00000001) #x0000000000000007)) (concat (_ bv0 32) #x00000000)))))
 

@@ -892,7 +892,7 @@ _fpmul_parts ( fp_number_type *  a,
 	     bit patterns 0xfff * 0x3f800400 ~= 0xfff (less than 0.5ulp
 	     off), not 0x1000 (more than 0.5ulp off).  */
 	}
-      else if ((low))
+      else if (low)
 	{
 	  /* We're a further than half way by a small amount corresponding
 	     to the bits set in "low".  Knowing that, we round here and

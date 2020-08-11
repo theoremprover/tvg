@@ -13,8 +13,10 @@ import Language.C.Data.Ident
 import Language.C.Data.Node
 import Language.C.Data.Position
 import Language.C.Analysis.AstAnalysis
+import Language.C.Analysis.DeclAnalysis
 import Language.C.Analysis.TravMonad
 import Language.C.Analysis.SemRep
+import Language.C.Analysis.Export
 import Language.C.System.GCC
 import Control.Monad
 import Control.Monad.Trans.Class
@@ -62,7 +64,7 @@ intSize = 32
 longIntSize = 64
 longLongIntSize = 64
 
-showInitialTrace = True
+showInitialTrace = False
 solveIt = True
 showOnlySolutions = True
 don'tShowTraces = True
@@ -111,8 +113,8 @@ main = do
 	hSetBuffering stdout NoBuffering
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul_exp.c") : "_fpmul_parts" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul_exp.c") : "_fpmul_parts" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
@@ -517,6 +519,44 @@ lookupTypeDefM ident = do
 			TypeDefType tydefref tyquals tyattrs -> TypeDefType tydefref tyquals (tyattrs++attrs)
 		Nothing -> myError $ "TypeDef " ++ (show ident) ++ " not found"
 
+inferLExprTypeM :: TyEnv -> CExpr -> CovVecM Type
+inferLExprTypeM tyenv expr = case expr of
+	CVar ident _ -> do
+		let Just ty = lookup ident tyenv
+		return ty
+	CMember objexpr member True _ -> do
+		PtrType objty _ _ <- inferLExprTypeM tyenv objexpr
+		getMemberTypeM objty member
+	CMember objexpr member False _ -> do
+		objty <- inferLExprTypeM tyenv objexpr
+		getMemberTypeM objty member
+	other -> myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " not implemented"
+
+decl2TypeM :: CDecl -> CovVecM Type
+decl2TypeM (CDecl declspecs _ _) = case declspecs of
+	[CTypeSpec (CVoidType _)]      -> return $ DirectType TyVoid noTypeQuals noAttributes
+	[CTypeSpec (CCharType _)]      -> return $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes
+	[CTypeSpec (CShortType _)]     -> return $ DirectType (TyIntegral TyShort) noTypeQuals noAttributes
+	[CTypeSpec (CIntType _)]       -> return $ DirectType (TyIntegral TyInt) noTypeQuals noAttributes
+	[CTypeSpec (CLongType _)]      -> return $ DirectType (TyIntegral TyLong) noTypeQuals noAttributes
+	[CTypeSpec (CFloatType _)]     -> return $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
+	[CTypeSpec (CDoubleType _)]    -> return $ DirectType (TyFloating TyDouble) noTypeQuals noAttributes
+	[CTypeSpec (CEnumType (CEnum (Just ident) Nothing _ _) _)] -> lookupTypeDefM ident		
+--		return $ DirectType (TyEnum (EnumTypeRef sueref undefNode)) noTypeQuals noAttributes
+	[CTypeSpec (CTypeDef ident _)] -> lookupTypeDefM ident
+	other -> myError $ "decl2TypeM: " ++ (render.pretty) other ++ " not implemented yet."
+
+{-
+decl2TypeM :: CDecl -> CovVecM Type
+decl2TypeM (CDecl typespecs _ ni) = do
+	gets <- globDeclsCVS
+	case runTrav_ (analyseTypeDecl $ CDecl typespecs [] ni) of
+		Left errs -> myError $ unlines (map show errs)
+		Right (a,errs) -> do
+			myError $ unlines (map show errs)
+			return a
+-}
+
 lookupTagM :: SUERef -> CovVecM TagDef
 lookupTagM ident = do
 	tags <- gets (gTags.globDeclsCVS)
@@ -715,7 +755,9 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
 			transids lexpr trace' $ \ (lexpr',trace'') -> do
-				unfoldTracesM mb_ret_type break_stack envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
+				ty <- inferLExprTypeM (map snd $ concat envs) lexpr'
+				let ass_expr_cast = CCast (exportTypeDecl ty) assigned_expr'' ni
+				unfoldTracesM mb_ret_type break_stack envs (Assignment lexpr' ass_expr_cast : trace'') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -894,8 +936,8 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 							True -> return $ Right True
 							False -> try_next rest
 
-unfoldTraces1M mb_ret_type break_stack (env:envs) trace ( (CBlockDecl (CDecl [CTypeSpec typespec] triples _) : rest) : rest2 ) = do
-	ty <- tyspec2TypeM typespec
+unfoldTraces1M mb_ret_type break_stack (env:envs) trace ( (CBlockDecl decl@(CDecl typespecs triples _) : rest) : rest2 ) = do
+	ty <- decl2TypeM decl
 	new_env_items <- forM triples $ \case
 		(Just (CDeclr (Just ident) derivdeclrs _ _ ni),mb_init,Nothing) -> do
 			let ty' = case derivdeclrs of
@@ -1061,18 +1103,6 @@ renameVars envs expr = everywhere (mkT subst_var) expr where
 		Just (ident',_) -> CVar ident' ni
 		Nothing -> error $ " in subst_var : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
 	subst_var expr = expr
-
-tyspec2TypeM :: CTypeSpec -> CovVecM Type
-tyspec2TypeM typespec = case typespec of
-	CVoidType _  -> return $ DirectType TyVoid noTypeQuals noAttributes
-	CIntType _   -> return $ DirectType (TyIntegral TyInt) noTypeQuals noAttributes
-	CLongType _  -> return $ DirectType (TyIntegral TyLong) noTypeQuals noAttributes
-	CCharType _  -> return $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes
-	CShortType _ -> return $ DirectType (TyIntegral TyShort) noTypeQuals noAttributes
-	CFloatType _ -> return $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
-	CTypeDef ident _ -> lookupTypeDefM ident
-	_ -> myError $ "tyspec2TypeM: " ++ (render.pretty) typespec ++ " not implemented yet."
-
 
 -- Substitutes an expression x by y everywhere in a
 substituteBy :: (Data a) => CExpr -> CExpr -> a -> a
@@ -1284,14 +1314,12 @@ expr2SExpr tyenv expr = do
 	expr2sexpr (CVar ident _) =
 		return ( SLeaf $ (render.pretty) ident, ty2Z3Type $ fromJust $ lookup ident tyenv )
 
-	expr2sexpr ccast@(CCast (CDecl [CTypeSpec ctypespec] [] _) subexpr _) = do
+	expr2sexpr ccast@(CCast decl subexpr _) = do
 		(subsexpr,from_ty) <- expr2sexpr subexpr
-		ty_m <- tyspec2TypeM ctypespec
-		ty_elimd <- elimTypeDefsM ty_m
+		ty_elimd <- decl2TypeM decl >>= elimTypeDefsM
 		let to_ty = ty2Z3Type ty_elimd
 		printLogV 10 $ "#### expr2sexpr " ++ (render.pretty) ccast ++ " : subsexpr=" ++ show subsexpr
-		printLogV 10 $ "####            ctypespec=" ++ (render.pretty) ctypespec
-		printLogV 10 $ "####            ty_m=" ++ (render.pretty) ty_m
+		printLogV 10 $ "####            decl=" ++ (render.pretty) decl
 		printLogV 10 $ "####            ty_elimd=" ++ (render.pretty) ty_elimd
 		printLogV 10 $ "####            from_ty=" ++ show from_ty ++ " , to_ty=" ++ show to_ty
 		return (mb_cast subsexpr from_ty to_ty,to_ty)
