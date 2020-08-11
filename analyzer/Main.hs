@@ -519,18 +519,24 @@ lookupTypeDefM ident = do
 			TypeDefType tydefref tyquals tyattrs -> TypeDefType tydefref tyquals (tyattrs++attrs)
 		Nothing -> myError $ "TypeDef " ++ (show ident) ++ " not found"
 
-inferLExprTypeM :: TyEnv -> CExpr -> CovVecM Type
-inferLExprTypeM tyenv expr = case expr of
+inferLExprDeclM :: TyEnv -> CExpr -> CovVecM CDecl
+inferLExprDeclM tyenv expr = case expr of
 	CVar ident _ -> do
 		let Just ty = lookup ident tyenv
-		return ty
+		return $ type2DeclM ty
 	CMember objexpr member True _ -> do
-		PtrType objty _ _ <- inferLExprTypeM tyenv objexpr
-		getMemberTypeM objty member
+		PtrType objty _ _ <- inferLExprDeclM tyenv objexpr
+		getMemberTypeM objty member >>= type2DeclM
 	CMember objexpr member False _ -> do
-		objty <- inferLExprTypeM tyenv objexpr
-		getMemberTypeM objty member
-	other -> myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " not implemented"
+		objty <- inferLExprDeclM tyenv objexpr
+		getMemberTypeM objty member >>= type2DeclM
+	other -> myError $ "inferLExprDeclM " ++ (render.pretty) expr ++ " not implemented"
+
+type2DeclM :: Type -> CovVecM CDecl
+type2DeclM ty = case ty of
+	DirectType tyname -> case tyname of
+		TyVoid -> return 
+		TyIntegral TyChar
 
 decl2TypeM :: CDecl -> CovVecM Type
 decl2TypeM (CDecl declspecs _ _) = case declspecs of
@@ -541,7 +547,7 @@ decl2TypeM (CDecl declspecs _ _) = case declspecs of
 	[CTypeSpec (CLongType _)]      -> return $ DirectType (TyIntegral TyLong) noTypeQuals noAttributes
 	[CTypeSpec (CFloatType _)]     -> return $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
 	[CTypeSpec (CDoubleType _)]    -> return $ DirectType (TyFloating TyDouble) noTypeQuals noAttributes
-	[CTypeSpec (CEnumType (CEnum (Just ident) Nothing _ _) _)] -> lookupTypeDefM ident		
+--	[CTypeSpec (CEnumType (CEnum (Just ident) Nothing _ _) _)] -> lookupTypeDefM ident		
 --		return $ DirectType (TyEnum (EnumTypeRef sueref undefNode)) noTypeQuals noAttributes
 	[CTypeSpec (CTypeDef ident _)] -> lookupTypeDefM ident
 	other -> myError $ "decl2TypeM: " ++ (render.pretty) other ++ " not implemented yet."
@@ -755,8 +761,8 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
 			transids lexpr trace' $ \ (lexpr',trace'') -> do
-				ty <- inferLExprTypeM (map snd $ concat envs) lexpr'
-				let ass_expr_cast = CCast (exportTypeDecl ty) assigned_expr'' ni
+				decl <- inferLExprDeclM (map snd $ concat envs) lexpr'
+				let ass_expr_cast = CCast decl assigned_expr'' ni
 				unfoldTracesM mb_ret_type break_stack envs (Assignment lexpr' ass_expr_cast : trace'') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
