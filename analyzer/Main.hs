@@ -532,11 +532,20 @@ inferLExprDeclM tyenv expr = case expr of
 		getMemberTypeM objty member >>= type2DeclM
 	other -> myError $ "inferLExprDeclM " ++ (render.pretty) expr ++ " not implemented"
 
+{-
 type2DeclM :: Type -> CovVecM CDecl
-type2DeclM ty = case ty of
-	DirectType tyname -> case tyname of
-		TyVoid -> return 
-		TyIntegral TyChar
+type2DeclM ty = return $ CDecl [case ty of
+	DirectType tyname _ _ -> case tyname of
+		TyVoid -> CTypeSpec (CVoidType undefNode)
+		TyIntegral TyChar -> CTypeSpec (CCharType undefNode)
+		TyIntegral TyShort -> CTypeSpec (CShortType undefNode)
+		TyIntegral TyInt -> CTypeSpec (CIntType undefNode)
+		TyIntegral TyLong -> CTypeSpec (CLongType undefNode)
+		TyIntegral TyFloat -> CTypeSpec (CFloatType undefNode)
+		TyIntegral TyDouble -> CTypeSpec (CDoubleType undefNode)
+		TyIntegral TyEnum -> CTypeSpec (CEnumType 
+	]
+-}
 
 decl2TypeM :: CDecl -> CovVecM Type
 decl2TypeM (CDecl declspecs _ _) = case declspecs of
@@ -549,7 +558,7 @@ decl2TypeM (CDecl declspecs _ _) = case declspecs of
 	[CTypeSpec (CDoubleType _)]    -> return $ DirectType (TyFloating TyDouble) noTypeQuals noAttributes
 --	[CTypeSpec (CEnumType (CEnum (Just ident) Nothing _ _) _)] -> lookupTypeDefM ident		
 --		return $ DirectType (TyEnum (EnumTypeRef sueref undefNode)) noTypeQuals noAttributes
-	[CTypeSpec (CTypeDef ident _)] -> lookupTypeDefM ident
+--	[CTypeSpec (CTypeDef ident _)] -> lookupTypeDefM ident
 	other -> myError $ "decl2TypeM: " ++ (render.pretty) other ++ " not implemented yet."
 
 {-
