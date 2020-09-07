@@ -1313,9 +1313,9 @@ expr2SExpr tyenv expr = do
 	
 		CVar ident _ -> return ( SLeaf $ (render.pretty) ident, ty2Z3Type $ fromJust $ lookup ident tyenv )
 	
-		ccast@(CCast lexpr subexpr _) -> do
+		ccast@(CCast to_decl subexpr _) -> do
 			(subsexpr,from_ty) <- expr2sexpr subexpr
-			(_,lexpr_ty) <- expr2sexpr lexpr
+			lexpr_ty <- decl2TypeM to_decl
 			let to_ty = ty2Z3Type lexpr_ty
 			printLogV 10 $ "#### expr2sexpr " ++ (render.pretty) ccast ++ " : subsexpr=" ++ show subsexpr
 			printLogV 10 $ "####            lexpr=" ++ (render.pretty) lexpr
@@ -1348,7 +1348,7 @@ expr2SExpr tyenv expr = do
 			return ( SExpr [ op_sexpr, mb_cast sexpr1 ty1 operand_target_ty, mb_cast sexpr2 ty2 operand_target_ty ], expr_target_ty )
 			where
 			opexpr_ty ty1 ty2 = case op of
-			--            (function,     operands' types,  operation's result type)
+			--            (function,     operands' type,   operation's result type)
 				CMulOp -> (SLeaf "bvmul",operand_target_ty,operand_target_ty)
 				CDivOp -> (SLeaf "bvdiv",operand_target_ty,operand_target_ty)
 				CAddOp -> (SLeaf "bvadd",operand_target_ty,operand_target_ty)
