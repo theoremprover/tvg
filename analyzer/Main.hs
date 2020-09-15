@@ -1264,12 +1264,12 @@ z3Int = Z3_BitVector intSize False
 
 type Constraint = CExpr
 
-expr2SExpr :: TyEnv -> Expr -> CovVecM ((SExpr,Type),CExpr)
+expr2SExpr :: TyEnv -> Expr -> CovVecM (SExpr,CExpr,Z3_Type)
 expr2SExpr tyenv expr = do
 	let expr_inseq0 = insert_eq0 True expr
-	sexpr_ty <- expr2sexpr expr_inseq0
-	return (sexpr_ty,expr_inseq0)
-
+	(sexpr,z3_type) <- expr2sexpr expr_inseq0
+	return (sexpr,expr,z3_type)
+    
 	where
 
 	bool_result_ops = [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp]
@@ -1323,8 +1323,6 @@ expr2SExpr tyenv expr = do
 			lexpr_ty <- decl2TypeM to_decl
 			let to_ty = ty2Z3Type lexpr_ty
 			printLogV 10 $ "#### expr2sexpr " ++ (render.pretty) ccast ++ " : subsexpr=" ++ show subsexpr
-			printLogV 10 $ "####            lexpr=" ++ (render.pretty) lexpr
-			printLogV 10 $ "####            ty_elimd=" ++ (render.pretty) ty_elimd
 			printLogV 10 $ "####            from_ty=" ++ show from_ty ++ " , to_ty=" ++ show to_ty
 			return (mb_cast subsexpr from_ty to_ty,to_ty)
 	
@@ -1473,8 +1471,8 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 		varsZ3 = for (filter ((`elem` (constraints_vars ++ output_idents)).fst) tyenv) $ \ (ident,ty) ->
 			SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
 	constraintsZ3 <- concatForM constraints $ \ expr -> do
-		((assert_sexpr,_),real_expr) <- expr2SExpr tyenv expr
-		return [ SComment ((render.pretty) real_expr), SExpr [SLeaf "assert", assert_sexpr] ]
+		(assert_sexpr,orig_expr,_) <- expr2SExpr tyenv expr
+		return [ SComment ((render.pretty) orig_expr), SExpr [SLeaf "assert", assert_sexpr] ]
 	let
 		outputvarsZ3 = for output_idents $ \ ident -> SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
 		model = [
