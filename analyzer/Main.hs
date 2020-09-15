@@ -1264,11 +1264,11 @@ z3Int = Z3_BitVector intSize False
 
 type Constraint = CExpr
 
-expr2SExpr :: TyEnv -> Expr -> CovVecM (SExpr,CExpr,Z3_Type)
+expr2SExpr :: TyEnv -> Expr -> CovVecM (SExpr,CExpr)
 expr2SExpr tyenv expr = do
 	let expr_inseq0 = insert_eq0 True expr
 	(sexpr,z3_type) <- expr2sexpr expr_inseq0
-	return (sexpr,expr,z3_type)
+	return (sexpr,expr)
     
 	where
 
@@ -1471,7 +1471,7 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 		varsZ3 = for (filter ((`elem` (constraints_vars ++ output_idents)).fst) tyenv) $ \ (ident,ty) ->
 			SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
 	constraintsZ3 <- concatForM constraints $ \ expr -> do
-		(assert_sexpr,orig_expr,_) <- expr2SExpr tyenv expr
+		(assert_sexpr,orig_expr) <- expr2SExpr tyenv expr
 		return [ SComment ((render.pretty) orig_expr), SExpr [SLeaf "assert", assert_sexpr] ]
 	let
 		outputvarsZ3 = for output_idents $ \ ident -> SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
