@@ -1259,7 +1259,7 @@ instance Show SExpr where
 
 data Z3_Type = Z3_Bool | Z3_BitVector Int Bool | Z3_Float | Z3_Double
 	deriving (Show,Eq,Ord)
--- the derived ordering intentionally coincides with the type casting hierarchy :-)
+-- the derived ordering intentionally coincides with the type casting precedence :-)
 z3Int = Z3_BitVector intSize False
 
 type Constraint = CExpr
@@ -1269,7 +1269,7 @@ expr2SExpr tyenv expr = do
 	let expr_inseq0 = insert_eq0 True expr
 	(sexpr,z3_type) <- expr2sexpr expr_inseq0
 	return (sexpr,expr)
-    
+
 	where
 
 	bool_result_ops = [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp]
