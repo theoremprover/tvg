@@ -519,6 +519,7 @@ lookupTypeDefM ident = do
 			TypeDefType tydefref tyquals tyattrs -> TypeDefType tydefref tyquals (tyattrs++attrs)
 		Nothing -> myError $ "TypeDef " ++ (show ident) ++ " not found"
 
+{-
 inferLExprDeclM :: TyEnv -> CExpr -> CovVecM CDecl
 inferLExprDeclM tyenv expr = case expr of
 	CVar ident _ -> do
@@ -531,6 +532,7 @@ inferLExprDeclM tyenv expr = case expr of
 		objty <- inferLExprDeclM tyenv objexpr
 		getMemberTypeM objty member >>= type2DeclM
 	other -> myError $ "inferLExprDeclM " ++ (render.pretty) expr ++ " not implemented"
+-}
 
 {-
 type2DeclM :: Type -> CovVecM CDecl
@@ -770,9 +772,12 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
 			transids lexpr trace' $ \ (lexpr',trace'') -> do
+{-
 				decl <- inferLExprDeclM (map snd $ concat envs) lexpr'
 				let ass_expr_cast = CCast decl assigned_expr'' ni
 				unfoldTracesM mb_ret_type break_stack envs (Assignment lexpr' ass_expr_cast : trace'') (rest:rest2)
+-}
+				unfoldTracesM mb_ret_type break_stack envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
