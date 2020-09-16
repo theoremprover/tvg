@@ -560,8 +560,8 @@ decl2TypeM (CDecl declspecs _ _) = case declspecs of
 	[CTypeSpec (CDoubleType _)]    -> return $ DirectType (TyFloating TyDouble) noTypeQuals noAttributes
 --	[CTypeSpec (CEnumType (CEnum (Just ident) Nothing _ _) _)] -> lookupTypeDefM ident		
 --		return $ DirectType (TyEnum (EnumTypeRef sueref undefNode)) noTypeQuals noAttributes
---	[CTypeSpec (CTypeDef ident _)] -> lookupTypeDefM ident
-	other -> myError $ "decl2TypeM: " ++ (render.pretty) other ++ " not implemented yet."
+	[CTypeSpec (CTypeDef ident _)] -> lookupTypeDefM ident
+	other -> myError $ "decl2TypeM: " ++ show other ++ " not implemented yet."
 
 {-
 decl2TypeM :: CDecl -> CovVecM Type
@@ -1438,6 +1438,7 @@ ty2Z3Type ty = case ty of
 		to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
 		to_mode attr = error $ "unknown attr " ++ (render.pretty) attr
 	PtrType _ _ _ -> Z3_BitVector 16 True
+	TypeDefType (TypeDefRef _ ty _) _ _ -> ty2Z3Type ty
 	_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
 
 ty2SExpr :: Type -> SExpr
