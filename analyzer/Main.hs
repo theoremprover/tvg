@@ -1044,11 +1044,19 @@ cinitializer2blockitems lexpr ty initializer =
 					_ -> myError $ "cinitializer2blockitems: CPartDesignators not implemented yet!"
 			_ -> myError $ "cinitializer2blockitems: " ++ (render.pretty) ty ++ " at " ++ (show $ nodeInfo lexpr) ++ " is no composite type!"
 
+
+insertImplicitCastsM :: CExpr -> CovVecM CExpr
+insertImplicitCastsM cexpr = do
+	case cexpr of
+		
+	return cexpr
+
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
 -- It needs to keep the original NodeInfos, because of the coverage information with is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
-translateExprM envs expr = do
+translateExprM envs expr0 = do
+	expr <- insertImplicitCastsM expr0
 	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
@@ -1090,7 +1098,7 @@ translateExprM envs expr = do
 	set_node_info :: CExpr -> CExpr
 	set_node_info cexpr = everywhere (mkT subst_ni) cexpr where
 		subst_ni :: NodeInfo -> NodeInfo
-		subst_ni _ = nodeInfo expr
+		subst_ni _ = nodeInfo expr0
 
 	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExpr)])] -> CovVecM [(CExpr,Trace)]
 	create_combinations expr trace [] = return [(set_node_info expr,trace)]
@@ -1196,8 +1204,10 @@ simplifyTraceM trace = everywhereM (mkM simplify) trace where
 	simplify (CUnary CIndOp (CUnary CAdrOp expr _) _) = return expr
 	simplify (CMember (CUnary CAdrOp s _) member True ni) = return $ CMember s member False ni
 	simplify (CMember (CUnary CIndOp p _) member False ni) = return $ CMember p member True ni
+{-
 	simplify (CCast (CDecl _ [(Just (CDeclr Nothing [CPtrDeclr [] _] Nothing [] _),Nothing,Nothing)] _) subexpr _) =
 		return subexpr
+-}
 	simplify expr = return expr
 
 
@@ -1413,22 +1423,22 @@ ty2Z3Type ty = case ty of
 	DirectType (TyComp (CompTypeRef _ _ _)) _ _ -> Z3_BitVector 4 True
 	DirectType tyname _ attrs -> case tyname of
 		TyIntegral intty -> case (intty,map to_mode attrs) of
-			(TyChar,[])   -> Z3_BitVector 8 True
-			(TySChar,[])  -> Z3_BitVector 8 False
-			(TyUChar,[]) -> Z3_BitVector 8 True
-			(TyShort,[]) -> Z3_BitVector 16 False
-			(TyUShort,[]) -> Z3_BitVector 16 True
-			(TyInt,[])   -> Z3_BitVector intSize False
-			(TyInt,["SI"])   -> Z3_BitVector 32 False
-			(TyInt,["DI"])   -> Z3_BitVector 64 False
-			(TyUInt,[])  -> Z3_BitVector intSize True
-			(TyUInt,["SI"])  -> Z3_BitVector 32 True
-			(TyUInt,["DI"])  -> Z3_BitVector 64 True
-			(TyLong,[])  -> Z3_BitVector longIntSize False
-			(TyULong,[])  -> Z3_BitVector longIntSize True
-			(TyLLong,[])  -> Z3_BitVector 64 False
-			(TyULLong,[]) -> Z3_BitVector 64 True
-			other         -> error $ "ty2Z3Type " ++ show other ++ " not implemented!"
+			(TyChar,[])     -> Z3_BitVector 8 True
+			(TySChar,[])    -> Z3_BitVector 8 False
+			(TyUChar,[])    -> Z3_BitVector 8 True
+			(TyShort,[])    -> Z3_BitVector 16 False
+			(TyUShort,[])   -> Z3_BitVector 16 True
+			(TyInt,[])      -> Z3_BitVector intSize False
+			(TyInt,["SI"])  -> Z3_BitVector 32 False
+			(TyInt,["DI"])  -> Z3_BitVector 64 False
+			(TyUInt,[])     -> Z3_BitVector intSize True
+			(TyUInt,["SI"]) -> Z3_BitVector 32 True
+			(TyUInt,["DI"]) -> Z3_BitVector 64 True
+			(TyLong,[])     -> Z3_BitVector longIntSize False
+			(TyULong,[])    -> Z3_BitVector longIntSize True
+			(TyLLong,[])    -> Z3_BitVector 64 False
+			(TyULLong,[])   -> Z3_BitVector 64 True
+			other           -> error $ "ty2Z3Type " ++ show other ++ " not implemented!"
 		TyFloating TyFloat  -> Z3_Float
 		TyFloating TyDouble -> Z3_Double
 		TyEnum _ -> Z3_BitVector intSize True
@@ -1452,8 +1462,8 @@ type Solution = [(String,SolutionVal)]
 data SolutionVal = IntVal Int | FloatVal Float | DoubleVal Double
 instance Eq SolutionVal where
 	IntVal i1    == IntVal i2    = i1==i2
-	FloatVal f1  == FloatVal f2  = f2-f1 <= floatTolerance
-	DoubleVal f1 == DoubleVal f2 = f2-f1 <= doubleTolerance
+	FloatVal f1  == FloatVal f2  = abs (f2-f1) <= floatTolerance
+	DoubleVal f1 == DoubleVal f2 = abs (f2-f1) <= doubleTolerance
 
 instance Show SolutionVal where
 	show (IntVal i)    = show i
