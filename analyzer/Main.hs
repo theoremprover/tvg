@@ -778,7 +778,7 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 				let ass_expr_cast = CCast decl assigned_expr'' ni
 				unfoldTracesM mb_ret_type break_stack envs (Assignment lexpr' ass_expr_cast : trace'') (rest:rest2)
 -}
-			unfoldTracesM mb_ret_type break_stack envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
+			unfoldTracesM mb_ret_type break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -1216,10 +1216,8 @@ simplifyTraceM trace = everywhereM (mkM simplify) trace where
 	simplify (CUnary CIndOp (CUnary CAdrOp expr _) _) = return expr
 	simplify (CMember (CUnary CAdrOp s _) member True ni) = return $ CMember s member False ni
 	simplify (CMember (CUnary CIndOp p _) member False ni) = return $ CMember p member True ni
-{-
 	simplify (CCast (CDecl _ [(Just (CDeclr Nothing [CPtrDeclr [] _] Nothing [] _),Nothing,Nothing)] _) subexpr _) =
 		return subexpr
--}
 	simplify expr = return expr
 
 
