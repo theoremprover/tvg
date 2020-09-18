@@ -1045,10 +1045,19 @@ cinitializer2blockitems lexpr ty initializer =
 			_ -> myError $ "cinitializer2blockitems: " ++ (render.pretty) ty ++ " at " ++ (show $ nodeInfo lexpr) ++ " is no composite type!"
 
 
-insertImplicitCastsM :: CExpr -> CovVecM CExpr
-insertImplicitCastsM cexpr = do
+insertImplicitCastsM :: [Env] -> CExpr -> CovVecM CExpr
+insertImplicitCastsM envs cexpr = do
 	case cexpr of
-		
+		CAssign assign_op lexpr ass_expr _ ->
+		CCond cond_expr (Just then_expr) else_expr _ ->
+		CBinary binop expr1 expr2 _ ->
+		CCast decl expr _ -> 
+		CUnary unop expr -> 
+		CCall fun_expr args _ ->  
+		CMember ptrexpr member_ident is_ptr _ -> 
+		CVar ident _ -> 
+		CConst cconst -> 
+		other -> myError $ "insertImplicitCastsM " ++ (render.pretty) other ++ " not implemented"
 	return cexpr
 
 -- Translates all identifiers in an expression to fresh ones,
@@ -1056,7 +1065,7 @@ insertImplicitCastsM cexpr = do
 -- It needs to keep the original NodeInfos, because of the coverage information with is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> CovVecM [(CExpr,Trace)]
 translateExprM envs expr0 = do
-	expr <- insertImplicitCastsM expr0
+	expr <- insertImplicitCastsM envs expr0
 	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
