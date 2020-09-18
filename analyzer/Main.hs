@@ -771,13 +771,14 @@ unfoldTraces1M mb_ret_type break_stack envs trace bstss@((CBlockStmt stmt : rest
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids assigned_expr' trace $ \ (assigned_expr'',trace') -> do
-			transids lexpr trace' $ \ (lexpr',trace'') -> do
+			[(lexpr',trace'')] <- translateExprM envs lexpr
+--			transids lexpr trace' $ \ (lexpr',trace'') -> do
 {-
 				decl <- inferLExprDeclM (map snd $ concat envs) lexpr'
 				let ass_expr_cast = CCast decl assigned_expr'' ni
 				unfoldTracesM mb_ret_type break_stack envs (Assignment lexpr' ass_expr_cast : trace'') (rest:rest2)
 -}
-				unfoldTracesM mb_ret_type break_stack envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
+			unfoldTracesM mb_ret_type break_stack envs (Assignment lexpr' assigned_expr'' : trace'') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
 			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
@@ -1047,6 +1048,8 @@ cinitializer2blockitems lexpr ty initializer =
 
 insertImplicitCastsM :: [Env] -> CExpr -> CovVecM CExpr
 insertImplicitCastsM envs cexpr = do
+	return cexpr
+{-
 	case cexpr of
 		CAssign assign_op lexpr ass_expr _ ->
 		CCond cond_expr (Just then_expr) else_expr _ ->
@@ -1058,7 +1061,7 @@ insertImplicitCastsM envs cexpr = do
 		CVar ident _ -> 
 		CConst cconst -> 
 		other -> myError $ "insertImplicitCastsM " ++ (render.pretty) other ++ " not implemented"
-	return cexpr
+-}
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
