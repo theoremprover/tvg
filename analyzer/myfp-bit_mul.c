@@ -872,7 +872,7 @@ _fpmul_parts ( fp_number_type *  a,
 	}
       high >>= 1;
     }
-  while (solver_pragma(0,1,2) && high < IMPLICIT_1)
+  while (solver_pragma(0,1) && high < IMPLICIT_1)
     {
       tmp->normal_exp--;
       high <<= 1;
