@@ -1,0 +1,14 @@
+(set-option :smt.relevancy 0)
+(set-option :produce-models true)
+
+(declare-const a (_ BitVec 16))
+(declare-const a2 (_ BitVec 32))
+
+(assert (_ sign_extend a a2))
+
+(assert (= a 0x0002))
+
+(minimize a)
+(check-sat)
+(get-value (a))
+(get-value (a2))
