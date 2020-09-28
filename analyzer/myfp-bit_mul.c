@@ -853,27 +853,44 @@ _fpmul_parts ( fp_number_type *  a,
     /* Multiplying two USIs to get a UDI, we're safe.  */
     {
       UDItype answer = (UDItype)a->fraction.ll * (UDItype)b->fraction.ll;
+#ifdef CALC
+printf("-1: answer = %llu\n", answer);
+#endif
 
       // Manually inserted casts!
       high = (fractype) (answer >> BITS_PER_SI);
       low = (fractype) answer;
+#ifdef CALC
+printf(" high = %u\n", high);
+printf(" low  = %u\n", low);
+#endif
     }
   }
 
   tmp->normal_exp = a->normal_exp + b->normal_exp
     + FRAC_NBITS - (FRACBITS + NGARDS);
   tmp->sign = a->sign != b->sign ;
+#ifdef CALC
+printf("0: tmp->normal_exp = %i\n", tmp->normal_exp);
+#endif
 
 // ERROR in [2,2,2,2,2,2,1,1,2,2,1,1] for return_val_ARROW_normal_exp : exec_val=-22 /= predicted_result=3
 
-  while (solver_pragma(1) && high >= IMPLICIT_2)
+#ifdef CALC
+printf("high=%li, IMPLICIT_2=%lu\n",high,IMPLICIT_2 );
+#endif
+  while (solver_pragma(1) && (high >= IMPLICIT_2))
     {
       tmp->normal_exp++;
-      if (solver_pragma(1) && high & 1)
-	{
-	  low >>= 1;
-	  low |= FRACHIGH;
-	}
+#ifdef CALC
+printf("1: tmp->normal_exp = %i\n", tmp->normal_exp);
+#endif
+
+        if (solver_pragma(1) && high & 1)
+        {
+          low >>= 1;
+          low |= FRACHIGH;
+        }
       high >>= 1;
     }
   while (solver_pragma(0) && high < IMPLICIT_1)
@@ -885,6 +902,9 @@ _fpmul_parts ( fp_number_type *  a,
       solver_debug(high);
     }
 
+#ifdef CALC
+printf("2: tmp->normal_exp = %i\n", tmp->normal_exp);
+#endif
   if (solver_pragma(1) && (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB))
     {
       if (solver_pragma(1) && high & (1 << NGARDS))
@@ -905,11 +925,14 @@ _fpmul_parts ( fp_number_type *  a,
 	  high += GARDROUND + 1;
 
 	  /* Avoid further rounding in pack_d.  */
-	  high &= ~(fractype) GARDMASK;
+	  high &= ~ (fractype) GARDMASK;
     }
     }
   tmp->fraction.ll = high;
   tmp->class = CLASS_NUMBER;
+#ifdef CALC
+printf("3: tmp->normal_exp = %i\n", tmp->normal_exp);
+#endif
   return tmp;
 }
 
@@ -1653,7 +1676,11 @@ tf_to_sf (TFtype arg_a)
 #ifdef CALC
 int main(int argc, char* argv[])
 {
-    //printf("IMPLICIT_1=%i\n",IMPLICIT_1);
+    printf("sizeof(UDItype)=%i\n",sizeof(UDItype));
+    printf("sizeof(fractype)=%i\n",sizeof(fractype));
+    printf("sizeof(int)=%i\n",sizeof(int));
+    printf("sizeof(long)=%i\n",sizeof(long));
+    printf("sizeof(long long)=%i\n",sizeof(long long));
     //printf("FRACBITS=%i, NGARDS=%i\n",FRACBITS,NGARDS);
     // FRACBITS=23, NGARDS=7
     printf("ROUND_TOWARDS_ZERO=%i, GARDMASK=%i, GARDMSB=%i\n",ROUND_TOWARDS_ZERO,GARDMASK,GARDMSB);

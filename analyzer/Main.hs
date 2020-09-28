@@ -61,7 +61,7 @@ for = flip map
 concatForM = flip concatMapM
 
 intSize = 32
-longIntSize = 64
+longIntSize = 32
 longLongIntSize = 64
 
 showInitialTrace = False
@@ -112,8 +112,10 @@ main = do
 	-- when there is an error, we'd like to have *all* output till then
 	hSetBuffering stdout NoBuffering
 
+	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
+
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : ["-writeModels","-exportPaths"] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : ["-writeModels"] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul_exp.c") : "_fpmul_parts" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -1375,8 +1377,8 @@ expr2SExpr tyenv expr = do
 			(sexpr1,ty1) <- expr2sexpr expr1
 			printLogV 10 $ "#### expr2sexpr " ++ (render.pretty) expr ++ " sexpr1=" ++ show sexpr1
 			(sexpr2,ty2) <- expr2sexpr expr2
-			let (op_sexpr,operand_target_ty,expr_target_ty) = opexpr_ty ty1 ty2
-			return ( SExpr [ op_sexpr, mb_cast sexpr1 ty1 operand_target_ty, mb_cast sexpr2 ty2 operand_target_ty ], expr_target_ty )
+			let (op_sexpr,op_target_ty,expr_target_ty) = opexpr_ty ty1 ty2
+			return ( SExpr [ op_sexpr, mb_cast sexpr1 ty1 op_target_ty, mb_cast sexpr2 ty2 op_target_ty ], expr_target_ty )
 			where
 			opexpr_ty ty1 ty2 = case op of
 			--            (function,     operands' type,   operation's result type)
@@ -1430,8 +1432,11 @@ expr2SExpr tyenv expr = do
 			where
 			cond_sexpr = SExpr [ SLeaf "=", sexpr, make_intconstant size_from 0 ]
 
-		-- DOWNCAST or SAMECAST: extract bits (modulo)
-		( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from >= size_to ->
+		-- SAMECAST: identity
+		( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from == size_to -> sexpr
+
+		-- DOWNCAST: extract bits (modulo)
+		( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from > size_to ->
 			SExpr [ SExpr [ SLeaf "_", SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0"], sexpr ]
 
 		-- UPCAST signed (to signed or unsigned): extend sign bit
