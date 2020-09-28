@@ -1414,19 +1414,26 @@ expr2SExpr tyenv expr = do
 		
 	make_intconstant :: Int -> Integer -> SExpr
 	make_intconstant size const = SLeaf (printf "#x%*.*x" (size `div` 4) (size `div` 4) const)
-	
+		
 	mb_cast :: SExpr -> Z3_Type -> Z3_Type -> SExpr
 	mb_cast sexpr from_ty to_ty | from_ty == to_ty = sexpr
 	mb_cast sexpr from_ty to_ty = case (from_ty,to_ty) of
 		( Z3_BitVector size_from _, Z3_Bool ) -> SExpr [ SLeaf "ite", cond_sexpr, SLeaf "false", SLeaf "true" ]
 			where
 			cond_sexpr = SExpr [ SLeaf "=", sexpr, make_intconstant size_from 0 ]
-		( Z3_BitVector size_from True, Z3_BitVector size_to True ) -> case size_from < size_to of
---			True  -> SExpr [ SLeaf "concat", SExpr [SLeaf "_",SLeaf "bv0",SLeaf (show $ size_to-size_from)], sexpr ]
-			True  -> SExpr [ SExpr [ SLeaf "_", SLeaf "sign_extend", SLeaf $ show (size_to-size_from) ], sexpr ] 
-			False -> case size_from > size_to of
-				True  -> SExpr [ SExpr [ SLeaf "_", SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0"], sexpr ]
-				False -> sexpr
+
+		-- DOWNCAST or SAMECAST: extract bits (modulo)
+		( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from >= size_to ->
+			SExpr [ SExpr [ SLeaf "_", SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0"], sexpr ]
+
+		-- UPCAST signed (to signed or unsigned): extend sign bit
+		( Z3_BitVector size_from True, Z3_BitVector size_to _ ) ->
+			SExpr [ SExpr [ SLeaf "_", SLeaf "sign_extend", SLeaf $ show (size_to-size_from) ], sexpr ] 
+
+		-- UPCAST unsigned (to signed or unsigned): extend with 0s
+		( Z3_BitVector size_from False, Z3_BitVector size_to _ ) ->
+			SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
+
 		_ -> error $ "mb_cast " ++ show sexpr ++ " " ++
 			show from_ty ++ " " ++ show to_ty ++ " not implemented!"
 
