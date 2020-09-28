@@ -113,7 +113,7 @@ main = do
 	hSetBuffering stdout NoBuffering
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : ["-writeModels","-exportPaths"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul_exp.c") : "_fpmul_parts" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -361,6 +361,14 @@ analyzeTraceM mb_ret_type res_line = do
 			extract_conds (Condition (Just b) _) = [ if b then 1 else 2 ]
 			extract_conds _ = []
 
+	opts <- gets optsCVS
+	when ("-exportPaths" `elem` opts) $ liftIO $ do
+		writeFile (analyzerPath </> "models" </> "path_" ++ show traceid <.> ".c") $ unlines $ concat $ for trace $ \case
+			Assignment lexpr assexpr -> [ (render.pretty) lexpr ++ " = " ++ (render.pretty) assexpr ++ " ;" ]
+			NewDeclaration (ident,ty) -> [ "(" ++ (render.pretty) ty ++ ") " ++ (render.pretty) ident ++ " ;" ]
+			Return expr -> [ "return " ++ (render.pretty) expr ++ " ;" ]
+			_ -> []
+			
 	when showInitialTrace $ do
 		printLog $ "=== TRACE " ++ show traceid ++ " ========================\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"

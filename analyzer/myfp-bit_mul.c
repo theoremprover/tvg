@@ -809,24 +809,24 @@ _fpmul_parts ( fp_number_type *  a,
   fractype low = 0;
   fractype high = 0;
 
-  if (isnan (a))
+  if (solver_pragma(2) && isnan (a))
     {
       a->sign = a->sign != b->sign;
       return a;
     }
-  if (isnan (b))
+  if (solver_pragma(2) && isnan (b))
     {
       b->sign = a->sign != b->sign;
       return b;
     }
-  if (isinf (a))
+  if (solver_pragma(2) && isinf (a))
     {
       if (iszero (b))
 	return nan ();
       a->sign = a->sign != b->sign;
       return a;
     }
-  if (isinf (b))
+  if (solver_pragma(2) && isinf (b))
     {
       if (iszero (a))
 	{
@@ -835,12 +835,12 @@ _fpmul_parts ( fp_number_type *  a,
       b->sign = a->sign != b->sign;
       return b;
     }
-  if (iszero (a))
+  if (solver_pragma(2) && iszero (a))
     {
       a->sign = a->sign != b->sign;
       return a;
     }
-  if (iszero (b))
+  if (solver_pragma(2) && iszero (b))
     {
       b->sign = a->sign != b->sign;
       return b;
@@ -863,17 +863,20 @@ _fpmul_parts ( fp_number_type *  a,
   tmp->normal_exp = a->normal_exp + b->normal_exp
     + FRAC_NBITS - (FRACBITS + NGARDS);
   tmp->sign = a->sign != b->sign ;
-  while (solver_pragma(0,1,2) && high >= IMPLICIT_2)
+
+// ERROR in [2,2,2,2,2,2,1,1,2,2,1,1] for return_val_ARROW_normal_exp : exec_val=-22 /= predicted_result=3
+
+  while (solver_pragma(1) && high >= IMPLICIT_2)
     {
       tmp->normal_exp++;
-      if (high & 1)
+      if (solver_pragma(1) && high & 1)
 	{
 	  low >>= 1;
 	  low |= FRACHIGH;
 	}
       high >>= 1;
     }
-  while (solver_pragma(0,1,2) && high < IMPLICIT_1)
+  while (solver_pragma(0) && high < IMPLICIT_1)
     {
       tmp->normal_exp--;
       high <<= 1;
@@ -882,9 +885,9 @@ _fpmul_parts ( fp_number_type *  a,
       solver_debug(high);
     }
 
-  if ((!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB))
+  if (solver_pragma(1) && (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB))
     {
-      if ((high & (1 << NGARDS)))
+      if (solver_pragma(1) && high & (1 << NGARDS))
 	{
 	  /* Because we're half way, we would round to even by adding
 	     GARDROUND + 1, except that's also done in the packing
