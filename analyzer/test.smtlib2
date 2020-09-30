@@ -3,8 +3,15 @@
 
 (declare-const a (_ BitVec 16))
 (declare-const a2 (_ BitVec 32))
+(declare-const a3 (_ BitVec 32))
+(declare-const a4 (_ BitVec 8))
+(declare-const a5 (_ BitVec 8))
 
 (assert (= ((_ sign_extend 16) a) a2))
+
+(assert (= ((_ zero_extend 16) a) a3))
+
+
 
 (assert (= a #x0002))
 
@@ -12,3 +19,4 @@
 (check-sat)
 (get-value (a))
 (get-value (a2))
+(get-value (a3))
