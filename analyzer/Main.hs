@@ -330,7 +330,7 @@ covVectorsM = do
 	modify $ \ s -> s { paramEnvCVS = Just param_env }
 	printLogV 2 $ "param_env = " ++ showEnv param_env
 
-	let decls = map (NewDeclaration .snd) (reverse param_env ++ glob_env)
+	let decls = map (NewDeclaration . snd) (reverse param_env ++ glob_env)
 
 	when checkSolutions $ do
 		filename <- gets srcFilenameCVS
@@ -533,10 +533,10 @@ envs2tyenv :: [Env] -> TyEnv
 envs2tyenv envs = map snd $ concat envs
 
 inferLExprTypeM :: [Env] -> CExpr -> CovVecM Type
-inferLExprTypeM envs expr = case renameVars envs expr of
-	CVar ident _ -> case lookup ident (envs2tyenv envs) of
+inferLExprTypeM envs expr = case expr of
+	CVar ident _ -> case lookup ident (concat envs) of
 		Nothing -> error $ "inferLExprTypeM " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv (envs2tyenv envs)
-		Just ty -> return ty
+		Just (_,ty) -> return ty
 	CMember objexpr member True _ -> do
 		PtrType objty _ _ <- inferLExprTypeM envs objexpr
 		getMemberTypeM objty member
@@ -1041,29 +1041,26 @@ cinitializer2blockitems lexpr ty initializer =
 			_ -> myError $ "cinitializer2blockitems: " ++ (render.pretty) ty ++ " at " ++ (show $ nodeInfo lexpr) ++ " is no composite type!"
 
 
-insertImplicitCastsM :: [Env] -> CExpr -> CovVecM CExpr
-insertImplicitCastsM envs cexpr = do
-	return cexpr
-{-
+insertImplicitCastsM :: [Env] -> CExpr -> Type -> CovVecM CExpr
+insertImplicitCastsM envs cexpr target_ty = do
 	case cexpr of
-		CAssign assign_op lexpr ass_expr _ ->
-		CCond cond_expr (Just then_expr) else_expr _ ->
-		CBinary binop expr1 expr2 _ ->
+--		CAssign assign_op lexpr ass_expr _ -> 
+--		CCond cond_expr (Just then_expr) else_expr _ -> 
+		CBinary binop expr1 expr2 _ -> 
 		CCast decl expr _ -> 
 		CUnary unop expr -> 
-		CCall fun_expr args _ ->  
+		CCall fun_expr args _ -> 
 		CMember ptrexpr member_ident is_ptr _ -> 
 		CVar ident _ -> 
 		CConst cconst -> 
 		other -> myError $ "insertImplicitCastsM " ++ (render.pretty) other ++ " not implemented"
--}
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
 -- It needs to keep the original NodeInfos, because of the coverage information with is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> Type -> CovVecM [(CExpr,Trace)]
 translateExprM envs expr0 target_ty = do
-	expr <- insertImplicitCastsM envs expr0
+	expr <- insertImplicitCastsM envs expr0 target_ty
 	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
@@ -1076,8 +1073,7 @@ translateExprM envs expr0 target_ty = do
 		to_call expr = return expr
 	(expr',calls) <- runStateT (everywhereM (mkM to_call) expr) []
 
-	let
-		expr'' = renameVars envs expr'
+	let expr'' = renameVars envs expr'
 
 	funcalls_traces :: [(NodeInfo,[(Trace,CExpr)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
@@ -1129,7 +1125,7 @@ translateExprM envs expr0 target_ty = do
 		substparamarg expr = expr
 
 
--- Renames Variables to unique names
+-- Renames Variables to unique names, looking up their unique name (wíth a number suffix)
 
 renameVars :: [Env] -> CExpr -> CExpr
 renameVars envs expr = everywhere (mkT subst_var) expr where
