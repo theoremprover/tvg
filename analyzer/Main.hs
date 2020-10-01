@@ -14,6 +14,7 @@ import Language.C.Data.Node
 import Language.C.Data.Position
 import Language.C.Analysis.AstAnalysis
 import Language.C.Analysis.DeclAnalysis
+import Language.C.Analysis.TypeUtils
 import Language.C.Analysis.TravMonad
 import Language.C.Analysis.SemRep
 import Language.C.Analysis.Export
@@ -63,6 +64,13 @@ concatForM = flip concatMapM
 intSize = 32
 longIntSize = 32
 longLongIntSize = 64
+
+intType = integral TyInt :: Type
+charType = integral TyChar :: Type
+ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
+
+flags2IntType flags = integral (getIntType flags) :: Type
+string2FloatType flags = floating (getFloatType flags) :: Type
 
 showInitialTrace = False
 solveIt = True
@@ -532,19 +540,6 @@ lookupTypeDefM ident = do
 envs2tyenv :: [Env] -> TyEnv
 envs2tyenv envs = map snd $ concat envs
 
-inferLExprTypeM :: [Env] -> CExpr -> CovVecM Type
-inferLExprTypeM envs expr = case expr of
-	CVar ident _ -> case lookup ident (concat envs) of
-		Nothing -> error $ "inferLExprTypeM " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv (envs2tyenv envs)
-		Just (_,ty) -> return ty
-	CMember objexpr member True _ -> do
-		PtrType objty _ _ <- inferLExprTypeM envs objexpr
-		getMemberTypeM objty member
-	CMember objexpr member False _ -> do
-		objty <- inferLExprTypeM envs objexpr
-		getMemberTypeM objty member
-	other -> myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " not implemented"
-
 {-
 type2DeclM :: Type -> CovVecM CDecl
 type2DeclM ty = error "" --return $ CDecl [case ty of
@@ -559,8 +554,6 @@ type2DeclM ty = error "" --return $ CDecl [case ty of
 		TyIntegral TyEnum -> CTypeSpec (CEnumType 
 	]
 -}
-
-intType = DirectType (TyIntegral TyInt) noTypeQuals noAttributes :: Type
 
 decl2TypeM :: CDecl -> CovVecM Type
 decl2TypeM (CDecl declspecs _ _) = case declspecs of
@@ -771,9 +764,9 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			to_dbg_output (name_id,ty) = DebugOutput ("solver_debug_" ++ identToString name_id) (CVar name_id undefNode,ty)
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
-		expr_ty <- inferLExprTypeM envs lexpr
+		expr_ty <- inferTypeM (envs2tyenv envs) (renameVars envs lexpr)
 		transids assigned_expr' trace expr_ty $ \ (assigned_expr'',trace') -> do
-			[(lexpr',trace'')] <- translateExprM envs lexpr expr_ty 
+			[(lexpr',trace'')] <- translateExprM envs lexpr expr_ty
 			unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
 		where
 		mb_binop = lookup assignop [
@@ -1041,26 +1034,52 @@ cinitializer2blockitems lexpr ty initializer =
 			_ -> myError $ "cinitializer2blockitems: " ++ (render.pretty) ty ++ " at " ++ (show $ nodeInfo lexpr) ++ " is no composite type!"
 
 
-insertImplicitCastsM :: [Env] -> CExpr -> Type -> CovVecM CExpr
-insertImplicitCastsM envs cexpr target_ty = do
+inferTypeM :: TyEnv -> CExpr -> CovVecM Type
+inferTypeM tyenv expr = case expr of
+	CVar ident _ -> case lookup ident tyenv of
+		Nothing -> error $ "inferTypeM " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv tyenv
+		Just ty -> return ty
+	CMember objexpr member True _ -> do
+		PtrType objty _ _ <- inferTypeM tyenv objexpr
+		getMemberTypeM objty member
+	CMember objexpr member False _ -> do
+		objty <- inferTypeM tyenv objexpr
+		getMemberTypeM objty member
+	other -> myError $ "inferTypeM " ++ (render.pretty) expr ++ " not implemented"
+
+insertImplicitCastsM :: TyEnv -> CExpr -> Type -> CovVecM CExpr
+insertImplicitCastsM tyenv cexpr target_ty = do
 	case cexpr of
---		CAssign assign_op lexpr ass_expr _ -> 
---		CCond cond_expr (Just then_expr) else_expr _ -> 
-		CBinary binop expr1 expr2 _ -> 
+--		CAssign assign_op lexpr ass_expr _ ->
+--		CCond cond_expr (Just then_expr) else_expr _ ->
+{-
+		CBinary binop expr1 expr2 _ ->
 		CCast decl expr _ -> 
-		CUnary unop expr -> 
-		CCall fun_expr args _ -> 
-		CMember ptrexpr member_ident is_ptr _ -> 
-		CVar ident _ -> 
-		CConst cconst -> 
+		CUnary unop expr _ -> 
+		CCall fun_expr args _ ->
+-}
+		CMember ptrexpr member_ident True _ -> do
+			sue_ty <- inferTypeM tyenv ptrexpr
+			getMemberTypeM sue_ty member_ident >>= maybe_cast
+		CVar ident _ -> do
+			let Just ident_ty = lookup ident tyenv
+			maybe_cast ident_ty
+		CConst (CIntConst (CInteger _ _ flags) _) -> maybe_cast $ flags2IntType flags
+		CConst (CFloatConst (CFloat s) _)         -> maybe_cast $ string2FloatType s	
+		CConst (CCharConst (CChar _ False) _)     -> maybe_cast charType
+		CConst (CStrConst _ _)                    -> maybe_cast $ ptrType charType
 		other -> myError $ "insertImplicitCastsM " ++ (render.pretty) other ++ " not implemented"
+	where
+	maybe_cast from_ty = do
+		--- IMPLEMENT!
+		return cexpr 
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
 -- It needs to keep the original NodeInfos, because of the coverage information with is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> Type -> CovVecM [(CExpr,Trace)]
 translateExprM envs expr0 target_ty = do
-	expr <- insertImplicitCastsM envs expr0 target_ty
+	expr <- insertImplicitCastsM (envs2tyenv envs) (renameVars envs expr0) target_ty
 	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
@@ -1072,8 +1091,6 @@ translateExprM envs expr0 target_ty = do
 			_  -> myError $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call expr = return expr
 	(expr',calls) <- runStateT (everywhereM (mkM to_call) expr) []
-
-	let expr'' = renameVars envs expr'
 
 	funcalls_traces :: [(NodeInfo,[(Trace,CExpr)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
@@ -1087,7 +1104,7 @@ translateExprM envs expr0 target_ty = do
 			tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
 		return (ni,funtraces_rets) 
 
-	create_combinations expr'' [] funcalls_traces
+	create_combinations expr' [] funcalls_traces
 	
 	where
 
@@ -1322,7 +1339,7 @@ expr2SExpr tyenv expr = do
 					[True, False,False,False] -> (TyInt,intSize)
 					[True, True, False,False] -> (TyLong,longIntSize)
 					[True, False,True, False] -> (TyLLong,longLongIntSize)
-					_ -> error $ "infer_type: Strange flags in " ++ (render.pretty) cconst
+					_ -> error $ "expr2sexpr: Strange flags in " ++ (render.pretty) cconst
 			CCharConst cchar _   -> ( SLeaf $ (render.pretty) cconst, ty2Z3Type $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes )
 			CFloatConst cfloat _ -> ( SLeaf $ (render.pretty) cconst, ty2Z3Type $ DirectType (TyFloating TyDouble) noTypeQuals noAttributes )
 			CStrConst cstr _     -> ( SLeaf $ (render.pretty) cconst, ty2Z3Type $ PtrType undefined noTypeQuals noAttributes )
