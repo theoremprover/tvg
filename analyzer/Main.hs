@@ -1053,11 +1053,15 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 --		CAssign assign_op lexpr ass_expr _ ->
 --		CCond cond_expr (Just then_expr) else_expr _ ->
 {-
-		CBinary binop expr1 expr2 _ ->
 		CCast decl expr _ -> 
 		CUnary unop expr _ -> 
 		CCall fun_expr args _ ->
 -}
+		CBinary binop expr1 expr2 _ | -> do
+			expr1_ty <- inferTypeM tyenv expr1
+			expr2_ty <- inferTypeM tyenv expr2
+			maybe_cast $ case max expr1_ty expr2_ty of
+				arg_target_ty | isCmpOp binop -> 
 		CMember ptrexpr member_ident True _ -> do
 			sue_ty <- inferTypeM tyenv ptrexpr
 			getMemberTypeM sue_ty member_ident >>= maybe_cast
