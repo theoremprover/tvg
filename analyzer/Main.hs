@@ -764,7 +764,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			to_dbg_output (name_id,ty) = DebugOutput ("solver_debug_" ++ identToString name_id) (CVar name_id undefNode,ty)
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
-		expr_ty <- inferTypeM (envs2tyenv envs) (renameVars envs lexpr)
+		expr_ty <- inferLExprTypeM (envs2tyenv envs) (renameVars envs lexpr)
 		transids assigned_expr' trace expr_ty $ \ (assigned_expr'',trace') -> do
 			[(lexpr',trace'')] <- translateExprM envs lexpr expr_ty
 			unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
@@ -1034,21 +1034,34 @@ cinitializer2blockitems lexpr ty initializer =
 			_ -> myError $ "cinitializer2blockitems: " ++ (render.pretty) ty ++ " at " ++ (show $ nodeInfo lexpr) ++ " is no composite type!"
 
 
-inferTypeM :: TyEnv -> CExpr -> CovVecM Type
-inferTypeM tyenv expr = case expr of
+inferLExprTypeM :: TyEnv -> CExpr -> CovVecM Type
+inferLExprTypeM tyenv expr = case expr of
 	CVar ident _ -> case lookup ident tyenv of
-		Nothing -> error $ "inferTypeM " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv tyenv
+		Nothing -> error $ "inferLExprTypeM " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv tyenv
 		Just ty -> return ty
 	CMember objexpr member True _ -> do
-		PtrType objty _ _ <- inferTypeM tyenv objexpr
+		PtrType objty _ _ <- inferLExprTypeM tyenv objexpr
 		getMemberTypeM objty member
 	CMember objexpr member False _ -> do
-		objty <- inferTypeM tyenv objexpr
+		objty <- inferLExprTypeM tyenv objexpr
 		getMemberTypeM objty member
-	other -> myError $ "inferTypeM " ++ (render.pretty) expr ++ " not implemented"
+	other -> myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " not implemented"
 
 insertImplicitCastsM :: TyEnv -> CExpr -> Type -> CovVecM CExpr
 insertImplicitCastsM tyenv cexpr target_ty = do
+	(cexpr',ty') <- insert_impl_casts cexpr
+	return $ maybe_cast cexpr' ty'
+	where
+	insert_impl_casts (CBinary binop expr1 expr2 ni) = do
+		(expr1',ty1') <- insert_impl_casts expr1
+		(expr2',ty2') <- insert_impl_casts expr2
+		let common_ty = max ty1' ty2'
+		return $ case CBinary binop (maybe_cast expr1' common_ty) (maybe_cast expr2' common_ty) ni of
+			expr' | isCmpOp binop -> maybe_cast expr' intType
+			expr' 
+			expr' | isBitOp binop -> maybe_cast expr' common_ty
+			expr' | isLogicOp binop -> maybe_cast expr' common_ty
+			expr' -> maybe_cast expr' common
 	case cexpr of
 --		CAssign assign_op lexpr ass_expr _ ->
 --		CCond cond_expr (Just then_expr) else_expr _ ->
@@ -1058,7 +1071,7 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 		CCall fun_expr args _ ->
 -}
 		CBinary binop expr1 expr2 _ | -> do
-			expr1_ty <- inferTypeM tyenv expr1
+			expr1_ty <- insertImplicitCastsM tyenv expr1
 			expr2_ty <- inferTypeM tyenv expr2
 			maybe_cast $ case max expr1_ty expr2_ty of
 				arg_target_ty | isCmpOp binop -> intType				
@@ -1074,8 +1087,8 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 		CConst (CCharConst (CChar _ False) _)     -> maybe_cast charType
 		CConst (CStrConst _ _)                    -> maybe_cast $ ptrType charType
 		other -> myError $ "insertImplicitCastsM " ++ (render.pretty) other ++ " not implemented"
-	where
-	maybe_cast from_ty | from_ty == target_ty = 
+
+	maybe_cast expr from_ty | from_ty == target_ty = 
 		--- IMPLEMENT!
 
 -- Translates all identifiers in an expression to fresh ones,
