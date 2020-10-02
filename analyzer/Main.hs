@@ -1061,7 +1061,8 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 			expr1_ty <- inferTypeM tyenv expr1
 			expr2_ty <- inferTypeM tyenv expr2
 			maybe_cast $ case max expr1_ty expr2_ty of
-				arg_target_ty | isCmpOp binop -> 
+				arg_target_ty | isCmpOp binop -> intType				
+				arg_target_ty | isCmpOp binop -> intType
 		CMember ptrexpr member_ident True _ -> do
 			sue_ty <- inferTypeM tyenv ptrexpr
 			getMemberTypeM sue_ty member_ident >>= maybe_cast
@@ -1074,9 +1075,8 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 		CConst (CStrConst _ _)                    -> maybe_cast $ ptrType charType
 		other -> myError $ "insertImplicitCastsM " ++ (render.pretty) other ++ " not implemented"
 	where
-	maybe_cast from_ty = do
+	maybe_cast from_ty | from_ty == target_ty = 
 		--- IMPLEMENT!
-		return cexpr 
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
