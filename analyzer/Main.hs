@@ -18,6 +18,7 @@ import Language.C.Analysis.TypeUtils
 import Language.C.Analysis.TravMonad
 import Language.C.Analysis.SemRep
 import Language.C.Analysis.Export
+import Language.C.Syntax.Ops
 import Language.C.System.GCC
 import Control.Monad
 import Control.Monad.Trans.Class
@@ -769,12 +770,9 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			[(lexpr',trace'')] <- translateExprM envs lexpr expr_ty
 			unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
 		where
-		mb_binop = lookup assignop [
-			(CMulAssOp,CMulOp),(CDivAssOp,CDivOp),(CRmdAssOp,CRmdOp),(CAddAssOp,CAddOp),(CSubAssOp,CSubOp),
-			(CShlAssOp,CShlOp),(CShrAssOp,CShrOp),(CAndAssOp,CAndOp),(CXorAssOp,CXorOp),(COrAssOp,COrOp) ]
-		assigned_expr' = case mb_binop of
-			Nothing -> assigned_expr
-			Just binop -> CBinary binop lexpr assigned_expr ni
+		assigned_expr' = case assignop of
+			CAssignOp -> assigned_expr
+			ass_op -> CBinary (assignBinop ass_op) lexpr assigned_expr ni
 
 	CExpr (Just (CUnary unaryop expr ni_op)) ni | unaryop `elem` (map fst unaryops) -> do
 		unfoldTracesM ret_type toplevel break_stack envs trace ( (CBlockStmt stmt' : rest) : rest2 )
@@ -1047,6 +1045,9 @@ inferLExprTypeM tyenv expr = case expr of
 		getMemberTypeM objty member
 	other -> myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " not implemented"
 
+typeConversionMax :: Type -> Type -> Type
+typeConversionMax ty1 
+
 insertImplicitCastsM :: TyEnv -> CExpr -> Type -> CovVecM CExpr
 insertImplicitCastsM tyenv cexpr target_ty = do
 	(cexpr',ty') <- insert_impl_casts cexpr
@@ -1055,21 +1056,18 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 	insert_impl_casts (CBinary binop expr1 expr2 ni) = do
 		(expr1',ty1') <- insert_impl_casts expr1
 		(expr2',ty2') <- insert_impl_casts expr2
-		let common_ty = max ty1' ty2'
+		let common_ty = typeConversionMax ty1' ty2'
 		return $ case CBinary binop (maybe_cast expr1' common_ty) (maybe_cast expr2' common_ty) ni of
 			expr' | isCmpOp binop -> maybe_cast expr' intType
-			expr' 
-			expr' | isBitOp binop -> maybe_cast expr' common_ty
-			expr' | isLogicOp binop -> maybe_cast expr' common_ty
-			expr' -> maybe_cast expr' common
-	case cexpr of
+			expr' -> maybe_cast expr' common_ty
+
+--	insert_impl_casts (CCast decl expr _) = 
 --		CAssign assign_op lexpr ass_expr _ ->
 --		CCond cond_expr (Just then_expr) else_expr _ ->
 {-
 		CCast decl expr _ -> 
 		CUnary unop expr _ -> 
 		CCall fun_expr args _ ->
--}
 		CBinary binop expr1 expr2 _ | -> do
 			expr1_ty <- insertImplicitCastsM tyenv expr1
 			expr2_ty <- inferTypeM tyenv expr2
@@ -1087,8 +1085,9 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 		CConst (CCharConst (CChar _ False) _)     -> maybe_cast charType
 		CConst (CStrConst _ _)                    -> maybe_cast $ ptrType charType
 		other -> myError $ "insertImplicitCastsM " ++ (render.pretty) other ++ " not implemented"
+-}
 
-	maybe_cast expr from_ty | from_ty == target_ty = 
+	maybe_cast expr from_ty | from_ty == target_ty = error "not implemented yet"
 		--- IMPLEMENT!
 
 -- Translates all identifiers in an expression to fresh ones,
