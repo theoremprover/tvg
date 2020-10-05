@@ -15,6 +15,7 @@ import Language.C.Data.Position
 import Language.C.Analysis.AstAnalysis
 import Language.C.Analysis.DeclAnalysis
 import Language.C.Analysis.TypeUtils
+import Language.C.Analysis.TypeConversions
 import Language.C.Analysis.TravMonad
 import Language.C.Analysis.SemRep
 import Language.C.Analysis.Export
@@ -1045,8 +1046,14 @@ inferLExprTypeM tyenv expr = case expr of
 		getMemberTypeM objty member
 	other -> myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " not implemented"
 
-typeConversionMax :: Type -> Type -> Type
-typeConversionMax ty1 
+implicitOpTypeConversionMax :: Type -> Type -> Type
+implicitOpTypeConversionMax ty1@(DirectType tyname1 _ _) ty2@(DirectType tyname2 _ _) =
+	case arithmeticConversion tyname1 tyname2 of
+		Just max_tyname -> DirectType max_tyname noTypeQuals noAttributes
+		Nothing -> error $ "implicitOpTypeConversionMax " ++ (render.pretty) ty1 ++ " " ++ (render.pretty) ty2 ++
+			" yielded Nothing!"
+implicitOpTypeConversionMax ty1 ty2 = error $ "implicitOpTypeConversionMax " ++ (render.pretty) ty1 ++ " " ++
+	(render.pretty) ty2 ++ " : there should be a explicit cast!"
 
 insertImplicitCastsM :: TyEnv -> CExpr -> Type -> CovVecM CExpr
 insertImplicitCastsM tyenv cexpr target_ty = do
@@ -1056,7 +1063,7 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 	insert_impl_casts (CBinary binop expr1 expr2 ni) = do
 		(expr1',ty1') <- insert_impl_casts expr1
 		(expr2',ty2') <- insert_impl_casts expr2
-		let common_ty = typeConversionMax ty1' ty2'
+		let common_ty = implicitOpTypeConversionMax ty1' ty2'
 		return $ case CBinary binop (maybe_cast expr1' common_ty) (maybe_cast expr2' common_ty) ni of
 			expr' | isCmpOp binop -> maybe_cast expr' intType
 			expr' -> maybe_cast expr' common_ty
