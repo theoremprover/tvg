@@ -1148,7 +1148,7 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
--- It needs to keep the original NodeInfos, because of the coverage information with is derived from the original source tree.
+-- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> Type -> CovVecM [(CExpr,Trace)]
 translateExprM envs expr0 target_ty = do
 	expr <- insertImplicitCastsM (envs2tyenv envs) (renameVars envs expr0) target_ty
