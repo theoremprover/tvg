@@ -497,6 +497,21 @@ instance Eq CConst where
 	(CFloatConst c1 _) == (CFloatConst c2 _) = c1==c2
 	(CStrConst c1 _)   == (CStrConst c2 _)   = c1==c2
 
+deriving instance Eq BuiltinType
+
+instance Eq TypeName where
+	TyVoid == TyVoid = True
+	(TyIntegral intty1) == (TyIntegral intty2) = intty1==intty2
+	(TyFloating floatty1) == (TyFloating floatty2) = floatty1==floatty2
+	(TyComplex floatty1) == (TyComplex floatty2) = floatty1==floatty2 
+	(TyComp (CompTypeRef sueref1 _ _)) == (TyComp (CompTypeRef sueref2 _ _)) = sueref1==sueref2
+	(TyEnum (EnumTypeRef eref1 _)) == (TyEnum (EnumTypeRef eref2 _)) = eref1==eref2	 
+	(TyBuiltin bty1) == (TyBuiltin bty2) = bty1==bty2
+
+instance Eq Type where
+	(DirectType tyname1 _ _) == (DirectType tyname2 _ _) = tyname1==tyname2
+	(PtrType ty1 _ _) == (PtrType ty2 _ _) = ty1 == ty2
+	ty1 == ty2 = error $ "Eq Type not implemented for " ++ (render.pretty) ty1 ++ " == " ++ (render.pretty) ty2
 
 lValueToVarName :: CExpr -> String
 lValueToVarName (CVar ident _) = identToString ident
@@ -1058,18 +1073,26 @@ implicitOpTypeConversionMax ty1 ty2 = error $ "implicitOpTypeConversionMax " ++ 
 insertImplicitCastsM :: TyEnv -> CExpr -> Type -> CovVecM CExpr
 insertImplicitCastsM tyenv cexpr target_ty = do
 	(cexpr',ty') <- insert_impl_casts cexpr
-	return $ maybe_cast cexpr' ty'
+	return $ maybe_cast cexpr' ty' target_ty
+
 	where
+
+	insert_impl_casts :: CExpr -> CovVecM (CExpr,Type)
+	
 	insert_impl_casts (CBinary binop expr1 expr2 ni) = do
 		(expr1',ty1') <- insert_impl_casts expr1
 		(expr2',ty2') <- insert_impl_casts expr2
 		let common_ty = implicitOpTypeConversionMax ty1' ty2'
-		return $ case CBinary binop (maybe_cast expr1' common_ty) (maybe_cast expr2' common_ty) ni of
-			expr' | isCmpOp binop -> maybe_cast expr' intType
-			expr' -> maybe_cast expr' common_ty
+		return $ case CBinary binop (maybe_cast expr1' ty1' common_ty) (maybe_cast expr2' ty2' common_ty) ni of
+			expr' | isCmpOp binop -> (maybe_cast expr' common_ty intType,intType)
+			expr' -> (expr',common_ty)
 
---	insert_impl_casts (CCast decl expr _) = 
---		CAssign assign_op lexpr ass_expr _ ->
+	insert_impl_casts (CCast decl expr ni) = do
+		(expr',_) <- insert_impl_casts expr
+		return $ CCast decl expr' ni
+
+		insert_impl_casts (CAssign assign_op lexpr ass_expr _) = do
+			
 --		CCond cond_expr (Just then_expr) else_expr _ ->
 {-
 		CCast decl expr _ -> 
@@ -1094,7 +1117,8 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 		other -> myError $ "insertImplicitCastsM " ++ (render.pretty) other ++ " not implemented"
 -}
 
-	maybe_cast expr from_ty | from_ty == target_ty = error "not implemented yet"
+	maybe_cast :: CExpr -> Type -> Type -> CExpr
+	maybe_cast expr from_ty to_ty = error "not implemented yet"
 		--- IMPLEMENT!
 
 -- Translates all identifiers in an expression to fresh ones,
