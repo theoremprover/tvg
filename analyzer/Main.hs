@@ -499,19 +499,17 @@ instance Eq CConst where
 
 deriving instance Eq BuiltinType
 
+{-
 instance Eq TypeName where
-	TyVoid == TyVoid = True
-	(TyIntegral intty1) == (TyIntegral intty2) = intty1==intty2
-	(TyFloating floatty1) == (TyFloating floatty2) = floatty1==floatty2
-	(TyComplex floatty1) == (TyComplex floatty2) = floatty1==floatty2 
-	(TyComp (CompTypeRef sueref1 _ _)) == (TyComp (CompTypeRef sueref2 _ _)) = sueref1==sueref2
-	(TyEnum (EnumTypeRef eref1 _)) == (TyEnum (EnumTypeRef eref2 _)) = eref1==eref2	 
-	(TyBuiltin bty1) == (TyBuiltin bty2) = bty1==bty2
+	(==) = sameTypeName
 
 instance Eq Type where
 	(DirectType tyname1 _ _) == (DirectType tyname2 _ _) = tyname1==tyname2
 	(PtrType ty1 _ _) == (PtrType ty2 _ _) = ty1 == ty2
 	ty1 == ty2 = error $ "Eq Type not implemented for " ++ (render.pretty) ty1 ++ " == " ++ (render.pretty) ty2
+-}
+instance Eq Type where
+	(==) = sameType
 
 lValueToVarName :: CExpr -> String
 lValueToVarName (CVar ident _) = identToString ident
@@ -1089,33 +1087,60 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 
 	insert_impl_casts (CCast decl expr ni) = do
 		(expr',_) <- insert_impl_casts expr
-		return $ CCast decl expr' ni
+		ty <- decl2TypeM decl
+		return (CCast decl expr' ni,ty)
 
-		insert_impl_casts (CAssign assign_op lexpr ass_expr _) = do
-			
---		CCond cond_expr (Just then_expr) else_expr _ ->
-{-
-		CCast decl expr _ -> 
-		CUnary unop expr _ -> 
-		CCall fun_expr args _ ->
-		CBinary binop expr1 expr2 _ | -> do
-			expr1_ty <- insertImplicitCastsM tyenv expr1
-			expr2_ty <- inferTypeM tyenv expr2
-			maybe_cast $ case max expr1_ty expr2_ty of
-				arg_target_ty | isCmpOp binop -> intType				
-				arg_target_ty | isCmpOp binop -> intType
-		CMember ptrexpr member_ident True _ -> do
-			sue_ty <- inferTypeM tyenv ptrexpr
-			getMemberTypeM sue_ty member_ident >>= maybe_cast
-		CVar ident _ -> do
-			let Just ident_ty = lookup ident tyenv
-			maybe_cast ident_ty
-		CConst (CIntConst (CInteger _ _ flags) _) -> maybe_cast $ flags2IntType flags
-		CConst (CFloatConst (CFloat s) _)         -> maybe_cast $ string2FloatType s	
-		CConst (CCharConst (CChar _ False) _)     -> maybe_cast charType
-		CConst (CStrConst _ _)                    -> maybe_cast $ ptrType charType
-		other -> myError $ "insertImplicitCastsM " ++ (render.pretty) other ++ " not implemented"
--}
+	insert_impl_casts (CUnary unop expr ni) = do
+		(expr',ty) <- insert_impl_casts expr
+		return ( CUnary unop expr' ni , case unop of
+			CAdrOp -> ptrType ty
+			CIndOp -> baseType ty
+			_      -> ty )
+
+--	insert_impl_casts (CAssign assign_op lexpr ass_expr _) = do
+
+	insert_impl_casts (CCond cond_expr (Just then_expr) else_expr ni) = do
+		(cond_expr',cond_ty) <- insert_impl_casts cond_expr
+		(then_expr',then_ty) <- insert_impl_casts then_expr
+		(else_expr',else_ty) <- insert_impl_casts else_expr
+		let common_ty = implicitOpTypeConversionMax then_ty else_ty
+		return ( CCond (maybe_cast cond_expr' cond_ty intType)
+			(Just $ maybe_cast then_expr' then_ty common_ty)
+			(maybe_cast else_expr' else_ty common_ty) ni ,
+			common_ty)
+		
+	insert_impl_casts ccall@(CCall fun_expr args ni) = do
+		case fun_expr of
+			CVar (Ident "__builtin_expect" _ _) _ -> insert_impl_casts $ head args
+			CVar (Ident "solver_pragma" _ _) _ -> return (ⅈ 1,intType)
+			CVar funident _ -> do
+				FunDef (VarDecl _ _ (FunctionType (FunType ret_type funparamdecls False) _)) _ _ <- lookupFunM funident
+				args' <- forM (zip args funparamdecls) $ \ (arg,paramdecl) -> do
+					let VarDecl _ _ arg_ty = getVarDecl paramdecl
+					formalparam_ty' <- elimTypeDefsM arg_ty
+					(arg',arg_ty) <- insert_impl_casts arg
+					return $ maybe_cast arg' arg_ty formalparam_ty'
+				ret_type' <- elimTypeDefsM ret_type
+				return ( CCall fun_expr args' ni, ret_type' )
+			other -> myError $ "insert_impl_casts " ++ (render.pretty) ccall ++ " not implemented yet!"
+
+	insert_impl_casts cvar@(CVar ident _) = case lookup ident tyenv of
+		Nothing -> error $ "Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv tyenv
+		Just ty -> return (cvar,ty)
+
+	insert_impl_casts cconst@(CConst _) = return (cconst, case cconst of
+		CConst (CIntConst (CInteger _ _ flags) _) -> flags2IntType flags
+		CConst (CFloatConst (CFloat s) _)         -> string2FloatType s	
+		CConst (CCharConst (CChar _ False) _)     -> charType
+		CConst (CStrConst _ _)                    -> ptrType charType )
+
+	insert_impl_casts lexpr@(CMember _ member_ident _ _) = do
+		sue_ty <- inferLExprTypeM tyenv lexpr
+		member_ty <- getMemberTypeM sue_ty member_ident
+		return (lexpr,member_ty)
+
+	insert_impl_casts other = myError $ "insert_impl_casts " ++ (render.pretty) other ++ " not implemented"
+
 
 	maybe_cast :: CExpr -> Type -> Type -> CExpr
 	maybe_cast expr from_ty to_ty = error "not implemented yet"
@@ -1130,8 +1155,6 @@ translateExprM envs expr0 target_ty = do
 	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
-			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
-			CVar (Ident "solver_pragma" _ _) _ -> return $ ⅈ 1
 			CVar funident _ -> do
 				modify ( (funident,args,ni): )
 				return $ CConst $ CStrConst undefined ni
