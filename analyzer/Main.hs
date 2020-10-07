@@ -500,12 +500,19 @@ instance Eq CConst where
 deriving instance Eq BuiltinType
 
 instance Eq TypeName where
-	(==) = sameTypeName
+	TyVoid                == TyVoid                = True
+	(TyIntegral intty1)   == (TyIntegral intty2)   = intty1==intty2
+	(TyFloating floatty1) == (TyFloating floatty2) = floatty1==floatty2
+	(TyComplex floatty1)  == (TyComplex floatty2)  = floatty1==floatty2 
+	(TyComp (CompTypeRef sueref1 _ _)) == (TyComp (CompTypeRef sueref2 _ _)) = sueref1==sueref2
+	(TyEnum (EnumTypeRef sueref1 _))   == (TyEnum (EnumTypeRef sueref2 _))   = sueref1==sueref2
+	(TyBuiltin builtinty1)             == (TyBuiltin builtinty2)             = builtinty1==builtinty2
+	_ == _ = False
 
 instance Eq Type where
 	(DirectType tyname1 _ _) == (DirectType tyname2 _ _) = tyname1==tyname2
 	(PtrType ty1 _ _) == (PtrType ty2 _ _) = ty1 == ty2
-	ty1 == ty2 = error $ "Eq Type not implemented for " ++ (render.pretty) ty1 ++ " == " ++ (render.pretty) ty2
+	_ == _ = False
 
 lValueToVarName :: CExpr -> String
 lValueToVarName (CVar ident _) = identToString ident
@@ -551,17 +558,17 @@ lookupTypeDefM ident = do
 envs2tyenv :: [Env] -> TyEnv
 envs2tyenv envs = map snd $ concat envs
 
-type2DeclM :: Type -> CDecl
-type2DeclM ty = CDecl [case ty of
+type2Decl :: Type -> CDecl
+type2Decl ty = CDecl [case ty of
 	DirectType tyname _ _ -> case tyname of
 		TyVoid -> CTypeSpec (CVoidType undefNode)
 		TyIntegral TyChar -> CTypeSpec (CCharType undefNode)
 		TyIntegral TyShort -> CTypeSpec (CShortType undefNode)
 		TyIntegral TyInt -> CTypeSpec (CIntType undefNode)
 		TyIntegral TyLong -> CTypeSpec (CLongType undefNode)
-		TyIntegral TyFloat -> CTypeSpec (CFloatType undefNode)
-		TyIntegral TyDouble -> CTypeSpec (CDoubleType undefNode)
---		TyIntegral TyEnum -> CTypeSpec (CEnumType 
+		TyFloating TyFloat -> CTypeSpec (CFloatType undefNode)
+		TyFloating TyDouble -> CTypeSpec (CDoubleType undefNode)
+--		TyIntegral TyEnum -> CTypeSpec (CEnumType
 	] [] undefNode
 
 decl2TypeM :: CDecl -> CovVecM Type
@@ -1145,13 +1152,13 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 		error $ "maybe_cast " ++ (render.pretty) expr ++ " " ++ (render.pretty) from_ty ++ " " ++
 			(render.pretty) to_ty ++ " is a downcast that should not occur implicitly!"
 	maybe_cast expr from_ty to_ty | implicitOpTypeConversionMax from_ty to_ty == to_ty =
-		CCast (typeToDecl to_ty) expr (nodeInfo expr)
+		CCast (type2Decl to_ty) expr (nodeInfo expr)
 	maybe_cast expr from_ty to_ty =
 		error $ "maybe_cast " ++ (render.pretty) expr ++ " " ++ (render.pretty) from_ty ++ " " ++
-			(render.pretty) to_ty ++ " : implicitOpTypeConversionMax " ++ (render.pretty) from_ty ++ " " (render.pretty) to_ty ++
-			" = " ++ (render.pretty) (implicitOpTypeConversionMax from_ty to_ty) ++
+			(render.pretty) to_ty ++ " : implicitOpTypeConversionMax " ++ (render.pretty) from_ty ++ " " ++
+			(render.pretty) to_ty ++ " = " ++ (render.pretty) (implicitOpTypeConversionMax from_ty to_ty) ++
 			" is not equal to from_ty or to_ty !"
-	
+
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
