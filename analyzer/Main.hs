@@ -560,26 +560,40 @@ lookupTypeDefM ident = do
 envs2tyenv :: [Env] -> TyEnv
 envs2tyenv envs = map snd $ concat envs
 
-type2Decl :: Type -> CDecl
-type2Decl ty = CDecl [case ty of
-	DirectType tyname _ _ -> case tyname of
-		TyVoid -> CTypeSpec (CVoidType undefNode)
-		TyIntegral TyChar -> CTypeSpec (CCharType undefNode)
-		TyIntegral TyShort -> CTypeSpec (CShortType undefNode)
-		TyIntegral TyInt -> CTypeSpec (CIntType undefNode)
-		TyIntegral TyLong -> CTypeSpec (CLongType undefNode)
-		TyFloating TyFloat -> CTypeSpec (CFloatType undefNode)
-		TyFloating TyDouble -> CTypeSpec (CDoubleType undefNode)
-		TyEnum (EnumTypeRef sueref _) -> CTypeSpec (CEnumType )
-	] [] undefNode
+type2DeclM :: Type -> CovVecM CDecl
+type2DeclM ty = do
+	typespecs <- case ty of
+		DirectType tyname _ _ -> case tyname of
+			TyVoid              -> return [ CTypeSpec (CVoidType undefNode) ]
+			TyIntegral TyChar   -> return [ CTypeSpec (CCharType undefNode) ]
+			TyIntegral TySChar  -> return [ CTypeSpec (CSignedType undefNode), CTypeSpec (CCharType undefNode) ]
+			TyIntegral TyUChar  -> return [ CTypeSpec (CUnsigType undefNode), CTypeSpec (CCharType undefNode) ]
+			TyIntegral TyShort  -> return [ CTypeSpec (CShortType undefNode) ]
+			TyIntegral TyInt    -> return [ CTypeSpec (CIntType undefNode) ]
+			TyIntegral TyUInt   -> return [ CTypeSpec (CUnsigType undefNode), CTypeSpec (CIntType undefNode) ]
+			TyIntegral TyLong   -> return [ CTypeSpec (CLongType undefNode) ]
+			TyIntegral TyULong  -> return [ CTypeSpec (CUnsigType undefNode), CTypeSpec (CLongType undefNode) ]
+			TyFloating TyFloat  -> return [ CTypeSpec (CFloatType undefNode) ]
+			TyFloating TyDouble -> return [ CTypeSpec (CDoubleType undefNode) ]
+			TyEnum (EnumTypeRef sueref _) -> do
+				EnumDef (EnumType (NamedRef enum_ident) enums _ _) <- lookupTagM sueref
+				let ids_inits = for enums $ \ (Enumerator val_ident _ _ _) -> (val_ident,Nothing)
+				return [ CTypeSpec $ CEnumType (CEnum (Just enum_ident) (Just ids_inits) [] undefNode) undefNode ]
+			other -> myError $ "type2DeclM " ++ (render.pretty) ty ++ " not implemented"
+		other -> myError $ "type2DeclM " ++ (render.pretty) ty ++ " not implemented"
+	return $ CDecl typespecs [] undefNode
 
 decl2TypeM :: CDecl -> CovVecM Type
 decl2TypeM (CDecl declspecs _ _) = case declspecs of
 	[CTypeSpec (CVoidType _)]      -> return $ DirectType TyVoid noTypeQuals noAttributes
 	[CTypeSpec (CCharType _)]      -> return $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes
+	[CTypeSpec (CUnsigType _), CTypeSpec (CCharType _)] -> return $ DirectType (TyIntegral TyUChar) noTypeQuals noAttributes
+	[CTypeSpec (CSignedType _), CTypeSpec (CCharType _)] -> return $ DirectType (TyIntegral TySChar) noTypeQuals noAttributes
 	[CTypeSpec (CShortType _)]     -> return $ DirectType (TyIntegral TyShort) noTypeQuals noAttributes
 	[CTypeSpec (CIntType _)]       -> return $ DirectType (TyIntegral TyInt) noTypeQuals noAttributes
+	[CTypeSpec (CUnsigType _), CTypeSpec (CIntType _)] -> return $ DirectType (TyIntegral TyUInt) noTypeQuals noAttributes
 	[CTypeSpec (CLongType _)]      -> return $ DirectType (TyIntegral TyLong) noTypeQuals noAttributes
+	[CTypeSpec (CUnsigType _), CTypeSpec (CLongType _)] -> return $ DirectType (TyIntegral TyULong) noTypeQuals noAttributes
 	[CTypeSpec (CFloatType _)]     -> return $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
 	[CTypeSpec (CDoubleType _)]    -> return $ DirectType (TyFloating TyDouble) noTypeQuals noAttributes
 --	[CTypeSpec (CEnumType (CEnum (Just ident) Nothing _ _) _)] -> lookupTypeDefM ident		
@@ -599,7 +613,7 @@ getMemberTypeM ty@(DirectType (TyComp (CompTypeRef sueref _ _)) _ _) member = do
 	mem_tys <- getMembersM sueref
 	case lookup member mem_tys of
 		Nothing -> myError $ "getMemberTypeM: Could not find member " ++ (render.pretty) member ++ " in " ++ (render.pretty) ty
-		Just mem_ty -> return mem_ty
+		Just mem_ty -> elimTypeDefsM mem_ty
 
 getMembersM :: SUERef -> CovVecM [(Ident,Type)]
 getMembersM sueref = do
@@ -1053,7 +1067,7 @@ inferLExprTypeM :: TyEnv -> CExpr -> CovVecM Type
 inferLExprTypeM tyenv expr = case expr of
 	CVar ident _ -> case lookup ident tyenv of
 		Nothing -> error $ "inferLExprTypeM " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv tyenv
-		Just ty -> return ty
+		Just ty -> elimTypeDefsM ty
 	CMember objexpr member True _ -> do
 		PtrType objty _ _ <- inferLExprTypeM tyenv objexpr
 		getMemberTypeM objty member
@@ -1074,7 +1088,7 @@ implicitOpTypeConversionMax ty1 ty2 = error $ "implicitOpTypeConversionMax " ++ 
 insertImplicitCastsM :: TyEnv -> CExpr -> Type -> CovVecM CExpr
 insertImplicitCastsM tyenv cexpr target_ty = do
 	(cexpr',ty') <- insert_impl_casts cexpr
-	return $ maybe_cast cexpr' ty' target_ty
+	maybe_cast cexpr' ty' target_ty
 
 	where
 
@@ -1084,14 +1098,19 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 		(expr1',ty1') <- insert_impl_casts expr1
 		(expr2',ty2') <- insert_impl_casts expr2
 		let common_ty = implicitOpTypeConversionMax ty1' ty2'
-		return $ case CBinary binop (maybe_cast expr1' ty1' common_ty) (maybe_cast expr2' ty2' common_ty) ni of
-			expr' | isCmpOp binop -> (maybe_cast expr' common_ty intType,intType)
-			expr' -> (expr',common_ty)
+		cast_expr1 <- maybe_cast expr1' ty1' common_ty
+		cast_expr2 <- maybe_cast expr2' ty2' common_ty
+		case CBinary binop cast_expr1 cast_expr2 ni of
+			expr' | isCmpOp binop -> do
+				cast_expr <- maybe_cast expr' common_ty intType
+				return (cast_expr,intType)
+			expr' -> return (expr',common_ty)
 
 	insert_impl_casts (CCast decl expr ni) = do
 		(expr',_) <- insert_impl_casts expr
 		ty <- decl2TypeM decl
-		return (CCast decl expr' ni,ty)
+		ty' <- elimTypeDefsM ty
+		return (CCast decl expr' ni,ty')
 
 	insert_impl_casts (CUnary unop expr ni) = do
 		(expr',ty) <- insert_impl_casts expr
@@ -1103,18 +1122,19 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 	insert_impl_casts (CAssign assign_op lexpr ass_expr ni) = do
 		lexpr_ty <- inferLExprTypeM tyenv lexpr
 		(ass_expr',ass_expr_ty) <- insert_impl_casts ass_expr
-		return (CAssign assign_op lexpr (maybe_cast ass_expr' ass_expr_ty lexpr_ty) ni,lexpr_ty)
+		cast_ass_expr <- maybe_cast ass_expr' ass_expr_ty lexpr_ty
+		return (CAssign assign_op lexpr cast_ass_expr ni,lexpr_ty)
 
 	insert_impl_casts (CCond cond_expr (Just then_expr) else_expr ni) = do
 		(cond_expr',cond_ty) <- insert_impl_casts cond_expr
 		(then_expr',then_ty) <- insert_impl_casts then_expr
 		(else_expr',else_ty) <- insert_impl_casts else_expr
 		let common_ty = implicitOpTypeConversionMax then_ty else_ty
-		return ( CCond (maybe_cast cond_expr' cond_ty intType)
-			(Just $ maybe_cast then_expr' then_ty common_ty)
-			(maybe_cast else_expr' else_ty common_ty) ni ,
-			common_ty)
-		
+		cast_cond_expr <- maybe_cast cond_expr' cond_ty intType
+		cast_then_expr <- maybe_cast then_expr' then_ty common_ty
+		cast_else_expr <- maybe_cast else_expr' else_ty common_ty
+		return ( CCond cast_cond_expr (Just cast_then_expr) cast_else_expr ni , common_ty)
+
 	insert_impl_casts ccall@(CCall fun_expr args ni) = do
 		case fun_expr of
 			CVar (Ident "__builtin_expect" _ _) _ -> insert_impl_casts $ head args
@@ -1125,14 +1145,16 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 					let VarDecl _ _ arg_ty = getVarDecl paramdecl
 					formalparam_ty' <- elimTypeDefsM arg_ty
 					(arg',arg_ty) <- insert_impl_casts arg
-					return $ maybe_cast arg' arg_ty formalparam_ty'
+					maybe_cast arg' arg_ty formalparam_ty'
 				ret_type' <- elimTypeDefsM ret_type
 				return ( CCall fun_expr args' ni, ret_type' )
 			other -> myError $ "insert_impl_casts " ++ (render.pretty) ccall ++ " not implemented yet!"
 
 	insert_impl_casts cvar@(CVar ident _) = case lookup ident tyenv of
 		Nothing -> error $ "Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv tyenv
-		Just ty -> return (cvar,ty)
+		Just ty -> do
+			ty' <- elimTypeDefsM ty
+			return (cvar,ty')
 
 	insert_impl_casts cconst@(CConst _) = return (cconst, case cconst of
 		CConst (CIntConst (CInteger _ _ flags) _) -> flags2IntType flags
@@ -1147,13 +1169,14 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 	insert_impl_casts other = myError $ "insert_impl_casts " ++ (render.pretty) other ++ " not implemented"
 
 
-	maybe_cast :: CExpr -> Type -> Type -> CExpr
-	maybe_cast expr from_ty to_ty | from_ty==to_ty = expr
+	maybe_cast :: CExpr -> Type -> Type -> CovVecM CExpr
+	maybe_cast expr from_ty to_ty | from_ty==to_ty = return expr
 	maybe_cast expr from_ty to_ty | implicitOpTypeConversionMax from_ty to_ty == from_ty =
 		error $ "maybe_cast " ++ (render.pretty) expr ++ " " ++ (render.pretty) from_ty ++ " " ++
 			(render.pretty) to_ty ++ " is a downcast that should not occur implicitly!"
-	maybe_cast expr from_ty to_ty | implicitOpTypeConversionMax from_ty to_ty == to_ty =
-		CCast (type2Decl to_ty) expr (nodeInfo expr)
+	maybe_cast expr from_ty to_ty | implicitOpTypeConversionMax from_ty to_ty == to_ty = do
+		decl <- type2DeclM to_ty
+		return $ CCast decl expr (nodeInfo expr)
 	maybe_cast expr from_ty to_ty =
 		error $ "maybe_cast " ++ (render.pretty) expr ++ " " ++ (render.pretty) from_ty ++ " " ++
 			(render.pretty) to_ty ++ " : implicitOpTypeConversionMax " ++ (render.pretty) from_ty ++ " " ++
@@ -1533,12 +1556,17 @@ expr2SExpr tyenv expr = do
 		_ -> error $ "mb_cast " ++ show sexpr ++ " " ++
 			show from_ty ++ " " ++ show to_ty ++ " not implemented!"
 
+attrs2modes :: [Attr] -> [String]
+attrs2modes attrs = map to_mode attrs
+	where
+	to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
+	to_mode attr = error $ "attrs2modes: unknown attr " ++ (render.pretty) attr
 
 ty2Z3Type :: Type -> Z3_Type
 ty2Z3Type ty = case ty of
 	DirectType (TyComp (CompTypeRef _ _ _)) _ _ -> Z3_BitVector 4 True
 	DirectType tyname _ attrs -> case tyname of
-		TyIntegral intty -> case (intty,map to_mode attrs) of
+		TyIntegral intty -> case (intty,attrs2modes attrs) of
 			(TyChar,[])     -> Z3_BitVector 8 True
 			(TySChar,[])    -> Z3_BitVector 8 False
 			(TyUChar,[])    -> Z3_BitVector 8 True
@@ -1560,9 +1588,6 @@ ty2Z3Type ty = case ty of
 		TyEnum _ -> Z3_BitVector intSize True
 		TyComp _ -> Z3_BitVector 16 True
 		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
-		where
-		to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
-		to_mode attr = error $ "unknown attr " ++ (render.pretty) attr
 	PtrType _ _ _ -> Z3_BitVector 16 True
 	TypeDefType (TypeDefRef _ ty _) _ _ -> ty2Z3Type ty
 	_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
