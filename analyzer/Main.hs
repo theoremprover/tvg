@@ -500,10 +500,12 @@ instance Eq CConst where
 deriving instance Eq BuiltinType
 
 instance Eq TypeName where
+	(TyEnum _) == (TyIntegral TyInt) = True
+	(TyIntegral TyInt) == (TyEnum _) = True
 	TyVoid                == TyVoid                = True
 	(TyIntegral intty1)   == (TyIntegral intty2)   = intty1==intty2
 	(TyFloating floatty1) == (TyFloating floatty2) = floatty1==floatty2
-	(TyComplex floatty1)  == (TyComplex floatty2)  = floatty1==floatty2 
+	(TyComplex floatty1)  == (TyComplex floatty2)  = floatty1==floatty2
 	(TyComp (CompTypeRef sueref1 _ _)) == (TyComp (CompTypeRef sueref2 _ _)) = sueref1==sueref2
 	(TyEnum (EnumTypeRef sueref1 _))   == (TyEnum (EnumTypeRef sueref2 _))   = sueref1==sueref2
 	(TyBuiltin builtinty1)             == (TyBuiltin builtinty2)             = builtinty1==builtinty2
@@ -568,7 +570,7 @@ type2Decl ty = CDecl [case ty of
 		TyIntegral TyLong -> CTypeSpec (CLongType undefNode)
 		TyFloating TyFloat -> CTypeSpec (CFloatType undefNode)
 		TyFloating TyDouble -> CTypeSpec (CDoubleType undefNode)
---		TyIntegral TyEnum -> CTypeSpec (CEnumType
+		TyEnum (EnumTypeRef sueref _) -> CTypeSpec (CEnumType )
 	] [] undefNode
 
 decl2TypeM :: CDecl -> CovVecM Type
@@ -1139,8 +1141,7 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 		CConst (CStrConst _ _)                    -> ptrType charType )
 
 	insert_impl_casts lexpr@(CMember _ member_ident _ _) = do
-		sue_ty <- inferLExprTypeM tyenv lexpr
-		member_ty <- getMemberTypeM sue_ty member_ident
+		member_ty <- inferLExprTypeM tyenv lexpr
 		return (lexpr,member_ty)
 
 	insert_impl_casts other = myError $ "insert_impl_casts " ++ (render.pretty) other ++ " not implemented"
