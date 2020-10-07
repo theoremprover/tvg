@@ -551,9 +551,8 @@ lookupTypeDefM ident = do
 envs2tyenv :: [Env] -> TyEnv
 envs2tyenv envs = map snd $ concat envs
 
-{-
-type2DeclM :: Type -> CovVecM CDecl
-type2DeclM ty = error "" --return $ CDecl [case ty of
+type2DeclM :: Type -> CDecl
+type2DeclM ty = CDecl [case ty of
 	DirectType tyname _ _ -> case tyname of
 		TyVoid -> CTypeSpec (CVoidType undefNode)
 		TyIntegral TyChar -> CTypeSpec (CCharType undefNode)
@@ -562,9 +561,8 @@ type2DeclM ty = error "" --return $ CDecl [case ty of
 		TyIntegral TyLong -> CTypeSpec (CLongType undefNode)
 		TyIntegral TyFloat -> CTypeSpec (CFloatType undefNode)
 		TyIntegral TyDouble -> CTypeSpec (CDoubleType undefNode)
-		TyIntegral TyEnum -> CTypeSpec (CEnumType 
-	]
--}
+--		TyIntegral TyEnum -> CTypeSpec (CEnumType 
+	] [] undefNode
 
 decl2TypeM :: CDecl -> CovVecM Type
 decl2TypeM (CDecl declspecs _ _) = case declspecs of
@@ -1093,9 +1091,10 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 			CIndOp -> baseType ty
 			_      -> ty )
 
-	insert_impl_casts (CAssign assign_op lexpr ass_expr _) = do
+	insert_impl_casts (CAssign assign_op lexpr ass_expr ni) = do
 		lexpr_ty <- inferLExprTypeM tyenv lexpr
-		
+		(ass_expr',ass_expr_ty) <- insert_impl_casts ass_expr
+		return (CAssign assign_op lexpr (maybe_cast ass_expr' ass_expr_ty lexpr_ty) ni,lexpr_ty)
 
 	insert_impl_casts (CCond cond_expr (Just then_expr) else_expr ni) = do
 		(cond_expr',cond_ty) <- insert_impl_casts cond_expr
@@ -1142,7 +1141,17 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 
 	maybe_cast :: CExpr -> Type -> Type -> CExpr
 	maybe_cast expr from_ty to_ty | from_ty==to_ty = expr
-	maybe_cast 
+	maybe_cast expr from_ty to_ty | implicitOpTypeConversionMax from_ty to_ty == from_ty =
+		error $ "maybe_cast " ++ (render.pretty) expr ++ " " ++ (render.pretty) from_ty ++ " " ++
+			(render.pretty) to_ty ++ " is a downcast that should not occur implicitly!"
+	maybe_cast expr from_ty to_ty | implicitOpTypeConversionMax from_ty to_ty == to_ty =
+		CCast (typeToDecl to_ty) expr (nodeInfo expr)
+	maybe_cast expr from_ty to_ty =
+		error $ "maybe_cast " ++ (render.pretty) expr ++ " " ++ (render.pretty) from_ty ++ " " ++
+			(render.pretty) to_ty ++ " : implicitOpTypeConversionMax " ++ (render.pretty) from_ty ++ " " (render.pretty) to_ty ++
+			" = " ++ (render.pretty) (implicitOpTypeConversionMax from_ty to_ty) ++
+			" is not equal to from_ty or to_ty !"
+	
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
