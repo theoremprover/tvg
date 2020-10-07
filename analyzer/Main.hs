@@ -499,7 +499,6 @@ instance Eq CConst where
 
 deriving instance Eq BuiltinType
 
-{-
 instance Eq TypeName where
 	(==) = sameTypeName
 
@@ -507,9 +506,6 @@ instance Eq Type where
 	(DirectType tyname1 _ _) == (DirectType tyname2 _ _) = tyname1==tyname2
 	(PtrType ty1 _ _) == (PtrType ty2 _ _) = ty1 == ty2
 	ty1 == ty2 = error $ "Eq Type not implemented for " ++ (render.pretty) ty1 ++ " == " ++ (render.pretty) ty2
--}
-instance Eq Type where
-	(==) = sameType
 
 lValueToVarName :: CExpr -> String
 lValueToVarName (CVar ident _) = identToString ident
@@ -1097,7 +1093,9 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 			CIndOp -> baseType ty
 			_      -> ty )
 
---	insert_impl_casts (CAssign assign_op lexpr ass_expr _) = do
+	insert_impl_casts (CAssign assign_op lexpr ass_expr _) = do
+		lexpr_ty <- inferLExprTypeM tyenv lexpr
+		
 
 	insert_impl_casts (CCond cond_expr (Just then_expr) else_expr ni) = do
 		(cond_expr',cond_ty) <- insert_impl_casts cond_expr
