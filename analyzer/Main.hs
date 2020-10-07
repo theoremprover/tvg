@@ -1143,8 +1143,8 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 
 
 	maybe_cast :: CExpr -> Type -> Type -> CExpr
-	maybe_cast expr from_ty to_ty = error "not implemented yet"
-		--- IMPLEMENT!
+	maybe_cast expr from_ty to_ty | from_ty==to_ty = expr
+	maybe_cast 
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
