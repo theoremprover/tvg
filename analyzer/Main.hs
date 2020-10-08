@@ -1137,7 +1137,7 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 
 	insert_impl_casts ccall@(CCall fun_expr args ni) = do
 		case fun_expr of
-			CVar (Ident "__builtin_expect" _ _) _ -> insert_impl_casts $ head args
+			CVar (Ident "a__builtin_expect" _ _) _ -> insert_impl_casts $ head args
 			CVar (Ident "solver_pragma" _ _) _ -> return (ⅈ 1,intType)
 			CVar funident _ -> do
 				FunDef (VarDecl _ _ (FunctionType (FunType ret_type funparamdecls False) _)) _ _ <- lookupFunM funident
@@ -1172,8 +1172,8 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 	maybe_cast :: CExpr -> Type -> Type -> CovVecM CExpr
 	maybe_cast expr from_ty to_ty | from_ty==to_ty = return expr
 	maybe_cast expr from_ty to_ty | implicitOpTypeConversionMax from_ty to_ty == from_ty =
-		error $ "maybe_cast " ++ (render.pretty) expr ++ " " ++ (render.pretty) from_ty ++ " " ++
-			(render.pretty) to_ty ++ " is a downcast that should not occur implicitly!"
+		error $ "maybe_cast\n    " ++ (render.pretty) expr ++ "\n    " ++ (render.pretty) from_ty ++ "\n    " ++
+			(render.pretty) to_ty ++ "\n    at " ++ (showLocation.lineColNodeInfo) expr ++ " is a downcast that should not occur implicitly!"
 	maybe_cast expr from_ty to_ty | implicitOpTypeConversionMax from_ty to_ty == to_ty = do
 		decl <- type2DeclM to_ty
 		return $ CCast decl expr (nodeInfo expr)
