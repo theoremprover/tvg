@@ -1088,7 +1088,7 @@ implicitOpTypeConversionMax ty1 ty2 = error $ "implicitOpTypeConversionMax " ++ 
 insertImplicitCastsM :: TyEnv -> CExpr -> Type -> CovVecM CExpr
 insertImplicitCastsM tyenv cexpr target_ty = do
 	(cexpr',ty') <- insert_impl_casts cexpr
-	maybe_cast cexpr' ty' target_ty
+	maybe_cast True cexpr' ty' target_ty
 
 	where
 
@@ -1098,11 +1098,11 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 		(expr1',ty1') <- insert_impl_casts expr1
 		(expr2',ty2') <- insert_impl_casts expr2
 		let common_ty = implicitOpTypeConversionMax ty1' ty2'
-		cast_expr1 <- maybe_cast expr1' ty1' common_ty
-		cast_expr2 <- maybe_cast expr2' ty2' common_ty
+		cast_expr1 <- maybe_cast False expr1' ty1' common_ty
+		cast_expr2 <- maybe_cast False expr2' ty2' common_ty
 		case CBinary binop cast_expr1 cast_expr2 ni of
 			expr' | isCmpOp binop -> do
-				cast_expr <- maybe_cast expr' common_ty intType
+				cast_expr <- maybe_cast False expr' common_ty intType
 				return (cast_expr,intType)
 			expr' -> return (expr',common_ty)
 
@@ -1122,7 +1122,7 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 	insert_impl_casts (CAssign assign_op lexpr ass_expr ni) = do
 		lexpr_ty <- inferLExprTypeM tyenv lexpr
 		(ass_expr',ass_expr_ty) <- insert_impl_casts ass_expr
-		cast_ass_expr <- maybe_cast ass_expr' ass_expr_ty lexpr_ty
+		cast_ass_expr <- maybe_cast True ass_expr' ass_expr_ty lexpr_ty
 		return (CAssign assign_op lexpr cast_ass_expr ni,lexpr_ty)
 
 	insert_impl_casts (CCond cond_expr (Just then_expr) else_expr ni) = do
@@ -1130,9 +1130,9 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 		(then_expr',then_ty) <- insert_impl_casts then_expr
 		(else_expr',else_ty) <- insert_impl_casts else_expr
 		let common_ty = implicitOpTypeConversionMax then_ty else_ty
-		cast_cond_expr <- maybe_cast cond_expr' cond_ty intType
-		cast_then_expr <- maybe_cast then_expr' then_ty common_ty
-		cast_else_expr <- maybe_cast else_expr' else_ty common_ty
+		cast_cond_expr <- maybe_cast False cond_expr' cond_ty intType
+		cast_then_expr <- maybe_cast False then_expr' then_ty common_ty
+		cast_else_expr <- maybe_cast False else_expr' else_ty common_ty
 		return ( CCond cast_cond_expr (Just cast_then_expr) cast_else_expr ni , common_ty)
 
 	insert_impl_casts ccall@(CCall fun_expr args ni) = do
@@ -1145,7 +1145,7 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 					let VarDecl _ _ arg_ty = getVarDecl paramdecl
 					formalparam_ty' <- elimTypeDefsM arg_ty
 					(arg',arg_ty) <- insert_impl_casts arg
-					maybe_cast arg' arg_ty formalparam_ty'
+					maybe_cast False arg' arg_ty formalparam_ty'
 				ret_type' <- elimTypeDefsM ret_type
 				return ( CCall fun_expr args' ni, ret_type' )
 			other -> myError $ "insert_impl_casts " ++ (render.pretty) ccall ++ " not implemented yet!"
@@ -1168,16 +1168,16 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 
 	insert_impl_casts other = myError $ "insert_impl_casts " ++ (render.pretty) other ++ " not implemented"
 
-
-	maybe_cast :: CExpr -> Type -> Type -> CovVecM CExpr
-	maybe_cast expr from_ty to_ty | from_ty==to_ty = return expr
-	maybe_cast expr from_ty to_ty | implicitOpTypeConversionMax from_ty to_ty == from_ty =
+	-- first Bool arg says if downcasting is allowed
+	maybe_cast :: Bool -> CExpr -> Type -> Type -> CovVecM CExpr
+	maybe_cast _ expr from_ty to_ty | from_ty==to_ty = return expr
+	maybe_cast False expr from_ty to_ty | implicitOpTypeConversionMax from_ty to_ty == from_ty =
 		error $ "maybe_cast\n    " ++ (render.pretty) expr ++ "\n    " ++ (render.pretty) from_ty ++ "\n    " ++
 			(render.pretty) to_ty ++ "\n    at " ++ (showLocation.lineColNodeInfo) expr ++ " is a downcast that should not occur implicitly!"
-	maybe_cast expr from_ty to_ty | implicitOpTypeConversionMax from_ty to_ty == to_ty = do
+	maybe_cast downcast expr from_ty to_ty | downcast || implicitOpTypeConversionMax from_ty to_ty == to_ty = do
 		decl <- type2DeclM to_ty
 		return $ CCast decl expr (nodeInfo expr)
-	maybe_cast expr from_ty to_ty =
+	maybe_cast _ expr from_ty to_ty =
 		error $ "maybe_cast " ++ (render.pretty) expr ++ " " ++ (render.pretty) from_ty ++ " " ++
 			(render.pretty) to_ty ++ " : implicitOpTypeConversionMax " ++ (render.pretty) from_ty ++ " " ++
 			(render.pretty) to_ty ++ " = " ++ (render.pretty) (implicitOpTypeConversionMax from_ty to_ty) ++

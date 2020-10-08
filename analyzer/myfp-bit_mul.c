@@ -858,8 +858,8 @@ printf("-1: answer = %llu\n", answer);
 #endif
 
       // Manually inserted casts!
-      high = (fractype) (answer >> BITS_PER_SI);
-      low = (fractype) answer;
+      high = answer >> BITS_PER_SI;
+      low = answer;
 #ifdef CALC
 printf(" high = %u\n", high);
 printf(" low  = %u\n", low);
