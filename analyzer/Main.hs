@@ -1101,9 +1101,11 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 		cast_expr1 <- maybe_cast False expr1' ty1' common_ty
 		cast_expr2 <- maybe_cast False expr2' ty2' common_ty
 		case CBinary binop cast_expr1 cast_expr2 ni of
+{-
 			expr' | isCmpOp binop -> do
 				cast_expr <- maybe_cast False expr' common_ty intType
 				return (cast_expr,intType)
+-}
 			expr' -> return (expr',common_ty)
 
 	insert_impl_casts (CCast decl expr ni) = do
@@ -1495,6 +1497,8 @@ expr2SExpr tyenv expr = do
 				CRmdOp -> (unSigned operand_target_ty "bvurem" "bvsrem",operand_target_ty,operand_target_ty)
 				CShlOp -> (unSigned operand_target_ty "bvshl"  "bvshl", operand_target_ty,operand_target_ty)
 				CShrOp -> (unSigned operand_target_ty "bvlshr" "bvashr",operand_target_ty,operand_target_ty)
+
+{-
 				CLeOp  -> (unSigned operand_target_ty "bvult"  "bvslt", operand_target_ty,Z3_Bool)
 				CGrOp  -> (unSigned operand_target_ty "bvugt"  "bvsgt", operand_target_ty,Z3_Bool)
 				CLeqOp -> (unSigned operand_target_ty "bvule"  "bvsle", operand_target_ty,Z3_Bool)
@@ -1502,6 +1506,15 @@ expr2SExpr tyenv expr = do
 				CLndOp -> (SLeaf "and",Z3_Bool,Z3_Bool)
 				CLorOp -> (SLeaf "or", Z3_Bool,Z3_Bool)
 				CEqOp  -> (SLeaf "=",    operand_target_ty,Z3_Bool)
+-}
+				CLeOp  -> (unSigned operand_target_ty "bvult"  "bvslt", operand_target_ty,operand_target_ty)
+				CGrOp  -> (unSigned operand_target_ty "bvugt"  "bvsgt", operand_target_ty,operand_target_ty)
+				CLeqOp -> (unSigned operand_target_ty "bvule"  "bvsle", operand_target_ty,operand_target_ty)
+				CGeqOp -> (unSigned operand_target_ty "bvuge"  "bvsge", operand_target_ty,operand_target_ty)
+				CLndOp -> (SLeaf "and",Z3_Bool,Z3_Bool)
+				CLorOp -> (SLeaf "or", Z3_Bool,Z3_Bool)
+				CEqOp  -> (SLeaf "=",    operand_target_ty,Z3_Bool)
+
 				CAndOp -> (SLeaf "bvand",operand_target_ty,operand_target_ty)
 				COrOp  -> (SLeaf "bvor", operand_target_ty,operand_target_ty)
 				CXorOp -> (SLeaf "bvxor",operand_target_ty,operand_target_ty)

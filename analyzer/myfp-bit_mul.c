@@ -869,6 +869,7 @@ printf(" low  = %u\n", low);
 
   tmp->normal_exp = a->normal_exp + b->normal_exp
     + FRAC_NBITS - (FRACBITS + NGARDS);
+// ..->sign is unsigned int
   tmp->sign = a->sign != b->sign ;
 #ifdef CALC
 printf("0: tmp->normal_exp = %i\n", tmp->normal_exp);
