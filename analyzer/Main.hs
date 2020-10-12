@@ -298,7 +298,6 @@ showTrace trace = unlines $ concatMap show_te trace where
 	show_te te | showBuiltins || not (isnotbuiltin te) = [show te]
 	show_te _ = []
 
-
 covVectorsM :: CovVecM Bool
 covVectorsM = do
 	funname <- gets funNameCVS
@@ -306,8 +305,9 @@ covVectorsM = do
 	glob_env <- concatMapM declaration2EnvItemM globdecls
 	let
 		def2stmt :: IdentDecl -> CovVecM [CBlockItem]
-		def2stmt (EnumeratorDef (Enumerator ident expr _ ni)) = return $
-			[ CBlockStmt (CExpr (Just $ (CVar ident (nodeInfo ident)) ≔ expr) ni) ]
+		def2stmt (EnumeratorDef (Enumerator ident (CConst (CIntConst cint c_ni)) (EnumType sueref _ _ enum_ni) ni)) = do
+			let ty = DirectType (TyEnum $ EnumTypeRef sueref enum_ni) noTypeQuals noAttributes
+			return [ CBlockStmt (CExpr (Just $ (CVar ident (nodeInfo ident,ty)) ≔ CConst (CIntConst cint (c_ni,intType))) (ni,ty)) ]
 		def2stmt (ObjectDef (ObjDef (VarDecl (VarName ident _) _ ty) (Just initializer) ni)) = do
 			ty' <- elimTypeDefsM ty
 			cinitializer2blockitems (CVar ident ni) ty' initializer
@@ -1402,14 +1402,15 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 			" is not equal to from_ty or to_ty !"
 
 
-expr2SExpr :: TyEnv -> Expr -> CovVecM (SExpr,CExpr)
-expr2SExpr tyenv expr = do
+expr2SExpr :: TyEnv -> CExprWithType -> CovVecM (SExpr,CExpr)
+expr2SExpr tyenv expr = error "" {-do
 	(sexpr,z3_type) <- expr2sexpr expr
 	return (sexpr,expr)
 
 	where
+-}
 
-data Z3_Type = Z3_Bool | Z3_BitVector Int Bool | Z3_Float | Z3_Double
+data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Double
 	deriving (Show,Eq,Ord)
 -- the derived ordering intentionally coincides with the type casting precedence :-)
 {-
