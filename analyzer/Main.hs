@@ -305,7 +305,7 @@ covVectorsM = do
 	glob_env <- concatMapM declaration2EnvItemM globdecls
 	let
 		def2stmt :: IdentDecl -> CovVecM [CBlockItem]
-		def2stmt (EnumeratorDef (Enumerator ident const_expr (EnumType _ _ _ _) ni)) = do
+		def2stmt (EnumeratorDef (Enumerator ident const_expr _ ni)) = do
 			return [ CBlockStmt $ CExpr (Just $ CVar ident (nodeInfo ident) ≔ const_expr) ni ]
 		def2stmt (ObjectDef (ObjDef (VarDecl (VarName ident _) _ ty) (Just initializer) ni)) = do
 			ty' <- elimTypeDefsM ty
@@ -795,7 +795,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	CExpr (Just (CCall (CVar (Ident "solver_debug" _ _) _) args ni)) _ -> do
 		let vars = for args $ \ (CVar ident _) -> fromJust $ lookup ident (concat envs)
 		unfoldTracesM ret_type toplevel break_stack envs (map to_dbg_output (reverse vars) ++ trace) (rest:rest2) where
-			to_dbg_output (name_id,ty) = DebugOutput ("solver_debug_" ++ identToString name_id) (CVar name_id undefNode,ty)
+			to_dbg_output (name_id,ty) = DebugOutput ("solver_debug_" ++ identToString name_id) (CVar name_id (undefNode,ty),ty)
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		expr_ty <- inferLExprTypeM (envs2tyenv envs) (renameVars envs lexpr)
@@ -844,10 +844,10 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 					Left traces' <- unroll_loopM depths
 					return $ Left $ traces ++ traces'
 
-		unroll :: CExprWithType -> Int -> [CBlockItem]
+		unroll :: CExpr -> Int -> [CBlockItem]
 		unroll while_cond n = 
 			concat ( replicate n [ CBlockStmt (CGotoPtr while_cond undefNode), CBlockStmt body ] ) ++
-			[ CBlockStmt $ CGotoPtr (not_c while_cond) (ni,intType) ]
+			[ CBlockStmt $ CGotoPtr (not_c while_cond) ni ]
 
 	_ -> myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 
@@ -920,16 +920,16 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 									[] -> return (Nothing,"infer_loopingsM: There is no assignment to the loop counter " ++ (render.pretty) counter_var ++ " prior to the loop")
 									ass@(Assignment _ i_0) : _ | null (fvar i_0)-> do
 										printLogV 1 $ "last assignment to loop counter is " ++ show ass
-										let i_n :: CExpr -> CExpr = case ass_expr of
+										let i_n :: CExprWithType -> CExprWithType = case ass_expr of
 											-- for all binops where the following holds (Linearity?):
 											-- i_n = i_(n-1) `binop` c  =>  i_n = i_0 `binop` c
 											CBinary binop (CVar ident _) cconst@(CConst _) _ | ident == ass_ident ∧ binop `elem` [CSubOp,CAddOp,CShrOp,CShlOp] ->
-												\ n_var → CBinary binop i_0 (n_var ∗ cconst) undefNode
+												\ n_var → CBinary binop i_0 (n_var ∗ cconst) (undefNode,intType)
 											_ -> error $ "infer_loopingsM: assignment " ++ (render.pretty) ass_ident ++ " := " ++ (render.pretty) ass_expr ++ " not implemented!"
 										let
 											n_name = "n_loopings"
 											n_ident = internalIdent n_name
-											n_var = CVar n_ident undefNode
+											n_var = CVar n_ident (undefNode,intType)
 											modelpath = analyzerPath </> n_name ++ show (lineColNodeInfo cond) ++ ".smtlib2"
 										n_type <- case lookup ass_ident (envs2tyenv envs) of
 											Nothing -> myError $ "infer_loopingsM: Could not find type of " ++ (render.pretty) counter_var
@@ -1005,41 +1005,45 @@ unfoldTraces1M _ _ _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pre
 
 
 infix 4 ⩵
-(⩵) :: CExprWithType -> CExprWithType -> CExprWithType
-a ⩵ b = CBinary CEqOp a b (undefNode,intType)
+(⩵) :: CExpression a -> CExpression a -> CExpression a
+a ⩵ b = CBinary CEqOp a b (annotation a)
 
 infix 4 !⩵
-(!⩵) :: CExprWithType -> CExprWithType -> CExprWithType
-a !⩵ b = not_c $ CBinary CEqOp a b (undefNode,intType)
+(!⩵) :: CExpression a -> CExpression a -> CExpression a
+a !⩵ b = not_c $ CBinary CEqOp a b (annotation a)
 
 infix 4 ⩾
-(⩾) :: CExprWithType -> CExprWithType -> CExprWithType
-a ⩾ b = CBinary CGeqOp a b (undefNode,intType)
+(⩾) :: CExpression a -> CExpression a -> CExpression a
+a ⩾ b = CBinary CGeqOp a b (annotation a)
 
 infixr 3 ⋏
-(⋏) :: CExprWithType -> CExprWithType -> CExprWithType
-a ⋏ b = CBinary CLndOp a b (undefNode,intType)
+(⋏) :: CExpression a -> CExpression a -> CExpression a
+a ⋏ b = CBinary CLndOp a b (annotation a)
 
 infixr 2 ⋎
-(⋎) :: CExprWithType -> CExprWithType -> CExprWithType
-a ⋎ b = CBinary CLorOp a b (undefNode,intType)
+(⋎) :: CExpression a -> CExpression a -> CExpression a
+a ⋎ b = CBinary CLorOp a b (annotation a)
 
 infixr 7 ∗
-(∗) :: CExprWithType -> CExprWithType -> CExprWithType
+(∗) :: CExpression a -> CExpression a -> CExpression a
 a ∗ b = CBinary CMulOp a b (annotation a)
 
 infixr 6 −
-(−) :: CExprWithType -> CExprWithType -> CExprWithType
+(−) :: CExpression a -> CExpression a -> CExpression a
 a − b = CBinary CSubOp a b (annotation a)
 
-not_c :: CExprWithType -> CExprWithType
+not_c :: CExpression a -> CExpression a
 not_c e = CUnary CNegOp e (annotation e)
 
-ⅈ :: Integer -> CExprWithType
-ⅈ i = CConst $ CIntConst (cInteger i) (undefNode,intType)
+class CreateInt a where
+	ⅈ :: Integer -> a
+instance CreateInt CExpr where
+	ⅈ i = CConst $ CIntConst (cInteger i) undefNode
+instance CreateInt CExprWithType where
+	ⅈ i = CConst $ CIntConst (cInteger i) (undefNode,intType)
 
 infix 1 ≔
-(≔) :: CExprWithType -> CExprWithType -> CExprWithType
+(≔) :: CExpression a -> CExpression a -> CExpression a
 ass ≔ expr = CAssign CAssignOp ass expr (annotation ass)
 
 
@@ -1402,7 +1406,7 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 			" is not equal to from_ty or to_ty !"
 
 
-expr2SExpr :: TyEnv -> CExprWithType -> CovVecM (SExpr,CExpr)
+expr2SExpr :: TyEnv -> CExprWithType -> CovVecM (SExpr,CExprWithType)
 expr2SExpr tyenv expr = error "" {-do
 	(sexpr,z3_type) <- expr2sexpr expr
 	return (sexpr,expr)
