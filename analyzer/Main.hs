@@ -305,9 +305,8 @@ covVectorsM = do
 	glob_env <- concatMapM declaration2EnvItemM globdecls
 	let
 		def2stmt :: IdentDecl -> CovVecM [CBlockItem]
-		def2stmt (EnumeratorDef (Enumerator ident (CConst (CIntConst cint c_ni)) (EnumType sueref _ _ enum_ni) ni)) = do
-			let ty = DirectType (TyEnum $ EnumTypeRef sueref enum_ni) noTypeQuals noAttributes
-			return [ CBlockStmt (CExpr (Just $ (CVar ident (nodeInfo ident,ty)) ≔ CConst (CIntConst cint (c_ni,intType))) (ni,ty)) ]
+		def2stmt (EnumeratorDef (Enumerator ident const_expr (EnumType _ _ _ _) ni)) = do
+			return [ CBlockStmt $ CExpr (Just $ CVar ident (nodeInfo ident) ≔ const_expr) ni ]
 		def2stmt (ObjectDef (ObjDef (VarDecl (VarName ident _) _ ty) (Just initializer) ni)) = do
 			ty' <- elimTypeDefsM ty
 			cinitializer2blockitems (CVar ident ni) ty' initializer
@@ -1054,8 +1053,7 @@ fvar expr = nub $ everything (++) (mkQ [] searchvar) expr
 cinitializer2blockitems :: CExpr -> Type -> CInit -> CovVecM [CBlockItem]
 cinitializer2blockitems lexpr ty initializer =
 	case initializer of
-		CInitExpr expr ni_init -> return [ CBlockStmt $ CExpr (
-			Just $ lexpr ≔ expr ) (ni_init,ty) ]
+		CInitExpr expr ni_init -> return [ CBlockStmt $ CExpr (Just $ lexpr ≔ expr ) ni_init ]
 		CInitList initlist _ -> case ty of
 			DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 				memberidentstypes <- getMembersM sueref
@@ -1296,7 +1294,9 @@ extractType = snd.annotation
 extractNodeInfo :: CExprWithType -> NodeInfo
 extractNodeInfo = fst.annotation
 
-type CExprWithType = CExpression (NodeInfo,Type)
+type NodeInfoWithType = (NodeInfo,Type)
+--type CBlockItemWithType = CCompoundBlockItem NodeInfoWithType
+type CExprWithType = CExpression NodeInfoWithType
 
 implicitOpTypeConversionMax :: Type -> Type -> Type
 implicitOpTypeConversionMax ty1@(DirectType tyname1 _ _) ty2@(DirectType tyname2 _ _) =
