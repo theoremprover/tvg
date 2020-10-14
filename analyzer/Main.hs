@@ -273,6 +273,9 @@ instance CNode TraceElem where
 	nodeInfo (Return expr)              = extractNodeInfo expr
 	nodeInfo (DebugOutput _ _)          = undefNode
 
+instance CNode NodeInfoWithType where
+	nodeInfo (ni,_) = ni
+
 instance Pretty NodeInfo where
 	pretty ni = text $ "line " ++ show line ++ ", col " ++ show col
 		where
@@ -482,7 +485,7 @@ isnotbuiltinIdent ident = not $ any (`isPrefixOf` (identToString ident)) ["__","
 isnotbuiltin (NewDeclaration (ident,_)) = isnotbuiltinIdent ident
 isnotbuiltin _ = True
 
-instance Eq CExpr where
+instance Eq (CExpression a) where
 	(CVar id1 _) == (CVar id2 _) = id1==id2
 	(CMember ptrexpr1 ident1 isptr1 _) == (CMember ptrexpr2 ident2 isptr2 _) =
 		ident1==ident2 && isptr1==isptr2 && ptrexpr1 == ptrexpr2
@@ -493,7 +496,7 @@ instance Eq CExpr where
 	(CConst const1) == (CConst const2) = const1==const2
 	_ == _ = False
 
-instance Eq CConst where
+instance Eq (CConstant a) where
 	(CIntConst c1 _)   == (CIntConst c2 _)   = c1==c2
 	(CCharConst c1 _)  == (CCharConst c2 _)  = c1==c2
 	(CFloatConst c1 _) == (CFloatConst c2 _) = c1==c2
@@ -857,7 +860,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond _) =
 		(real_cond,Just (map arg2int args,num_reached)) where
 			num_reached = length $ filter is_this_cond trace
-			is_this_cond (Condition _ c) | nodeInfo c == nodeInfo real_cond = True
+			is_this_cond (Condition _ c) | extractNodeInfo c == nodeInfo real_cond = True
 			is_this_cond _ = False
 			arg2int (CConst (CIntConst (CInteger i _ _) _)) = fromIntegral i
 	recognizeAnnotation real_cond = (real_cond,Nothing)
@@ -911,7 +914,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 						printLogV 2 $ "body_assigns = \n" ++
 							intercalate " , " (map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") body_assigns)
 
-						case body_assigns of
+						case body_assigns :: [(CExprWithType,CExprWithType)] of
 							[ (counter_var@(CVar ass_ident _),ass_expr) ] -> do
 								let
 									is_ass_to_ass_var (Assignment (CVar ident _) _) | ident==ass_ident = True
@@ -1088,16 +1091,16 @@ translateExprM :: [Env] -> CExpr -> Type -> CovVecM [(CExprWithType,Trace)]
 translateExprM envs expr0 target_ty = do
 	expr <- insertImplicitCastsM (envs2tyenv envs) (renameVars envs expr0) target_ty
 	let	
-		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
-		to_call (CCall funexpr args ni) = case funexpr of
+		to_call :: CExprWithType -> StateT [(Ident,[CExprWithType],NodeInfo)] CovVecM CExprWithType
+		to_call (CCall funexpr args ni_ty) = case funexpr of
 			CVar funident _ -> do
-				modify ( (funident,args,ni): )
-				return $ CConst $ CStrConst undefined ni
+				modify ( (funident,args,nodeInfo ni_ty): )
+				return $ CConst $ CStrConst undefined ni_ty
 			_  -> myError $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call expr = return expr
 	(expr',calls) <- runStateT (everywhereM (mkM to_call) expr) []
 
-	funcalls_traces :: [(NodeInfo,[(Trace,CExpr)])] <- forM calls $ \ (funident,args,ni) -> do
+	funcalls_traces :: [(NodeInfo,[(Trace,CExprWithType)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
 		expanded_params_args <- expand_params_argsM paramdecls args
 		let body' = replace_param_with_arg expanded_params_args body
@@ -1113,36 +1116,36 @@ translateExprM envs expr0 target_ty = do
 	
 	where
 
-	expand_params_argsM ::  [ParamDecl] -> [CExpr] -> CovVecM [(Ident,CExpr)]
+	expand_params_argsM ::  [ParamDecl] -> [CExprWithType] -> CovVecM [(Ident,CExprWithType)]
 	expand_params_argsM paramdecls args = concatForM (zip paramdecls args) expandparam where
-		expandparam :: (ParamDecl,CExpr) -> CovVecM [(Ident,CExpr)]
+		expandparam :: (ParamDecl,CExprWithType) -> CovVecM [(Ident,CExprWithType)]
 		expandparam (paramdecl,arg) = do
 			let VarDecl (VarName srcident _) _ arg_ty = getVarDecl paramdecl
 			return [(srcident,arg)]
 
-	set_node_info :: CExpr -> CExpr
+	set_node_info :: CExprWithType -> CExprWithType
 	set_node_info cexpr = everywhere (mkT subst_ni) cexpr where
 		subst_ni :: NodeInfo -> NodeInfo
 		subst_ni _ = nodeInfo expr0
 
-	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExpr)])] -> CovVecM [(CExpr,Trace)]
+	create_combinations :: CExprWithType -> Trace -> [(NodeInfo,[(Trace,CExprWithType)])] -> CovVecM [(CExprWithType,Trace)]
 	create_combinations expr trace [] = return [(set_node_info expr,trace)]
 	create_combinations expr trace ((ni,tes):rest) = do
 		concatForM tes $ \ (fun_trace,ret_expr) -> do
 			let
 				-- substitute the function call by the return expression
 				expr' = everywhere (mkT subst_ret_expr) expr
-				subst_ret_expr :: CExpr -> CExpr
+				subst_ret_expr :: CExprWithType -> CExprWithType
 				subst_ret_expr expr = if nodeInfo expr == ni then ret_expr else expr
 --			printLog $ "fun_trace=" ++ show fun_trace
 			create_combinations expr' (fun_trace++trace) rest
 
 	-- β-reduction
-	replace_param_with_arg :: [(Ident,CExpr)] -> CStat -> CStat
+	replace_param_with_arg :: [(Ident,CExprWithType)] -> CStat -> CStat
 	replace_param_with_arg [] body = body
 	replace_param_with_arg ((srcident,arg):rest) body = replace_param_with_arg rest body' where
 		body' = everywhere (mkT substparamarg) body
-		substparamarg :: CExpr -> CExpr
+		substparamarg :: CExprWithType -> CExprWithType
 		substparamarg (CVar ident _) | ident==srcident = arg
 		substparamarg expr = expr
 
@@ -1158,10 +1161,10 @@ renameVars envs expr = everywhere (mkT subst_var) expr where
 	subst_var expr = expr
 
 -- Substitutes an expression x by y everywhere in a
-substituteBy :: (Data a) => CExpr -> CExpr -> a -> a
-substituteBy x y a = everywhere (mkT substexpr) a
+substituteBy :: (Data d) => CExprWithType -> CExprWithType -> d -> d
+substituteBy x y d = everywhere (mkT substexpr) d
 	where
-	substexpr :: CExpr -> CExpr
+	substexpr :: CExprWithType -> CExprWithType
 	substexpr found_expr | x == found_expr = y
 	substexpr found_expr                   = found_expr
 
@@ -1243,14 +1246,14 @@ createSymbolicVarsM res_trace new_idents (ti : rest) = do
 	createSymbolicVarsM (ti' : (map NewDeclaration add_tis) ++ res_trace) (map fst add_tis ++ new_idents) rest
 	where
 	
-	create_var :: CExpr -> Type -> StateT [(Ident,Type)] CovVecM CExpr
+	create_var :: CExprWithType -> Type -> StateT [(Ident,Type)] CovVecM CExprWithType
 	create_var expr ty = do
 		let newident = mkIdentWithCNodePos expr $ lValueToVarName expr
 		when (not $ newident `elem` new_idents) $
 			modify ((newident,ty) : )
-		return $ CVar newident (nodeInfo expr)
+		return $ CVar newident (annotation expr)
 
-	createsymvar_m :: CExpr -> StateT [(Ident,Type)] CovVecM CExpr
+	createsymvar_m :: CExprWithType -> StateT [(Ident,Type)] CovVecM CExprWithType
 
 	createsymvar_m expr@(CUnary CIndOp (CVar ptr_ident _) ni) = do
 		let Just (PtrType ty _ _) = lookup ptr_ident $ createTyEnv res_trace
@@ -1645,7 +1648,7 @@ instance Show SolutionVal where
 	show (FloatVal f)  = show f
 	show (DoubleVal f) = show f
 
-makeAndSolveZ3ModelM :: TyEnv -> [CExpr] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
+makeAndSolveZ3ModelM :: TyEnv -> [CExprWithType] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpathfile = do
 	opts <- gets optsCVS
 	printLogV 2 $ "output_idents = " ++ showIdents output_idents
