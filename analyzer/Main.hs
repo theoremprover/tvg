@@ -565,28 +565,28 @@ lookupTypeDefM ident = do
 envs2tyenv :: [Env] -> TyEnv
 envs2tyenv envs = map snd $ concat envs
 
-type2DeclM :: Type -> CovVecM CDecl
+type2DeclM :: forall a . Type -> CovVecM (CDeclaration a)
 type2DeclM ty = do
 	typespecs <- case ty of
 		DirectType tyname _ _ -> case tyname of
-			TyVoid              -> return [ CTypeSpec (CVoidType undefNode) ]
-			TyIntegral TyChar   -> return [ CTypeSpec (CCharType undefNode) ]
-			TyIntegral TySChar  -> return [ CTypeSpec (CSignedType undefNode), CTypeSpec (CCharType undefNode) ]
-			TyIntegral TyUChar  -> return [ CTypeSpec (CUnsigType undefNode), CTypeSpec (CCharType undefNode) ]
-			TyIntegral TyShort  -> return [ CTypeSpec (CShortType undefNode) ]
-			TyIntegral TyInt    -> return [ CTypeSpec (CIntType undefNode) ]
-			TyIntegral TyUInt   -> return [ CTypeSpec (CUnsigType undefNode), CTypeSpec (CIntType undefNode) ]
-			TyIntegral TyLong   -> return [ CTypeSpec (CLongType undefNode) ]
-			TyIntegral TyULong  -> return [ CTypeSpec (CUnsigType undefNode), CTypeSpec (CLongType undefNode) ]
-			TyFloating TyFloat  -> return [ CTypeSpec (CFloatType undefNode) ]
-			TyFloating TyDouble -> return [ CTypeSpec (CDoubleType undefNode) ]
+			TyVoid              -> return [ CTypeSpec (CVoidType undefined) ]
+			TyIntegral TyChar   -> return [ CTypeSpec (CCharType undefined) ]
+			TyIntegral TySChar  -> return [ CTypeSpec (CSignedType undefined), CTypeSpec (CCharType undefined) ]
+			TyIntegral TyUChar  -> return [ CTypeSpec (CUnsigType undefined), CTypeSpec (CCharType undefined) ]
+			TyIntegral TyShort  -> return [ CTypeSpec (CShortType undefined) ]
+			TyIntegral TyInt    -> return [ CTypeSpec (CIntType undefined) ]
+			TyIntegral TyUInt   -> return [ CTypeSpec (CUnsigType undefined), CTypeSpec (CIntType undefined) ]
+			TyIntegral TyLong   -> return [ CTypeSpec (CLongType undefined) ]
+			TyIntegral TyULong  -> return [ CTypeSpec (CUnsigType undefined), CTypeSpec (CLongType undefined) ]
+			TyFloating TyFloat  -> return [ CTypeSpec (CFloatType undefined) ]
+			TyFloating TyDouble -> return [ CTypeSpec (CDoubleType undefined) ]
 			TyEnum (EnumTypeRef sueref _) -> do
 				EnumDef (EnumType (NamedRef enum_ident) enums _ _) <- lookupTagM sueref
 				let ids_inits = for enums $ \ (Enumerator val_ident _ _ _) -> (val_ident,Nothing)
-				return [ CTypeSpec $ CEnumType (CEnum (Just enum_ident) (Just ids_inits) [] undefNode) undefNode ]
+				return [ CTypeSpec $ CEnumType (CEnum (Just enum_ident) (Just ids_inits) [] undefined) undefined ]
 			other -> myError $ "type2DeclM " ++ (render.pretty) ty ++ " not implemented"
 		other -> myError $ "type2DeclM " ++ (render.pretty) ty ++ " not implemented"
-	return $ CDecl typespecs [] undefNode
+	return $ CDecl typespecs [] undefined
 
 decl2TypeM :: CDecl -> CovVecM Type
 decl2TypeM (CDecl declspecs _ _) = case declspecs of
@@ -1335,10 +1335,12 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 		expr' <- insert_impl_casts expr
 		ty <- decl2TypeM decl
 		ty' <- elimTypeDefsM ty
-		return $ CCast decl expr' (ni,ty')
+		decl' <- decl2TypeM decl >>= type2DeclM
+		return $ CCast decl' expr' (ni,ty')
 
 	insert_impl_casts (CUnary unop expr ni) = do
-		(expr',ty) <- insert_impl_casts expr
+		expr' <- insert_impl_casts expr
+		let ty = extractType expr'
 		return $ CUnary unop expr' (ni, case unop of
 			CAdrOp -> ptrType ty
 			CIndOp -> baseType ty
