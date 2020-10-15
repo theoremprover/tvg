@@ -1084,12 +1084,16 @@ inferLExprTypeM tyenv expr = case expr of
 		getMemberTypeM objty member
 	other -> myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " not implemented"
 
+-- Creates an CExprWithType from a CExpr
+transcribeExprM :: [Env] -> CExpr -> Type -> CovVecM CExprWithType
+transcribeExprM envs expr target_ty = insertImplicitCastsM envs (renameVars envs expr) target_ty
+
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls.
 -- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> Type -> CovVecM [(CExprWithType,Trace)]
 translateExprM envs expr0 target_ty = do
-	expr <- insertImplicitCastsM (envs2tyenv envs) (renameVars envs expr0) target_ty
+	expr <- transcribeExprM envs expr0 target_ty
 	let	
 		to_call :: CExprWithType -> StateT [(Ident,[CExprWithType],NodeInfo)] CovVecM CExprWithType
 		to_call (CCall funexpr args ni_ty) = case funexpr of
@@ -1293,8 +1297,6 @@ instance Show SExpr where
 	show (SExpr sexprs) = "(" ++ intercalate " " (map show sexprs) ++ ")"
 	show (SComment s) = "; " ++ s
 
--- ######
-
 extractType :: CExprWithType -> Type
 extractType = snd.annotation
 
@@ -1314,12 +1316,14 @@ implicitOpTypeConversionMax ty1@(DirectType tyname1 _ _) ty2@(DirectType tyname2
 implicitOpTypeConversionMax ty1 ty2 = error $ "implicitOpTypeConversionMax " ++ (render.pretty) ty1 ++ " " ++
 	(render.pretty) ty2 ++ " : there should be a explicit cast!"
 
-insertImplicitCastsM :: TyEnv -> CExpr -> Type -> CovVecM CExprWithType
-insertImplicitCastsM tyenv cexpr target_ty = do
+insertImplicitCastsM :: [Env] -> CExpr -> Type -> CovVecM CExprWithType
+insertImplicitCastsM envs cexpr target_ty = do
 	cexprty <- insert_impl_casts cexpr
 	maybe_cast True cexprty target_ty
 
 	where
+
+	tyenv = envs2tyenv envs
 
 	insert_impl_casts :: CExpr -> CovVecM CExprWithType
 	
@@ -1348,9 +1352,10 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 
 	insert_impl_casts (CAssign assign_op lexpr ass_expr ni) = do
 		lexpr_ty <- inferLExprTypeM tyenv lexpr
+		lexpr' <- transcribeExprM envs lexpr lexpr_ty
 		ass_expr' <- insert_impl_casts ass_expr
 		cast_ass_expr <- maybe_cast True ass_expr' lexpr_ty
-		return $ CAssign assign_op lexpr cast_ass_expr (ni,lexpr_ty)
+		return $ CAssign assign_op lexpr' cast_ass_expr (ni,lexpr_ty)
 
 	insert_impl_casts (CCond cond_expr (Just then_expr) else_expr ni) = do
 		cond_expr' <- insert_impl_casts cond_expr
@@ -1365,33 +1370,34 @@ insertImplicitCastsM tyenv cexpr target_ty = do
 	insert_impl_casts ccall@(CCall fun_expr args ni) = do
 		case fun_expr of
 			CVar (Ident "a__builtin_expect" _ _) _ -> insert_impl_casts $ head args
-			CVar (Ident "solver_pragma" _ _) _ -> return $ amap (,intType) (ⅈ 1)
-			CVar funident _ -> do
-				FunDef (VarDecl _ _ (FunctionType (FunType ret_type funparamdecls False) _)) _ _ <- lookupFunM funident
+			CVar (Ident "solver_pragma" _ _) _ -> return $ ⅈ 1
+			CVar funident fun_ni -> do
+				FunDef (VarDecl _ _ fun_ty@(FunctionType (FunType ret_type funparamdecls False) _)) _ _ <- lookupFunM funident
 				args' <- forM (zip args funparamdecls) $ \ (arg,paramdecl) -> do
 					let VarDecl _ _ arg_ty = getVarDecl paramdecl
 					formalparam_ty' <- elimTypeDefsM arg_ty
-					(arg',arg_ty) <- insert_impl_casts arg
-					maybe_cast False arg' arg_ty formalparam_ty'
+					arg' <- insert_impl_casts arg
+					maybe_cast False arg' formalparam_ty'
 				ret_type' <- elimTypeDefsM ret_type
-				return ( CCall fun_expr args' ni, ret_type' )
+				return $ CCall (CVar funident (fun_ni,fun_ty)) args' (ni,ret_type')
 			other -> myError $ "insert_impl_casts " ++ (render.pretty) ccall ++ " not implemented yet!"
 
-	insert_impl_casts cvar@(CVar ident _) = case lookup ident tyenv of
+	insert_impl_casts cvar@(CVar ident ni) = case lookup ident tyenv of
 		Nothing -> error $ "Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv tyenv
 		Just ty -> do
 			ty' <- elimTypeDefsM ty
-			return (cvar,ty')
+			return $ CVar ident (ni,ty')
 
-	insert_impl_casts cconst@(CConst _) = return (cconst, case cconst of
-		CConst (CIntConst (CInteger _ _ flags) _) -> flags2IntType flags
-		CConst (CFloatConst (CFloat s) _)         -> string2FloatType s	
-		CConst (CCharConst (CChar _ False) _)     -> charType
-		CConst (CStrConst _ _)                    -> ptrType charType )
+	insert_impl_casts (CConst ctconst) = return $ CConst $ case ctconst of
+		CIntConst cint@(CInteger _ _ flags) ni -> CIntConst cint (ni,flags2IntType flags)
+		CFloatConst cfloat@(CFloat s) ni       -> CFloatConst cfloat (ni,string2FloatType s)
+		CCharConst cchar@(CChar _ False) ni    -> CCharConst cchar (ni,charType)
+		CStrConst cstr ni                      -> CStrConst cstr (ni,ptrType charType)
 
-	insert_impl_casts lexpr@(CMember _ member_ident _ _) = do
+	insert_impl_casts lexpr@(CMember pexpr member_ident isp ni) = do
 		member_ty <- inferLExprTypeM tyenv lexpr
-		return (lexpr,member_ty)
+		pexpr' <- insert_impl_casts pexpr
+		return $ CMember pexpr' member_ident isp (ni,member_ty)
 
 	insert_impl_casts other = myError $ "insert_impl_casts " ++ (render.pretty) other ++ " not implemented"
 
@@ -1728,7 +1734,7 @@ solveTraceM mb_ret_type traceid trace = do
 			is_debug_output (DebugOutput name (expr,ty)) = [(name,expr,ty)]
 			is_debug_output _ = []
 		(debug_idents,debug_constraints,debug_tyenv) = unzip3 $ for (zip [1..] debug_outputs) $ \ (i,(name,expr,ty)) ->
-			let name_id = internalIdent (name ++ "_" ++ show i) in (name_id,CVar name_id undefNode ⩵ expr,(name_id,ty))
+			let name_id = internalIdent (name ++ "_" ++ show i) in (name_id,CVar name_id (undefNode,ty) ⩵ expr,(name_id,ty))
 
 		tyenv = createTyEnv trace ++ debug_tyenv
 
