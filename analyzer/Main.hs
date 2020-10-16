@@ -565,28 +565,29 @@ lookupTypeDefM ident = do
 envs2tyenv :: [Env] -> TyEnv
 envs2tyenv envs = map snd $ concat envs
 
-type2DeclM :: forall a . Type -> CovVecM (CDeclaration a)
+type2DeclM :: Annotations a => Type -> CovVecM (CDeclaration a)
 type2DeclM ty = do
-	typespecs <- case ty of
+	ty' <- elimTypeDefsM ty
+	typespecs <- case ty' of
 		DirectType tyname _ _ -> case tyname of
-			TyVoid              -> return [ CTypeSpec (CVoidType undefined) ]
-			TyIntegral TyChar   -> return [ CTypeSpec (CCharType undefined) ]
-			TyIntegral TySChar  -> return [ CTypeSpec (CSignedType undefined), CTypeSpec (CCharType undefined) ]
-			TyIntegral TyUChar  -> return [ CTypeSpec (CUnsigType undefined), CTypeSpec (CCharType undefined) ]
-			TyIntegral TyShort  -> return [ CTypeSpec (CShortType undefined) ]
-			TyIntegral TyInt    -> return [ CTypeSpec (CIntType undefined) ]
-			TyIntegral TyUInt   -> return [ CTypeSpec (CUnsigType undefined), CTypeSpec (CIntType undefined) ]
-			TyIntegral TyLong   -> return [ CTypeSpec (CLongType undefined) ]
-			TyIntegral TyULong  -> return [ CTypeSpec (CUnsigType undefined), CTypeSpec (CLongType undefined) ]
-			TyFloating TyFloat  -> return [ CTypeSpec (CFloatType undefined) ]
-			TyFloating TyDouble -> return [ CTypeSpec (CDoubleType undefined) ]
+			TyVoid              -> return [ CTypeSpec (CVoidType undefAnno) ]
+			TyIntegral TyChar   -> return [ CTypeSpec (CCharType undefAnno) ]
+			TyIntegral TySChar  -> return [ CTypeSpec (CSignedType undefAnno), CTypeSpec (CCharType undefAnno) ]
+			TyIntegral TyUChar  -> return [ CTypeSpec (CUnsigType undefAnno), CTypeSpec (CCharType undefAnno) ]
+			TyIntegral TyShort  -> return [ CTypeSpec (CShortType undefAnno) ]
+			TyIntegral TyInt    -> return [ CTypeSpec (CIntType undefAnno) ]
+			TyIntegral TyUInt   -> return [ CTypeSpec (CUnsigType undefAnno), CTypeSpec (CIntType undefAnno) ]
+			TyIntegral TyLong   -> return [ CTypeSpec (CLongType undefAnno) ]
+			TyIntegral TyULong  -> return [ CTypeSpec (CUnsigType undefAnno), CTypeSpec (CLongType undefAnno) ]
+			TyFloating TyFloat  -> return [ CTypeSpec (CFloatType undefAnno) ]
+			TyFloating TyDouble -> return [ CTypeSpec (CDoubleType undefAnno) ]
 			TyEnum (EnumTypeRef sueref _) -> do
 				EnumDef (EnumType (NamedRef enum_ident) enums _ _) <- lookupTagM sueref
 				let ids_inits = for enums $ \ (Enumerator val_ident _ _ _) -> (val_ident,Nothing)
-				return [ CTypeSpec $ CEnumType (CEnum (Just enum_ident) (Just ids_inits) [] undefined) undefined ]
+				return [ CTypeSpec $ CEnumType (CEnum (Just enum_ident) (Just ids_inits) [] undefAnno) undefAnno ]
 			other -> myError $ "type2DeclM " ++ (render.pretty) ty ++ " not implemented"
 		other -> myError $ "type2DeclM " ++ (render.pretty) ty ++ " not implemented"
-	return $ CDecl typespecs [] undefined
+	return $ CDecl typespecs [] undefAnno
 
 decl2TypeM :: CDecl -> CovVecM Type
 decl2TypeM (CDecl declspecs _ _) = case declspecs of
@@ -1041,9 +1042,16 @@ not_c e = CUnary CNegOp e (annotation e)
 class CreateInt a where
 	ⅈ :: Integer -> a
 instance CreateInt CExpr where
-	ⅈ i = CConst $ CIntConst (cInteger i) undefNode
+	ⅈ i = CConst $ CIntConst (cInteger i) undefAnno
 instance CreateInt CExprWithType where
-	ⅈ i = CConst $ CIntConst (cInteger i) (undefNode,intType)
+	ⅈ i = CConst $ CIntConst (cInteger i) undefAnno
+
+class Annotations a where
+	undefAnno :: a
+instance Annotations NodeInfo where
+	undefAnno = undefNode
+instance Annotations NodeInfoWithType where
+	undefAnno = (undefNode,DirectType (TyBuiltin TyAny) noTypeQuals noAttributes)
 
 infix 1 ≔
 (≔) :: CExpression a -> CExpression a -> CExpression a
@@ -1093,6 +1101,7 @@ transcribeExprM envs expr target_ty = insertImplicitCastsM envs (renameVars envs
 -- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> Type -> CovVecM [(CExprWithType,Trace)]
 translateExprM envs expr0 target_ty = do
+	printLogV 0 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ (render.pretty) target_ty
 	expr <- transcribeExprM envs expr0 target_ty
 	let	
 		to_call :: CExprWithType -> StateT [(Ident,[CExprWithType],NodeInfo)] CovVecM CExprWithType
