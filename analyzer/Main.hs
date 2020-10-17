@@ -1116,6 +1116,7 @@ translateExprM envs expr0 target_ty = do
 	funcalls_traces :: [(NodeInfo,[(Trace,CExprWithType)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
 		expanded_params_args <- expand_params_argsM paramdecls args
+		-- β-reduction of the arguments:
 		let body' = replace_param_with_arg expanded_params_args body
 		printLogV 2 $ "body'= " ++ (render.pretty) body'
 		Left funtraces <- unfoldTracesM ret_ty False [] envs [] [ [ CBlockStmt body' ] ]
