@@ -1327,8 +1327,11 @@ implicitOpTypeConversionMax ty1 ty2 = error $ "implicitOpTypeConversionMax " ++ 
 
 insertImplicitCastsM :: [Env] -> CExpr -> Type -> CovVecM CExprWithType
 insertImplicitCastsM envs cexpr target_ty = do
+	printLogV 0 $ "insertImplicitCastsM [envs] " ++ (render.pretty) cexpr ++ " " ++ (render.pretty) target_ty
 	cexprty <- insert_impl_casts cexpr
-	maybe_cast True cexprty target_ty
+	ret <- maybe_cast True cexprty target_ty
+	printLogV 0 $ "END insertImplicitCastsM [envs] " ++ (render.pretty) cexpr ++ " " ++ (render.pretty) target_ty
+	return ret
 
 	where
 

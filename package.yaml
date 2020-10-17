@@ -40,9 +40,6 @@ dependencies:
 - mainland-pretty
 - containers-unicode-symbols
 
-library:
-  source-dirs: src
-
 executables:
 #  tvg-exe:
 #    main:                Main.hs
