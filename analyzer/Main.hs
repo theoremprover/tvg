@@ -33,7 +33,6 @@ import Numeric (readHex)
 import Data.Either
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
-import qualified GHC.Generics as GHCG
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
 import Data.Time.LocalTime
@@ -80,7 +79,7 @@ showOnlySolutions = True
 don'tShowTraces = True
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
-outputVerbosity = 1
+outputVerbosity = 2
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
@@ -251,6 +250,9 @@ printStatsM :: CovVecM ()
 printStatsM = gets statsCVS >>= (printLogV 1) . show 
 
 type CovVecM = StateT CovVecState IO
+
+instance Show Type where
+	show t = (render.pretty) t
 
 data TraceElem =
 	Assignment CExprWithType CExprWithType |
@@ -782,6 +784,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	CReturn Nothing _            -> return $ Left [trace]
 
 	CReturn (Just ret_expr) _ -> do
+		printLogV 1 $ "unfoldTraces1M " ++ (render.pretty) stmt
 		transids ret_expr trace ret_type $ \ (ret_expr',trace') -> do
 			case toplevel of
 				False -> return $ Left [Return ret_expr' : trace']
@@ -966,6 +969,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 
 	transids :: CExpr -> Trace -> Type -> ((CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
 	transids expr trace expr_ty cont = do
+		printLogV 1 $ "transids " ++ (render.pretty) expr ++ "..."
 		additional_expr_traces :: [(CExprWithType,Trace)] <- translateExprM envs expr expr_ty
 		case toplevel of
 			False -> do
@@ -1039,14 +1043,10 @@ a − b = CBinary CSubOp a b (annotation a)
 not_c :: CExpression a -> CExpression a
 not_c e = CUnary CNegOp e (annotation e)
 
-class CreateInt a where
-	ⅈ :: Integer -> a
-instance CreateInt CExpr where
-	ⅈ i = CConst $ CIntConst (cInteger i) undefAnno
-instance CreateInt CExprWithType where
-	ⅈ i = CConst $ CIntConst (cInteger i) undefAnno
+ⅈ :: (Annotations a) => Integer -> CExpression a
+ⅈ i = CConst $ CIntConst (cInteger i) undefAnno
 
-class Annotations a where
+class (Typeable a) => Annotations a where
 	undefAnno :: a
 instance Annotations NodeInfo where
 	undefAnno = undefNode
@@ -1058,10 +1058,14 @@ infix 1 ≔
 ass ≔ expr = CAssign CAssignOp ass expr (annotation ass)
 
 
-fvar :: Data d => d -> [Ident]
-fvar expr = nub $ everything (++) (mkQ [] searchvar) expr
+fvar :: CExprWithType -> [Ident]
+fvar expr = nub $ everything (++) (mkQ [] searchvar) (everywhere (mkT delete_attrs) expr)
 	where
-	searchvar :: CExpr -> [Ident]
+
+	delete_attrs :: CAttribute NodeInfoWithType -> CAttribute NodeInfoWithType
+	delete_attrs (CAttr ident _ a) = CAttr ident [] a
+
+	searchvar :: CExpression NodeInfoWithType -> [Ident]
 	searchvar (CVar ident _) = [ ident ]
 	searchvar _ = []
 
@@ -1101,24 +1105,30 @@ transcribeExprM envs expr target_ty = insertImplicitCastsM envs (renameVars envs
 -- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> Type -> CovVecM [(CExprWithType,Trace)]
 translateExprM envs expr0 target_ty = do
-	printLogV 0 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ (render.pretty) target_ty
-	expr <- transcribeExprM envs expr0 target_ty
+	printLogV 1 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ (render.pretty) target_ty
+
+	-- extract a list of all calls from the input expression (including fun-identifier, the arguments, and NodeInfo)
 	let	
-		to_call :: CExprWithType -> StateT [(Ident,[CExprWithType],NodeInfo)] CovVecM CExprWithType
-		to_call (CCall funexpr args ni_ty) = case funexpr of
+		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
+		to_call (CCall funexpr args ni) = case funexpr of
+			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
+			CVar (Ident "solver_pragma" _ _) _ -> return $ ⅈ 1
 			CVar funident _ -> do
-				modify ( (funident,args,nodeInfo ni_ty): )
-				return $ CConst $ CStrConst undefined ni_ty
+				modify ( (funident,args,ni): )
+				-- Replace the call by a placeholder with the same NodeInfo
+				return $ CConst $ CStrConst (CString (show ni) False) ni
 			_  -> myError $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call expr = return expr
-	(expr',calls) <- runStateT (everywhereM (mkM to_call) expr) []
+	(expr,calls) <- runStateT (everywhereM (mkM to_call) expr0) []
 
 	funcalls_traces :: [(NodeInfo,[(Trace,CExprWithType)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
 		expanded_params_args <- expand_params_argsM paramdecls args
+		printLogV 1 $ "body = " ++ (render.pretty) body
+		printLogV 1 $ "expanded_params_args = " ++ show expanded_params_args
 		-- β-reduction of the arguments:
 		let body' = replace_param_with_arg expanded_params_args body
-		printLogV 2 $ "body'= " ++ (render.pretty) body'
+		printLogV 1 $ "body'= " ++ (render.pretty) body'
 		Left funtraces <- unfoldTracesM ret_ty False [] envs [] [ [ CBlockStmt body' ] ]
 		forM_ funtraces $ \ tr -> printLogV 2 $ "funtrace = " ++ showTrace tr
 		let funtraces_rets = concat $ for funtraces $ \case
@@ -1126,16 +1136,26 @@ translateExprM envs expr0 target_ty = do
 			tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
 		return (ni,funtraces_rets) 
 
+	expr' <- transcribeExprM envs expr target_ty
+
 	create_combinations expr' [] funcalls_traces
 	
 	where
 
-	expand_params_argsM ::  [ParamDecl] -> [CExprWithType] -> CovVecM [(Ident,CExprWithType)]
+	-- From the list of ParamDecls, extract the identifiers from the declarations and pair them with the argument
+	expand_params_argsM ::  [ParamDecl] -> [CExpr] -> CovVecM [(Ident,CExpr)]
 	expand_params_argsM paramdecls args = concatForM (zip paramdecls args) expandparam where
-		expandparam :: (ParamDecl,CExprWithType) -> CovVecM [(Ident,CExprWithType)]
+		expandparam :: (ParamDecl,CExpr) -> CovVecM [(Ident,CExpr)]
 		expandparam (paramdecl,arg) = do
 			let VarDecl (VarName srcident _) _ arg_ty = getVarDecl paramdecl
 			return [(srcident,arg)]
+
+	-- β-reduction
+	replace_param_with_arg :: [(Ident,CExpr)] -> CStat -> CStat
+	replace_param_with_arg iexprs stmt = foldl
+		(\ stmt' (ident,cexpr) -> substituteBy (CVar ident undefNode) cexpr stmt')
+		stmt
+		iexprs
 
 	set_node_info :: CExprWithType -> CExprWithType
 	set_node_info cexpr = everywhere (mkT subst_ni) cexpr where
@@ -1154,15 +1174,6 @@ translateExprM envs expr0 target_ty = do
 --			printLog $ "fun_trace=" ++ show fun_trace
 			create_combinations expr' (fun_trace++trace) rest
 
-	-- β-reduction
-	replace_param_with_arg :: [(Ident,CExprWithType)] -> CStat -> CStat
-	replace_param_with_arg [] body = body
-	replace_param_with_arg ((srcident,arg):rest) body = replace_param_with_arg rest body' where
-		body' = everywhere (mkT substparamarg) body
-		substparamarg :: CExprWithType -> CExprWithType
-		substparamarg (CVar ident _) | ident==srcident = arg
-		substparamarg expr = expr
-
 
 -- Renames Variables to unique names, looking up their unique name (wíth a number suffix)
 
@@ -1175,12 +1186,12 @@ renameVars envs expr = everywhere (mkT subst_var) expr where
 	subst_var expr = expr
 
 -- Substitutes an expression x by y everywhere in a
-substituteBy :: (Data d) => CExprWithType -> CExprWithType -> d -> d
-substituteBy x y d = everywhere (mkT substexpr) d
+substituteBy :: (Eq a,Data a,Data d) => a -> a -> d -> d
+substituteBy x y d = everywhere (mkT (substexpr x y)) d
 	where
-	substexpr :: CExprWithType -> CExprWithType
-	substexpr found_expr | x == found_expr = y
-	substexpr found_expr                   = found_expr
+	substexpr :: (Eq a) => a -> a -> a -> a
+	substexpr x y found_expr | x == found_expr = y
+	substexpr _ _ found_expr                   = found_expr
 
 
 -- Going from the end of the trace backwards,
@@ -1328,10 +1339,10 @@ implicitOpTypeConversionMax ty1 ty2 = error $ "implicitOpTypeConversionMax " ++ 
 
 insertImplicitCastsM :: [Env] -> CExpr -> Type -> CovVecM CExprWithType
 insertImplicitCastsM envs cexpr target_ty = do
-	printLogV 0 $ "insertImplicitCastsM [envs] " ++ (render.pretty) cexpr ++ " " ++ (render.pretty) target_ty
+	printLogV 1 $ "insertImplicitCastsM [envs] " ++ (render.pretty) cexpr ++ " " ++ (render.pretty) target_ty
 	cexprty <- insert_impl_casts cexpr
 	ret <- maybe_cast True cexprty target_ty
-	printLogV 0 $ "END insertImplicitCastsM [envs] " ++ (render.pretty) cexpr ++ " " ++ (render.pretty) target_ty
+	printLogV 1 $ "END insertImplicitCastsM [envs] " ++ (render.pretty) cexpr ++ " " ++ (render.pretty) target_ty
 	return ret
 
 	where
@@ -1382,8 +1393,10 @@ insertImplicitCastsM envs cexpr target_ty = do
 
 	insert_impl_casts ccall@(CCall fun_expr args ni) = do
 		case fun_expr of
+{-
 			CVar (Ident "a__builtin_expect" _ _) _ -> insert_impl_casts $ head args
 			CVar (Ident "solver_pragma" _ _) _ -> return $ ⅈ 1
+-}
 			CVar funident fun_ni -> do
 				FunDef (VarDecl _ _ fun_ty@(FunctionType (FunType ret_type funparamdecls False) _)) _ _ <- lookupFunM funident
 				args' <- forM (zip args funparamdecls) $ \ (arg,paramdecl) -> do
@@ -1674,7 +1687,7 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 	opts <- gets optsCVS
 	printLogV 2 $ "output_idents = " ++ showIdents output_idents
 	let
-		constraints_vars = fvar constraints
+		constraints_vars = nub $ concatMap fvar constraints
 	printLogV 2 $ "constraints_vars = " ++ showIdents constraints_vars
 
 	let
