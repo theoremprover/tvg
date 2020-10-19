@@ -1428,22 +1428,93 @@ insertImplicitCastsM envs cexpr target_ty = do
 			" is not equal to from_ty or to_ty !"
 
 
+-- TODO: delete TyEnv?
 expr2SExpr :: TyEnv -> CExprWithType -> CovVecM (SExpr,CExprWithType)
 expr2SExpr _ expr = do
-	sexpr <- expr2sexpr expr
+	sexpr <- expr2sexpr True expr
 	return (sexpr,expr)
 
 	where
 
 	make_intconstant :: Type -> Integer -> SExpr
-	make_intconstant ty const = SLeaf (printf "#x%*.*x" (sizeofIntTy ty `div` 4) (sizeofIntTy ty `div` 4) const) where
+	make_intconstant ty const = SLeaf (printf "#x%*.*x" (sizeofIntTy ty `div` 4) (sizeofIntTy ty `div` 4) const)
 
-	expr2sexpr :: CExprWithType -> CovVecM SExpr
-	expr2sexpr cconst@(CConst _) = return $ case cconst of
-		CIntConst intconst (ni,ty) -> make_intconstant ty (getCInteger intconst)
-		CCharConst cchar _   -> SLeaf $ (render.pretty) cconst
-		CFloatConst cfloat _ -> SLeaf $ (render.pretty) cconst
-		CStrConst cstr _     -> SLeaf $ (render.pretty) cconst
+	neq0 :: Constraint -> Constraint
+	neq0 constr = not_c $ constr ⩵ ⅈ 0
+
+	expr2sexpr :: Bool -> CExprWithType -> CovVecM SExpr
+
+	expr2sexpr must_be_bool expr = case expr of
+
+		CUnary CNegOp expr _ -> do
+			sexpr <- expr2sexpr True expr
+			return $ SExpr [ SLeaf "not", sexpr ]
+		
+		-- all binary operators returning Bool
+		CBinary CNeqOp expr1 expr2 _ -> expr2sexpr must_be_bool $ expr1 !⩵ expr2
+		CBinary binop expr1 expr2 (_,ty) | binop `elem` [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp] -> do
+			sexpr1 <- expr2sexpr (binop `elem` [CLndOp,CLorOp]) expr1
+			sexpr2 <- expr2sexpr (binop `elem` [CLndOp,CLorOp]) expr2
+			return $ SExpr [ op_sexpr, sexpr1, sexpr2 ]
+			where
+			unSigned unsigned signed = case ty2Z3Type ty of
+				Z3_BitVector _ is_unsigned -> SLeaf $ if is_unsigned then unsigned else signed
+				_ -> error $ "unSigned: target_ty of " ++ (render.pretty) expr ++ " is no bitvector!"
+			op_sexpr = case binop of
+				CLndOp -> SLeaf "and"
+				CLorOp -> SLeaf "or"
+				CLeOp  -> SLeaf $ unSigned "bvult" "bvslt"
+				CGrOp  -> SLeaf $ unSigned "bvugt" "bvsgt"
+				CLeqOp -> SLeaf $ unSigned "bvule" "bvsle"
+				CGeqOp -> SLeaf $ unSigned "bvuge" "bvsge"
+				CEqOp  -> SLeaf "="
+
+		-- binary operators returning the operands' type
+		CBinary binop expr1 expr2 _ -> do
+			
+
+		cconst@(CConst ctconst) -> return $ case ctconst of
+			CIntConst intconst (_,ty) -> make_intconstant ty (getCInteger intconst)
+			CCharConst cchar _        -> SLeaf $ (render.pretty) cconst
+			CFloatConst cfloat _      -> SLeaf $ (render.pretty) cconst
+			CStrConst cstr _          -> SLeaf $ (render.pretty) cconst
+
+		CVar ident _ -> return $ SLeaf $ (render.pretty) ident
+
+		CUnary CPlusOp expr _ -> expr2sexpr expr
+		CUnary op expr _ -> do
+			sexpr <- expr2sexpr expr
+			return $ SExpr [ SLeaf op_str, sexpr ]
+			where
+			op_str = case op of
+				CMinOp  -> "bvneg"
+				CCompOp -> "bvnot"
+				_ -> error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
+
+		CCast to_decl subexpr (_,from_ty) -> do
+			to_ty <- decl2TypeM to_decl
+			case ( ty2Z3Type from_ty, ty2Z3Type to_ty ) of
+				( Z3_BitVector size_from _, Z3_Bool ) -> SExpr [ SLeaf "ite", cond_sexpr, SLeaf "false", SLeaf "true" ]
+					where
+					cond_sexpr = SExpr [ SLeaf "=", sexpr, make_intconstant size_from 0 ]
+		
+				-- SAMECAST: identity
+				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from == size_to -> sexpr
+		
+				-- DOWNCAST: extract bits (modulo)
+				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from > size_to ->
+					SExpr [ SExpr [ SLeaf "_", SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0"], sexpr ]
+		
+				-- UPCAST signed (to signed or unsigned): extend sign bit
+				( Z3_BitVector size_from True, Z3_BitVector size_to _ ) ->
+					SExpr [ SExpr [ SLeaf "_", SLeaf "sign_extend", SLeaf $ show (size_to-size_from) ], sexpr ] 
+		
+				-- UPCAST unsigned (to signed or unsigned): extend with 0s
+				( Z3_BitVector size_from False, Z3_BitVector size_to _ ) ->
+					SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
+		
+				_ -> error $ "mb_cast " ++ show sexpr ++ " " ++
+					show from_ty ++ " " ++ show to_ty ++ " not implemented!"
 
 {-	
 	expr2sexpr (CVar ident (_,ty)) -> return ( SLeaf $ (render.pretty) ident, ty2Z3Type $ fromJust $ lookup ident tyenv )
@@ -1490,22 +1561,6 @@ expr2SExpr _ expr = do
 				CShlOp -> (unSigned operand_target_ty "bvshl"  "bvshl", operand_target_ty,operand_target_ty)
 				CShrOp -> (unSigned operand_target_ty "bvlshr" "bvashr",operand_target_ty,operand_target_ty)
 
-{-
-				CLeOp  -> (unSigned operand_target_ty "bvult"  "bvslt", operand_target_ty,Z3_Bool)
-				CGrOp  -> (unSigned operand_target_ty "bvugt"  "bvsgt", operand_target_ty,Z3_Bool)
-				CLeqOp -> (unSigned operand_target_ty "bvule"  "bvsle", operand_target_ty,Z3_Bool)
-				CGeqOp -> (unSigned operand_target_ty "bvuge"  "bvsge", operand_target_ty,Z3_Bool)
-				CLndOp -> (SLeaf "and",Z3_Bool,Z3_Bool)
-				CLorOp -> (SLeaf "or", Z3_Bool,Z3_Bool)
-				CEqOp  -> (SLeaf "=",    operand_target_ty,Z3_Bool)
--}
-				CLeOp  -> (unSigned operand_target_ty "bvult"  "bvslt", operand_target_ty,operand_target_ty)
-				CGrOp  -> (unSigned operand_target_ty "bvugt"  "bvsgt", operand_target_ty,operand_target_ty)
-				CLeqOp -> (unSigned operand_target_ty "bvule"  "bvsle", operand_target_ty,operand_target_ty)
-				CGeqOp -> (unSigned operand_target_ty "bvuge"  "bvsge", operand_target_ty,operand_target_ty)
-				CLndOp -> (SLeaf "and",Z3_Bool,Z3_Bool)
-				CLorOp -> (SLeaf "or", Z3_Bool,Z3_Bool)
-				CEqOp  -> (SLeaf "=",    operand_target_ty,Z3_Bool)
 
 				CAndOp -> (SLeaf "bvand",operand_target_ty,operand_target_ty)
 				COrOp  -> (SLeaf "bvor", operand_target_ty,operand_target_ty)
@@ -1514,9 +1569,6 @@ expr2SExpr _ expr = do
 				where
 				operand_target_ty = max ty1 ty2
 		
-			unSigned op_ty unsigned signed = case op_ty of
-				Z3_BitVector _ is_unsigned -> SLeaf $ if is_unsigned then unsigned else signed
-				_ -> error $ "unSigned: target_ty of " ++ (render.pretty) expr ++ " is no bitvector!"
 	
 		ccond@(CCond cond (Just then_expr) else_expr _) -> do
 			(cond_sexpr,Z3_Bool) <- expr2sexpr cond
@@ -1712,25 +1764,25 @@ expr2SExpr tyenv expr = do
 -}
 
 sizeofIntTy :: Type -> Int
-sizeofIntTy (DirectType tyname _ attrs) -> case tyname of
+sizeofIntTy ty@(DirectType tyname _ attrs) = case tyname of
 	TyIntegral intty -> case (intty,attrs2modes attrs) of
 		(TyChar,[])     -> 8
 		(TySChar,[])    -> 8
 		(TyUChar,[])    -> 8
 		(TyShort,[])    -> 16
-		(TyUShort,[])   -> Z3_BitVector 16 True
-		(TyInt,[])      -> Z3_BitVector intSize False
-		(TyInt,["SI"])  -> Z3_BitVector 32 False
-		(TyInt,["DI"])  -> Z3_BitVector 64 False
-		(TyUInt,[])     -> Z3_BitVector intSize True
-		(TyUInt,["SI"]) -> Z3_BitVector 32 True
-		(TyUInt,["DI"]) -> Z3_BitVector 64 True
-		(TyLong,[])     -> Z3_BitVector longIntSize False
-		(TyULong,[])    -> Z3_BitVector longIntSize True
-		(TyLLong,[])    -> Z3_BitVector 64 False
-		(TyULLong,[])   -> Z3_BitVector 64 True
-		other           -> error $ "ty2Z3Type " ++ show other ++ " not implemented!"
-
+		(TyUShort,[])   -> 16
+		(TyInt,[])      -> intSize
+		(TyInt,["SI"])  -> 32
+		(TyInt,["DI"])  -> 64
+		(TyUInt,[])     -> intSize
+		(TyUInt,["SI"]) -> 32
+		(TyUInt,["DI"]) -> 64
+		(TyLong,[])     -> longIntSize
+		(TyULong,[])    -> longIntSize
+		(TyLLong,[])    -> 64
+		(TyULLong,[])   -> 64
+		other           -> error $ "sizeofIntTy " ++ show other ++ " not implemented!"
+	other -> error $ "sizeofIntTy: " ++ (render.pretty) ty ++ " is not an Integral type"
 
 attrs2modes :: [Attr] -> [String]
 attrs2modes attrs = map to_mode attrs
@@ -1738,38 +1790,19 @@ attrs2modes attrs = map to_mode attrs
 	to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
 	to_mode attr = error $ "attrs2modes: unknown attr " ++ (render.pretty) attr
 
-{-
-
 ty2Z3Type :: Type -> Z3_Type
 ty2Z3Type ty = case ty of
 	DirectType (TyComp (CompTypeRef _ _ _)) _ _ -> Z3_BitVector 4 True
 	DirectType tyname _ attrs -> case tyname of
-		TyIntegral intty -> case (intty,attrs2modes attrs) of
-			(TyChar,[])     -> Z3_BitVector 8 True
-			(TySChar,[])    -> Z3_BitVector 8 False
-			(TyUChar,[])    -> Z3_BitVector 8 True
-			(TyShort,[])    -> Z3_BitVector 16 False
-			(TyUShort,[])   -> Z3_BitVector 16 True
-			(TyInt,[])      -> Z3_BitVector intSize False
-			(TyInt,["SI"])  -> Z3_BitVector 32 False
-			(TyInt,["DI"])  -> Z3_BitVector 64 False
-			(TyUInt,[])     -> Z3_BitVector intSize True
-			(TyUInt,["SI"]) -> Z3_BitVector 32 True
-			(TyUInt,["DI"]) -> Z3_BitVector 64 True
-			(TyLong,[])     -> Z3_BitVector longIntSize False
-			(TyULong,[])    -> Z3_BitVector longIntSize True
-			(TyLLong,[])    -> Z3_BitVector 64 False
-			(TyULLong,[])   -> Z3_BitVector 64 True
-			other           -> error $ "ty2Z3Type " ++ show other ++ " not implemented!"
+		TyIntegral intty    -> Z3_BitVector (sizeofIntTy ty) $ intty `elem` [TyChar,TyUChar,TyUShort,TyUInt,TyULong,TyULLong]
 		TyFloating TyFloat  -> Z3_Float
 		TyFloating TyDouble -> Z3_Double
-		TyEnum _ -> Z3_BitVector intSize True
-		TyComp _ -> Z3_BitVector 16 True
+		TyEnum _            -> Z3_BitVector intSize True
+		TyComp _            -> Z3_BitVector 16 True
 		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
 	PtrType _ _ _ -> Z3_BitVector 16 True
 	TypeDefType (TypeDefRef _ ty _) _ _ -> ty2Z3Type ty
 	_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
--}
 
 ty2SExpr :: Type -> SExpr
 ty2SExpr ty = case ty2Z3Type ty of
