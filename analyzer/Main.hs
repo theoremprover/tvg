@@ -589,7 +589,7 @@ type2DeclM ty = do
 		other -> myError $ "type2DeclM " ++ (render.pretty) ty ++ " not implemented"
 	return $ CDecl typespecs [] undefAnno
 
-decl2TypeM :: (Show a) => CDeclaration a -> CovVecM Type
+decl2TypeM :: (Annotations a) => CDeclaration a -> CovVecM Type
 decl2TypeM (CDecl declspecs _ _) = case declspecs of
 	[CTypeSpec (CVoidType _)]      -> return $ DirectType TyVoid noTypeQuals noAttributes
 	[CTypeSpec (CCharType _)]      -> return $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes
@@ -1046,7 +1046,7 @@ instance CreateInt CExpr where
 instance CreateInt CExprWithType where
 	ⅈ i = CConst $ CIntConst (cInteger i) undefAnno
 
-class Annotations a where
+class (Show a) => Annotations a where
 	undefAnno :: a
 instance Annotations NodeInfo where
 	undefAnno = undefNode
