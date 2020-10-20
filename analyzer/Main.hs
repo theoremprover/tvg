@@ -276,8 +276,6 @@ instance CNode TraceElem where
 instance CNode NodeInfoWithType where
 	nodeInfo (ni,_) = ni
 
-deriving instance Show NodeInfoWithType
-
 instance Pretty NodeInfo where
 	pretty ni = text $ "line " ++ show line ++ ", col " ++ show col
 		where
