@@ -3,6 +3,7 @@
 
 module Main where
 
+import Prelude hiding ((<>)) -- Making way for Text.Pretty.<>
 import System.Environment
 import System.FilePath
 import System.Process
@@ -566,31 +567,32 @@ lookupTypeDefM ident = do
 envs2tyenv :: [Env] -> TyEnv
 envs2tyenv envs = map snd $ concat envs
 
-type2DeclM :: Annotations a => Type -> CovVecM (CDeclaration a)
+type2DeclM :: Type -> CovVecM (CDeclaration NodeInfoWithType)
 type2DeclM ty = do
 	ty' <- elimTypeDefsM ty
+	let anno = (undefNode,ty)
 	typespecs <- case ty' of
 		DirectType tyname _ _ -> case tyname of
-			TyVoid              -> return [ CTypeSpec (CVoidType undefAnno) ]
-			TyIntegral TyChar   -> return [ CTypeSpec (CCharType undefAnno) ]
-			TyIntegral TySChar  -> return [ CTypeSpec (CSignedType undefAnno), CTypeSpec (CCharType undefAnno) ]
-			TyIntegral TyUChar  -> return [ CTypeSpec (CUnsigType undefAnno), CTypeSpec (CCharType undefAnno) ]
-			TyIntegral TyShort  -> return [ CTypeSpec (CShortType undefAnno) ]
-			TyIntegral TyInt    -> return [ CTypeSpec (CIntType undefAnno) ]
-			TyIntegral TyUInt   -> return [ CTypeSpec (CUnsigType undefAnno), CTypeSpec (CIntType undefAnno) ]
-			TyIntegral TyLong   -> return [ CTypeSpec (CLongType undefAnno) ]
-			TyIntegral TyULong  -> return [ CTypeSpec (CUnsigType undefAnno), CTypeSpec (CLongType undefAnno) ]
-			TyFloating TyFloat  -> return [ CTypeSpec (CFloatType undefAnno) ]
-			TyFloating TyDouble -> return [ CTypeSpec (CDoubleType undefAnno) ]
+			TyVoid              -> return [ CTypeSpec (CVoidType anno) ]
+			TyIntegral TyChar   -> return [ CTypeSpec (CCharType anno) ]
+			TyIntegral TySChar  -> return [ CTypeSpec (CSignedType anno), CTypeSpec (CCharType anno) ]
+			TyIntegral TyUChar  -> return [ CTypeSpec (CUnsigType anno), CTypeSpec (CCharType anno) ]
+			TyIntegral TyShort  -> return [ CTypeSpec (CShortType anno) ]
+			TyIntegral TyInt    -> return [ CTypeSpec (CIntType anno) ]
+			TyIntegral TyUInt   -> return [ CTypeSpec (CUnsigType anno), CTypeSpec (CIntType anno) ]
+			TyIntegral TyLong   -> return [ CTypeSpec (CLongType anno) ]
+			TyIntegral TyULong  -> return [ CTypeSpec (CUnsigType anno), CTypeSpec (CLongType anno) ]
+			TyFloating TyFloat  -> return [ CTypeSpec (CFloatType anno) ]
+			TyFloating TyDouble -> return [ CTypeSpec (CDoubleType anno) ]
 			TyEnum (EnumTypeRef sueref _) -> do
 				EnumDef (EnumType (NamedRef enum_ident) enums _ _) <- lookupTagM sueref
 				let ids_inits = for enums $ \ (Enumerator val_ident _ _ _) -> (val_ident,Nothing)
-				return [ CTypeSpec $ CEnumType (CEnum (Just enum_ident) (Just ids_inits) [] undefAnno) undefAnno ]
+				return [ CTypeSpec $ CEnumType (CEnum (Just enum_ident) (Just ids_inits) [] anno) anno ]
 			other -> myError $ "type2DeclM " ++ (render.pretty) ty ++ " not implemented"
 		other -> myError $ "type2DeclM " ++ (render.pretty) ty ++ " not implemented"
-	return $ CDecl typespecs [] undefAnno
+	return $ CDecl typespecs [] anno
 
-decl2TypeM :: (Annotations a) => CDeclaration a -> CovVecM Type
+decl2TypeM :: (Show a) => CDeclaration a -> CovVecM Type
 decl2TypeM (CDecl declspecs _ _) = case declspecs of
 	[CTypeSpec (CVoidType _)]      -> return $ DirectType TyVoid noTypeQuals noAttributes
 	[CTypeSpec (CCharType _)]      -> return $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes
@@ -940,6 +942,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 											Nothing -> myError $ "infer_loopingsM: Could not find type of " ++ (render.pretty) counter_var
 											Just ty -> return ty
 										(model_string,mb_sol) <- makeAndSolveZ3ModelM
+											[]
 											((n_ident,n_type) : envs2tyenv envs)
 											(let
 												cond_n       = (counter_var `substituteBy` (i_n n_var)) cond
@@ -1043,16 +1046,9 @@ not_c e = CUnary CNegOp e (annotation e)
 class CreateInt a where
 	ⅈ :: Integer -> a
 instance CreateInt CExpr where
-	ⅈ i = CConst $ CIntConst (cInteger i) undefAnno
+	ⅈ i = CConst $ CIntConst (cInteger i) undefNode
 instance CreateInt CExprWithType where
-	ⅈ i = CConst $ CIntConst (cInteger i) undefAnno
-
-class (Show a) => Annotations a where
-	undefAnno :: a
-instance Annotations NodeInfo where
-	undefAnno = undefNode
-instance Annotations NodeInfoWithType where
-	undefAnno = (undefNode,DirectType (TyBuiltin TyAny) noTypeQuals noAttributes)
+	ⅈ i = CConst $ CIntConst (cInteger i) (undefNode,intType)
 
 infix 1 ≔
 (≔) :: CExpression a -> CExpression a -> CExpression a
@@ -1322,11 +1318,26 @@ createTyEnv trace = concatMap traceitem2tyenv trace
 	traceitem2tyenv (NewDeclaration tyenvitem) = [tyenvitem]
 	traceitem2tyenv _ = []
 
-data SExpr = SExpr [SExpr] | SLeaf String | SComment String
-instance Show SExpr where
-	show (SLeaf s) = s
-	show (SExpr sexprs) = "(" ++ intercalate " " (map show sexprs) ++ ")"
-	show (SComment s) = "; " ++ s
+data SCompound = SExprLine SExpr | SComment String | SEmptyLine deriving Show
+instance Pretty SCompound where
+	pretty SEmptyLine = text ""
+	pretty (SComment s) = text ("; " ++ s)
+	pretty (SExprLine sexpr) = pretty sexpr
+
+data SExpr = SExpr [SExpr] | SLeaf String | SOnOneLine SExpr deriving Show
+instance Pretty SExpr where
+	pretty (SOnOneLine sexpr) = prettyOneLine sexpr
+	pretty (SLeaf s) = text s
+	pretty (SExpr (sexpr:sexprs)) = vcat [
+		text "(" <> pretty sexpr,
+		nest 4 $ vcat (map pretty sexprs),
+		text ")" ]
+
+prettyOneLine (SOnOneLine sexpr) = prettyOneLine sexpr
+prettyOneLine (SLeaf s) = text s
+prettyOneLine (SExpr (sexpr:sexprs)) =
+	text "(" <> prettyOneLine sexpr <+> hcat (map prettyOneLine sexprs) <+> text ")"
+prettyOneLine s = error $ "In prettyOneLine: " ++ show s
 
 extractType :: CExprWithType -> Type
 extractType = snd.annotation
@@ -1640,8 +1651,8 @@ instance Show SolutionVal where
 	show (FloatVal f)  = show f
 	show (DoubleVal f) = show f
 
-makeAndSolveZ3ModelM :: TyEnv -> [CExprWithType] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
-makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpathfile = do
+makeAndSolveZ3ModelM :: [Int] -> TyEnv -> [CExprWithType] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
+makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents modelpathfile = do
 	opts <- gets optsCVS
 	printLogV 2 $ "output_idents = " ++ showIdents output_idents
 	let
@@ -1649,22 +1660,34 @@ makeAndSolveZ3ModelM tyenv constraints additional_sexprs output_idents modelpath
 	printLogV 2 $ "constraints_vars = " ++ showIdents constraints_vars
 
 	let
-		varsZ3 = for (filter ((`elem` (constraints_vars ++ output_idents)).fst) tyenv) $ \ (ident,ty) ->
-			SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
-	constraintsZ3 <- concatForM constraints $ \ expr -> do
+		varsZ3 :: [SCompound] = for (filter ((`elem` (constraints_vars ++ output_idents)).fst) tyenv) $ \ (ident,ty) ->
+			SExprLine $ SOnOneLine $ SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
+	constraintsZ3 :: [SCompound] <- concatForM constraints $ \ expr -> do
 		(assert_sexpr,orig_expr) <- expr2SExpr expr
-		return [ SComment ((render.pretty) orig_expr), SExpr [SLeaf "assert", assert_sexpr] ]
+		return [ SEmptyLine,
+			SComment "----------------------------------------------",
+			SComment $ showLocation (lineColNodeInfo orig_expr) ++ " : ",
+		 	SComment $ (render.pretty) orig_expr,
+			SComment "----------------------------------------------",
+			SExprLine $ SExpr [SLeaf "assert", assert_sexpr] ]
 	let
-		outputvarsZ3 = for output_idents $ \ ident -> SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
-		model = [
-			SExpr [SLeaf "set-option", SLeaf ":smt.relevancy", SLeaf "0"],
-			SExpr [SLeaf "set-option", SLeaf ":produce-models", SLeaf "true"] ] ++
+		outputvarsZ3 = for output_idents $ \ ident -> SExprLine $ SOnOneLine $ SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
+		model :: [SCompound] = [
+			SComment $ show traceid,
+			SEmptyLine,
+			SExprLine $ SOnOneLine $ SExpr [SLeaf "set-option", SLeaf ":smt.relevancy", SLeaf "0"],
+			SExprLine $ SOnOneLine $ SExpr [SLeaf "set-option", SLeaf ":produce-models", SLeaf "true"],
+			SEmptyLine ] ++
 			varsZ3 ++
+			[SEmptyLine] ++
 			constraintsZ3 ++
-			additional_sexprs ++
-			[ SExpr [SLeaf "check-sat"] ] ++
+			[SEmptyLine] ++
+			map (SExprLine . SOnOneLine) additional_sexprs ++
+			[SEmptyLine] ++
+			[ SExprLine $ SOnOneLine $ SExpr [SLeaf "check-sat"] ] ++
+			[SEmptyLine] ++
 			outputvarsZ3
-		model_string = unlines $ map show model
+		model_string = unlines $ map (render.pretty) model
 		model_string_linenumbers = unlines $ map (\ (i,l) -> show i ++ ": " ++ l) (zip [1..] (lines model_string))
 	when ("-writeModels" `elem` opts) $ liftIO $ writeFile modelpathfile model_string
 	printLogV 2 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
@@ -1724,6 +1747,7 @@ solveTraceM mb_ret_type traceid trace = do
 		tyenv = createTyEnv trace ++ debug_tyenv
 
 	(model_string,mb_sol) <- makeAndSolveZ3ModelM
+		traceid
 		tyenv
 		(constraints ++ debug_constraints)
 		(for param_names $ \ name -> SExpr [SLeaf "minimize",SLeaf (identToString name)])
