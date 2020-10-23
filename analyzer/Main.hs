@@ -1191,15 +1191,8 @@ substituteBy x y d = everywhere (mkT (substexpr x y)) d
 	substexpr :: (Eq a) => a -> a -> a -> a
 	substexpr x y found_expr | x == found_expr = y
 	substexpr _ _ found_expr                   = found_expr
-{-
-substituteBy :: (Data d) => CExprWithType -> CExprWithType -> d -> d
-substituteBy x y d = everywhere (mkT substexpr) d
-	where
-	substexpr :: CExprWithType -> CExprWithType
-	substexpr found_expr | x == found_expr = y
-	substexpr found_expr                   = found_expr
--}
 
+-- elimInds:
 -- Going from the end of the trace backwards,
 -- for all ASSN ptr = expr where ptr is a pointer (probably expr=&...),
 -- substitute ptr by expr in the already processed trace
@@ -1321,22 +1314,22 @@ createTyEnv trace = concatMap traceitem2tyenv trace
 data SCompound = SExprLine SExpr | SComment String | SEmptyLine deriving Show
 instance Pretty SCompound where
 	pretty SEmptyLine = text ""
-	pretty (SComment s) = text ("; " ++ s)
+	pretty (SComment s) = semi <+> text s
 	pretty (SExprLine sexpr) = pretty sexpr
 
 data SExpr = SExpr [SExpr] | SLeaf String | SOnOneLine SExpr deriving Show
 instance Pretty SExpr where
 	pretty (SOnOneLine sexpr) = prettyOneLine sexpr
 	pretty (SLeaf s) = text s
-	pretty (SExpr (sexpr:sexprs)) = vcat [
-		text "(" <> pretty sexpr,
-		nest 4 $ vcat (map pretty sexprs),
-		text ")" ]
+	pretty sexpr@(SExpr (SLeaf "_" : sexprs)) = prettyOneLine sexpr
+	pretty (SExpr (sexpr:sexprs)) = (lparen <+> pretty sexpr) $+$
+		(nest 4 $ vcat (map pretty sexprs)) $+$
+		rparen
 
 prettyOneLine (SOnOneLine sexpr) = prettyOneLine sexpr
 prettyOneLine (SLeaf s) = text s
 prettyOneLine (SExpr (sexpr:sexprs)) =
-	text "(" <> prettyOneLine sexpr <+> hcat (map prettyOneLine sexprs) <+> text ")"
+	text "(" <> prettyOneLine sexpr <+> hsep (map prettyOneLine sexprs) <+> text ")"
 prettyOneLine s = error $ "In prettyOneLine: " ++ show s
 
 extractType :: CExprWithType -> Type
