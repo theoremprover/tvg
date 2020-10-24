@@ -567,31 +567,35 @@ lookupTypeDefM ident = do
 envs2tyenv :: [Env] -> TyEnv
 envs2tyenv envs = map snd $ concat envs
 
+{-
 type2DeclM :: Type -> CovVecM (CDeclaration NodeInfoWithType)
 type2DeclM ty = do
 	ty' <- elimTypeDefsM ty
 	let anno = (undefNode,ty)
 	typespecs <- case ty' of
-		DirectType tyname _ _ -> case tyname of
-			TyVoid              -> return [ CTypeSpec (CVoidType anno) ]
-			TyIntegral TyChar   -> return [ CTypeSpec (CCharType anno) ]
-			TyIntegral TySChar  -> return [ CTypeSpec (CSignedType anno), CTypeSpec (CCharType anno) ]
-			TyIntegral TyUChar  -> return [ CTypeSpec (CUnsigType anno), CTypeSpec (CCharType anno) ]
-			TyIntegral TyShort  -> return [ CTypeSpec (CShortType anno) ]
-			TyIntegral TyInt    -> return [ CTypeSpec (CIntType anno) ]
-			TyIntegral TyUInt   -> return [ CTypeSpec (CUnsigType anno), CTypeSpec (CIntType anno) ]
-			TyIntegral TyLong   -> return [ CTypeSpec (CLongType anno) ]
-			TyIntegral TyULong  -> return [ CTypeSpec (CUnsigType anno), CTypeSpec (CLongType anno) ]
-			TyFloating TyFloat  -> return [ CTypeSpec (CFloatType anno) ]
-			TyFloating TyDouble -> return [ CTypeSpec (CDoubleType anno) ]
-			TyEnum (EnumTypeRef sueref _) -> do
+		DirectType tyname _ _ -> case (tyname,sizeofIntTy ty') of
+			(TyVoid,_)              -> return [ CTypeSpec (CVoidType anno) ]
+			(TyIntegral TyChar,_)   -> return [ CTypeSpec (CCharType anno) ]
+			(TyIntegral TySChar,_)  -> return [ CTypeSpec (CSignedType anno), CTypeSpec (CCharType anno) ]
+			(TyIntegral TyUChar,_)  -> return [ CTypeSpec (CUnsigType anno), CTypeSpec (CCharType anno) ]
+			(TyIntegral TyShort,_)  -> return [ CTypeSpec (CShortType anno) ]
+			(TyIntegral TyInt,32)    -> return [ CTypeSpec (CIntType anno) ]
+			(TyIntegral TyInt,64)    -> return [ CTypeSpec (CLongType anno) ]
+			(TyIntegral TyUInt,32)   -> return [ CTypeSpec (CUnsigType anno), CTypeSpec (CIntType anno) ]
+			(TyIntegral TyUInt,64)   -> return [ CTypeSpec (CUnsigType anno), CTypeSpec (CLongType anno) ]
+			(TyIntegral TyLong,_)   -> return [ CTypeSpec (CLongType anno) ]
+			(TyIntegral TyULong,_)  -> return [ CTypeSpec (CUnsigType anno), CTypeSpec (CLongType anno) ]
+			(TyFloating TyFloat,_)  -> return [ CTypeSpec (CFloatType anno) ]
+			(TyFloating TyDouble,_) -> return [ CTypeSpec (CDoubleType anno) ]
+			(TyEnum (EnumTypeRef sueref _),_) -> do
 				EnumDef (EnumType (NamedRef enum_ident) enums _ _) <- lookupTagM sueref
 				let ids_inits = for enums $ \ (Enumerator val_ident _ _ _) -> (val_ident,Nothing)
 				return [ CTypeSpec $ CEnumType (CEnum (Just enum_ident) (Just ids_inits) [] anno) anno ]
-			other -> myError $ "type2DeclM " ++ (render.pretty) ty ++ " not implemented"
+			(other,_) -> myError $ "type2DeclM " ++ (render.pretty) ty ++ " not implemented"
 		other -> myError $ "type2DeclM " ++ (render.pretty) ty ++ " not implemented"
 	return $ CDecl typespecs [] anno
 
+-}
 decl2TypeM :: (Show a) => CDeclaration a -> CovVecM Type
 decl2TypeM (CDecl declspecs _ _) = case declspecs of
 	[CTypeSpec (CVoidType _)]      -> return $ DirectType TyVoid noTypeQuals noAttributes
@@ -1322,26 +1326,26 @@ instance Pretty SExpr where
 	pretty (SOnOneLine sexpr) = prettyOneLine sexpr
 	pretty (SLeaf s) = text s
 	pretty sexpr@(SExpr (SLeaf "_" : sexprs)) = prettyOneLine sexpr
-	pretty (SExpr (sexpr:sexprs)) = (lparen <+> pretty sexpr) $+$
+	pretty (SExpr (sexpr:sexprs)) = (lparen <> pretty sexpr) $+$
 		(nest 4 $ vcat (map pretty sexprs)) $+$
 		rparen
 
 prettyOneLine (SOnOneLine sexpr) = prettyOneLine sexpr
 prettyOneLine (SLeaf s) = text s
 prettyOneLine (SExpr (sexpr:sexprs)) =
-	text "(" <> prettyOneLine sexpr <+> hsep (map prettyOneLine sexprs) <+> text ")"
+	lparen <> prettyOneLine sexpr <+> hsep (map prettyOneLine sexprs) <> rparen
 prettyOneLine s = error $ "In prettyOneLine: " ++ show s
 
-extractType :: CExprWithType -> Type
+extractType :: CExprWithType -> Z3_Type
 extractType = snd.annotation
 
 extractNodeInfo :: CExprWithType -> NodeInfo
 extractNodeInfo = fst.annotation
 
-type NodeInfoWithType = (NodeInfo,Type)
---type CBlockItemWithType = CCompoundBlockItem NodeInfoWithType
+type NodeInfoWithType = (NodeInfo,Z3_Type)
 type CExprWithType = CExpression NodeInfoWithType
 
+{-
 implicitOpTypeConversionMax :: Type -> Type -> Type
 implicitOpTypeConversionMax ty1@(DirectType tyname1 _ _) ty2@(DirectType tyname2 _ _) =
 	case arithmeticConversion tyname1 tyname2 of
@@ -1350,12 +1354,12 @@ implicitOpTypeConversionMax ty1@(DirectType tyname1 _ _) ty2@(DirectType tyname2
 			" yielded Nothing!"
 implicitOpTypeConversionMax ty1 ty2 = error $ "implicitOpTypeConversionMax " ++ (render.pretty) ty1 ++ " " ++
 	(render.pretty) ty2 ++ " : there should be a explicit cast!"
+-}
 
 insertImplicitCastsM :: [Env] -> CExpr -> Type -> CovVecM CExprWithType
 insertImplicitCastsM envs cexpr target_ty = do
-	printLogV 0 $ "insertImplicitCastsM [envs] " ++ (render.pretty) cexpr ++ " " ++ (render.pretty) target_ty
-	cexprty <- insert_impl_casts cexpr
-	maybe_cast True cexprty target_ty
+	printLogV 2 $ "insertImplicitCastsM [envs] " ++ (render.pretty) cexpr ++ " " ++ (render.pretty) target_ty
+	insert_impl_casts cexpr >>= maybe_cast True target_ty
 
 	where
 
@@ -1366,42 +1370,43 @@ insertImplicitCastsM envs cexpr target_ty = do
 	insert_impl_casts (CBinary binop expr1 expr2 ni) = do
 		expr1' <- insert_impl_casts expr1
 		expr2' <- insert_impl_casts expr2
-		let common_ty = implicitOpTypeConversionMax (extractType expr1') (extractType expr2')
-		cast_expr1 <- maybe_cast False expr1' common_ty
-		cast_expr2 <- maybe_cast False expr2' common_ty
-		return $ CBinary binop cast_expr1 cast_expr2 (ni,common_ty)
+		let common_ty = max (extractType expr1') (extractType expr2')
+		CBinary <$> pure binop <*>
+			maybe_cast False common_ty expr1' <*>
+			maybe_cast False common_ty expr2' <*>
+			pure (ni,common_ty)
 
 	insert_impl_casts (CCast decl expr ni) = do
-		expr' <- insert_impl_casts expr
-		ty <- decl2TypeM decl
-		ty' <- elimTypeDefsM ty
-		decl' <- decl2TypeM decl >>= type2DeclM
-		return $ CCast decl' expr' (ni,ty')
+		ty' <- decl2TypeM decl >>= elimTypeDefsM
+		CCast <$> pure decl <*>
+			insert_impl_casts expr <*>
+			pure (ni,ty2Z3Type ty')
 
 	insert_impl_casts (CUnary unop expr ni) = do
 		expr' <- insert_impl_casts expr
 		let ty = extractType expr'
-		return $ CUnary unop expr' (ni, case unop of
-			CAdrOp -> ptrType ty
-			CIndOp -> baseType ty
-			_      -> ty )
+		CUnary <$> pure unop <*> pure expr' <*> pure (ni, case (unop,ty) of
+			(CAdrOp, ty) -> Z3_Ptr ty
+			(CIndOp, Z3_Ptr ty) -> ty
+			(_,      ty)        -> ty )
 
 	insert_impl_casts (CAssign assign_op lexpr ass_expr ni) = do
 		lexpr_ty <- inferLExprTypeM tyenv lexpr
-		lexpr' <- transcribeExprM envs lexpr lexpr_ty
-		ass_expr' <- insert_impl_casts ass_expr
-		cast_ass_expr <- maybe_cast True ass_expr' lexpr_ty
-		return $ CAssign assign_op lexpr' cast_ass_expr (ni,lexpr_ty)
+		CAssign <$> pure assign_op <*>
+			transcribeExprM envs lexpr lexpr_ty <*>
+			insert_impl_casts ass_expr <*>
+			pure (ni,lexpr_ty)
+
+-- CONTINUE HERE
 
 	insert_impl_casts (CCond cond_expr (Just then_expr) else_expr ni) = do
-		cond_expr' <- insert_impl_casts cond_expr
 		then_expr' <- insert_impl_casts then_expr
 		else_expr' <- insert_impl_casts else_expr
-		let common_ty = implicitOpTypeConversionMax (extractType then_expr') (extractType else_expr')
-		cast_cond_expr <- maybe_cast False cond_expr' intType
-		cast_then_expr <- maybe_cast False then_expr' common_ty
-		cast_else_expr <- maybe_cast False else_expr' common_ty
-		return $ CCond cast_cond_expr (Just cast_then_expr) cast_else_expr (ni , common_ty)
+		let common_ty = max (extractType then_expr') (extractType else_expr')
+		CCond <$> (insert_impl_casts cond_expr >>= maybe_cast False intType) <*>
+			(Just <$> maybe_cast False common_ty then_expr') <*>
+			maybe_cast False common_ty else_expr' <*>
+			pure (ni , common_ty)
 
 	insert_impl_casts ccall@(CCall fun_expr args ni) = do
 		case fun_expr of
@@ -1413,7 +1418,7 @@ insertImplicitCastsM envs cexpr target_ty = do
 					let VarDecl _ _ arg_ty = getVarDecl paramdecl
 					formalparam_ty' <- elimTypeDefsM arg_ty
 					arg' <- insert_impl_casts arg
-					maybe_cast False arg' formalparam_ty'
+					maybe_cast False formalparam_ty' arg'
 				ret_type' <- elimTypeDefsM ret_type
 				return $ CCall (CVar funident (fun_ni,fun_ty)) args' (ni,ret_type')
 			other -> myError $ "insert_impl_casts " ++ (render.pretty) ccall ++ " not implemented yet!"
@@ -1421,8 +1426,7 @@ insertImplicitCastsM envs cexpr target_ty = do
 	insert_impl_casts cvar@(CVar ident ni) = case lookup ident tyenv of
 		Nothing -> error $ "Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv tyenv
 		Just ty -> do
-			ty' <- elimTypeDefsM ty
-			return $ CVar ident (ni,ty')
+			CVar <$> pure ident <*> ((ni,) <$> elimTypeDefsM ty)
 
 	insert_impl_casts (CConst ctconst) = return $ CConst $ case ctconst of
 		CIntConst cint@(CInteger _ _ flags) ni -> CIntConst cint (ni,flags2IntType flags)
@@ -1430,23 +1434,20 @@ insertImplicitCastsM envs cexpr target_ty = do
 		CCharConst cchar@(CChar _ False) ni    -> CCharConst cchar (ni,charType)
 		CStrConst cstr ni                      -> CStrConst cstr (ni,ptrType charType)
 
-	insert_impl_casts lexpr@(CMember pexpr member_ident isp ni) = do
-		member_ty <- inferLExprTypeM tyenv lexpr
-		pexpr' <- insert_impl_casts pexpr
-		return $ CMember pexpr' member_ident isp (ni,member_ty)
+	insert_impl_casts lexpr@(CMember pexpr member_ident isp ni) =
+		CMember <$> insert_impl_casts pexpr <*> pure member_ident <*> pure isp <*> ((ni,) <$> inferLExprTypeM tyenv lexpr)
 
 	insert_impl_casts other = myError $ "insert_impl_casts " ++ (render.pretty) other ++ " not implemented"
 
 	-- first Bool arg says if downcasting is allowed
-	maybe_cast :: Bool -> CExprWithType -> Type -> CovVecM CExprWithType
-	maybe_cast _ expr to_ty | extractType expr == to_ty = return expr
-	maybe_cast False expr to_ty | implicitOpTypeConversionMax (extractType expr) to_ty == extractType expr =
+	maybe_cast :: Bool -> Type -> CExprWithType -> CovVecM CExprWithType
+	maybe_cast _ to_ty expr | extractType expr == to_ty = return expr
+	maybe_cast False to_ty expr | implicitOpTypeConversionMax (extractType expr) to_ty == extractType expr =
 		error $ "maybe_cast\n    " ++ (render.pretty) expr ++ "\n    " ++ (render.pretty) (extractType expr) ++ "\n    " ++
 			(render.pretty) to_ty ++ "\n    at " ++ (showLocation.lineColNodeInfo) expr ++ " is a downcast that should not occur implicitly!"
-	maybe_cast downcast expr to_ty | downcast || implicitOpTypeConversionMax (extractType expr) to_ty == to_ty = do
-		decl <- type2DeclM to_ty
-		return $ CCast decl expr (nodeInfo expr,to_ty)
-	maybe_cast _ expr to_ty =
+	maybe_cast downcast to_ty expr | downcast || implicitOpTypeConversionMax (extractType expr) to_ty == to_ty = do
+		CCast <$> type2DeclM to_ty <*> pure expr <*> pure (nodeInfo expr,to_ty)
+	maybe_cast _ to_ty expr =
 		error $ "maybe_cast " ++ (render.pretty) expr ++ " " ++ (render.pretty) (extractType expr) ++ " " ++
 			(render.pretty) to_ty ++ " : implicitOpTypeConversionMax " ++ (render.pretty) (extractType expr) ++ " " ++
 			(render.pretty) to_ty ++ " = " ++ (render.pretty) (implicitOpTypeConversionMax (extractType expr) to_ty) ++
@@ -1479,25 +1480,23 @@ expr2SExpr expr = do
 	expr2sexpr' must_be_bool expr = case expr of
 
 		-- returns Bool
-		CUnary CNegOp subexpr _ -> do
-			sexpr <- expr2sexpr True subexpr
-			return $ SExpr [ SLeaf "not", sexpr ]
+		CUnary CNegOp subexpr _ -> SExpr <$> sequence [ pure $ SLeaf "not", expr2sexpr True subexpr ]
 
 		-- all binary operators returning Bool
 		CBinary CNeqOp expr1 expr2 _ -> expr2sexpr False $ expr1 !⩵ expr2
 		CBinary binop expr1 expr2 (_,ty) | binop `elem` [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp] -> do
-			sexpr1 <- expr2sexpr (binop `elem` [CLndOp,CLorOp]) expr1
-			sexpr2 <- expr2sexpr (binop `elem` [CLndOp,CLorOp]) expr2
-			return $ SExpr [ op_sexpr, sexpr1, sexpr2 ]
-			where
-			op_sexpr = case binop of
-				CLndOp -> SLeaf "and"
-				CLorOp -> SLeaf "or"
-				CLeOp  -> SLeaf $ unSignedTy ty "bvult" "bvslt"
-				CGrOp  -> SLeaf $ unSignedTy ty "bvugt" "bvsgt"
-				CLeqOp -> SLeaf $ unSignedTy ty "bvule" "bvsle"
-				CGeqOp -> SLeaf $ unSignedTy ty "bvuge" "bvsge"
-				CEqOp  -> SLeaf "="
+			SExpr <$> sequence [ pure $ SLeaf op_sexpr,
+				expr2sexpr (binop `elem` [CLndOp,CLorOp]) expr1,
+				expr2sexpr (binop `elem` [CLndOp,CLorOp]) expr2 ]
+				where
+				op_sexpr = case binop of
+					CLndOp -> "and"
+					CLorOp -> "or"
+					CLeOp  -> unSignedTy ty "bvult" "bvslt"
+					CGrOp  -> unSignedTy ty "bvugt" "bvsgt"
+					CLeqOp -> unSignedTy ty "bvule" "bvsle"
+					CGeqOp -> unSignedTy ty "bvuge" "bvsge"
+					CEqOp  -> "="
 
 		-- from here on, then expression may not return Bool,
 		-- hence a check has to be made if a (!=0) has to be inserted
@@ -1506,10 +1505,8 @@ expr2SExpr expr = do
 		non_bool_expr -> do
 			case non_bool_expr of
 				-- binary operators returning the operands' type
-				CBinary binop expr1 expr2 (_,ty) -> do
-					sexpr1 <- expr2sexpr False expr1
-					sexpr2 <- expr2sexpr False expr2
-					return $ SExpr [ SLeaf op_sexpr, sexpr1, sexpr2 ]
+				CBinary binop expr1 expr2 (_,ty) ->
+					SExpr <$> sequence [ pure $ SLeaf op_sexpr, expr2sexpr False expr1, expr2sexpr False expr2 ]
 					where
 					op_sexpr = case binop of
 						CMulOp -> "bvmul"
@@ -1532,9 +1529,7 @@ expr2SExpr expr = do
 				CVar ident _ -> return $ SLeaf $ (render.pretty) ident
 		
 				CUnary CPlusOp subexpr _ -> expr2sexpr False subexpr
-				CUnary op subexpr _ -> do
-					sexpr <- expr2sexpr False subexpr
-					return $ SExpr [ SLeaf op_str, sexpr ]
+				CUnary op subexpr _ -> SExpr <$> sequence [ pure $ SLeaf op_str, expr2sexpr False subexpr ]
 					where
 					op_str = case op of
 						CMinOp  -> "bvneg"
@@ -1556,7 +1551,7 @@ expr2SExpr expr = do
 						( Z3_BitVector size_from True, Z3_BitVector size_to _ ) ->
 							SExpr [ SExpr [ SLeaf "_", SLeaf "sign_extend", SLeaf $ show (size_to-size_from) ], sexpr ] 
 				
-						-- UPCAST unsigned (to signed or unsigned): extend with 0s
+						-- UPCAST unsigned (to signed or unsigned): extend with zeros
 						( Z3_BitVector size_from False, Z3_BitVector size_to _ ) ->
 							SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
 				
@@ -1564,11 +1559,12 @@ expr2SExpr expr = do
 							(render.pretty) from_ty ++ " " ++ (render.pretty) to_ty ++ " not implemented!"
 		
 				ccond@(CCond cond (Just then_expr) else_expr _) -> do
-					cond_sexpr <- expr2sexpr True cond
-					then_sexpr <- expr2sexpr False then_expr
-					else_sexpr <- expr2sexpr False else_expr
-					return $ SExpr [ SLeaf "ite", cond_sexpr, then_sexpr, else_sexpr ]
-	
+					SExpr <$> sequence [
+						pure $ SLeaf "ite",
+						expr2sexpr True cond,
+						expr2sexpr False then_expr,
+						expr2sexpr False else_expr ]
+
 				cmember@(CMember _ _ _ _) -> myError $ "expr2sexpr " ++ (render.pretty) cmember ++ " should not occur!"
 			
 				ccall@(CCall _ _ _) -> myError $ "expr2sexpr " ++ (render.pretty) ccall ++ " should not occur!"
@@ -1580,13 +1576,14 @@ expr2SExpr expr = do
 				True  -> SExpr 
 -}
 
-data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Double
-	deriving (Show,Eq,Ord)
--- the derived ordering intentionally coincides with the type casting precedence :-)
+data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Double | Z3_Ptr Z3_Type
+	deriving (Show,Eq,Ord,Data)
+-- Z3_BitVector Int (isUnsigned::Bool), hence
+-- the derived ordering intentionally coincides with the type casting ordering :-)
 
 sizeofIntTy :: Type -> Int
 sizeofIntTy ty@(DirectType tyname _ attrs) = case tyname of
-	TyIntegral intty -> case (intty,attrs2modes attrs) of
+	TyIntegral intty -> case (intty,map to_mode attrs) of
 		(TyChar,[])     -> 8
 		(TySChar,[])    -> 8
 		(TyUChar,[])    -> 8
@@ -1604,9 +1601,6 @@ sizeofIntTy ty@(DirectType tyname _ attrs) = case tyname of
 		(TyULLong,[])   -> 64
 		other           -> error $ "sizeofIntTy " ++ show other ++ " not implemented!"
 	other -> error $ "sizeofIntTy: " ++ (render.pretty) ty ++ " is not an Integral type"
-
-attrs2modes :: [Attr] -> [String]
-attrs2modes attrs = map to_mode attrs
 	where
 	to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
 	to_mode attr = error $ "attrs2modes: unknown attr " ++ (render.pretty) attr
@@ -1625,8 +1619,8 @@ ty2Z3Type ty = case ty of
 	TypeDefType (TypeDefRef _ ty _) _ _ -> ty2Z3Type ty
 	_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
 
-ty2SExpr :: Type -> SExpr
-ty2SExpr ty = case ty2Z3Type ty of
+z3Ty2SExpr :: Z3_Type -> SExpr
+z3Ty2SExpr ty = case ty of
 	Z3_BitVector size _ -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
 	Z3_Float            -> SLeaf "Float32"
 	Z3_Double           -> SLeaf "Float64"
@@ -1654,7 +1648,7 @@ makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents m
 
 	let
 		varsZ3 :: [SCompound] = for (filter ((`elem` (constraints_vars ++ output_idents)).fst) tyenv) $ \ (ident,ty) ->
-			SExprLine $ SOnOneLine $ SExpr [ SLeaf "declare-const", SLeaf (identToString ident), ty2SExpr ty ]
+			SExprLine $ SOnOneLine $ SExpr [ SLeaf "declare-const", SLeaf (identToString ident), z3Ty2SExpr ty ]
 	constraintsZ3 :: [SCompound] <- concatForM constraints $ \ expr -> do
 		(assert_sexpr,orig_expr) <- expr2SExpr expr
 		return [ SEmptyLine,
