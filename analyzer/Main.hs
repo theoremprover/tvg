@@ -504,6 +504,7 @@ instance Eq (CConstant a) where
 	(CFloatConst c1 _) == (CFloatConst c2 _) = c1==c2
 	(CStrConst c1 _)   == (CStrConst c2 _)   = c1==c2
 
+{-
 deriving instance Eq BuiltinType
 
 instance Eq TypeName where
@@ -522,6 +523,7 @@ instance Eq Type where
 	(DirectType tyname1 _ _) == (DirectType tyname2 _ _) = tyname1==tyname2
 	(PtrType ty1 _ _) == (PtrType ty2 _ _) = ty1 == ty2
 	_ == _ = False
+-}
 
 lValueToVarName :: CExprWithType -> String
 lValueToVarName (CVar ident _) = identToString ident
@@ -567,35 +569,6 @@ lookupTypeDefM ident = do
 envs2tyenv :: [Env] -> TyEnv
 envs2tyenv envs = map snd $ concat envs
 
-{-
-type2DeclM :: Type -> CovVecM (CDeclaration NodeInfoWithType)
-type2DeclM ty = do
-	ty' <- elimTypeDefsM ty
-	let anno = (undefNode,ty)
-	typespecs <- case ty' of
-		DirectType tyname _ _ -> case (tyname,sizeofIntTy ty') of
-			(TyVoid,_)              -> return [ CTypeSpec (CVoidType anno) ]
-			(TyIntegral TyChar,_)   -> return [ CTypeSpec (CCharType anno) ]
-			(TyIntegral TySChar,_)  -> return [ CTypeSpec (CSignedType anno), CTypeSpec (CCharType anno) ]
-			(TyIntegral TyUChar,_)  -> return [ CTypeSpec (CUnsigType anno), CTypeSpec (CCharType anno) ]
-			(TyIntegral TyShort,_)  -> return [ CTypeSpec (CShortType anno) ]
-			(TyIntegral TyInt,32)    -> return [ CTypeSpec (CIntType anno) ]
-			(TyIntegral TyInt,64)    -> return [ CTypeSpec (CLongType anno) ]
-			(TyIntegral TyUInt,32)   -> return [ CTypeSpec (CUnsigType anno), CTypeSpec (CIntType anno) ]
-			(TyIntegral TyUInt,64)   -> return [ CTypeSpec (CUnsigType anno), CTypeSpec (CLongType anno) ]
-			(TyIntegral TyLong,_)   -> return [ CTypeSpec (CLongType anno) ]
-			(TyIntegral TyULong,_)  -> return [ CTypeSpec (CUnsigType anno), CTypeSpec (CLongType anno) ]
-			(TyFloating TyFloat,_)  -> return [ CTypeSpec (CFloatType anno) ]
-			(TyFloating TyDouble,_) -> return [ CTypeSpec (CDoubleType anno) ]
-			(TyEnum (EnumTypeRef sueref _),_) -> do
-				EnumDef (EnumType (NamedRef enum_ident) enums _ _) <- lookupTagM sueref
-				let ids_inits = for enums $ \ (Enumerator val_ident _ _ _) -> (val_ident,Nothing)
-				return [ CTypeSpec $ CEnumType (CEnum (Just enum_ident) (Just ids_inits) [] anno) anno ]
-			(other,_) -> myError $ "type2DeclM " ++ (render.pretty) ty ++ " not implemented"
-		other -> myError $ "type2DeclM " ++ (render.pretty) ty ++ " not implemented"
-	return $ CDecl typespecs [] anno
-
--}
 decl2TypeM :: (Show a) => CDeclaration a -> CovVecM Type
 decl2TypeM (CDecl declspecs _ _) = case declspecs of
 	[CTypeSpec (CVoidType _)]      -> return $ DirectType TyVoid noTypeQuals noAttributes
@@ -651,11 +624,13 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 
 -- Extracts the declared identifer and the type from a Declaration
 
+safeZ3IdentifierPrefix = 'a'
+
 declaration2EnvItemM :: Declaration decl => decl -> CovVecM [EnvItem]
 declaration2EnvItemM decl = do
 	let VarDecl (VarName srcident@(Ident srcname i ni) _) _ ty = getVarDecl decl
 	ty' <- elimTypeDefsM ty
-	let srcident' = if "_" `isPrefixOf` srcname then Ident ('a':srcname) i ni else srcident
+	let srcident' = if "_" `isPrefixOf` srcname then Ident (safeZ3IdentifierPrefix:srcname) i ni else srcident
 	return $ [ (srcident,(srcident',ty')) ]
 
 mkIdentWithCNodePos :: (CNode cnode) => cnode -> String -> Ident
@@ -1346,17 +1321,6 @@ extractNodeInfo = fst.annotation
 type NodeInfoWithType = (NodeInfo,Z3_Type)
 type CExprWithType = CExpression NodeInfoWithType
 
-{-
-implicitOpTypeConversionMax :: Type -> Type -> Type
-implicitOpTypeConversionMax ty1@(DirectType tyname1 _ _) ty2@(DirectType tyname2 _ _) =
-	case arithmeticConversion tyname1 tyname2 of
-		Just max_tyname -> DirectType max_tyname noTypeQuals noAttributes
-		Nothing -> error $ "implicitOpTypeConversionMax " ++ (render.pretty) ty1 ++ " " ++ (render.pretty) ty2 ++
-			" yielded Nothing!"
-implicitOpTypeConversionMax ty1 ty2 = error $ "implicitOpTypeConversionMax " ++ (render.pretty) ty1 ++ " " ++
-	(render.pretty) ty2 ++ " : there should be a explicit cast!"
--}
-
 annotateTypesM :: [Env] -> CExpr -> Z3_Type -> CovVecM CExprWithType
 annotateTypesM envs cexpr target_ty = do
 	printLogV 2 $ "annotateTypesM [envs] " ++ (render.pretty) cexpr ++ " " ++ show target_ty
@@ -1405,16 +1369,23 @@ annotateTypesM envs cexpr target_ty = do
 
 	annotate_types ccall@(CCall fun_expr args ni) = do
 		case fun_expr of
-			CVar (Ident "a__builtin_expect" _ _) _ -> annotate_types $ head args
+			CVar (Ident expectfunname _ _) _ | expectfunname == safeZ3IdentifierPrefix : "__builtin_expect" ->
+				annotate_types $ head args
 			CVar (Ident "solver_pragma" _ _) _ -> return $ ⅈ 1
 			CVar funident fun_ni -> do
 				FunDef (VarDecl _ _ fun_ty@(FunctionType (FunType ret_type funparamdecls False) _)) _ _ <- lookupFunM funident
+				when (length args /= length funparamdecls) $
+					myError $ "annotate_types " ++ (render.pretty) ccall ++ " : length args /= length funparamdecls !"
 				args' <- forM (zip args funparamdecls) $ \ (arg,paramdecl) -> do
-					let VarDecl _ _ arg_ty = getVarDecl paramdecl
-					formalparam_ty' <- elimTypeDefsM arg_ty
-					CCast <$> undefined <*> annotate_types arg <*> pure (nodeInfo paramdecl,ty2Z3Type formalparam_ty')
-				ret_type' <- elimTypeDefsM ret_type
-				return $ CCall (CVar funident (fun_ni,ty2Z3Type fun_ty)) args' (ni,ty2Z3Type ret_type')
+					let VarDecl _ _ decl_ty = getVarDecl paramdecl
+					formalparam_ty <- elimTypeDefsM decl_ty >>= ty2Z3TypeM
+					arg' <- annotate_types arg 
+					let arg_ty = extractType arg'
+					return $ case arg_ty==formalparam_ty of
+						True  -> arg'
+						False -> CCast (CDecl [] [] (nodeInfo paramdecl,arg_ty)) arg' (nodeInfo arg,formalparam_ty)
+				ret_type' <- elimTypeDefsM ret_type >>= ty2Z3TypeM
+				return $ CCall (CVar funident (fun_ni,Z3_UnspecifiedType)) args' (ni,ret_type')
 			other -> myError $ "annotate_types " ++ (render.pretty) ccall ++ " not implemented yet!"
 
 	annotate_types cvar@(CVar ident ni) = case lookup ident tyenv of
@@ -1434,22 +1405,6 @@ annotateTypesM envs cexpr target_ty = do
 		CMember <$> annotate_types pexpr <*> pure member_ident <*> pure isp <*> pure (ni,ty2Z3Type lexpr_ty)
 
 	annotate_types other = myError $ "annotate_types " ++ (render.pretty) other ++ " not implemented"
-
-{-
-	-- first Bool arg says if downcasting is allowed
-	maybe_cast :: Bool -> Type -> CExprWithType -> CovVecM CExprWithType
-	maybe_cast _ to_ty expr | extractType expr == to_ty = return expr
-	maybe_cast False to_ty expr | implicitOpTypeConversionMax (extractType expr) to_ty == extractType expr =
-		error $ "maybe_cast\n    " ++ (render.pretty) expr ++ "\n    " ++ (render.pretty) (extractType expr) ++ "\n    " ++
-			(render.pretty) to_ty ++ "\n    at " ++ (showLocation.lineColNodeInfo) expr ++ " is a downcast that should not occur implicitly!"
-	maybe_cast downcast to_ty expr | downcast || implicitOpTypeConversionMax (extractType expr) to_ty == to_ty = do
-		CCast <$> type2DeclM to_ty <*> pure expr <*> pure (nodeInfo expr,to_ty)
-	maybe_cast _ to_ty expr =
-		error $ "maybe_cast " ++ (render.pretty) expr ++ " " ++ (render.pretty) (extractType expr) ++ " " ++
-			(render.pretty) to_ty ++ " : implicitOpTypeConversionMax " ++ (render.pretty) (extractType expr) ++ " " ++
-			(render.pretty) to_ty ++ " = " ++ (render.pretty) (implicitOpTypeConversionMax (extractType expr) to_ty) ++
-			" is not equal to from_ty or to_ty !"
--}
 
 
 type Constraint = CExprWithType
@@ -1480,40 +1435,42 @@ expr2SExpr expr = do
 		-- returns Bool
 		CUnary CNegOp subexpr _ -> SExpr <$> sequence [ pure $ SLeaf "not", expr2sexpr True subexpr ]
 
-		-- all binary operators returning Bool
+		-- all the following binary operators are returning Bool, therefore no "is-not-equal-to-zero" fixup or casting is needed
 		CBinary CNeqOp expr1 expr2 _ -> expr2sexpr False $ expr1 !⩵ expr2
-		CBinary binop expr1 expr2 (_,ty) | binop `elem` [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp] -> do
+		CBinary binop expr1 expr2 (_,to_ty) | binop `elem` [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp] -> do
 			SExpr <$> sequence [ pure $ SLeaf op_sexpr,
-				expr2sexpr (binop `elem` [CLndOp,CLorOp]) expr1,
-				expr2sexpr (binop `elem` [CLndOp,CLorOp]) expr2 ]
+				expr2sexpr (binop `elem` [CLndOp,CLorOp]) $ mb_cast to_ty expr1,
+				expr2sexpr (binop `elem` [CLndOp,CLorOp]) $ mb_cast to_ty expr2 ]
 				where
 				op_sexpr = case binop of
 					CLndOp -> "and"
 					CLorOp -> "or"
-					CLeOp  -> unSignedTy ty "bvult" "bvslt"
-					CGrOp  -> unSignedTy ty "bvugt" "bvsgt"
-					CLeqOp -> unSignedTy ty "bvule" "bvsle"
-					CGeqOp -> unSignedTy ty "bvuge" "bvsge"
+					CLeOp  -> unSignedTy to_ty "bvult" "bvslt"
+					CGrOp  -> unSignedTy to_ty "bvugt" "bvsgt"
+					CLeqOp -> unSignedTy to_ty "bvule" "bvsle"
+					CGeqOp -> unSignedTy to_ty "bvuge" "bvsge"
 					CEqOp  -> "="
 
 		-- from here on, then expression may not return Bool,
-		-- hence a check has to be made if a (!=0) has to be inserted
+		-- hence a check has to be made if a "is-not-equal-to-zero" has to be inserted
 		non_bool_expr | must_be_bool -> expr2sexpr False $ non_bool_expr !⩵ ⅈ 0
 
 		non_bool_expr -> do
 			case non_bool_expr of
 				-- binary operators returning the operands' type
-				CBinary binop expr1 expr2 (_,ty) ->
-					SExpr <$> sequence [ pure $ SLeaf op_sexpr, expr2sexpr False expr1, expr2sexpr False expr2 ]
+				CBinary binop expr1 expr2 (_,to_ty) ->
+					SExpr <$> sequence [ pure $ SLeaf op_sexpr,
+						expr2sexpr False $ mb_cast to_ty expr1,
+						expr2sexpr False $ mb_cast to_ty expr2 ]
 					where
 					op_sexpr = case binop of
 						CMulOp -> "bvmul"
 						CDivOp -> "bvdiv"
 						CAddOp -> "bvadd"
 						CSubOp -> "bvsub"
-						CRmdOp -> unSignedTy ty "bvurem" "bvsrem"
-						CShlOp -> unSignedTy ty "bvshl" "bvshl"
-						CShrOp -> unSignedTy ty "bvlshr" "bvashr"
+						CRmdOp -> unSignedTy to_ty "bvurem" "bvsrem"
+						CShlOp -> unSignedTy to_ty "bvshl" "bvshl"
+						CShrOp -> unSignedTy to_ty "bvlshr" "bvashr"
 						CAndOp -> "bvand"
 						COrOp  -> "bvor"
 						CXorOp -> "bvxor"
@@ -1526,8 +1483,9 @@ expr2SExpr expr = do
 		
 				CVar ident _ -> return $ SLeaf $ (render.pretty) ident
 		
-				CUnary CPlusOp subexpr _ -> expr2sexpr False subexpr
-				CUnary op subexpr _ -> SExpr <$> sequence [ pure $ SLeaf op_str, expr2sexpr False subexpr ]
+				CUnary CPlusOp subexpr (_,to_ty) -> expr2sexpr False $ mb_cast to_ty subexpr
+				CUnary op subexpr (_,to_ty) -> SExpr <$> sequence
+					[ pure $ SLeaf op_str, expr2sexpr False $ mb_cast to_ty subexpr ]
 					where
 					op_str = case op of
 						CMinOp  -> "bvneg"
@@ -1554,53 +1512,48 @@ expr2SExpr expr = do
 				
 						(from_ty,to_ty) -> error $ "mb_cast " ++ show sexpr ++ " " ++
 							show from_ty ++ " " ++ show to_ty ++ " not implemented!"
-		
-				ccond@(CCond cond (Just then_expr) else_expr _) -> do
+
+				ccond@(CCond cond (Just then_expr) else_expr (_,to_ty)) -> do
 					SExpr <$> sequence [
 						pure $ SLeaf "ite",
 						expr2sexpr True cond,
-						expr2sexpr False then_expr,
-						expr2sexpr False else_expr ]
+						expr2sexpr False $ mb_cast to_ty then_expr,
+						expr2sexpr False $ mb_cast to_ty else_expr ]
 
 				cmember@(CMember _ _ _ _) -> myError $ "expr2sexpr " ++ (render.pretty) cmember ++ " should not occur!"
 			
 				ccall@(CCall _ _ _) -> myError $ "expr2sexpr " ++ (render.pretty) ccall ++ " should not occur!"
-		
-				other -> myError $ "expr2SExpr " ++ (render.pretty) other ++ " not implemented" 
-{-
-			return $ case must_be_bool of
-				False -> sexpr
-				True  -> SExpr 
--}
 
-data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Double | Z3_Ptr Z3_Type
+				other -> myError $ "expr2SExpr " ++ (render.pretty) other ++ " not implemented" 
+
+		where
+
+		mb_cast :: Z3_Type -> CExprWithType -> CExprWithType
+		mb_cast to_ty subexpr = case (extractType subexpr,to_ty) of
+			( Z3_BitVector size_from _ , Z3_BitVector size_to _ ) | size_from == size_to -> subexpr
+			( from_ty , to_ty ) | from_ty == to_ty -> subexpr
+			_ -> CCast z3typedecls subexpr (extractNodeInfo subexpr,to_ty)
+				where
+				anno = (extractNodeInfo subexpr,to_ty)
+				z3typedecls = CDecl typespecs [] anno
+					where
+					typespecs = case to_ty of
+						Z3_BitVector size_to unsigned -> 
+							(if unsigned then [ CTypeSpec (CUnsigType anno)] else [] ) ++ case size_to of
+								8                      -> [ CTypeSpec (CCharType anno) ]
+								16                     -> [ CTypeSpec (CShortType anno) ]
+								s | s==intSize         -> [ CTypeSpec (CIntType anno) ]
+								s | s==longIntSize     -> [ CTypeSpec (CLongType anno) ]
+								s | s==longLongIntSize -> [ CTypeSpec (CLongType anno), CTypeSpec (CLongType anno) ]
+						Z3_Float  -> [ CTypeSpec (CFloatType anno) ]
+						Z3_Double -> [ CTypeSpec (CDoubleType anno) ]
+						other -> error $ "mb_cast " ++ show to_ty ++ " " ++ (render.pretty) subexpr ++ " not implemented"
+
+
+data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Double | Z3_Ptr Z3_Type | Z3_UnspecifiedType
 	deriving (Show,Eq,Ord,Data)
 -- Z3_BitVector Int (isUnsigned::Bool), hence
 -- the derived ordering intentionally coincides with the type casting ordering :-)
-
-sizeofIntTy :: Type -> Int
-sizeofIntTy ty@(DirectType tyname _ attrs) = case tyname of
-	TyIntegral intty -> case (intty,map to_mode attrs) of
-		(TyChar,[])     -> 8
-		(TySChar,[])    -> 8
-		(TyUChar,[])    -> 8
-		(TyShort,[])    -> 16
-		(TyUShort,[])   -> 16
-		(TyInt,[])      -> intSize
-		(TyInt,["SI"])  -> 32
-		(TyInt,["DI"])  -> 64
-		(TyUInt,[])     -> intSize
-		(TyUInt,["SI"]) -> 32
-		(TyUInt,["DI"]) -> 64
-		(TyLong,[])     -> longIntSize
-		(TyULong,[])    -> longIntSize
-		(TyLLong,[])    -> 64
-		(TyULLong,[])   -> 64
-		other           -> error $ "sizeofIntTy " ++ show other ++ " not implemented!"
-	other -> error $ "sizeofIntTy: " ++ (render.pretty) ty ++ " is not an Integral type"
-	where
-	to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
-	to_mode attr = error $ "attrs2modes: unknown attr " ++ (render.pretty) attr
 
 ty2Z3Type :: Type -> Z3_Type
 ty2Z3Type ty = case ty of
@@ -1614,13 +1567,44 @@ ty2Z3Type ty = case ty of
 		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
 	PtrType _ _ _ -> Z3_BitVector 16 True
 	TypeDefType (TypeDefRef _ ty _) _ _ -> ty2Z3Type ty
+--	FunctionType (FunType ret_type funparamdecls False) _ -> Z3_Fun 
 	_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
+
+	where
+
+	sizeofIntTy :: Type -> Int
+	sizeofIntTy ty@(DirectType tyname _ attrs) = case tyname of
+		TyIntegral intty -> case (intty,map to_mode attrs) of
+			(TyChar,[])     -> 8
+			(TySChar,[])    -> 8
+			(TyUChar,[])    -> 8
+			(TyShort,[])    -> 16
+			(TyUShort,[])   -> 16
+			(TyInt,[])      -> intSize
+			(TyInt,["SI"])  -> 32
+			(TyInt,["DI"])  -> 64
+			(TyUInt,[])     -> intSize
+			(TyUInt,["SI"]) -> 32
+			(TyUInt,["DI"]) -> 64
+			(TyLong,[])     -> longIntSize
+			(TyULong,[])    -> longIntSize
+			(TyLLong,[])    -> 64
+			(TyULLong,[])   -> 64
+			other           -> error $ "sizeofIntTy " ++ show other ++ " not implemented!"
+		other -> error $ "sizeofIntTy: " ++ (render.pretty) ty ++ " is not an Integral type"
+		where
+		to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
+		to_mode attr = error $ "attrs2modes: unknown attr " ++ (render.pretty) attr
+
+ty2Z3TypeM :: Type -> CovVecM Z3_Type 
+ty2Z3TypeM ty = return $ ty2Z3Type ty
 
 z3Ty2SExpr :: Z3_Type -> SExpr
 z3Ty2SExpr ty = case ty of
 	Z3_BitVector size _ -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
 	Z3_Float            -> SLeaf "Float32"
 	Z3_Double           -> SLeaf "Float64"
+	other               -> error $ "z3Ty2SExpr " ++ show other ++ " should not appear!"
 
 type Solution = [(String,SolutionVal)]
 
@@ -1655,7 +1639,8 @@ makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents m
 			SComment "----------------------------------------------",
 			SExprLine $ SExpr [SLeaf "assert", assert_sexpr] ]
 	let
-		outputvarsZ3 = for output_idents $ \ ident -> SExprLine $ SOnOneLine $ SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
+		outputvarsZ3 = for output_idents $ \ ident -> SExprLine $ SOnOneLine $
+			SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
 		model :: [SCompound] = [
 			SComment $ show traceid,
 			SEmptyLine,
