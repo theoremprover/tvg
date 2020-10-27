@@ -1550,7 +1550,7 @@ z3typedecls to_ty anno = CDecl typespecs [] anno
 		other -> error $ "z3typedecls " ++ show to_ty ++ " <anno> not implemented"
 
 
-data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Double | Z3_Ptr Z3_Type | Z3_UnspecifiedType
+data Z3_Type = Z3_Bool | Z3_BitVector Int Bool | Z3_Float | Z3_Double | Z3_Ptr Z3_Type | Z3_UnspecifiedType
 	deriving (Show,Eq,Ord,Data)
 -- Z3_BitVector Int (isUnsigned::Bool), hence
 -- the derived ordering intentionally coincides with the type casting ordering :-)
@@ -1604,6 +1604,7 @@ z3Ty2SExpr ty = case ty of
 	Z3_BitVector size _ -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
 	Z3_Float            -> SLeaf "Float32"
 	Z3_Double           -> SLeaf "Float64"
+	Z3_Bool             -> SLeaf "Bool"
 	other               -> error $ "z3Ty2SExpr " ++ show other ++ " should not appear!"
 
 type Solution = [(String,SolutionVal)]
