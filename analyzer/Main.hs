@@ -75,13 +75,13 @@ ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
 flags2IntType flags = integral (getIntType flags) :: Type
 string2FloatType flags = floating (getFloatType flags) :: Type
 
-showInitialTrace = True
+showInitialTrace = False
 solveIt = True
 showOnlySolutions = True
-don'tShowTraces = False
+don'tShowTraces = True
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
-outputVerbosity = 2
+outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
@@ -906,7 +906,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 								case filter is_ass_to_ass_var trace of
 									[] -> return (Nothing,"infer_loopingsM: There is no assignment to the loop counter " ++ (render.pretty) counter_var ++ " prior to the loop")
 									ass@(Assignment _ i_0) : _ | null (fvar i_0)-> do
-										printLogV 1 $ "last assignment to loop counter is " ++ show ass
+										printLogV 2 $ "last assignment to loop counter is " ++ show ass
 										let i_n :: CExprWithType -> CExprWithType = case ass_expr of
 											-- for all binops where the following holds (Linearity?):
 											-- i_n = i_(n-1) `binop` c  =>  i_n = i_0 `binop` c
@@ -1083,7 +1083,7 @@ transcribeExprM envs expr target_ty = do
 -- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> Type -> CovVecM [(CExprWithType,Trace)]
 translateExprM envs expr0 target_ty = do
-	printLogV 1 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ (render.pretty) target_ty
+	printLogV 2 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ (render.pretty) target_ty
 
 	-- extract a list of all calls from the input expression (including fun-identifier, the arguments, and NodeInfo)
 	let	
@@ -1102,11 +1102,11 @@ translateExprM envs expr0 target_ty = do
 	funcalls_traces :: [(NodeInfo,[(Trace,CExprWithType)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
 		expanded_params_args <- expand_params_argsM paramdecls args
-		printLogV 1 $ "body = " ++ (render.pretty) body
-		printLogV 1 $ "expanded_params_args = " ++ show expanded_params_args
+		printLogV 2 $ "body = " ++ (render.pretty) body
+		printLogV 2 $ "expanded_params_args = " ++ show expanded_params_args
 		-- β-reduction of the arguments:
 		let body' = replace_param_with_arg expanded_params_args body
-		printLogV 1 $ "body'= " ++ (render.pretty) body'
+		printLogV 2 $ "body'= " ++ (render.pretty) body'
 		Left funtraces <- unfoldTracesM ret_ty False [] envs [] [ [ CBlockStmt body' ] ]
 		forM_ funtraces $ \ tr -> printLogV 2 $ "funtrace = " ++ showTrace tr
 		let funtraces_rets = concat $ for funtraces $ \case
@@ -1331,7 +1331,7 @@ annotateTypesM envs cexpr target_ty = do
 	tyenv = envs2tyenv envs
 
 	annotate_types :: CExpr -> CovVecM CExprWithType
-	
+
 	annotate_types (CBinary binop expr1 expr2 ni) = do
 		expr1' <- annotate_types expr1
 		expr2' <- annotate_types expr2
@@ -1339,8 +1339,8 @@ annotateTypesM envs cexpr target_ty = do
 		CBinary <$> pure binop <*> pure expr1' <*> pure expr2' <*> pure (ni,common_ty)
 
 	annotate_types (CCast decl expr ni) = do
-		ty' <- decl2TypeM decl >>= elimTypeDefsM
-		CCast <$> pure (CDecl [] [] (undefNode,ty2Z3Type ty')) <*> annotate_types expr <*> pure (ni,ty2Z3Type ty')
+		ty' <- decl2TypeM decl >>= elimTypeDefsM >>= return.ty2Z3Type
+		CCast <$> pure (z3typedecls ty' (ni,ty')) <*> annotate_types expr <*> pure (ni,ty')
 
 	annotate_types (CUnary unop expr ni) = do
 		expr' <- annotate_types expr
@@ -1532,22 +1532,22 @@ expr2SExpr expr = do
 		mb_cast to_ty subexpr = case (extractType subexpr,to_ty) of
 			( Z3_BitVector size_from _ , Z3_BitVector size_to _ ) | size_from == size_to -> subexpr
 			( from_ty , to_ty ) | from_ty == to_ty -> subexpr
-			_ -> CCast z3typedecls subexpr (extractNodeInfo subexpr,to_ty)
-				where
-				anno = (extractNodeInfo subexpr,to_ty)
-				z3typedecls = CDecl typespecs [] anno
-					where
-					typespecs = case to_ty of
-						Z3_BitVector size_to unsigned -> 
-							(if unsigned then [ CTypeSpec (CUnsigType anno)] else [] ) ++ case size_to of
-								8                      -> [ CTypeSpec (CCharType anno) ]
-								16                     -> [ CTypeSpec (CShortType anno) ]
-								s | s==intSize         -> [ CTypeSpec (CIntType anno) ]
-								s | s==longIntSize     -> [ CTypeSpec (CLongType anno) ]
-								s | s==longLongIntSize -> [ CTypeSpec (CLongType anno), CTypeSpec (CLongType anno) ]
-						Z3_Float  -> [ CTypeSpec (CFloatType anno) ]
-						Z3_Double -> [ CTypeSpec (CDoubleType anno) ]
-						other -> error $ "mb_cast " ++ show to_ty ++ " " ++ (render.pretty) subexpr ++ " not implemented"
+			_ -> CCast (z3typedecls to_ty (extractNodeInfo subexpr,to_ty)) subexpr (extractNodeInfo subexpr,to_ty)
+ 
+z3typedecls :: Z3_Type -> NodeInfoWithType -> CDeclaration NodeInfoWithType
+z3typedecls to_ty anno = CDecl typespecs [] anno
+	where
+	typespecs = case to_ty of
+		Z3_BitVector size_to unsigned ->
+			(if unsigned then [ CTypeSpec (CUnsigType anno)] else [] ) ++ case size_to of
+				8                      -> [ CTypeSpec (CCharType anno) ]
+				16                     -> [ CTypeSpec (CShortType anno) ]
+				s | s==intSize         -> [ CTypeSpec (CIntType anno) ]
+				s | s==longIntSize     -> [ CTypeSpec (CLongType anno) ]
+				s | s==longLongIntSize -> [ CTypeSpec (CLongType anno), CTypeSpec (CLongType anno) ]
+		Z3_Float  -> [ CTypeSpec (CFloatType anno) ]
+		Z3_Double -> [ CTypeSpec (CDoubleType anno) ]
+		other -> error $ "z3typedecls " ++ show to_ty ++ " <anno> not implemented"
 
 
 data Z3_Type = Z3_BitVector Int Bool | Z3_Float | Z3_Double | Z3_Ptr Z3_Type | Z3_UnspecifiedType
