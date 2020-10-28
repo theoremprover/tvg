@@ -1321,6 +1321,8 @@ extractNodeInfo = fst.annotation
 type NodeInfoWithType = (NodeInfo,Z3_Type)
 type CExprWithType = CExpression NodeInfoWithType
 
+isBoolBinop op = op `elem` [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp]
+
 annotateTypesM :: [Env] -> CExpr -> Z3_Type -> CovVecM CExprWithType
 annotateTypesM envs cexpr target_ty = do
 	printLogV 2 $ "annotateTypesM [envs] " ++ (render.pretty) cexpr ++ " " ++ show target_ty
@@ -1335,7 +1337,9 @@ annotateTypesM envs cexpr target_ty = do
 	annotate_types (CBinary binop expr1 expr2 ni) = do
 		expr1' <- annotate_types expr1
 		expr2' <- annotate_types expr2
-		let common_ty = max (extractType expr1') (extractType expr2')
+		let common_ty = case isBoolBinop binop of
+			False -> max (extractType expr1') (extractType expr2')
+			True  -> Z3_Bool
 		CBinary <$> pure binop <*> pure expr1' <*> pure expr2' <*> pure (ni,common_ty)
 
 	annotate_types (CCast decl expr ni) = do
@@ -1346,7 +1350,8 @@ annotateTypesM envs cexpr target_ty = do
 		expr' <- annotate_types expr
 		let ty = extractType expr'
 		CUnary <$> pure unop <*> pure expr' <*> pure (ni, case (unop,ty) of
-			(CAdrOp, ty) -> Z3_Ptr ty
+			(CNegOp, _)         -> Z3_Bool
+			(CAdrOp, ty)        -> Z3_Ptr ty
 			(CIndOp, Z3_Ptr ty) -> ty
 			(_,      ty)        -> ty )
 
@@ -1411,7 +1416,7 @@ type Constraint = CExprWithType
 
 expr2SExpr :: Constraint -> CovVecM (SExpr,Constraint)
 expr2SExpr expr = do
-	sexpr <- expr2sexpr True expr
+	sexpr <- expr2sexpr expr
 	return (sexpr,expr)
 
 	where
@@ -1423,26 +1428,34 @@ expr2SExpr expr = do
 		Z3_BitVector _ is_unsigned -> if is_unsigned then unsigned else signed
 		_ -> error $ "unSigned: ty of " ++ (render.pretty) expr ++ " is no bitvector!"
 
-	expr2sexpr :: Bool -> CExprWithType -> CovVecM SExpr
-	expr2sexpr b cexpr = do
-		printLogV 2 $ "expr2sexpr " ++ show b ++ " " ++ (render.pretty) cexpr
-		expr2sexpr' b cexpr
+	expr2sexpr :: CExprWithType -> CovVecM SExpr
+	expr2sexpr cexpr = do
+		printLogV 2 $ "expr2sexpr " ++ (render.pretty) cexpr
+		expr2sexpr' cexpr
 
-	expr2sexpr' :: Bool -> CExprWithType -> CovVecM SExpr
+	expr2sexpr' :: CExprWithType -> CovVecM SExpr
 
-	expr2sexpr' must_be_bool expr = case expr of
+	expr2sexpr' expr = case expr of
 
-		-- returns Bool
-		CUnary CNegOp subexpr _ -> SExpr <$> sequence [ pure $ SLeaf "not", expr2sexpr True subexpr ]
-
-		-- all the following binary operators are returning Bool, therefore no "is-not-equal-to-zero" fixup or casting is needed
-		CBinary CNeqOp expr1 expr2 _ -> expr2sexpr False $ expr1 !⩵ expr2
-		CBinary binop expr1 expr2 (_,to_ty) | binop `elem` [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp] -> do
-			SExpr <$> sequence [ pure $ SLeaf op_sexpr,
-				expr2sexpr (binop `elem` [CLndOp,CLorOp]) $ mb_cast to_ty expr1,
-				expr2sexpr (binop `elem` [CLndOp,CLorOp]) $ mb_cast to_ty expr2 ]
+		CBinary binop expr1 expr2 (_,to_ty) | isBoolBinop binop -> do
+			let to_ty' = case to_ty of
+				Z3_Bool -> max (extractType expr1) (extractType expr2)
+				other   -> other
+			SExpr <$> sequence [ pure $ SLeaf (op_sexpr to_ty'),
+				mb_cast to_ty' expr1,
+				mb_cast to_ty' expr2 ]
 				where
-				op_sexpr = case binop of
+				op_sexpr to_ty = case binop of
+					CMulOp -> "bvmul"
+					CDivOp -> "bvdiv"
+					CAddOp -> "bvadd"
+					CSubOp -> "bvsub"
+					CRmdOp -> unSignedTy to_ty "bvurem" "bvsrem"
+					CShlOp -> unSignedTy to_ty "bvshl" "bvshl"
+					CShrOp -> unSignedTy to_ty "bvlshr" "bvashr"
+					CAndOp -> "bvand"
+					COrOp  -> "bvor"
+					CXorOp -> "bvxor"
 					CLndOp -> "and"
 					CLorOp -> "or"
 					CLeOp  -> unSignedTy to_ty "bvult" "bvslt"
@@ -1451,89 +1464,72 @@ expr2SExpr expr = do
 					CGeqOp -> unSignedTy to_ty "bvuge" "bvsge"
 					CEqOp  -> "="
 
-		-- from here on, then expression may not return Bool,
-		-- hence a check has to be made if a "is-not-equal-to-zero" has to be inserted
-		non_bool_expr | must_be_bool -> expr2sexpr False $ non_bool_expr !⩵ ⅈ 0
+		cconst@(CConst ctconst) -> return $ case ctconst of
+			CIntConst intconst (_,ty) -> make_intconstant ty (getCInteger intconst)
+			CCharConst cchar _        -> SLeaf $ (render.pretty) cconst
+			CFloatConst cfloat _      -> SLeaf $ (render.pretty) cconst
+			CStrConst cstr _          -> SLeaf $ (render.pretty) cconst
 
-		non_bool_expr -> do
-			case non_bool_expr of
-				-- binary operators returning the operands' type
-				CBinary binop expr1 expr2 (_,to_ty) ->
-					SExpr <$> sequence [ pure $ SLeaf op_sexpr,
-						expr2sexpr False $ mb_cast to_ty expr1,
-						expr2sexpr False $ mb_cast to_ty expr2 ]
-					where
-					op_sexpr = case binop of
-						CMulOp -> "bvmul"
-						CDivOp -> "bvdiv"
-						CAddOp -> "bvadd"
-						CSubOp -> "bvsub"
-						CRmdOp -> unSignedTy to_ty "bvurem" "bvsrem"
-						CShlOp -> unSignedTy to_ty "bvshl" "bvshl"
-						CShrOp -> unSignedTy to_ty "bvlshr" "bvashr"
-						CAndOp -> "bvand"
-						COrOp  -> "bvor"
-						CXorOp -> "bvxor"
+		CVar ident _ -> return $ SLeaf $ (render.pretty) ident
+
+		CUnary CPlusOp subexpr (_,to_ty) -> mb_cast to_ty subexpr
+		CUnary op subexpr (_,to_ty) -> SExpr <$> sequence
+			[ pure $ SLeaf op_str, mb_cast to_ty subexpr ]
+			where
+			op_str = case op of
+				CMinOp  -> "bvneg"
+				CCompOp -> "bvnot"
+				_ -> error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
+
+		CCast _ subexpr (_,to_ty) -> mb_cast to_ty subexpr
+
+		ccond@(CCond cond (Just then_expr) else_expr (_,to_ty)) -> do
+			SExpr <$> sequence [
+				pure $ SLeaf "ite",
+				expr2sexpr cond,
+				mb_cast to_ty then_expr,
+				mb_cast to_ty else_expr ]
+
+		cmember@(CMember _ _ _ _) -> myError $ "expr2sexpr " ++ (render.pretty) cmember ++ " should not occur!"
 	
-				cconst@(CConst ctconst) -> return $ case ctconst of
-					CIntConst intconst (_,ty) -> make_intconstant ty (getCInteger intconst)
-					CCharConst cchar _        -> SLeaf $ (render.pretty) cconst
-					CFloatConst cfloat _      -> SLeaf $ (render.pretty) cconst
-					CStrConst cstr _          -> SLeaf $ (render.pretty) cconst
-		
-				CVar ident _ -> return $ SLeaf $ (render.pretty) ident
-		
-				CUnary CPlusOp subexpr (_,to_ty) -> expr2sexpr False $ mb_cast to_ty subexpr
-				CUnary op subexpr (_,to_ty) -> SExpr <$> sequence
-					[ pure $ SLeaf op_str, expr2sexpr False $ mb_cast to_ty subexpr ]
-					where
-					op_str = case op of
-						CMinOp  -> "bvneg"
-						CCompOp -> "bvnot"
-						_ -> error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
-		
-				CCast _ subexpr (_,to_ty) -> do
-					sexpr <- expr2sexpr False subexpr
-					return $ case ( extractType subexpr, to_ty ) of
-						-- SAMECAST: identity
-						( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from == size_to -> sexpr
-				
-						-- DOWNCAST: extract bits (modulo)
-						( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from > size_to ->
-							SExpr [ SExpr [ SLeaf "_", SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0"], sexpr ]
-				
-						-- UPCAST signed (to signed or unsigned): extend sign bit
-						( Z3_BitVector size_from True, Z3_BitVector size_to _ ) ->
-							SExpr [ SExpr [ SLeaf "_", SLeaf "sign_extend", SLeaf $ show (size_to-size_from) ], sexpr ] 
-				
-						-- UPCAST unsigned (to signed or unsigned): extend with zeros
-						( Z3_BitVector size_from False, Z3_BitVector size_to _ ) ->
-							SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
-				
-						(from_ty,to_ty) -> error $ "mb_cast " ++ show sexpr ++ " " ++
-							show from_ty ++ " " ++ show to_ty ++ " not implemented!"
+		ccall@(CCall _ _ _) -> myError $ "expr2sexpr " ++ (render.pretty) ccall ++ " should not occur!"
 
-				ccond@(CCond cond (Just then_expr) else_expr (_,to_ty)) -> do
-					SExpr <$> sequence [
-						pure $ SLeaf "ite",
-						expr2sexpr True cond,
-						expr2sexpr False $ mb_cast to_ty then_expr,
-						expr2sexpr False $ mb_cast to_ty else_expr ]
-
-				cmember@(CMember _ _ _ _) -> myError $ "expr2sexpr " ++ (render.pretty) cmember ++ " should not occur!"
-			
-				ccall@(CCall _ _ _) -> myError $ "expr2sexpr " ++ (render.pretty) ccall ++ " should not occur!"
-
-				other -> myError $ "expr2SExpr " ++ (render.pretty) other ++ " not implemented" 
+		other -> myError $ "expr2SExpr " ++ (render.pretty) other ++ " not implemented" 
 
 		where
 
-		mb_cast :: Z3_Type -> CExprWithType -> CExprWithType
-		mb_cast to_ty subexpr = case (extractType subexpr,to_ty) of
-			( Z3_BitVector size_from _ , Z3_BitVector size_to _ ) | size_from == size_to -> subexpr
-			( from_ty , to_ty ) | from_ty == to_ty -> subexpr
-			_ -> CCast (z3typedecls to_ty (extractNodeInfo subexpr,to_ty)) subexpr (extractNodeInfo subexpr,to_ty)
- 
+		mb_cast :: Z3_Type -> CExprWithType -> CovVecM SExpr
+		mb_cast to_ty expr = do
+			sexpr <- expr2sexpr expr
+			case (extractType expr,to_ty) of
+				( Z3_Bool, Z3_Bool ) -> return sexpr
+
+				-- Casting from Bool
+				( Z3_Bool, Z3_BitVector size_from _ ) ->
+					return $ SExpr [ SLeaf "ite", sexpr, make_intconstant to_ty 0, make_intconstant to_ty 1 ]
+
+				-- Casting to Bool
+				( from_ty@(Z3_BitVector size_from _) , Z3_Bool ) -> return $
+					SExpr [ SLeaf "not", SExpr [ SLeaf "=", sexpr, make_intconstant from_ty 0 ]]
+
+				-- SAMECAST: identity
+				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from == size_to -> return sexpr
+		
+				-- DOWNCAST: extract bits (modulo)
+				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from > size_to -> return $ 
+					SExpr [ SExpr [ SLeaf "_", SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0"], sexpr ]
+		
+				-- UPCAST signed (to signed or unsigned): extend sign bit
+				( Z3_BitVector size_from True, Z3_BitVector size_to _ ) | size_from < size_to -> return $ 
+					SExpr [ SExpr [ SLeaf "_", SLeaf "sign_extend", SLeaf $ show (size_to-size_from) ], sexpr ] 
+		
+				-- UPCAST unsigned (to signed or unsigned): extend with zeros
+				( Z3_BitVector size_from False, Z3_BitVector size_to _ ) | size_from < size_to -> return $ 
+					SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
+		
+				(from_ty,to_ty) -> myError $ "mb_cast " ++ show to_ty ++ " " ++
+					(render.pretty) expr ++ " " ++ " not implemented!"
+
 z3typedecls :: Z3_Type -> NodeInfoWithType -> CDeclaration NodeInfoWithType
 z3typedecls to_ty anno = CDecl typespecs [] anno
 	where
