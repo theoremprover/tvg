@@ -1354,7 +1354,8 @@ type CExprWithType = CExpression NodeInfoWithType
 -- all these operators return Bool
 isBoolResultBinop = (`elem` [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp])
 
--- adds Z3 types into the annotation, making a CExprWithType from a CExpr
+-- adds Z3 types into the annotation that the expressions should have
+-- (making a CExprWithType from a CExpr)
 annotateTypesM :: [Env] -> CExpr ->CovVecM CExprWithType
 annotateTypesM envs cexpr = do
 	printLogV 2 $ "annotateTypesM [envs] " ++ (render.pretty) cexpr
@@ -1465,17 +1466,18 @@ expr2SExpr expr = mb_cast Z3_Bool expr
 		printLogV 2 $ "expr2sexpr " ++ (render.pretty) cexpr
 		expr2sexpr' cexpr
 
+	-- Inserts implicit casts and turns an CExprWithType into an SExpr
 	expr2sexpr' :: CExprWithType -> CovVecM SExpr
 
 	expr2sexpr' expr = case expr of
 
 		CBinary CNeqOp expr1 expr2 ni -> expr2sexpr $ expr1 !⩵ expr2
 		CBinary binop expr1 expr2 (_,to_ty) -> do
-			let arg_to_ty = case to_ty of
-				Z3_Bool -> case binop `elem` [CLndOp,CLorOp] of
-					True  -> Z3_Bool
-					False -> max (extractType expr1) (extractType expr2)
-				other   -> other
+			let arg_to_ty = case binop `elem` [CLndOp,CLorOp] of
+				-- Maybe cast the arguments of && and || to Bool
+				True  -> Z3_Bool
+				-- For all the others, maybe cast the args to their common type
+				False -> max (extractType expr1) (extractType expr2)
 			SExpr <$> sequence [ pure $ SLeaf (op_sexpr arg_to_ty),
 				mb_cast arg_to_ty expr1,
 				mb_cast arg_to_ty expr2 ]
