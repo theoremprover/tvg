@@ -1390,7 +1390,7 @@ annotateTypesM envs cexpr = do
 	annotate_types (CAssign assign_op lexpr ass_expr ni) = do
 		lexpr_z3ty <- inferLExprTypeM tyenv lexpr >>= return.ty2Z3Type
 		CAssign <$> pure assign_op <*>
-			transcribeExprM envs lexpr <*>
+			annotate_types lexpr <*>
 			annotate_types ass_expr <*>
 			pure (ni,lexpr_z3ty)
 
