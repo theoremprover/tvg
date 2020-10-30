@@ -1024,34 +1024,34 @@ unfoldTraces1M _ _ _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pre
 
 
 infix 4 ⩵
-(⩵) :: CExpression a -> CExpression a -> CExpression a
+(⩵) :: CExpr -> CExpr -> CExpr
 a ⩵ b = CBinary CEqOp a b (annotation a)
 
 infix 4 !⩵
-(!⩵) :: CExpression a -> CExpression a -> CExpression a
+(!⩵) :: CExpr -> CExpr -> CExpr
 a !⩵ b = not_c $ CBinary CEqOp a b (annotation a)
 
 infix 4 ⩾
-(⩾) :: CExpression a -> CExpression a -> CExpression a
+(⩾) :: CExpr -> CExpr -> CExpr
 a ⩾ b = CBinary CGeqOp a b (annotation a)
 
 infixr 3 ⋏
-(⋏) :: CExpression a -> CExpression a -> CExpression a
+(⋏) :: CExpr -> CExpr -> CExpr
 a ⋏ b = CBinary CLndOp a b (annotation a)
 
 infixr 2 ⋎
-(⋎) :: CExpression a -> CExpression a -> CExpression a
+(⋎) :: CExpr -> CExpr -> CExpr
 a ⋎ b = CBinary CLorOp a b (annotation a)
 
 infixr 7 ∗
-(∗) :: CExpression a -> CExpression a -> CExpression a
+(∗) :: CExpr -> CExpr -> CExpr
 a ∗ b = CBinary CMulOp a b (annotation a)
 
 infixr 6 −
-(−) :: CExpression a -> CExpression a -> CExpression a
+(−) :: CExpr -> CExpr -> CExpr
 a − b = CBinary CSubOp a b (annotation a)
 
-not_c :: CExpression a -> CExpression a
+not_c :: CExpr -> CExpr
 not_c e = CUnary CNegOp e (annotation e)
 
 class CreateInt a where
@@ -1359,10 +1359,14 @@ isBoolResultBinop = (`elem` [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqO
 -- (making a CExprWithType from a CExpr), also insertsimplicit casts
 annotateTypesM :: [Env] -> CExpr -> Z3_Type -> CovVecM CExprWithType
 annotateTypesM envs cexpr target_ty = do
-	printLogV 2 $ "annotateTypesM [envs] " ++ (render.pretty) cexpr
 	cexpr' <- annotate_types cexpr
-	return $ mb_cast target_ty cexpr'
+	let ret = mb_cast target_ty cexpr'
+	printLogV 1 $ "\n# " ++ (showLocation.lineColNodeInfo) cexpr
+	printLogV 1 $ "annotateTypesM [envs]\n" ++ (render.pretty) cexpr ++ "\ntarget_ty = " ++ show target_ty
+	printLogV 1 $ "==>\n" ++ (render.pretty) ret ++ "\n"
 
+	return ret
+	
 	where
 
 	tyenv = envs2tyenv envs
@@ -1511,11 +1515,11 @@ expr2SExpr expr = expr2sexpr expr
 		castexpr@(CCast _ subexpr (_,to_ty)) -> do
 			sexpr <- expr2sexpr subexpr
 			return $ case (extractType subexpr,to_ty) of
-		
+
 				-- Casting from Bool
 				( Z3_Bool, Z3_BitVector size_from _ ) ->
 					SExpr [ SLeaf "ite", sexpr, make_intconstant to_ty 0, make_intconstant to_ty 1 ]
-		
+
 				-- Casting to Bool
 				( from_ty@(Z3_BitVector size_from _) , Z3_Bool ) ->
 					SExpr [ SLeaf "not", SExpr [ SLeaf "=", sexpr, make_intconstant from_ty 0 ]]
