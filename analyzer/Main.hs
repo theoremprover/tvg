@@ -556,7 +556,7 @@ instance Eq Type where
 	_ == _ = False
 -}
 
-lValueToVarName :: CExprWithType -> String
+lValueToVarName :: (Pretty (CExpression a)) => CExpression a -> String
 lValueToVarName (CVar ident _) = identToString ident
 lValueToVarName (CMember ptrexpr member isptr _) =
 	lValueToVarName ptrexpr ++ (if isptr then "_ARROW_" else "_DOT_") ++ identToString member
@@ -683,12 +683,12 @@ identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 
 -- Recursively create all "interface" variables for the top level function to be analyzed
 
-createInterfaceM :: [(Ident,Type)] -> CovVecM [(EnvItem,CExprWithType)]
+createInterfaceM :: [(Ident,Type)] -> CovVecM [(EnvItem,CExpr)]
 createInterfaceM ty_env = concatForM ty_env $ \ (srcident,ty) ->do
 	ty' <- elimTypeDefsM ty
-	createInterfaceFromExprM (CVar srcident (nodeInfo srcident,ty2Z3Type ty')) ty'
+	createInterfaceFromExprM (CVar srcident (nodeInfo srcident)) ty'
 
-createInterfaceFromExprM :: CExprWithType -> Type -> CovVecM [(EnvItem,CExprWithType)]
+createInterfaceFromExprM :: CExpr -> Type -> CovVecM [(EnvItem,CExpr)]
 createInterfaceFromExprM expr ty = do
 	ty' <- elimTypeDefsM ty
 	case ty' of
@@ -717,7 +717,7 @@ createInterfaceFromExprM expr ty = do
 
 		where
 	
-		prepend_plainvar :: Type -> CovVecM [(EnvItem,CExprWithType)] -> CovVecM [(EnvItem,CExprWithType)]
+		prepend_plainvar :: Type -> CovVecM [(EnvItem,CExpr)] -> CovVecM [(EnvItem,CExpr)]
 		prepend_plainvar ty' rest_m = do
 			let srcident = internalIdent $ lValueToVarName expr
 			rest <- rest_m
@@ -801,12 +801,12 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 				False -> return $ Left [Return ret_expr' : trace']
 				True  -> do
 					ret_var_expr <- createInterfaceM [(internalIdent returnval_var_name,ret_type)]
-					ret_env_expr <- createInterfaceFromExprM ret_expr' ret_type
+					ret_env_expr <- createInterfaceFromExprM ret_expr ret_type
 					when (length ret_var_expr /= length ret_env_expr) $ error "unfoldTraces1M CReturn: length ret_var_expr /= length ret_env_expr !"
-					let ret_trace = concat $ for (zip ret_var_expr ret_env_expr) $
-						\ ( ((_,(ret_var_ident,ret_var_ty)),_) , (_,ret_member_expr)) -> [
-							Condition Nothing $ CVar ret_var_ident (undefNode,ty2Z3Type ret_var_ty) ⩵ ret_member_expr,
-							NewDeclaration (ret_var_ident,ret_var_ty) ]
+					ret_trace <- concatForM (zip ret_var_expr ret_env_expr) $
+						\ ( ((_,(ret_var_ident,ret_var_ty)),_) , (ret_var_envitem,ret_member_expr)) -> do
+							ret_val_cond <- transcribeExprM ([ret_var_envitem]:envs) Z3_Bool $ CVar ret_var_ident undefNode ⩵ ret_member_expr
+							return [ Condition Nothing ret_val_cond, NewDeclaration (ret_var_ident,ret_var_ty) ]
 					analyzeTraceM (Just ret_type) (Return ret_expr' : (ret_trace ++ trace'))
 						>>= return.Right
 
@@ -930,6 +930,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 							intercalate " , " (map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") body_assigns)
 
 						case body_assigns :: [(CExprWithType,CExprWithType)] of
+{-
 							[ (counter_var@(CVar ass_ident _),ass_expr) ] -> do
 								let
 									is_ass_to_ass_var (Assignment (CVar ident _) _) | ident==ass_ident = True
@@ -974,6 +975,8 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 											Just sol@[(_,IntVal n)] -> (Just [n], "Found looping solution n = " ++ show sol)
 											_                       -> (Nothing,"n_looping: Strange mb_sol=" ++ show mb_sol)
 									ass -> return (Nothing,"infer_loopingsM: " ++ show ass ++ " is not assigning a constant.")
+-}
+
 							other -> return (Nothing,"body contains not exactly one assignment of a variable from the condition " ++ (render.pretty) cond ++ ":\n" ++
 								unlines (map (\(ass_var,_) -> (render.pretty) ass_var) other))
 						
