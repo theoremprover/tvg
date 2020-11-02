@@ -1021,7 +1021,7 @@ unfoldTraces1M ret_type toplevel break_stack (_:restenvs) trace ([]:rest2) = do
 	unfoldTracesM ret_type toplevel break_stack' restenvs trace rest2
 
 unfoldTraces1M ret_type False _ _ trace [] = return $ Left [trace]
-unfoldTraces1M ret_type True  _ _ trace [] = analyzeTraceM (Just ret_type) trace >>= return.Right
+unfoldTraces1M ret_type True  _ envs trace [] = analyzeTraceM (Just ret_type) trace >>= return.Right
 
 unfoldTraces1M _ _ _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
@@ -1741,7 +1741,7 @@ solveTraceM mb_ret_type traceid trace = do
 			is_debug_output _ = []
 		(debug_idents,debug_constraints,debug_tyenv) = unzip3 $ for (zip [1..] debug_outputs) $ \ (i,(name,expr,ty)) ->
 			let name_id = internalIdent (name ++ "_" ++ show i) in
-				(name_id,CVar name_id (undefNode, ty2Z3Type ty) ⩵ expr,(name_id,ty))
+			(name_id,CBinary CEqOp (CVar name_id (annotation expr)) expr (annotation expr),(name_id,ty))
 
 		tyenv = createTyEnv trace ++ debug_tyenv
 
