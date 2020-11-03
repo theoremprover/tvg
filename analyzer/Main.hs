@@ -771,8 +771,8 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	CIf cond then_stmt mb_else_stmt ni -> do
 		let then_trace_m real_cond = transids real_cond Z3_Bool trace $ \ (cond',trace') -> do
 			unfoldTracesM ret_type toplevel break_stack envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
-		let else_trace_m real_cond = transids real_cond Z3_Bool trace $ \ (cond',trace') -> do
-			let not_cond = Condition (Just False) (CUnary CNegOp cond' (annotation cond'))
+		let else_trace_m real_cond = transids (CUnary CNegOp real_cond (annotation real_cond)) Z3_Bool trace $ \ (ncond',trace') -> do			
+			let not_cond = Condition (Just False) ncond'
 			case mb_else_stmt of
 				Nothing        -> unfoldTracesM ret_type toplevel break_stack envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM ret_type toplevel break_stack envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
@@ -804,8 +804,8 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 					ret_env_expr <- createInterfaceFromExprM ret_expr ret_type
 					when (length ret_var_expr /= length ret_env_expr) $ error "unfoldTraces1M CReturn: length ret_var_expr /= length ret_env_expr !"
 					ret_trace <- concatForM (zip ret_var_expr ret_env_expr) $
-						\ ( ((_,(ret_var_ident,ret_var_ty)),_) , (ret_var_envitem,ret_member_expr)) -> do
-							ret_val_cond <- transcribeExprM ([ret_var_envitem]:envs) Z3_Bool $ CVar ret_var_ident undefNode ⩵ ret_member_expr
+						\ ( (rve@(_,(ret_var_ident,ret_var_ty)),_) , (_,ret_member_expr)) -> do
+							ret_val_cond <- transcribeExprM ([rve]:envs) Z3_Bool $ CVar ret_var_ident undefNode ⩵ ret_member_expr
 							return [ Condition Nothing ret_val_cond, NewDeclaration (ret_var_ident,ret_var_ty) ]
 					analyzeTraceM (Just ret_type) (Return ret_expr' : (ret_trace ++ trace'))
 						>>= return.Right
@@ -816,7 +816,9 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			to_dbg_output (name_id,ty) = DebugOutput ("solver_debug_" ++ identToString name_id) (CVar name_id (undefNode,ty2Z3Type ty),ty)
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
+--		printLogV 1 $ "inferLExprTypeM (envs2tyenv envs) (renameVars envs lexpr) ..."
 		lexpr_ty <- inferLExprTypeM (envs2tyenv envs) (renameVars envs lexpr) >>= return.ty2Z3Type
+--		printLogV 1 $ "inferLExprTypeM."
 		transids assigned_expr' lexpr_ty trace $ \ (assigned_expr'',trace') -> do
 			[(lexpr',trace'')] <- translateExprM envs lexpr lexpr_ty
 			unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
