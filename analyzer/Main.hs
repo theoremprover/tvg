@@ -277,15 +277,6 @@ instance CNode TraceElem where
 instance CNode NodeInfoWithType where
 	nodeInfo (ni,_) = ni
 
-instance Pretty NodeInfo where
-	pretty ni = text $ "line " ++ show line ++ ", col " ++ show col
-		where
-		(line,col) = lineColNodeInfo ni
-
-{-
-instance Pretty CExprWithType where
-	pretty cexpr = pretty $ fmap fst cexpr
--}
 instance Pretty CExprWithType where
     pretty (CBinary op expr1 expr2 (_,ty)) = prettyCE (pretty op) [pretty expr1,pretty expr2] ty
     pretty (CCast decl expr (_,ty)) = prettyCE (lparen <> (text $ show ty) <> rparen) [pretty expr] ty
@@ -316,8 +307,10 @@ instance Pretty SExpr where
 		rparen
 -}
 
+{-
 instance (Pretty a) => Pretty [a] where
 	pretty xs = brackets $ hcat $ punctuate comma (map pretty xs)
+-}
 
 instance Show TraceElem where
 	show te = ( case te of
@@ -326,7 +319,7 @@ instance Show TraceElem where
 		(NewDeclaration (lval,ty)) -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
 		(Return exprs)             -> "RET  " ++ (render.pretty) exprs
 		(DebugOutput varname (expr,_)) -> "DBGOUT " ++ varname ++ " " ++ (render.pretty) expr
-		) ++ "  (" ++ (render.pretty) (nodeInfo te) ++ ")"
+		) ++ "  (" ++ (showLocation.lineColNodeInfo) te ++ ")"
 
 showTrace :: Trace -> String
 showTrace trace = unlines $ concatMap show_te trace where
@@ -535,27 +528,6 @@ instance Eq (CConstant a) where
 	(CFloatConst c1 _) == (CFloatConst c2 _) = c1==c2
 	(CStrConst c1 _)   == (CStrConst c2 _)   = c1==c2
 
-{-
-deriving instance Eq BuiltinType
-
-instance Eq TypeName where
-	(TyEnum _) == (TyIntegral TyInt) = True
-	(TyIntegral TyInt) == (TyEnum _) = True
-	TyVoid                == TyVoid                = True
-	(TyIntegral intty1)   == (TyIntegral intty2)   = intty1==intty2
-	(TyFloating floatty1) == (TyFloating floatty2) = floatty1==floatty2
-	(TyComplex floatty1)  == (TyComplex floatty2)  = floatty1==floatty2
-	(TyComp (CompTypeRef sueref1 _ _)) == (TyComp (CompTypeRef sueref2 _ _)) = sueref1==sueref2
-	(TyEnum (EnumTypeRef sueref1 _))   == (TyEnum (EnumTypeRef sueref2 _))   = sueref1==sueref2
-	(TyBuiltin builtinty1)             == (TyBuiltin builtinty2)             = builtinty1==builtinty2
-	_ == _ = False
-
-instance Eq Type where
-	(DirectType tyname1 _ _) == (DirectType tyname2 _ _) = tyname1==tyname2
-	(PtrType ty1 _ _) == (PtrType ty2 _ _) = ty1 == ty2
-	_ == _ = False
--}
-
 lValueToVarName :: (Pretty (CExpression a)) => CExpression a -> String
 lValueToVarName (CVar ident _) = identToString ident
 lValueToVarName (CMember ptrexpr member isptr _) =
@@ -755,7 +727,6 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			collect_stmts (_:rest) = collect_stmts rest
 
 			case_replacement = collect_stmts cbis
-		printLogV 1 $ (render.pretty) case_replacement
 		unfoldTracesM ret_type toplevel (length bstss : break_stack) envs trace ( (
 			CBlockDecl (CDecl [CTypeSpec $ CLongType cond_ni]
 				[(Just $ CDeclr (Just cond_var_ident) [] Nothing [] cond_ni, Just $ CInitExpr condexpr cond_ni, Nothing)] cond_ni) :
@@ -772,6 +743,8 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 		let then_trace_m real_cond = transids real_cond Z3_Bool trace $ \ (cond',trace') -> do
 			unfoldTracesM ret_type toplevel break_stack envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
 		let else_trace_m real_cond = transids (CUnary CNegOp real_cond (annotation real_cond)) Z3_Bool trace $ \ (ncond',trace') -> do			
+			printLogV 1 $ "### real_cond = " ++ (render.pretty) real_cond
+			printLogV 1 $ "### ncond'    = " ++ (render.pretty) ncond'
 			let not_cond = Condition (Just False) ncond'
 			case mb_else_stmt of
 				Nothing        -> unfoldTracesM ret_type toplevel break_stack envs (not_cond : trace') ( rest : rest2 )
@@ -816,9 +789,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			to_dbg_output (name_id,ty) = DebugOutput ("solver_debug_" ++ identToString name_id) (CVar name_id (undefNode,ty2Z3Type ty),ty)
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
---		printLogV 1 $ "inferLExprTypeM (envs2tyenv envs) (renameVars envs lexpr) ..."
 		lexpr_ty <- inferLExprTypeM (envs2tyenv envs) (renameVars envs lexpr) >>= return.ty2Z3Type
---		printLogV 1 $ "inferLExprTypeM."
 		transids assigned_expr' lexpr_ty trace $ \ (assigned_expr'',trace') -> do
 			[(lexpr',trace'')] <- translateExprM envs lexpr lexpr_ty
 			unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
@@ -1115,7 +1086,7 @@ transcribeExprM envs target_ty expr = do
 	annotateTypesM envs (renameVars envs expr) target_ty
 
 -- Translates all identifiers in an expression to fresh ones,
--- and expands function calls.
+-- and expands function calls. Finally, transcribeExprM.
 -- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> Z3_Type -> CovVecM [(CExprWithType,Trace)]
 translateExprM envs expr0 target_ty = do
