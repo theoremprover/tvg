@@ -274,8 +274,6 @@ instance CNode TraceElem where
 	nodeInfo (Return expr)              = extractNodeInfo expr
 	nodeInfo (DebugOutput _ _)          = undefNode
 
-instance CNode NodeInfoWithType where
-	nodeInfo (ni,_) = ni
 
 instance Pretty CExprWithType where
     pretty (CBinary op expr1 expr2 (_,ty)) = prettyCE (pretty op) [pretty expr1,pretty expr2] ty
@@ -284,7 +282,12 @@ instance Pretty CExprWithType where
     pretty (CMember expr ident deref (_,ty)) = prettyCE (text "")
     	[pretty expr,text (if deref then "->" else ".") <+> pretty ident] ty
     pretty (CVar ident (_,ty)) = pretty ident <+> text "::" <+> text (show ty)
-    pretty (CConst constant) = pretty (fmap fst constant) <+> text "::" <+> text ((show.snd.annotation) constant)
+    pretty (CConst constant) = ( text $ case constant of
+		CIntConst cint _ -> show $ getCInteger cint
+		CCharConst cchar _ -> show $ getCChar cchar
+		CFloatConst cfloat _ -> show cfloat
+		CStrConst cstr _ -> show $ getCString cstr ) <+>
+		text "::" <+> text ((show.snd.annotation) constant)
 
 prettyCE head subs ty =
 	lparen <+> head $+$
@@ -528,7 +531,7 @@ instance Eq (CConstant a) where
 	(CFloatConst c1 _) == (CFloatConst c2 _) = c1==c2
 	(CStrConst c1 _)   == (CStrConst c2 _)   = c1==c2
 
-lValueToVarName :: (Pretty (CExpression a)) => CExpression a -> String
+lValueToVarName :: (Show a) => CExpression a -> String
 lValueToVarName (CVar ident _) = identToString ident
 lValueToVarName (CMember ptrexpr member isptr _) =
 	lValueToVarName ptrexpr ++ (if isptr then "_ARROW_" else "_DOT_") ++ identToString member
@@ -544,7 +547,7 @@ lValueToVarName (CBinary binop expr1 expr2 _) =
 			Just s -> s
 lValueToVarName (CConst (CIntConst cint _)) = (if i<0 then "m" else "") ++ show (abs i) where
 	i = getCInteger cint
-lValueToVarName lval = error $ "lValueToVarName " ++ (render.pretty) lval ++ " not implemented!"
+lValueToVarName lval = error $ "lValueToVarName " ++ show lval ++ " not implemented!"
 
 type TyEnvItem = (Ident,Type)
 instance Pretty TyEnvItem where
@@ -1156,7 +1159,7 @@ translateExprM envs expr0 target_ty = do
 				-- substitute the function call by the return expression
 				expr' = everywhere (mkT subst_ret_expr) expr
 				subst_ret_expr :: CExprWithType -> CExprWithType
-				subst_ret_expr expr = if nodeInfo expr == ni then ret_expr else expr
+				subst_ret_expr expr = if extractNodeInfo expr == ni then ret_expr else expr
 --			printLog $ "fun_trace=" ++ show fun_trace
 			create_combinations expr' (fun_trace++trace) rest
 
@@ -1259,7 +1262,7 @@ createSymbolicVarsM res_trace new_idents (ti : rest) = do
 	
 	create_var :: CExprWithType -> Type -> StateT [(Ident,Type)] CovVecM CExprWithType
 	create_var expr ty = do
-		let newident = mkIdentWithCNodePos expr $ lValueToVarName expr
+		let newident = mkIdentWithCNodePos (extractNodeInfo expr) $ lValueToVarName expr
 		when (not $ newident `elem` new_idents) $
 			modify ((newident,ty) : )
 		return $ CVar newident (annotation expr)
@@ -1281,7 +1284,7 @@ createSymbolicVarsM res_trace new_idents (ti : rest) = do
 
 	--  for a.member   create    a_DOT_member :: member_type
 	createsymvar_m expr@(CMember (CVar a_ident _) member False ni) = do
-		return $ CVar (mkIdentWithCNodePos expr $ lValueToVarName expr) ni
+		return $ CVar (mkIdentWithCNodePos (extractNodeInfo expr) $ lValueToVarName expr) ni
 
 	createsymvar_m expr@(CUnary CAdrOp (CVar a_ident _) _) = do
 		let Just ty = lookup a_ident $ createTyEnv res_trace
@@ -1339,6 +1342,7 @@ annotateTypesM envs cexpr target_ty = do
 	let ret = mb_cast target_ty cexpr'
 	printLogV 1 $ "\n# " ++ (showLocation.lineColNodeInfo) cexpr
 	printLogV 1 $ "annotateTypesM [envs]\n" ++ (render.pretty) cexpr ++ "\ntarget_ty = " ++ show target_ty
+	printLogV 1 $ "\n--- " ++ show cexpr ++ "\n"
 	printLogV 1 $ "==>\n" ++ (render.pretty) ret ++ "\n"
 
 	return ret
@@ -1635,7 +1639,7 @@ makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents m
 		assert_sexpr <- expr2SExpr expr
 		return $ [ SEmptyLine,
 			SComment "----------------------------------------------",
-			SComment $ showLocation (lineColNodeInfo expr) ++ " : ",
+			SComment $ showLocation (lineColNodeInfo $ extractNodeInfo expr) ++ " : ",
 			SComment $ (render.pretty) (fmap fst expr) ] ++
 		 	map SComment (lines $ (render.pretty) expr) ++
 			[ SComment "----------------------------------------------",
