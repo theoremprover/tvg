@@ -746,15 +746,15 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 		let then_trace_m real_cond = transids real_cond Z3_Bool trace $ \ (cond',trace') -> do
 			unfoldTracesM ret_type toplevel break_stack envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
 		let else_trace_m real_cond = transids (CUnary CNegOp real_cond (annotation real_cond)) Z3_Bool trace $ \ (ncond',trace') -> do			
-			printLogV 1 $ "### real_cond = " ++ (render.pretty) real_cond
-			printLogV 1 $ "### ncond'    = " ++ (render.pretty) ncond'
+			printLogV 2 $ "### real_cond = " ++ (render.pretty) real_cond
+			printLogV 2 $ "### ncond'    = " ++ (render.pretty) ncond'
 			let not_cond = Condition (Just False) ncond'
 			case mb_else_stmt of
 				Nothing        -> unfoldTracesM ret_type toplevel break_stack envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM ret_type toplevel break_stack envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 		case recognizeAnnotation cond of
 			(real_cond,Just (ns,num_reached)) | ns!!num_reached /= 12 -> do
-				printLogV 1 $ "Recognized IF annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond
+				printLogV 2 $ "Recognized IF annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond
 				case ns!!num_reached of
 					1 -> then_trace_m real_cond
 					2 -> else_trace_m real_cond
@@ -818,7 +818,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 
  	CWhile cond body False ni -> do
  		(mb_unrolling_depth,msg) <- infer_loopingsM cond body
- 		printLogV 1 msg
+ 		printLogV 2 msg
  		unroll_loopM $ case mb_unrolling_depth of
 			Nothing -> uNROLLING_STRATEGY
 			Just ns -> ns
@@ -830,7 +830,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			False -> return $ Left []
 			True  -> return $ Right False
 		unroll_loopM (depth:depths) = do
-			printLogV 1 $ "unroll_loopM " ++ show depth
+			printLogV 2 $ "unroll_loopM " ++ show depth
 			unfoldTracesM ret_type toplevel break_stack envs trace ((unroll cond depth ++ rest) : rest2 ) >>= \case
 				Right True  -> return $ Right True
 				Right False -> unroll_loopM depths
@@ -1095,7 +1095,8 @@ translateExprM :: [Env] -> CExpr -> Z3_Type -> CovVecM [(CExprWithType,Trace)]
 translateExprM envs expr0 target_ty = do
 	printLogV 2 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ show target_ty
 
-	-- extract a list of all calls from the input expression (including fun-identifier, the arguments, and NodeInfo)
+	-- extract a list of all calls from the input expression expr0
+	-- (including fun-identifier, the arguments, and NodeInfo)
 	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
@@ -1109,6 +1110,7 @@ translateExprM envs expr0 target_ty = do
 		to_call expr = return expr
 	(expr,calls) <- runStateT (everywhereM (mkM to_call) expr0) []
 
+	-- construct all possible traces in called (sub-)functions and return them together with the returned expression
 	funcalls_traces :: [(NodeInfo,[(Trace,CExprWithType)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
 		expanded_params_args <- expand_params_argsM paramdecls args
@@ -1124,10 +1126,8 @@ translateExprM envs expr0 target_ty = do
 			tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
 		return (ni,funtraces_rets) 
 
-	expr' <- transcribeExprM envs target_ty expr 
-
-	printLogV 1 $ "creating combinations..."
-	create_combinations expr' [] funcalls_traces
+	printLogV 2 $ "creating combinations..."
+	create_combinations expr [] funcalls_traces
 
 	where
 
@@ -1151,15 +1151,22 @@ translateExprM envs expr0 target_ty = do
 		subst_ni :: NodeInfo -> NodeInfo
 		subst_ni _ = nodeInfo expr0
 
-	create_combinations :: CExprWithType -> Trace -> [(NodeInfo,[(Trace,CExprWithType)])] -> CovVecM [(CExprWithType,Trace)]
-	create_combinations expr trace [] = return [(set_node_info expr,trace)]
+	-- iterate over all possible traces in a called (sub-)function and concatenate their traces 
+	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExprWithType)])] -> CovVecM [(CExprWithType,Trace)]
+	-- return the completely fixed expression 
+	create_combinations expr trace [] = do
+		expr' <- transcribeExprM envs target_ty expr
+		return [(set_node_info expr',trace)]
+	-- replace the place-holder in the expr with the return expression of each sub-function's trace,
+	-- concatenating all possibilities (but it does not matter which one, since we only fully cover the top level function)
 	create_combinations expr trace ((ni,tes):rest) = do
 		concatForM tes $ \ (fun_trace,ret_expr) -> do
 			let
 				-- substitute the function call by the return expression
-				expr' = everywhere (mkT subst_ret_expr) expr
-				subst_ret_expr :: CExprWithType -> CExprWithType
-				subst_ret_expr expr = if extractNodeInfo expr == ni then ret_expr else expr
+				expr' = everywhere (mkT subst_ret_expr) expr where
+					subst_ret_expr :: CExpr -> CExpr
+					-- this functor mapping "fmap fst ret_expr" is the MOAH
+					subst_ret_expr expr = if nodeInfo expr == ni then fmap fst ret_expr else expr
 --			printLog $ "fun_trace=" ++ show fun_trace
 			create_combinations expr' (fun_trace++trace) rest
 
@@ -1340,10 +1347,10 @@ annotateTypesM :: [Env] -> CExpr -> Z3_Type -> CovVecM CExprWithType
 annotateTypesM envs cexpr target_ty = do
 	cexpr' <- annotate_types cexpr
 	let ret = mb_cast target_ty cexpr'
-	printLogV 1 $ "\n# " ++ (showLocation.lineColNodeInfo) cexpr
-	printLogV 1 $ "annotateTypesM [envs]\n" ++ (render.pretty) cexpr ++ "\ntarget_ty = " ++ show target_ty
-	printLogV 1 $ "\n--- " ++ show cexpr ++ "\n"
-	printLogV 1 $ "==>\n" ++ (render.pretty) ret ++ "\n"
+	printLogV 2 $ "\n# " ++ (showLocation.lineColNodeInfo) cexpr
+	printLogV 2 $ "annotateTypesM [envs]\n" ++ (render.pretty) cexpr ++ "\ntarget_ty = " ++ show target_ty
+	printLogV 2 $ "\n--- " ++ show cexpr ++ "\n"
+	printLogV 2 $ "==>\n" ++ (render.pretty) ret ++ "\n"
 
 	return ret
 	
@@ -1359,7 +1366,9 @@ annotateTypesM envs cexpr target_ty = do
 		expr1' <- annotate_types expr1
 		expr2' <- annotate_types expr2
 		let
-			common_ty = max (extractType expr1') (extractType expr2')
+			common_ty = case binop `elem` [CLndOp,CLorOp] of
+				False -> max (extractType expr1') (extractType expr2')
+				True  -> Z3_Bool
 			result_ty = case isBoolResultBinop binop of
 				True  -> Z3_Bool
 				False -> common_ty
@@ -1665,7 +1674,7 @@ makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents m
 		model_string = unlines $ map (render.pretty) model
 		model_string_linenumbers = unlines $ map (\ (i,l) -> show i ++ ": " ++ l) (zip [1..] (lines model_string))
 	when ("-writeModels" `elem` opts) $ liftIO $ writeFile modelpathfile model_string
-	printLogV 2 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
+	printLogV 1 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
 	printStatsM
 	printLogV 1 $ "Running model " ++ takeFileName modelpathfile ++ "..."
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
