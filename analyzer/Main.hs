@@ -1507,7 +1507,7 @@ expr2SExpr expr = expr2sexpr expr
 
 				-- Casting from Bool
 				( Z3_Bool, Z3_BitVector size_from _ ) ->
-					SExpr [ SLeaf "ite", sexpr, make_intconstant to_ty 0, make_intconstant to_ty 1 ]
+					SExpr [ SLeaf "ite", sexpr, make_intconstant to_ty 1, make_intconstant to_ty 0 ]
 
 				-- Casting to Bool
 				( from_ty@(Z3_BitVector size_from _) , Z3_Bool ) ->
