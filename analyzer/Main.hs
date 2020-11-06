@@ -77,7 +77,7 @@ string2FloatType flags = floating (getFloatType flags) :: Type
 
 showInitialTrace = False
 solveIt = True
-showModels = False
+showModels = True
 showOnlySolutions = True
 don'tShowTraces = True
 checkSolutions = solveIt && True
@@ -311,10 +311,8 @@ instance Pretty SExpr where
 		rparen
 -}
 
-{-
 instance (Pretty a) => Pretty [a] where
 	pretty xs = brackets $ hcat $ punctuate comma (map pretty xs)
--}
 
 instance Show TraceElem where
 	show te = ( case te of
@@ -748,8 +746,8 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 		let then_trace_m real_cond = transids real_cond Z3_Bool trace $ \ (cond',trace') -> do
 			unfoldTracesM ret_type toplevel break_stack envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
 		let else_trace_m real_cond = transids (CUnary CNegOp real_cond (annotation real_cond)) Z3_Bool trace $ \ (ncond',trace') -> do			
-			printLogV 2 $ "### real_cond = " ++ (render.pretty) real_cond
-			printLogV 2 $ "### ncond'    = " ++ (render.pretty) ncond'
+			printLogV 1 $ "### real_cond = " ++ (render.pretty) real_cond
+			printLogV 1 $ "### ncond'    = " ++ (render.pretty) ncond'
 			let not_cond = Condition (Just False) ncond'
 			case mb_else_stmt of
 				Nothing        -> unfoldTracesM ret_type toplevel break_stack envs (not_cond : trace') ( rest : rest2 )
@@ -965,6 +963,8 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	transids :: CExpr -> Z3_Type -> Trace -> ((CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
 	transids expr ty trace cont = do
 		additional_expr_traces :: [(CExprWithType,Trace)] <- translateExprM envs expr ty
+		printLogV 1 $ "### transids " ++ (render.pretty) expr
+		printLogV 1 $ "### -> additional_expr_traces = " ++ (render.pretty) (map fst additional_expr_traces)
 		case toplevel of
 			False -> do
 				conts :: [UnfoldTracesRet] <- forM additional_expr_traces $ \ (expr',trace') -> do
@@ -1163,14 +1163,15 @@ translateExprM envs expr0 target_ty = do
 		return [(set_node_info expr',trace)]
 	-- replace the place-holder in the expr with the return expression of each sub-function's trace,
 	-- concatenating all possibilities (but it does not matter which one, since we only fully cover the top level function)
-	create_combinations expr trace ((ni,tes):rest) = do
+	create_combinations expr trace ((tes_ni,tes):rest) = do
 		concatForM tes $ \ (fun_trace,ret_expr) -> do
 			let
 				-- substitute the function call by the return expression
 				expr' = everywhere (mkT subst_ret_expr) expr where
 					subst_ret_expr :: CExpr -> CExpr
 					-- this functor mapping "fmap fst ret_expr" is the MOAH
-					subst_ret_expr expr = if nodeInfo expr == ni then fmap fst ret_expr else expr
+					subst_ret_expr (CConst (CStrConst (CString ni_s False) ni)) | tes_ni == ni = fmap fst ret_expr
+					subst_ret_expr expr = expr
 --			printLog $ "fun_trace=" ++ show fun_trace
 			create_combinations expr' (fun_trace++trace) rest
 

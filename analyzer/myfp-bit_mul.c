@@ -809,11 +809,24 @@ _fpmul_parts ( fp_number_type *  a,
   fractype low = 0;
   fractype high = 0;
 
+/*
+    a->class = 3;
+    a->sign= 1;
+    a->normal_exp=1;
+    a->fraction.ll= 1000000000;
+
+    b->class = 3;
+    b->sign= 1;
+    b->normal_exp=1;
+    b->fraction.ll= 1207959552;
+*/
+
   if (solver_pragma(2) && isnan (a))
     {
       a->sign = a->sign != b->sign;
       return a;
     }
+
   if (solver_pragma(2) && isnan (b))
     {
       b->sign = a->sign != b->sign;
@@ -846,11 +859,8 @@ _fpmul_parts ( fp_number_type *  a,
       return b;
     }
 
-  /* Calculate the mantissa by multiplying both numbers to get a
-     twice-as-wide number.  */
   {
 
-    /* Multiplying two USIs to get a UDI, we're safe.  */
     {
       UDItype answer = (UDItype)a->fraction.ll * (UDItype)b->fraction.ll;
 #ifdef CALC
@@ -883,38 +893,31 @@ printf(" low  = %u\n", low);
         }
       high >>= 1;
     }
+
   while (solver_pragma(2) && high < IMPLICIT_1)
     {
       tmp->normal_exp--;
       high <<= 1;
-      if (solver_pragma(2,2) && (low & FRACHIGH)) high |= 1;
+      if (solver_pragma(2,2) && (low & FRACHIGH))
+      {
+        high |= 1;
+      }
       low <<= 1;
-//      solver_debug(high);
     }
 
   if (solver_pragma(1) && (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB))
     {
       if (solver_pragma(2) && high & (1 << NGARDS))
 	{
-	  /* Because we're half way, we would round to even by adding
-	     GARDROUND + 1, except that's also done in the packing
-	     function, and rounding twice will lose precision and cause
-	     the result to be too far off.  Example: 32-bit floats with
-	     bit patterns 0xfff * 0x3f800400 ~= 0xfff (less than 0.5ulp
-	     off), not 0x1000 (more than 0.5ulp off).  */
 	}
       else if (solver_pragma(2) && low)
 	{
-	  /* We're a further than half way by a small amount corresponding
-	     to the bits set in "low".  Knowing that, we round here and
-	     not in pack_d, because there we don't have "low" available
-	     anymore.  */
 	  high += GARDROUND + 1;
 
-	  /* Avoid further rounding in pack_d.  */
 	  high &= ~ (fractype) GARDMASK;
     }
     }
+
   tmp->fraction.ll = high;
   tmp->class = CLASS_NUMBER;
 #ifdef CALC
