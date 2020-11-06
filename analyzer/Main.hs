@@ -77,7 +77,7 @@ string2FloatType flags = floating (getFloatType flags) :: Type
 
 showInitialTrace = False
 solveIt = True
-showModels = True
+showModels = False
 showOnlySolutions = True
 don'tShowTraces = True
 checkSolutions = solveIt && True
@@ -746,8 +746,8 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 		let then_trace_m real_cond = transids real_cond Z3_Bool trace $ \ (cond',trace') -> do
 			unfoldTracesM ret_type toplevel break_stack envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
 		let else_trace_m real_cond = transids (CUnary CNegOp real_cond (annotation real_cond)) Z3_Bool trace $ \ (ncond',trace') -> do			
-			printLogV 1 $ "### real_cond = " ++ (render.pretty) real_cond
-			printLogV 1 $ "### ncond'    = " ++ (render.pretty) ncond'
+			printLogV 2 $ "### real_cond = " ++ (render.pretty) real_cond
+			printLogV 2 $ "### ncond'    = " ++ (render.pretty) ncond'
 			let not_cond = Condition (Just False) ncond'
 			case mb_else_stmt of
 				Nothing        -> unfoldTracesM ret_type toplevel break_stack envs (not_cond : trace') ( rest : rest2 )
@@ -756,7 +756,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			-- 12 is a wildcard in the choice list
 			-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
 			(real_cond,Just (ns,num_reached)) | length ns > num_reached && ns!!num_reached /= 12 -> do
-				printLogV 1 $ "Recognized IF annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond
+				printLogV 2 $ "Recognized IF annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond
 				case ns!!num_reached of
 					1 -> then_trace_m real_cond
 					2 -> else_trace_m real_cond
@@ -963,8 +963,8 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	transids :: CExpr -> Z3_Type -> Trace -> ((CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
 	transids expr ty trace cont = do
 		additional_expr_traces :: [(CExprWithType,Trace)] <- translateExprM envs expr ty
-		printLogV 1 $ "### transids " ++ (render.pretty) expr
-		printLogV 1 $ "### -> additional_expr_traces = " ++ (render.pretty) (map fst additional_expr_traces)
+		printLogV 2 $ "### transids " ++ (render.pretty) expr
+		printLogV 2 $ "### -> additional_expr_traces = " ++ (render.pretty) (map fst additional_expr_traces)
 		case toplevel of
 			False -> do
 				conts :: [UnfoldTracesRet] <- forM additional_expr_traces $ \ (expr',trace') -> do
