@@ -871,44 +871,30 @@ printf(" low  = %u\n", low);
     + FRAC_NBITS - (FRACBITS + NGARDS);
 // ..->sign is unsigned int
   tmp->sign = a->sign != b->sign ;
-#ifdef CALC
-printf("0: tmp->normal_exp = %i\n", tmp->normal_exp);
-#endif
 
-// ERROR in [2,2,2,2,2,2,1,1,2,2,1,1] for return_val_ARROW_normal_exp : exec_val=-22 /= predicted_result=3
-
-#ifdef CALC
-printf("high=%li, IMPLICIT_2=%lu\n",high,IMPLICIT_2 );
-#endif
-  while (solver_pragma(1) && (high >= IMPLICIT_2))
+  while (solver_pragma(0) && (high >= IMPLICIT_2))
     {
       tmp->normal_exp++;
-#ifdef CALC
-printf("1: tmp->normal_exp = %i\n", tmp->normal_exp);
-#endif
 
-        if (solver_pragma(1) && high & 1)
+        if (solver_pragma(1) && (high & 1))
         {
           low >>= 1;
           low |= FRACHIGH;
         }
       high >>= 1;
     }
-  while (solver_pragma(0) && high < IMPLICIT_1)
+  while (solver_pragma(2) && high < IMPLICIT_1)
     {
       tmp->normal_exp--;
       high <<= 1;
-      if (low & FRACHIGH) high |= 1;
+      if (solver_pragma(2,2) && (low & FRACHIGH)) high |= 1;
       low <<= 1;
-      solver_debug(high);
+//      solver_debug(high);
     }
 
-#ifdef CALC
-printf("2: tmp->normal_exp = %i\n", tmp->normal_exp);
-#endif
   if (solver_pragma(1) && (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB))
     {
-      if (solver_pragma(1) && high & (1 << NGARDS))
+      if (solver_pragma(2) && high & (1 << NGARDS))
 	{
 	  /* Because we're half way, we would round to even by adding
 	     GARDROUND + 1, except that's also done in the packing
@@ -917,7 +903,7 @@ printf("2: tmp->normal_exp = %i\n", tmp->normal_exp);
 	     bit patterns 0xfff * 0x3f800400 ~= 0xfff (less than 0.5ulp
 	     off), not 0x1000 (more than 0.5ulp off).  */
 	}
-      else if (low)
+      else if (solver_pragma(2) && low)
 	{
 	  /* We're a further than half way by a small amount corresponding
 	     to the bits set in "low".  Knowing that, we round here and

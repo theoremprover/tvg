@@ -77,6 +77,7 @@ string2FloatType flags = floating (getFloatType flags) :: Type
 
 showInitialTrace = False
 solveIt = True
+showModels = False
 showOnlySolutions = True
 don'tShowTraces = True
 checkSolutions = solveIt && True
@@ -582,6 +583,7 @@ decl2TypeM (CDecl declspecs _ _) = case declspecs of
 	[CTypeSpec (CUnsigType _), CTypeSpec (CCharType _)] -> return $ DirectType (TyIntegral TyUChar) noTypeQuals noAttributes
 	[CTypeSpec (CSignedType _), CTypeSpec (CCharType _)] -> return $ DirectType (TyIntegral TySChar) noTypeQuals noAttributes
 	[CTypeSpec (CShortType _)]     -> return $ DirectType (TyIntegral TyShort) noTypeQuals noAttributes
+	[CTypeSpec (CUnsigType _), CTypeSpec (CShortType _)] -> return $ DirectType (TyIntegral TyUShort) noTypeQuals noAttributes
 	[CTypeSpec (CIntType _)]       -> return $ DirectType (TyIntegral TyInt) noTypeQuals noAttributes
 	[CTypeSpec (CUnsigType _), CTypeSpec (CIntType _)] -> return $ DirectType (TyIntegral TyUInt) noTypeQuals noAttributes
 	[CTypeSpec (CLongType _)]      -> return $ DirectType (TyIntegral TyLong) noTypeQuals noAttributes
@@ -753,8 +755,10 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 				Nothing        -> unfoldTracesM ret_type toplevel break_stack envs (not_cond : trace') ( rest : rest2 )
 				Just else_stmt -> unfoldTracesM ret_type toplevel break_stack envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
 		case recognizeAnnotation cond of
-			(real_cond,Just (ns,num_reached)) | ns!!num_reached /= 12 -> do
-				printLogV 2 $ "Recognized IF annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond
+			-- 12 is a wildcard in the choice list
+			-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
+			(real_cond,Just (ns,num_reached)) | length ns > num_reached && ns!!num_reached /= 12 -> do
+				printLogV 1 $ "Recognized IF annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond
 				case ns!!num_reached of
 					1 -> then_trace_m real_cond
 					2 -> else_trace_m real_cond
@@ -850,9 +854,9 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	recognizeAnnotation :: CExpr -> (CExpr,Maybe ([Int],Int))
 	recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond _) =
 		(real_cond,Just (map arg2int args,num_reached)) where
-			num_reached = length $ filter is_this_cond trace
-			is_this_cond (Condition _ c) | extractNodeInfo c == nodeInfo real_cond = True
-			is_this_cond _ = False
+			num_reached = length $ filter is_this_cond trace where
+				is_this_cond (Condition _ c) | extractNodeInfo c == nodeInfo real_cond = True
+				is_this_cond _ = False
 			arg2int (CConst (CIntConst (CInteger i _ _) _)) = fromIntegral i
 	recognizeAnnotation real_cond = (real_cond,Nothing)
 
@@ -1674,7 +1678,7 @@ makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents m
 		model_string = unlines $ map (render.pretty) model
 		model_string_linenumbers = unlines $ map (\ (i,l) -> show i ++ ": " ++ l) (zip [1..] (lines model_string))
 	when ("-writeModels" `elem` opts) $ liftIO $ writeFile modelpathfile model_string
-	printLogV 1 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
+	when showModels $ printLog $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
 	printStatsM
 	printLogV 1 $ "Running model " ++ takeFileName modelpathfile ++ "..."
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do

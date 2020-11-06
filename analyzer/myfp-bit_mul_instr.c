@@ -799,15 +799,27 @@ sub (FLO_type arg_a, FLO_type arg_b)
 }
 #endif /* L_addsub_sf || L_addsub_df */
 
+int loop1=0,loop2=0,found=0;
+
 #if defined(L_mul_sf) || defined(L_mul_df) || defined(L_mul_tf)
 static inline __attribute__ ((__always_inline__)) fp_number_type *
 _fpmul_parts ( fp_number_type *  a,
 	       fp_number_type *  b,
 	       fp_number_type * tmp)
 {
+printf("sizeof(int)=%i\n",sizeof(int));
+printf("sizeof(short)=%i\n",sizeof(short));
+printf("sizeof(long)=%i\n",sizeof(long));
+printf("sizeof(long long)=%i\n",sizeof(long long));
+
+printf("sizeof(fractype)=%i\n",sizeof(fractype));
+printf("sizeof(a->sign)=%i\n",sizeof(a->sign));
+printf("sizeof(a->normal_exp)=%i\n",sizeof(a->normal_exp));
+printf("sizeof(USItype)=%i\n",sizeof(USItype));
+printf("sizeof(UDItype)=%i\n",sizeof(UDItype));
+
   fractype low = 0;
   fractype high = 0;
-  int loop1=0,loop2=0,found=0;
 
   if (isnan (a))
     {
@@ -853,22 +865,24 @@ _fpmul_parts ( fp_number_type *  a,
     /* Multiplying two USIs to get a UDI, we're safe.  */
     {
       UDItype answer = (UDItype)a->fraction.ll * (UDItype)b->fraction.ll;
-   //printf("answer=%u, BITS_PER_SI=%u\n",answer,BITS_PER_SI);
+printf("1: answer=%u\n",answer);
 
       high = answer >> BITS_PER_SI;
+printf("2: high=%lu, IMPLICIT_2=%u\n",high,IMPLICIT_2);
       low = answer;
+printf("3: low=%lu\n",low);
     }
   }
 
   tmp->normal_exp = a->normal_exp + b->normal_exp
     + FRAC_NBITS - (FRACBITS + NGARDS);
   tmp->sign = a->sign != b->sign ;
-  //printf("high=%u, IMPLICIT_2=%u\n",high,IMPLICIT_2);
+printf("4: high=%u, IMPLICIT_2=%u\n",high,IMPLICIT_2);
 
   while (high >= IMPLICIT_2)
     {
       loop1++;
-      //printf("loop1=%i\n",loop1);
+printf("loop1=%i\n",loop1);
       tmp->normal_exp++;
       if (high & 1)
 	{
@@ -885,23 +899,27 @@ _fpmul_parts ( fp_number_type *  a,
   while (high < IMPLICIT_1)
     {
     loop2++;
-      //printf("loop2=%i\n",loop2);
-      if(loop2>30) exit(0);
+printf("loop2=%i\n",loop2);
+
       tmp->normal_exp--;
 
       high <<= 1;
+printf("X: high=%i\n",high);
+
       if (low & FRACHIGH) {
         high |= 1;
+printf("X: low & FRACHIGH, high=%i\n",high);
         }
+        else printf("X: ! low & FRACHIGH\n");
       low <<= 1;
     }
 
   if (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB)
     {
-//    printf("!ROUND_TOWARDS_ZERO\n");
+printf("!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB\n");
       if (high & (1 << NGARDS))
 	{
-//    printf("high & (1 << NGARDS)\n");
+printf("high & (1 << NGARDS)\n");
 	  /* Because we're half way, we would round to even by adding
 	     GARDROUND + 1, except that's also done in the packing
 	     function, and rounding twice will lose precision and cause
@@ -911,22 +929,22 @@ _fpmul_parts ( fp_number_type *  a,
 	}
       else if (low)
 	{
+printf("else if(low)\n");
 	  /* We're a further than half way by a small amount corresponding
 	     to the bits set in "low".  Knowing that, we round here and
 	     not in pack_d, because there we don't have "low" available
 	     anymore.  */
 	  high += GARDROUND + 1;
+printf("10: high = %i\n",high);
 
 	  /* Avoid further rounding in pack_d.  */
 	  high &= ~(fractype) GARDMASK;
+printf("11: high = %i\n",high);
 	}
-	else     found=1;
+    else
+printf("! else if(low)\n");
 
     }
-  tmp->class = found;
-  tmp->sign = loop1;
-  tmp->normal_exp = loop2;
-  tmp->fraction.ll = high;
   return tmp;
 }
 
@@ -1699,26 +1717,15 @@ int main(int argc, char* argv[])
     unsigned int argt4; sscanf(argv[i++],"%u",&argt4); // fractype ll; }
 */
 
-    printf("Start\n");
-
-    for(unsigned int ll1=1000000000;;ll1++) {
-    for(unsigned int ll2=1000000000;ll2<10000000000;ll2++) {
+    unsigned int ll1=1000000000;
+    unsigned int ll2=1207959552;
 
     fp_number_type a = { 3, 1, 1, { ll1 } };
     fp_number_type b = { 3, 1, 1, { ll2 } };
     fp_number_type t = { 3, 1, 1, { 0 } };
 
- //   printf("%i  \r\n\b",n++);
     _fpmul_parts(&a,&b,&t);
-    if(t.class>0)
-    {
-    printf("f(a={ %i,%u,%i, fraction={%u} },  b={ %i,%u,%i, fraction={%u} }}) =\nloop1=%i loop2=%i\n",
-        a.class,a.sign,a.normal_exp,a.fraction.ll,
-        b.class,b.sign,b.normal_exp,b.fraction.ll,
-        t.sign,t.normal_exp);
-    }
 
-    } }
     return 0;
 }
 #endif
