@@ -77,7 +77,7 @@ string2FloatType flags = floating (getFloatType flags) :: Type
 
 showInitialTrace = False
 solveIt = True
-showModels = False
+showModels = True
 showOnlySolutions = True
 don'tShowTraces = True
 checkSolutions = solveIt && True
@@ -630,6 +630,7 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 
 -- Extracts the declared identifer and the type from a Declaration
 
+-- Z3 does not accept identifiers starting with an underscore, so we prefix these with:
 safeZ3IdentifierPrefix = 'a'
 
 declaration2EnvItemM :: Declaration decl => decl -> CovVecM [EnvItem]
@@ -783,15 +784,17 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 					when (length ret_var_expr /= length ret_env_expr) $ error "unfoldTraces1M CReturn: length ret_var_expr /= length ret_env_expr !"
 					ret_trace <- concatForM (zip ret_var_expr ret_env_expr) $
 						\ ( (rve@(_,(ret_var_ident,ret_var_ty)),_) , (_,ret_member_expr)) -> do
-							ret_val_cond <- transcribeExprM ([rve]:envs) Z3_Bool $ CVar ret_var_ident undefNode ⩵ ret_member_expr
+							ret_val_cond <- transcribeExprM ([rve]:envs) (Just Z3_Bool) $ CVar ret_var_ident undefNode ⩵ ret_member_expr
 							return [ Condition Nothing ret_val_cond, NewDeclaration (ret_var_ident,ret_var_ty) ]
 					analyzeTraceM (Just ret_type) (Return ret_expr' : (ret_trace ++ trace'))
 						>>= return.Right
 
 	CExpr (Just (CCall (CVar (Ident "solver_debug" _ _) _) args ni)) _ -> do
-		let vars = for args $ \ (CVar ident _) -> fromJust $ lookup ident (concat envs)
-		unfoldTracesM ret_type toplevel break_stack envs (map to_dbg_output (reverse vars) ++ trace) (rest:rest2) where
-			to_dbg_output (name_id,ty) = DebugOutput ("solver_debug_" ++ identToString name_id) (CVar name_id (undefNode,ty2Z3Type ty),ty)
+		dbgouts <- forM args $ \ arg -> do
+			ty <- inferLExprTypeM (envs2tyenv envs) (renameVars envs arg)
+			expr' <- transcribeExprM envs Nothing arg
+			return $ DebugOutput ("solver_debug_" ++ lValueToVarName expr') (expr',ty)
+		unfoldTracesM ret_type toplevel break_stack envs (reverse dbgouts ++ trace) (rest:rest2)
 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		lexpr_ty <- inferLExprTypeM (envs2tyenv envs) (renameVars envs lexpr) >>= return.ty2Z3Type
@@ -1088,9 +1091,9 @@ inferLExprTypeM tyenv expr = case expr of
 	other -> myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " not implemented"
 
 -- Creates an CExprWithType from a CExpr
-transcribeExprM :: [Env] -> Z3_Type -> CExpr -> CovVecM CExprWithType
-transcribeExprM envs target_ty expr = do
-	annotateTypesM envs (renameVars envs expr) target_ty
+transcribeExprM :: [Env] -> Maybe Z3_Type -> CExpr -> CovVecM CExprWithType
+transcribeExprM envs mb_target_ty expr = do
+	annotateTypesAndCastM envs (renameVars envs expr) mb_target_ty
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls. Finally, transcribeExprM.
@@ -1159,7 +1162,7 @@ translateExprM envs expr0 target_ty = do
 	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExprWithType)])] -> CovVecM [(CExprWithType,Trace)]
 	-- return the completely fixed expression 
 	create_combinations expr trace [] = do
-		expr' <- transcribeExprM envs target_ty expr
+		expr' <- transcribeExprM envs (Just target_ty) expr
 		return [(set_node_info expr',trace)]
 	-- replace the place-holder in the expr with the return expression of each sub-function's trace,
 	-- concatenating all possibilities (but it does not matter which one, since we only fully cover the top level function)
@@ -1348,12 +1351,14 @@ isBoolResultBinop = (`elem` [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqO
 
 -- adds Z3 types to the annotation that the expressions should have
 -- (making a CExprWithType from a CExpr), also insertsimplicit casts
-annotateTypesM :: [Env] -> CExpr -> Z3_Type -> CovVecM CExprWithType
-annotateTypesM envs cexpr target_ty = do
+annotateTypesAndCastM :: [Env] -> CExpr -> Maybe Z3_Type -> CovVecM CExprWithType
+annotateTypesAndCastM envs cexpr mb_target_ty = do
 	cexpr' <- annotate_types cexpr
-	let ret = mb_cast target_ty cexpr'
+	let ret = case mb_target_ty of
+		Just target_ty -> mb_cast target_ty cexpr'
+		Nothing -> cexpr'
 	printLogV 2 $ "\n# " ++ (showLocation.lineColNodeInfo) cexpr
-	printLogV 2 $ "annotateTypesM [envs]\n" ++ (render.pretty) cexpr ++ "\ntarget_ty = " ++ show target_ty
+	printLogV 2 $ "annotateTypesAndCastM [envs]\n" ++ (render.pretty) cexpr ++ "\ntarget_ty = " ++ show mb_target_ty
 	printLogV 2 $ "\n--- " ++ show cexpr ++ "\n"
 	printLogV 2 $ "==>\n" ++ (render.pretty) ret ++ "\n"
 

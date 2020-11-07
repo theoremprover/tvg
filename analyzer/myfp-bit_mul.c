@@ -851,30 +851,33 @@ _fpmul_parts ( fp_number_type *  a,
 
     {
       UDItype answer = (UDItype)a->fraction.ll * (UDItype)b->fraction.ll;
-#ifdef CALC
-printf("-1: answer = %llu\n", answer);
-#endif
 
       // Manually inserted casts!
       high = answer >> BITS_PER_SI;
       low = answer;
-#ifdef CALC
-printf(" high = %u\n", high);
-printf(" low  = %u\n", low);
-#endif
     }
   }
 
   tmp->normal_exp = a->normal_exp + b->normal_exp
     + FRAC_NBITS - (FRACBITS + NGARDS);
+
+#ifdef CALC
+printf("1: tmp->normal_exp=%i\n",tmp->normal_exp);
+#endif
+
+solver_debug(tmp->normal_exp);
 // ..->sign is unsigned int
   tmp->sign = a->sign != b->sign ;
 
   while (solver_pragma(1) && (high >= IMPLICIT_2))
     {
       tmp->normal_exp++;
+solver_debug(tmp->normal_exp);
+#ifdef CALC
+printf("2: tmp->normal_exp=%i\n",tmp->normal_exp);
+#endif
 
-        if (high & 1)
+        if (solver_pragma(1) && high & 1)
         {
           low >>= 1;
           low |= FRACHIGH;
@@ -885,6 +888,11 @@ printf(" low  = %u\n", low);
   while (solver_pragma(0) && high < IMPLICIT_1)
     {
       tmp->normal_exp--;
+#ifdef CALC
+printf("3: tmp->normal_exp=%i\n",tmp->normal_exp);
+#endif
+
+solver_debug(tmp->normal_exp);
       high <<= 1;
       if (low & FRACHIGH)
       {
@@ -908,9 +916,7 @@ printf(" low  = %u\n", low);
 
   tmp->fraction.ll = high;
   tmp->class = CLASS_NUMBER;
-#ifdef CALC
-printf("3: tmp->normal_exp = %i\n", tmp->normal_exp);
-#endif
+
   return tmp;
 }
 
@@ -1659,7 +1665,7 @@ int main(int argc, char* argv[])
     printf("sizeof(int)=%i\n",sizeof(int));
     printf("sizeof(long)=%i\n",sizeof(long));
     printf("sizeof(long long)=%i\n",sizeof(long long));
-    //printf("FRACBITS=%i, NGARDS=%i\n",FRACBITS,NGARDS);
+    printf("FRACBITS=%i, NGARDS=%i, FRAC_NBITS=%i\n",FRACBITS,NGARDS,FRAC_NBITS);
     // FRACBITS=23, NGARDS=7
     printf("ROUND_TOWARDS_ZERO=%i, GARDMASK=%i, GARDMSB=%i\n",ROUND_TOWARDS_ZERO,GARDMASK,GARDMSB);
 
