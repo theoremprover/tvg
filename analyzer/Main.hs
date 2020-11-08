@@ -77,12 +77,13 @@ string2FloatType flags = floating (getFloatType flags) :: Type
 
 showInitialTrace = False
 solveIt = True
-showModels = True
+showModels = False
 showOnlySolutions = True
 don'tShowTraces = True
+showFinalTrace = False
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
-outputVerbosity = 1
+outputVerbosity = 2
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
@@ -295,22 +296,6 @@ prettyCE head subs ty =
 	(nest 4 $ vcat subs) $+$
 	rparen <+> text "::" <+> text (show ty)
 
-{-
-instance Pretty SCompound where
-	pretty SEmptyLine = text ""
-	pretty (SComment s) = semi <+> text s
-	pretty (SExprLine sexpr) = pretty sexpr
-
-data SExpr = SExpr [SExpr] | SLeaf String | SOnOneLine SExpr deriving Show
-instance Pretty SExpr where
-	pretty (SOnOneLine sexpr) = prettyOneLine sexpr
-	pretty (SLeaf s) = text s
-	pretty sexpr@(SExpr (SLeaf "_" : sexprs)) = prettyOneLine sexpr
-	pretty (SExpr (sexpr:sexprs)) = (lparen <> pretty sexpr) $+$
-		(nest 4 $ vcat (map pretty sexprs)) $+$
-		rparen
--}
-
 instance (Pretty a) => Pretty [a] where
 	pretty xs = brackets $ hcat $ punctuate comma (map pretty xs)
 
@@ -452,7 +437,7 @@ analyzeTraceM mb_ret_type res_line = do
 	-- a.m  ~> a_DOT_m
 	-- &a   ~> ADR_a
 	res_trace_symbolic <- createSymbolicVarsM [] (map fst $ createTyEnv res_trace_simplified2) res_trace_simplified2
-	when (not don'tShowTraces) $ do
+	when showFinalTrace $ do
 		printLog $ "\n--- TRACE after createSymbolicVarsM " ++ show traceid ++ " -----------\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine res_trace_symbolic
@@ -591,6 +576,7 @@ decl2TypeM (CDecl declspecs _ _) = case declspecs of
 --	[CTypeSpec (CEnumType (CEnum (Just ident) Nothing _ _) _)] -> lookupTypeDefM ident		
 --		return $ DirectType (TyEnum (EnumTypeRef sueref undefNode)) noTypeQuals noAttributes
 	[CTypeSpec (CTypeDef ident _)] -> lookupTypeDefM ident
+	[CTypeSpec (CSUType (CStruct _ (Just ident) _ _ _) _)] -> return $ DirectType (TyComp $ CompTypeRef (NamedRef ident) StructTag undefNode) noTypeQuals noAttributes
 	other -> myError $ "decl2TypeM: " ++ show other ++ " not implemented yet."
 
 lookupTagM :: SUERef -> CovVecM TagDef
@@ -687,7 +673,7 @@ createInterfaceFromExprM expr ty = do
 	
 		-- direct-type expr where direct-type is no struct/union
 		DirectType _ _ _ -> prepend_plainvar ty' $ return []
-	
+
 		_ ->
 			myError $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
 
@@ -777,9 +763,9 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	CReturn (Just ret_expr) _ -> do
 		transids ret_expr (ty2Z3Type ret_type) trace $ \ (ret_expr',trace') -> do
 			case toplevel of
-				False -> return $ Left [Return ret_expr' : trace']
+				False -> return $ Left [ Return ret_expr' : trace' ]
 				True  -> do
-					ret_var_expr <- createInterfaceM [(internalIdent returnval_var_name,ret_type)]
+					ret_var_expr <- createInterfaceM $ [(internalIdent returnval_var_name,ret_type)] ++ envs2tyenv envs
 					ret_env_expr <- createInterfaceFromExprM ret_expr ret_type
 					when (length ret_var_expr /= length ret_env_expr) $ error "unfoldTraces1M CReturn: length ret_var_expr /= length ret_env_expr !"
 					ret_trace <- concatForM (zip ret_var_expr ret_env_expr) $
@@ -874,9 +860,6 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 				printLogV 2 $ "******** Continuing..."
 				cont
 	maybe_cutoff cont = cont
-
---	num_reached :: (CNode cnode) => cnode -> Int
---	num_reached cnode = length $ filter ((== nodeInfo cnode).nodeInfo) trace
 
 	conditions_reached :: Int
 	conditions_reached = length $ filter is_condition trace where
@@ -1173,7 +1156,8 @@ translateExprM envs expr0 target_ty = do
 				expr' = everywhere (mkT subst_ret_expr) expr where
 					subst_ret_expr :: CExpr -> CExpr
 					-- this functor mapping "fmap fst ret_expr" is the MOAH
-					subst_ret_expr (CConst (CStrConst (CString ni_s False) ni)) | tes_ni == ni = fmap fst ret_expr
+					subst_ret_expr (CConst (CStrConst (CString ni_s False) ni)) | tes_ni == ni && show ni == ni_s =
+						fmap fst ret_expr
 					subst_ret_expr expr = expr
 --			printLog $ "fun_trace=" ++ show fun_trace
 			create_combinations expr' (fun_trace++trace) rest
@@ -1532,11 +1516,11 @@ expr2SExpr expr = expr2sexpr expr
 					SExpr [ SExpr [ SLeaf "_", SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0"], sexpr ]
 		
 				-- UPCAST signed (to signed or unsigned): extend sign bit
-				( Z3_BitVector size_from True, Z3_BitVector size_to _ ) | size_from < size_to ->
+				( Z3_BitVector size_from False, Z3_BitVector size_to _ ) | size_from < size_to ->
 					SExpr [ SExpr [ SLeaf "_", SLeaf "sign_extend", SLeaf $ show (size_to-size_from) ], sexpr ] 
 		
 				-- UPCAST unsigned (to signed or unsigned): extend with zeros
-				( Z3_BitVector size_from False, Z3_BitVector size_to _ ) | size_from < size_to ->
+				( Z3_BitVector size_from True, Z3_BitVector size_to _ ) | size_from < size_to ->
 					SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
 		
 				(from_ty,to_ty) -> error $ "expr2sexpr " ++ show from_ty ++ " " ++ show to_ty ++ " in " ++
@@ -1556,10 +1540,12 @@ expr2SExpr expr = expr2sexpr expr
 		other -> myError $ "expr2SExpr " ++ (render.pretty) other ++ " not implemented" 
 
 
+-- This is just for pretty-printing type decls
 z3typedecls :: Z3_Type -> NodeInfoWithType -> CDeclaration NodeInfoWithType
 z3typedecls to_ty anno = CDecl typespecs [] anno
 	where
 	typespecs = case to_ty of
+		Z3_BitVector 4 _ -> [ CTypeSpec $ CSUType (CStruct CStructTag (Just $ internalIdent "<STRUCT_TYPE>") Nothing [] anno) anno]
 		Z3_BitVector size_to unsigned ->
 			(if unsigned then [ CTypeSpec (CUnsigType anno)] else [] ) ++ case size_to of
 				8                      -> [ CTypeSpec (CCharType anno) ]
@@ -1567,6 +1553,7 @@ z3typedecls to_ty anno = CDecl typespecs [] anno
 				s | s==intSize         -> [ CTypeSpec (CIntType anno) ]
 				s | s==longIntSize     -> [ CTypeSpec (CLongType anno) ]
 				s | s==longLongIntSize -> [ CTypeSpec (CLongType anno), CTypeSpec (CLongType anno) ]
+				s -> error $ "z3typedecls: size_to = " ++ show s ++ " unimplemented!"
 		Z3_Float  -> [ CTypeSpec (CFloatType anno) ]
 		Z3_Double -> [ CTypeSpec (CDoubleType anno) ]
 		Z3_Bool   -> [ CTypeSpec (CTypeDef (internalIdent "BOOL") anno) ]

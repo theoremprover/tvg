@@ -809,25 +809,25 @@ _fpmul_parts ( fp_number_type *  a,
   fractype low = 0;
   fractype high = 0;
 
-  if (solver_pragma(2) && isnan (a))
+  if (isnan (a))
     {
       a->sign = a->sign != b->sign;
       return a;
     }
 
-  if (solver_pragma(2) && isnan (b))
+  if (isnan (b))
     {
       b->sign = a->sign != b->sign;
       return b;
     }
-  if (solver_pragma(2) && isinf (a))
+  if (isinf (a))
     {
       if (iszero (b))
 	return nan ();
       a->sign = a->sign != b->sign;
       return a;
     }
-  if (solver_pragma(2) && isinf (b))
+  if (isinf (b))
     {
       if (iszero (a))
 	{
@@ -836,12 +836,12 @@ _fpmul_parts ( fp_number_type *  a,
       b->sign = a->sign != b->sign;
       return b;
     }
-  if (solver_pragma(2) && iszero (a))
+  if (iszero (a))
     {
       a->sign = a->sign != b->sign;
       return a;
     }
-  if (solver_pragma(2) && iszero (b))
+  if (iszero (b))
     {
       b->sign = a->sign != b->sign;
       return b;
@@ -851,9 +851,8 @@ _fpmul_parts ( fp_number_type *  a,
 
     {
       UDItype answer = (UDItype)a->fraction.ll * (UDItype)b->fraction.ll;
-
       // Manually inserted casts!
-      high = answer >> BITS_PER_SI;
+      high = answer >> BITS_PER_SI;  // high :: (_ BitVec 32)
       low = answer;
     }
   }
@@ -861,21 +860,12 @@ _fpmul_parts ( fp_number_type *  a,
   tmp->normal_exp = a->normal_exp + b->normal_exp
     + FRAC_NBITS - (FRACBITS + NGARDS);
 
-#ifdef CALC
-printf("1: tmp->normal_exp=%i\n",tmp->normal_exp);
-#endif
-
-solver_debug(tmp->normal_exp);
 // ..->sign is unsigned int
   tmp->sign = a->sign != b->sign ;
 
-  while (solver_pragma(1) && (high >= IMPLICIT_2))
+  while (solver_pragma(0,1,2) && (high >= IMPLICIT_2))
     {
       tmp->normal_exp++;
-solver_debug(tmp->normal_exp);
-#ifdef CALC
-printf("2: tmp->normal_exp=%i\n",tmp->normal_exp);
-#endif
 
         if (solver_pragma(1) && high & 1)
         {
@@ -885,14 +875,9 @@ printf("2: tmp->normal_exp=%i\n",tmp->normal_exp);
       high >>= 1;
     }
 
-  while (solver_pragma(0) && high < IMPLICIT_1)
+  while (solver_pragma(0,1,2) && high < IMPLICIT_1)
     {
       tmp->normal_exp--;
-#ifdef CALC
-printf("3: tmp->normal_exp=%i\n",tmp->normal_exp);
-#endif
-
-solver_debug(tmp->normal_exp);
       high <<= 1;
       if (low & FRACHIGH)
       {
@@ -901,9 +886,9 @@ solver_debug(tmp->normal_exp);
       low <<= 1;
     }
 
-  if (solver_pragma(1) && !ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB)
+  if (!ROUND_TOWARDS_ZERO && (high & GARDMASK) == GARDMSB)
     {
-      if (solver_pragma(1) && high & (1 << NGARDS))
+      if (high & (1 << NGARDS))
 	  {
 	  }
       else if (low)
