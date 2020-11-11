@@ -80,7 +80,7 @@ solveIt = True
 showModels = False
 showOnlySolutions = True
 don'tShowTraces = True
-showFinalTrace = True
+showFinalTrace = False
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
 outputVerbosity = 1
@@ -1550,31 +1550,6 @@ expr2SExpr expr = expr2sexpr expr
 		ccall@(CCall _ _ _) -> myError $ "expr2sexpr of call " ++ (render.pretty) ccall ++ " should not occur!"
 
 		other -> myError $ "expr2SExpr " ++ (render.pretty) other ++ " not implemented" 
-
-{-
-z3typedecls :: Z3_Type -> NodeInfoWithType -> CDeclaration NodeInfoWithType
-z3typedecls to_ty anno = CDecl typespecs declrs anno
-	where
-	(typespecs,declrs) = create to_ty
-	create to_ty = case to_ty of
-		Z3_BitVector size_to unsigned ->
-			((if unsigned then [ CTypeSpec (CUnsigType anno)] else [] ) ++ case size_to of
-				8                      -> [ CTypeSpec (CCharType anno) ]
-				16                     -> [ CTypeSpec (CShortType anno) ]
-				s | s==intSize         -> [ CTypeSpec (CIntType anno) ]
-				s | s==longIntSize     -> [ CTypeSpec (CLongType anno) ]
-				s | s==longLongIntSize -> [ CTypeSpec (CLongType anno), CTypeSpec (CLongType anno) ]
-				s -> error $ "z3typedecls: size_to = " ++ show s ++ " unimplemented!" , [])
-		Z3_Float  -> ([ CTypeSpec (CFloatType anno) ],[])
-		Z3_Double -> ([ CTypeSpec (CDoubleType anno) ],[])
-		Z3_Bool   -> ([ CTypeSpec (CIntType anno) ],[])
---		Z3_Compound 
-		Z3_Ptr target_ty -> (sub_tyspecs,
-			[( Just $ CDeclr Nothing [ CPtrDeclr [] anno ] Nothing [] anno, Nothing, Nothing)] ++ sub_declrs)
-			where
-			(sub_tyspecs,sub_declrs) = create target_ty
-		other -> error $ "z3typedecls " ++ show to_ty ++ " <anno> not implemented"
--}
 
 data Z3_Type = Z3_Bool | Z3_BitVector Int Bool | Z3_Float | Z3_Double | Z3_Ptr Z3_Type | Z3_Compound
 	deriving (Show,Eq,Ord,Data)

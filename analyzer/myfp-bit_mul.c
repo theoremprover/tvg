@@ -867,7 +867,7 @@ _fpmul_parts ( fp_number_type *  a,
     {
       tmp->normal_exp++;
 
-        if (solver_pragma(1) && high & 1)
+        if (high & 1)
         {
           low >>= 1;
           low |= FRACHIGH;
