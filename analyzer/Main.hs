@@ -563,8 +563,8 @@ lookupTypeDefM ident = do
 envs2tyenv :: [Env] -> TyEnv
 envs2tyenv envs = map snd $ concat envs
 
-decl2TypeM :: (Show a) => CDeclaration a -> CovVecM Type
-decl2TypeM (CDecl declspecs _ _) = case declspecs of
+decl2TypeM :: (Show a) => String -> CDeclaration a -> CovVecM Type
+decl2TypeM from (CDecl declspecs _ _) = case declspecs of
 	[CTypeSpec (CVoidType _)]      -> return $ DirectType TyVoid noTypeQuals noAttributes
 	[CTypeSpec (CCharType _)]      -> return $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes
 	[CTypeSpec (CUnsigType _), CTypeSpec (CCharType _)] -> return $ DirectType (TyIntegral TyUChar) noTypeQuals noAttributes
@@ -581,7 +581,7 @@ decl2TypeM (CDecl declspecs _ _) = case declspecs of
 --		return $ DirectType (TyEnum (EnumTypeRef sueref undefNode)) noTypeQuals noAttributes
 	[CTypeSpec (CTypeDef ident _)] -> lookupTypeDefM ident
 	[CTypeSpec (CSUType (CStruct _ (Just ident) _ _ _) _)] -> return $ DirectType (TyComp $ CompTypeRef (NamedRef ident) StructTag undefNode) noTypeQuals noAttributes
-	other -> myError $ "decl2TypeM: " ++ show other ++ " not implemented yet."
+	other -> myError $ "decl2TypeM " ++ from ++ " : " ++ show other ++ " not implemented yet."
 
 lookupTagM :: SUERef -> CovVecM TagDef
 lookupTagM ident = do
@@ -974,7 +974,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 							False -> try_next rest
 
 unfoldTraces1M ret_type toplevel break_stack (env:envs) trace ( (CBlockDecl decl@(CDecl typespecs triples _) : rest) : rest2 ) = do
-	ty <- decl2TypeM decl
+	ty <- decl2TypeM "unfoldTraces1M ret_type" decl
 	new_env_items <- forM triples $ \case
 		(Just (CDeclr (Just ident) derivdeclrs _ _ ni),mb_init,Nothing) -> do
 			let ty' = case derivdeclrs of
@@ -1376,8 +1376,10 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 				False -> common_ty
 		return $ CBinary binop (mb_cast common_ty expr1') (mb_cast common_ty expr2') (ni,result_ty)
 
-	annotate_types (CCast decl expr ni) = do
-		ty' <- decl2TypeM decl >>= elimTypeDefsM >>= return.ty2Z3Type
+	-- Skip empty casts
+	annotate_types (CCast (CDecl [] [] _) expr _) = annotate_types expr
+	annotate_types ccast@(CCast decl expr ni) = do
+		ty' <- decl2TypeM ("annotate_types " ++ (render.pretty) ccast) decl >>= elimTypeDefsM >>= return.ty2Z3Type
 		expr' <- annotate_types expr
 		return $ cast expr' ty'
 
@@ -1426,6 +1428,7 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 	mb_cast :: Z3_Type -> CExprWithType -> CExprWithType
 	mb_cast to_ty cexpr = case (extractType cexpr,to_ty) of
 		( Z3_Bool, Z3_Bool ) -> cexpr
+		( Z3_Compound, Z3_Compound) -> cexpr
 		( Z3_Ptr ty1, Z3_Ptr ty2 ) | ty1==ty2 -> cexpr
 		( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from == size_to -> cexpr
 		_ -> cast cexpr to_ty
@@ -1548,7 +1551,7 @@ expr2SExpr expr = expr2sexpr expr
 
 		other -> myError $ "expr2SExpr " ++ (render.pretty) other ++ " not implemented" 
 
-
+{-
 z3typedecls :: Z3_Type -> NodeInfoWithType -> CDeclaration NodeInfoWithType
 z3typedecls to_ty anno = CDecl typespecs declrs anno
 	where
@@ -1571,7 +1574,7 @@ z3typedecls to_ty anno = CDecl typespecs declrs anno
 			where
 			(sub_tyspecs,sub_declrs) = create target_ty
 		other -> error $ "z3typedecls " ++ show to_ty ++ " <anno> not implemented"
-
+-}
 
 data Z3_Type = Z3_Bool | Z3_BitVector Int Bool | Z3_Float | Z3_Double | Z3_Ptr Z3_Type | Z3_Compound
 	deriving (Show,Eq,Ord,Data)
