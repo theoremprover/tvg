@@ -809,25 +809,25 @@ _fpmul_parts ( fp_number_type *  a,
   fractype low = 0;
   fractype high = 0;
 
-  if (isnan (a))
+  if (solver_pragma(12) && isnan (a))
     {
       a->sign = a->sign != b->sign;
       return a;
     }
 
-  if (isnan (b))
+  if (solver_pragma(12) && isnan (b))
     {
       b->sign = a->sign != b->sign;
       return b;
     }
-  if (isinf (a))
+  if (solver_pragma(12) && isinf (a))
     {
       if (iszero (b))
 	return nan ();
       a->sign = a->sign != b->sign;
       return a;
     }
-  if (isinf (b))
+  if (solver_pragma(12) && isinf (b))
     {
       if (iszero (a))
 	{
@@ -836,12 +836,12 @@ _fpmul_parts ( fp_number_type *  a,
       b->sign = a->sign != b->sign;
       return b;
     }
-  if (iszero (a))
+  if (solver_pragma(12) && iszero (a))
     {
       a->sign = a->sign != b->sign;
       return a;
     }
-  if (iszero (b))
+  if (solver_pragma(12) && iszero (b))
     {
       b->sign = a->sign != b->sign;
       return b;
@@ -863,7 +863,7 @@ _fpmul_parts ( fp_number_type *  a,
 // ..->sign is unsigned int
   tmp->sign = a->sign != b->sign ;
 
-  while (solver_pragma(0,1,2) && (high >= IMPLICIT_2))
+  while (solver_pragma(0,1) && (high >= IMPLICIT_2))
     {
       tmp->normal_exp++;
 
@@ -875,7 +875,7 @@ _fpmul_parts ( fp_number_type *  a,
       high >>= 1;
     }
 
-  while (solver_pragma(0,1,2) && high < IMPLICIT_1)
+  while (solver_pragma(0,1) && high < IMPLICIT_1)
     {
       tmp->normal_exp--;
       high <<= 1;

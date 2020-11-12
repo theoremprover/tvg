@@ -90,7 +90,7 @@ showBuiltins = False
 cutOffs = False
 logToFile = True
 
--- Z3 does not accept identifiers starting with an underscore, so we prefix these with:
+-- Z3 does not accept identifiers starting with an underscore, so we prefix these with a
 safeZ3IdentifierPrefix = 'a'
 
 mAX_UNROLLS = 30
@@ -354,8 +354,6 @@ covVectorsM = do
 			next : _ -> next
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
---createInterfaceM :: [(Ident,Type)] -> CovVecM [(EnvItem,CExpr)]
---createInterfaceFromExprM :: CExpr -> Type -> CovVecM [(EnvItem,CExpr)]
 	param_env <- createInterfaceM $ for (map getVarDecl funparamdecls) $
 		\ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
 	modify $ \ s -> s { paramEnvCVS = Just param_env }
@@ -461,14 +459,15 @@ analyzeTraceM mb_ret_type res_line = do
 				to_branch cond@(Condition (Just b) _) | is_visible_traceelem startend cond =
 					[ (if b then Then else Else) (lineColNodeInfo cond) ]
 				to_branch _ = []
+			printLogV 2 $ "visible_trace =\n" ++ unlines (map show $ Set.toList visible_trace) 
 		
 			let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,resultdata)
 			case is_solution traceanalysisresult of
 				False -> do
 					printLogV 2  $ "### FALSE : " ++ show traceid ++ " no solution!"
 				True  -> do
-					printLogV 2  $ "### TRUE : " ++ show traceid ++ " Is Solution"
-					when (isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
+					printLogV 2  $ "### TRUE : " ++ show traceid ++ " is Solution"
+					when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
 					modify $ \ s -> s { analysisStateCVS = let (tas,covered) = analysisStateCVS s in
 						case visible_trace ⊆ covered of
 							False -> (traceanalysisresult:tas,visible_trace ∪ covered)
@@ -577,8 +576,6 @@ decl2TypeM from (CDecl declspecs _ _) = case declspecs of
 	[CTypeSpec (CUnsigType _), CTypeSpec (CLongType _)] -> return $ DirectType (TyIntegral TyULong) noTypeQuals noAttributes
 	[CTypeSpec (CFloatType _)]     -> return $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
 	[CTypeSpec (CDoubleType _)]    -> return $ DirectType (TyFloating TyDouble) noTypeQuals noAttributes
---	[CTypeSpec (CEnumType (CEnum (Just ident) Nothing _ _) _)] -> lookupTypeDefM ident		
---		return $ DirectType (TyEnum (EnumTypeRef sueref undefNode)) noTypeQuals noAttributes
 	[CTypeSpec (CTypeDef ident _)] -> lookupTypeDefM ident
 	[CTypeSpec (CSUType (CStruct _ (Just ident) _ _ _) _)] -> return $ DirectType (TyComp $ CompTypeRef (NamedRef ident) StructTag undefNode) noTypeQuals noAttributes
 	other -> myError $ "decl2TypeM " ++ from ++ " : " ++ show other ++ " not implemented yet."
@@ -825,17 +822,11 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 		where
 
 		unroll_loopM :: [Int] -> CovVecM UnfoldTracesRet
-		unroll_loopM [] = case toplevel of
-			False -> return $ Left []
-			True  -> return $ Right False
-		unroll_loopM (depth:depths) = do
-			printLogV 2 $ "unroll_loopM " ++ show depth
-			unfoldTracesM ret_type toplevel break_stack envs trace ((unroll cond depth ++ rest) : rest2 ) >>= \case
-				Right True  -> return $ Right True
-				Right False -> unroll_loopM depths
-				Left traces -> do
-					Left traces' <- unroll_loopM depths
-					return $ Left $ traces ++ traces'
+		unroll_loopM depths = do
+			ress <- forM depths $ \ depth -> unfoldTracesM ret_type toplevel break_stack envs trace ((unroll cond depth ++ rest) : rest2 )
+			return $ case toplevel of
+				False -> Left (concat $ lefts ress)
+				True  -> Right (any id $ rights ress)
 
 		unroll :: CExpr -> Int -> [CBlockItem]
 		unroll while_cond n = 
@@ -847,10 +838,11 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	where
 
 	recognizeAnnotation :: CExpr -> (CExpr,Maybe ([Int],Int))
-	recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond _) =
-		(real_cond,Just (map arg2int args,num_reached)) where
+	recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) =
+		-- set the original cexpr's NodeInfo in the real_cond in order to retain the proper decision point
+		(amap (const ni) real_cond,Just (map arg2int args,num_reached)) where
 			num_reached = length $ filter is_this_cond trace where
-				is_this_cond (Condition _ c) | extractNodeInfo c == nodeInfo real_cond = True
+				is_this_cond (Condition _ c) = extractNodeInfo c == nodeInfo real_cond
 				is_this_cond _ = False
 			arg2int (CConst (CIntConst (CInteger i _ _) _)) = fromIntegral i
 	recognizeAnnotation real_cond = (real_cond,Nothing)
