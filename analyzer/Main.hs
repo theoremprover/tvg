@@ -22,6 +22,8 @@ import Language.C.Analysis.SemRep
 import Language.C.Analysis.Export
 import Language.C.Syntax.Ops
 import Language.C.System.GCC
+--import "language-c-quote" Language.C.Quote.GCC
+--import "language-c-quote" Language.C.Pretty
 import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
@@ -42,11 +44,6 @@ import Data.Foldable
 import Data.List
 import Data.Maybe
 import System.IO
-
-import "language-c-quote" Language.C.Quote.GCC
-import "language-c-quote" Language.C.Pretty
-import Text.PrettyPrint.Mainland.Class (ppr)
-import Text.PrettyPrint.Mainland (prettyCompact)
 
 import DataTree
 import GlobDecls
@@ -1795,26 +1792,3 @@ checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution)) = do
 
 			printLog $ "checkSolutionM " ++ show traceid ++ " OK."
 			return resultdata
-
-{-
-(set-option :pp.fp_real_literals true)
-(declare-const i Int)
-(declare-const ar (Array Int Float32))
-
-(assert (<= 0 i))
-(assert (<= i 3))
-(assert (= (store ar 1 1.0) ar))
-(assert (= (store ar 2 4.0) ar))
-(assert (= (store ar 3 9.0) ar))
-
-(assert (>= (select ar i) (roundTowardZero (/ 5 1))))
-
-(check-sat)
-(get-model)
-(get-value (i))
-
-int a[10];
-a[2] = 7;
-a[2] = a[2] + 1;
-
--}

@@ -30,14 +30,12 @@ dependencies:
 - strict
 - time
 - html
-- binary
 - containers
 - extra
 - blaze-html
 - base-unicode-symbols
 - regex-tdfa
 - language-c-quote
-- mainland-pretty
 - containers-unicode-symbols
 
 executables:

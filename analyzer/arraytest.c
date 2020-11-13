@@ -26,3 +26,34 @@ int main(int argc, char* argv[])
     printf("f(a0=%i, a1=%i, a2=%i) = %i\n%i\n",a[0],a[1],a[2],f(a));
 }
 #endif
+
+/*
+(set-option :pp.fp_real_literals true)
+(declare-const i Int)
+(declare-const ar (Array Int Float32))
+
+(assert (<= 0 i))
+(assert (<= i 3))
+(assert (= (store ar 1 1.0) ar))
+(assert (= (store ar 2 4.0) ar))
+(assert (= (store ar 3 9.0) ar))
+
+(assert (>= (select ar i) (roundTowardZero (/ 5 1))))
+
+(check-sat)
+(get-model)
+(get-value (i))
+
+
+int a[10];
+a[2] = 7;
+a[2] = a[2] + 1;
+
+a[2]=7       => ar = store ar 2 7
+int x = a[2]*2;    .. (select ar 2)
+a[2]=a[2]+1  => ar = store ar 2 ((select ar 2) + 1)
+int y = a[2]+1;
+
+x = 4;
+x = 7;
+*/
