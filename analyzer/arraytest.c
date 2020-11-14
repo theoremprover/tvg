@@ -50,10 +50,10 @@ a[2] = 7;
 a[2] = a[2] + 1;
 
 a[2]=7       => ar = store ar 2 7
-int x = a[2]*2;    .. (select ar 2)
-a[2]=a[2]+1  => ar = store ar 2 ((select ar 2) + 1)
+
+a[3]=a[2]+1  => ar = store ar 3 ((select ar 2) + 1)
+
 int y = a[2]+1;
 
-x = 4;
-x = 7;
+
 */

@@ -830,13 +830,14 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			concat ( replicate n [ CBlockStmt (CGotoPtr while_cond undefNode), CBlockStmt body ] ) ++
 			[ CBlockStmt $ CGotoPtr (not_c while_cond) ni ]
 
+	-- Reduce the for loop to a bismimular while loop
 	CFor (Right decl) mb_cond mb_inc_expr stmt ni -> do
 		unfoldTracesM ret_type toplevel break_stack envs trace ((CBlockStmt stmt' : rest) : rest2)
 		where
 		stmt' = CCompound [] [ CBlockDecl decl, CBlockStmt body_stmt ] ni
 		body_stmt = CWhile (maybe (ⅈ 1) id mb_cond) while_body False ni
 		while_body = CCompound [] ( CBlockStmt stmt :
-			maybe [] (\ expr -> [CBlockStmt $ CExpr (Just expr) (nodeInfo expr)]) mb_inc_expr ) (nodeInfo stmt)
+			maybe [] (\ expr -> [ CBlockStmt $ CExpr (Just expr) (nodeInfo expr) ]) mb_inc_expr ) (nodeInfo stmt)
 
 	_ -> myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 
