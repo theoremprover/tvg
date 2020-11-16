@@ -46,8 +46,6 @@ int main(int argc, char* argv[])
 
 
 int a[10];
-a[2] = 7;
-a[2] = a[2] + 1;
 
 a[2]=7       => ar = store ar 2 7
 
