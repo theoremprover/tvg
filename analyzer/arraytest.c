@@ -3,6 +3,14 @@
 #include <stdlib.h>
 #endif
 
+int solver_pragma(int x,...)
+{
+    return 1;
+}
+void solver_debug(void* x)
+{
+}
+
 int f(int arr[3])
 {
     int j=0;
@@ -53,5 +61,12 @@ a[3]=a[2]+1  => ar2 = store ar1 3 ((select ar1 2) + 1)
 
 int y = a[2]+1;
 
+
+
+DECL a Array Int Int
+ASSN a[i] = 7
+COND a[i]>0
+ASSN a[i] = a[i]+1
+COND a[i]==8
 
 */
