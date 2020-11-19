@@ -6,7 +6,7 @@
 int f(int arr[3])
 {
     int j=0;
-    for(int i=0;i<sizeof(arr);i++)
+    for(int i=0;i<3;i++)
     {
         if(arr[i]>0) arr[i] *= 2;
         j += arr[i];
@@ -17,7 +17,7 @@ int f(int arr[3])
 #ifdef CALC
 int main(int argc, char* argv[])
 {
-    int i=0;
+    int i=1;
     int a[3];
     sscanf(argv[i++],"%i",&a[0]);
     sscanf(argv[i++],"%i",&a[1]);
@@ -47,9 +47,9 @@ int main(int argc, char* argv[])
 
 int a[10];
 
-a[2]=7       => ar = store ar 2 7
+a[2]=7       => ar1 = store ar0 2 7
 
-a[3]=a[2]+1  => ar = store ar 3 ((select ar 2) + 1)
+a[3]=a[2]+1  => ar2 = store ar1 3 ((select ar1 2) + 1)
 
 int y = a[2]+1;
 

@@ -673,6 +673,13 @@ createInterfaceFromExprM expr ty = do
 		-- direct-type expr where direct-type is no struct/union
 		DirectType _ _ _ -> prepend_plainvar ty' $ return []
 
+		ArrayType elem_ty (ArraySize True (CConst (CIntConst cint _))) _ _ -> do
+			elem_ty' <- elimTypeDefsM elem_ty
+			let (CVar (Ident arrvar_ident _ _) (ni,_)) = expr
+			let elem_names = map (\ i -> internalIdent $ show arrvar_ident ++ "_" ++ show i) [0..(getCInteger cint - 1)]
+			concatForM elem_names $ \ elem_name ->
+				createInterfaceFromExprM (CVar elem_name (ni,ty2Z3Type elem_ty')) elem_ty'
+
 		_ ->
 			myError $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
 
@@ -1235,6 +1242,8 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 	where
 	foldtraceM :: Trace -> Trace -> CovVecM Trace
 	foldtraceM result [] = return result
+	-- Skip assignments to array elements
+	foldtraceM result (ass@(Assignment (CIndex _ _ _) _) : rest) = foldtraceM (ass:result) rest
 	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (substituteBy lvalue expr result) rest
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
 
@@ -1421,6 +1430,11 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 		pexpr' <- annotate_types pexpr
 		return $ CMember pexpr' member_ident is_p (ni,ty2Z3Type lexpr_ty)
 
+	annotate_types (CIndex var@(CVar ident _) ix ni) = do
+		var' <- annotate_types var
+		ix' <- annotate_types ix
+		return $ CIndex var' (mb_cast (ty2Z3Type intType) ix') (ni,extractType var')
+
 	annotate_types other = myError $ "annotate_types " ++ (render.pretty) other ++ " not implemented"
 
 	mb_cast :: Z3_Type -> CExprWithType -> CExprWithType
@@ -1543,16 +1557,28 @@ expr2SExpr expr = expr2sexpr expr
 				expr2sexpr then_expr,
 				expr2sexpr else_expr ]
 
+		CIndex var@(CVar _ _) ix _ -> do
+			var_sexpr <- expr2sexpr var
+			ix_sexpr <- expr2sexpr ix
+			return $ SExpr [ SLeaf "select", var_sexpr, ix_sexpr ]
+
 		cmember@(CMember _ _ _ _) -> myError $ "expr2sexpr of member " ++ (render.pretty) cmember ++ " should not occur!"
 	
 		ccall@(CCall _ _ _) -> myError $ "expr2sexpr of call " ++ (render.pretty) ccall ++ " should not occur!"
 
 		other -> myError $ "expr2SExpr " ++ (render.pretty) other ++ " not implemented" 
 
-data Z3_Type = Z3_Bool | Z3_BitVector Int Bool | Z3_Float | Z3_Double | Z3_Ptr Z3_Type | Z3_Compound
-	deriving (Show,Eq,Ord,Data)
+data Z3_Type =
+	Z3_Bool |
 -- Z3_BitVector Int (isUnsigned::Bool), hence
 -- the derived ordering intentionally coincides with the type casting ordering :-)
+	Z3_BitVector Int Bool |
+	Z3_Float |
+	Z3_Double |
+	Z3_Ptr Z3_Type |
+	Z3_Array Z3_Type Integer |
+	Z3_Compound
+	deriving (Show,Eq,Ord,Data)
 
 ty2Z3Type :: Type -> Z3_Type
 ty2Z3Type ty = case ty of
@@ -1564,6 +1590,8 @@ ty2Z3Type ty = case ty of
 		TyComp _            -> Z3_Compound
 		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
 	PtrType target_ty _ _ -> Z3_Ptr $ ty2Z3Type target_ty
+	ArrayType elem_ty (ArraySize True (CConst (CIntConst cint _))) _ _ ->
+		Z3_Array (ty2Z3Type elem_ty) (getCInteger cint)
 	TypeDefType (TypeDefRef _ ty _) _ _ -> ty2Z3Type ty
 --	FunctionType (FunType ret_type funparamdecls False) _ -> Z3_Fun 
 	_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
@@ -1599,12 +1627,13 @@ ty2Z3TypeM ty = return $ ty2Z3Type ty
 
 z3Ty2SExpr :: Z3_Type -> SExpr
 z3Ty2SExpr ty = case ty of
-	Z3_BitVector size _ -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
-	Z3_Float            -> SLeaf "Float32"
-	Z3_Double           -> SLeaf "Float64"
-	Z3_Bool             -> SLeaf "Bool"
-	Z3_Ptr _            -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show 1) ]
-	other               -> error $ "z3Ty2SExpr " ++ show other ++ " should not occur!"
+	Z3_BitVector size _   -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
+	Z3_Float              -> SLeaf "Float32"
+	Z3_Double             -> SLeaf "Float64"
+	Z3_Bool               -> SLeaf "Bool"
+	Z3_Ptr _              -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show 1) ]
+	Z3_Array elem_ty size -> SExpr [ SLeaf "Array", SLeaf "Int", z3Ty2SExpr elem_ty ]
+	other                 -> error $ "z3Ty2SExpr " ++ show other ++ " should not occur!"
 
 type Solution = [(String,SolutionVal)]
 
