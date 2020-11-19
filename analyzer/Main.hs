@@ -22,8 +22,8 @@ import Language.C.Analysis.SemRep
 import Language.C.Analysis.Export
 import Language.C.Syntax.Ops
 import Language.C.System.GCC
---import "language-c-quote" Language.C.Quote.GCC
---import "language-c-quote" Language.C.Pretty
+import "language-c-quote" Language.C.Quote.GCC
+import "language-c-quote" Language.C.Pretty
 import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
@@ -375,6 +375,38 @@ covVectorsM = do
 
 	Right all_covered <- unfoldTracesM ret_type' True [] (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	return all_covered
+
+harnessAST srcfilename argdecls scanfs funname funname_s args printf_args = [cunit|
+#include <stdio.h>
+#include <stdlib.h>
+
+int solver_pragma(int x,...) { return 1; }
+void solver_debug(void* x) { }
+
+#include "#{srcfilename}"
+
+void main(int argc, char* argv[])
+{
+    int i=1;
+
+	$decls:argdecls
+	$stms:scanfs
+
+/*
+	int x0;
+    sscanf(argv[i++],"%i",&x0);
+    int n0;
+    sscanf(argv[i++],"%i",&n0);
+*/
+	int res = $id:funname ( $args:args ) ;
+	printf($args:printf_args);
+//    printf("#{funname_s}(x=%i, n=%i) =\n%i\n",x0,n0,res);
+}
+|]
+
+printC :: IO ()
+printC = do
+	
 
 type Location = (Int,Int)
 

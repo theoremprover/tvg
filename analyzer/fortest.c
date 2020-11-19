@@ -30,7 +30,7 @@ int main(int argc, char* argv[])
     sscanf(argv[i++],"%i",&x0);
     sscanf(argv[i++],"%i",&n0);
 
-    printf("f(x=%i, n=%i) = %i\n%i\n",x0,n0,f(x0,n0));
+    printf("f(x=%i, n=%i) =\n%i\n",x0,n0,f(x0,n0));
 }
 #endif
 
