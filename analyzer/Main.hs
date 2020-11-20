@@ -373,6 +373,8 @@ covVectorsM = do
 			ExitFailure _ -> myError $ "Compilation failed:\n" ++ stderr
 			ExitSuccess -> modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
 
+		printC param_env
+
 	Right all_covered <- unfoldTracesM ret_type' True [] (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	return all_covered
 
@@ -389,8 +391,8 @@ void main(int argc, char* argv[])
 {
     int i=1;
 
-	$decls:argdecls
-	$stms:scanfs
+	$escstm:argdecls
+	$escstm:scanfs
 
 /*
 	int x0;
@@ -404,9 +406,12 @@ void main(int argc, char* argv[])
 }
 |]
 
-printC :: IO ()
-printC = do
-	
+printC :: Env -> IO ()
+printC param_env = do
+	putStrLn $ (render.ppr) $ harnessAST srcfilename argdecls scanfs funname funname_s args printf_args
+	where
+	srcfilename = "srcfile.c"
+	argdecls = for param_env $ \ (id1,(_,ty)) -> [cdecl|]
 
 type Location = (Int,Int)
 
