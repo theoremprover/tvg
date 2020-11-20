@@ -244,7 +244,7 @@ data CovVecState = CovVecState {
 	analysisStateCVS :: ([TraceAnalysisResult],Set.Set Branch),
 	allCondPointsCVS :: Set.Set Branch,
 	statsCVS         :: Stats,
-	retEnvCVS        :: Maybe Env
+	retEnvCVS        :: Maybe [(EnvItem,CExprWithType)]
 	}
 
 data Stats = Stats { cutoffTries :: Int, cutoffsS :: Int }
@@ -337,8 +337,9 @@ covVectorsM = do
 		lookupFunM (builtinIdent funname)
 	ret_type' <- elimTypeDefsM ret_type
 
-	ret_env <- createInterfaceM [(internalIdent returnval_var_name,ret_type')]
-	modify $ \ s -> s { retEnvCVS = Just ret_env }
+	let srcident = internalIdent returnval_var_name
+	ret_env_exprs <- createInterfaceFromExprM (CVar srcident (nodeInfo srcident,ty2Z3Type ret_type')) ret_type'
+	modify $ \ s -> s { retEnvCVS = Just ret_env_exprs }
 	
 	let condition_points = Set.fromList $ everything (++) (mkQ [] searchcondpoint) body
 		where
@@ -359,8 +360,8 @@ covVectorsM = do
 			next : _ -> next
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
-	param_env <- createInterfaceM $ for (map getVarDecl funparamdecls) $
-		\ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
+	let formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
+	param_env <- createInterfaceM formal_params
 	modify $ \ s -> s { paramEnvCVS = Just param_env }
 	printLogV 2 $ "param_env = " ++ showEnv param_env
 
@@ -373,7 +374,7 @@ covVectorsM = do
 			chkexefilename = replaceExtension mainFileName "exe"
 		absolute_filename <- liftIO $ makeAbsolute filename
 
-		charness <- createCHarness srcfilename funname ret_type' param_env
+		charness <- createCHarness ret_type formal_params srcfilename funname ret_type' param_env
 		liftIO $ writeFile (replaceFileName filename mainFileName) charness
 
 		gcc <- gets compilerCVS
@@ -412,20 +413,21 @@ int main(int argc, char* argv[])
 	incl_stdio = "#include <stdio.h>"
 	incl_stdlib = "#include <stdlib.h>"
 
-createCHarness :: String -> String -> Type -> Env -> CovVecM String
-createCHarness filename funname ret_type param_env = do
-	Just retenv <- gets retEnvCVS
+createCHarness :: Type -> [(Ident,Type)] -> String -> String -> Type -> Env -> CovVecM String
+createCHarness orig_rettype formal_params filename funname ret_type param_env = do
+	Just retenvexprs <- gets retEnvCVS
 	let
 		argnames = map ((render.pretty).fst) param_env
 		incl_srcfilename = "#include \"" ++ filename ++ "\""
 		argdecls = unlines $ for param_env $ \ (id1,(_,ty)) ->
 			(render.pretty) ty ++ " " ++ (render.pretty) id1 ++ ";\n" ++
 			"sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&" ++ (render.pretty) id1 ++ ");"
-		funcall = (render.pretty) ret_type ++ " " ++ returnval_var_name ++ " = " ++ funname ++ "(" ++ intercalate "," argnames ++ ");"
+		funcall = (render.pretty) orig_rettype ++ " " ++ returnval_var_name ++ " = " ++
+			funname ++ "(" ++ intercalate "," (map ((render.pretty).fst) formal_params) ++ ");"
 		argformats = map type_format_string $ map (snd.snd) param_env
 		argvals = intercalate "," $ for (zip argnames argformats) $ \ (argname,argformat) -> argname ++ " = " ++ argformat
-		ret_formatss = map (type_format_string.snd.snd) retenv
-		ret_vals = map ((render.pretty).fst) retenv
+		ret_formatss = map (type_format_string.snd.snd.fst) retenvexprs
+		ret_vals = for retenvexprs $ \ (_,cexpr) -> (render.pretty) (fmap fst cexpr)
 		print_retval = "printf(\"" ++ funname ++ "(" ++ argvals ++ ") = \\n"
 			++ intercalate " " ret_formatss ++ "\\n\", " ++ intercalate "," argnames ++ "," ++
 			intercalate ", " ret_vals ++ ");"
@@ -837,11 +839,11 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			case toplevel of
 				False -> return $ Left [ Return ret_expr' : trace' ]
 				True  -> do
-					ret_var_expr <- createInterfaceM [(internalIdent returnval_var_name,ret_type)]
+					Just ret_var_expr <- gets retEnvCVS
 					ret_env_expr <- createInterfaceFromExprM ret_expr' ret_type
 					when (length ret_var_expr /= length ret_env_expr) $ error "unfoldTraces1M CReturn: length ret_var_expr /= length ret_env_expr !"
 					ret_trace <- concatForM (zip ret_var_expr ret_env_expr) $
-						\ ( (_,(ret_var_ident,ret_var_ty)) , (_,ret_member_expr)) -> do
+						\ ( ((_,(ret_var_ident,ret_var_ty)),_) , (_,ret_member_expr)) -> do
 							let ret_val_cond = CBinary CEqOp
 								(CVar ret_var_ident (nodeInfo ret_var_ident,ty2Z3Type ret_var_ty))
 								ret_member_expr
@@ -1804,7 +1806,7 @@ solveTraceM mb_ret_type traceid trace = do
 	Just param_env <- gets paramEnvCVS
 	let
 		param_names = map (fst.snd) param_env
-		ret_names   = map (fst.snd) retval_env
+		ret_names   = map (fst.snd.fst) retval_env
 		constraints = concatMap traceitem2constr trace where
 		traceitem2constr (Condition _ expr) = [expr]
 		traceitem2constr _ = []
@@ -1829,7 +1831,7 @@ solveTraceM mb_ret_type traceid trace = do
 		Nothing -> Left $ isJust mb_sol
 		Just _ -> Right (model_string,case mb_sol of
 			Nothing -> Nothing
-			Just sol -> Just (param_env,retval_env,sol))
+			Just sol -> Just (param_env,map fst retval_env,sol))
 
 
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
