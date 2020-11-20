@@ -1,7 +1,3 @@
-#ifdef CALC
-#include <stdio.h>
-#endif
-
 #define FLOAT_ONLY
 
 #define FLOAT_BIT_ORDER_MISMATCH
@@ -9,14 +5,6 @@
 
 #undef NO_DI_MODE
 #undef TFLOAT
-
-int solver_pragma(int x,...)
-{
-    return 1;
-}
-void solver_debug(void* x)
-{
-}
 
 /* This is a software floating point library which can be used
    for targets without hardware floating point. 
@@ -1642,6 +1630,7 @@ tf_to_sf (TFtype arg_a)
 #endif /* ! FLOAT */
 #endif /* !EXTENDED_FLOAT_STUBS */
 
+/*
 #ifdef CALC
 int main(int argc, char* argv[])
 {
@@ -1687,3 +1676,4 @@ int main(int argc, char* argv[])
     return 0;
 }
 #endif
+*/

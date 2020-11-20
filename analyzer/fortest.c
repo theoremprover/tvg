@@ -1,17 +1,3 @@
-#ifdef CALC
-#include <stdio.h>
-#include <stdlib.h>
-#endif
-
-int solver_pragma(int x,...)
-{
-    return 1;
-}
-void solver_debug(void* x)
-{
-}
-
-
 int f(int x,int n)
 {
     int j = 1;
@@ -21,18 +7,6 @@ int f(int x,int n)
     }
     return j;
 }
-
-#ifdef CALC
-int main(int argc, char* argv[])
-{
-    int x0,n0;
-    int i=1;
-    sscanf(argv[i++],"%i",&x0);
-    sscanf(argv[i++],"%i",&n0);
-
-    printf("f(x=%i, n=%i) =\n%i\n",x0,n0,f(x0,n0));
-}
-#endif
 
 /*
 (set-option :pp.fp_real_literals true)

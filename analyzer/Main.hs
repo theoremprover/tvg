@@ -23,7 +23,9 @@ import Language.C.Analysis.Export
 import Language.C.Syntax.Ops
 import Language.C.System.GCC
 import "language-c-quote" Language.C.Quote.GCC
-import "language-c-quote" Language.C.Pretty
+--import "language-c-quote" Language.C.Pretty
+import qualified Text.PrettyPrint.Mainland as PPM
+import qualified Text.PrettyPrint.Mainland.Class as PPMC
 import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Strict
@@ -86,6 +88,7 @@ doubleTolerance = 1e-10 :: Double
 showBuiltins = False
 cutOffs = False
 logToFile = True
+mainFileName = "main.c"
 
 -- Z3 does not accept identifiers starting with an underscore, so we prefix these with a
 safeZ3IdentifierPrefix = 'a'
@@ -128,9 +131,9 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : ["-writeModels"] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
@@ -165,7 +168,7 @@ main = do
 	
 						(full_coverage,s) <- runStateT covVectorsM $
 							CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc opts
-								Nothing ([],Set.empty) Set.empty intialStats
+								Nothing ([],Set.empty) Set.empty intialStats Nothing
 						let
 							(testvectors_rev,covered) = analysisStateCVS s
 							testvectors = reverse testvectors_rev
@@ -240,7 +243,8 @@ data CovVecState = CovVecState {
 	paramEnvCVS      :: Maybe Env,
 	analysisStateCVS :: ([TraceAnalysisResult],Set.Set Branch),
 	allCondPointsCVS :: Set.Set Branch,
-	statsCVS         :: Stats
+	statsCVS         :: Stats,
+	retEnvCVS        :: Maybe Env
 	}
 
 data Stats = Stats { cutoffTries :: Int, cutoffsS :: Int }
@@ -333,6 +337,9 @@ covVectorsM = do
 		lookupFunM (builtinIdent funname)
 	ret_type' <- elimTypeDefsM ret_type
 
+	ret_env <- createInterfaceM [(internalIdent returnval_var_name,ret_type')]
+	modify $ \ s -> s { retEnvCVS = Just ret_env }
+	
 	let condition_points = Set.fromList $ everything (++) (mkQ [] searchcondpoint) body
 		where
 		n2loc node = nodeInfo node
@@ -363,55 +370,77 @@ covVectorsM = do
 		filename <- gets srcFilenameCVS
 		let
 			srcfilename = takeFileName filename
-			chkexefilename = replaceExtension srcfilename "exe"
+			chkexefilename = replaceExtension mainFileName "exe"
 		absolute_filename <- liftIO $ makeAbsolute filename
+
+		charness <- createCHarness srcfilename funname ret_type' param_env
+		liftIO $ writeFile (replaceFileName filename mainFileName) charness
+
 		gcc <- gets compilerCVS
 		(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
-			readProcessWithExitCode gcc ["-Wno-builtin-declaration-mismatch","-Wno-int-conversion","-o",
-				chkexefilename,"-DCALC",srcfilename] ""
+			readProcessWithExitCode gcc ["-Wno-builtin-declaration-mismatch","-Wno-int-conversion","-Wno-incompatible-pointer-types","-o",
+				chkexefilename,mainFileName] ""
 		case exitcode of
 			ExitFailure _ -> myError $ "Compilation failed:\n" ++ stderr
 			ExitSuccess -> modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
 
-		printC param_env
 
 	Right all_covered <- unfoldTracesM ret_type' True [] (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	return all_covered
 
-harnessAST srcfilename argdecls scanfs funname funname_s args printf_args = [cunit|
-#include <stdio.h>
-#include <stdlib.h>
+harnessAST incl argdecls funcall print_retval = [cunit|
+$esc:incl_stdio
+$esc:incl_stdlib
 
 int solver_pragma(int x,...) { return 1; }
 void solver_debug(void* x) { }
 
-#include "#{srcfilename}"
+$esc:incl
 
-void main(int argc, char* argv[])
+int main(int argc, char* argv[])
 {
     int i=1;
 
 	$escstm:argdecls
-	$escstm:scanfs
 
-/*
-	int x0;
-    sscanf(argv[i++],"%i",&x0);
-    int n0;
-    sscanf(argv[i++],"%i",&n0);
-*/
-	int res = $id:funname ( $args:args ) ;
-	printf($args:printf_args);
-//    printf("#{funname_s}(x=%i, n=%i) =\n%i\n",x0,n0,res);
+	$escstm:funcall
+	$escstm:print_retval
+	
+	return 0;
 }
 |]
-
-printC :: Env -> IO ()
-printC param_env = do
-	putStrLn $ (render.ppr) $ harnessAST srcfilename argdecls scanfs funname funname_s args printf_args
 	where
-	srcfilename = "srcfile.c"
-	argdecls = for param_env $ \ (id1,(_,ty)) -> [cdecl|]
+	incl_stdio = "#include <stdio.h>"
+	incl_stdlib = "#include <stdlib.h>"
+
+createCHarness :: String -> String -> Type -> Env -> CovVecM String
+createCHarness filename funname ret_type param_env = do
+	Just retenv <- gets retEnvCVS
+	let
+		argnames = map ((render.pretty).fst) param_env
+		incl_srcfilename = "#include \"" ++ filename ++ "\""
+		argdecls = unlines $ for param_env $ \ (id1,(_,ty)) ->
+			(render.pretty) ty ++ " " ++ (render.pretty) id1 ++ ";\n" ++
+			"sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&" ++ (render.pretty) id1 ++ ");"
+		funcall = (render.pretty) ret_type ++ " " ++ returnval_var_name ++ " = " ++ funname ++ "(" ++ intercalate "," argnames ++ ");"
+		argformats = map type_format_string $ map (snd.snd) param_env
+		argvals = intercalate "," $ for (zip argnames argformats) $ \ (argname,argformat) -> argname ++ " = " ++ argformat
+		ret_formatss = map (type_format_string.snd.snd) retenv
+		ret_vals = map ((render.pretty).fst) retenv
+		print_retval = "printf(\"" ++ funname ++ "(" ++ argvals ++ ") = \\n"
+			++ intercalate " " ret_formatss ++ "\\n\", " ++ intercalate "," argnames ++ "," ++
+			intercalate ", " ret_vals ++ ");"
+	return $ PPM.prettyCompact $ PPMC.ppr $ harnessAST incl_srcfilename argdecls funcall print_retval
+	where
+	type_format_string ty = "%" ++ case ty2Z3Type ty of
+		Z3_Float  -> "f"
+		Z3_Double -> "lf"
+		Z3_BitVector size unsigned | size==intSize -> if unsigned then "u" else "i"
+		Z3_BitVector size unsigned | size==longIntSize -> "l" ++ if unsigned then "u" else "i"
+		Z3_BitVector size unsigned | size==longLongIntSize -> "ll" ++ if unsigned then "u" else "i"
+		Z3_BitVector size unsigned -> if unsigned then "u" else "i"
+		Z3_Ptr _ -> "p"
+		_ -> error $ "type_format_string " ++ (render.pretty) ty ++ " not implemented"
 
 type Location = (Int,Int)
 
@@ -1634,31 +1663,29 @@ ty2Z3Type ty = case ty of
 --	FunctionType (FunType ret_type funparamdecls False) _ -> Z3_Fun 
 	_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
 
+sizeofIntTy :: Type -> Int
+sizeofIntTy ty@(DirectType tyname _ attrs) = case tyname of
+	TyIntegral intty -> case (intty,map to_mode attrs) of
+		(TyChar,[])     -> 8
+		(TySChar,[])    -> 8
+		(TyUChar,[])    -> 8
+		(TyShort,[])    -> 16
+		(TyUShort,[])   -> 16
+		(TyInt,[])      -> intSize
+		(TyInt,["SI"])  -> 32
+		(TyInt,["DI"])  -> 64
+		(TyUInt,[])     -> intSize
+		(TyUInt,["SI"]) -> 32
+		(TyUInt,["DI"]) -> 64
+		(TyLong,[])     -> longIntSize
+		(TyULong,[])    -> longIntSize
+		(TyLLong,[])    -> 64
+		(TyULLong,[])   -> 64
+		other           -> error $ "sizeofIntTy " ++ show other ++ " not implemented!"
+	other -> error $ "sizeofIntTy: " ++ (render.pretty) ty ++ " is not an Integral type"
 	where
-
-	sizeofIntTy :: Type -> Int
-	sizeofIntTy ty@(DirectType tyname _ attrs) = case tyname of
-		TyIntegral intty -> case (intty,map to_mode attrs) of
-			(TyChar,[])     -> 8
-			(TySChar,[])    -> 8
-			(TyUChar,[])    -> 8
-			(TyShort,[])    -> 16
-			(TyUShort,[])   -> 16
-			(TyInt,[])      -> intSize
-			(TyInt,["SI"])  -> 32
-			(TyInt,["DI"])  -> 64
-			(TyUInt,[])     -> intSize
-			(TyUInt,["SI"]) -> 32
-			(TyUInt,["DI"]) -> 64
-			(TyLong,[])     -> longIntSize
-			(TyULong,[])    -> longIntSize
-			(TyLLong,[])    -> 64
-			(TyULLong,[])   -> 64
-			other           -> error $ "sizeofIntTy " ++ show other ++ " not implemented!"
-		other -> error $ "sizeofIntTy: " ++ (render.pretty) ty ++ " is not an Integral type"
-		where
-		to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
-		to_mode attr = error $ "attrs2modes: unknown attr " ++ (render.pretty) attr
+	to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
+	to_mode attr = error $ "attrs2modes: unknown attr " ++ (render.pretty) attr
 
 ty2Z3TypeM :: Type -> CovVecM Z3_Type 
 ty2Z3TypeM ty = return $ ty2Z3Type ty
@@ -1772,9 +1799,9 @@ solveTraceM mb_ret_type traceid trace = do
 	printLogV 1 $ "solveTraceM " ++ show traceid ++ " ..."
 	let
 		tracename = show traceid
-	retval_env  <- case mb_ret_type of
-		Nothing  -> return []
-		Just ret_type -> createInterfaceM [(internalIdent returnval_var_name,ret_type)]
+	Just retval_env  <- case mb_ret_type of
+		Nothing  -> return $ Just []
+		Just ret_type -> gets retEnvCVS
 	Just param_env <- gets paramEnvCVS
 	let
 		param_names = map (fst.snd) param_env

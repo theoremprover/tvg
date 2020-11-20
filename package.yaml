@@ -37,6 +37,7 @@ dependencies:
 - regex-tdfa
 - language-c-quote
 - containers-unicode-symbols
+- mainland-pretty
 
 executables:
 #  tvg-exe:
