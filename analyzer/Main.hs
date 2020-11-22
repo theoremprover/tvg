@@ -361,6 +361,7 @@ covVectorsM = do
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
 	let formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
+	ext_decls <- createDecls formal_params
 	param_env <- createInterfaceM formal_params
 	modify $ \ s -> s { paramEnvCVS = Just param_env }
 	printLogV 2 $ "param_env = " ++ showEnv param_env
@@ -374,7 +375,7 @@ covVectorsM = do
 			chkexefilename = replaceExtension mainFileName "exe"
 		absolute_filename <- liftIO $ makeAbsolute filename
 
-		charness <- createCHarness ret_type formal_params srcfilename funname ret_type' param_env
+		charness <- createCHarness ret_type formal_params srcfilename funname ret_type' param_env ext_decls
 		liftIO $ writeFile (replaceFileName filename mainFileName) charness
 
 		gcc <- gets compilerCVS
@@ -413,15 +414,15 @@ int main(int argc, char* argv[])
 	incl_stdio = "#include <stdio.h>"
 	incl_stdlib = "#include <stdlib.h>"
 
-createCHarness :: Type -> [(Ident,Type)] -> String -> String -> Type -> Env -> CovVecM String
-createCHarness orig_rettype formal_params filename funname ret_type param_env = do
+createCHarness :: Type -> [(Ident,Type)] -> String -> String -> Type -> Env -> [String] -> CovVecM String
+createCHarness orig_rettype formal_params filename funname ret_type param_env extdecls = do
 	Just retenvexprs <- gets retEnvCVS
 	let
 		argnames = map ((render.pretty).fst) param_env
 		incl_srcfilename = "#include \"" ++ filename ++ "\""
-		argdecls = unlines $ for param_env $ \ (id1,(_,ty)) ->
-			(render.pretty) ty ++ " " ++ (render.pretty) id1 ++ ";\n" ++
-			"sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&" ++ (render.pretty) id1 ++ ");"
+
+		argdecls = unlines extdecls
+
 		funcall = (render.pretty) orig_rettype ++ " " ++ returnval_var_name ++ " = " ++
 			funname ++ "(" ++ intercalate "," (map ((render.pretty).fst) formal_params) ++ ");"
 		argformats = map type_format_string $ map (snd.snd) param_env
@@ -432,16 +433,17 @@ createCHarness orig_rettype formal_params filename funname ret_type param_env = 
 			++ intercalate " " ret_formatss ++ "\\n\", " ++ intercalate "," argnames ++ "," ++
 			intercalate ", " ret_vals ++ ");"
 	return $ PPM.prettyCompact $ PPMC.ppr $ harnessAST incl_srcfilename argdecls funcall print_retval
-	where
-	type_format_string ty = "%" ++ case ty2Z3Type ty of
-		Z3_Float  -> "f"
-		Z3_Double -> "lf"
-		Z3_BitVector size unsigned | size==intSize -> if unsigned then "u" else "i"
-		Z3_BitVector size unsigned | size==longIntSize -> "l" ++ if unsigned then "u" else "i"
-		Z3_BitVector size unsigned | size==longLongIntSize -> "ll" ++ if unsigned then "u" else "i"
-		Z3_BitVector size unsigned -> if unsigned then "u" else "i"
-		Z3_Ptr _ -> "p"
-		_ -> error $ "type_format_string " ++ (render.pretty) ty ++ " not implemented"
+
+type_format_string :: Type -> String
+type_format_string ty = "%" ++ case ty2Z3Type ty of
+	Z3_Float  -> "f"
+	Z3_Double -> "lf"
+	Z3_BitVector size unsigned | size==intSize -> if unsigned then "u" else "i"
+	Z3_BitVector size unsigned | size==longIntSize -> "l" ++ if unsigned then "u" else "i"
+	Z3_BitVector size unsigned | size==longLongIntSize -> "ll" ++ if unsigned then "u" else "i"
+	Z3_BitVector size unsigned -> if unsigned then "u" else "i"
+	Z3_Ptr _ -> "p"
+	_ -> error $ "type_format_string " ++ (render.pretty) ty ++ " not implemented"
 
 type Location = (Int,Int)
 
@@ -663,8 +665,7 @@ getMembersM :: SUERef -> CovVecM [(Ident,Type)]
 getMembersM sueref = do
 	CompDef (CompType _ _ memberdecls _ _) <- lookupTagM sueref
 	forM memberdecls $ \ (MemberDecl (VarDecl (VarName ident _) _ ty) Nothing _) -> do
-		ty' <- elimTypeDefsM ty
-		return (ident,ty')
+		return (ident,ty)
 
 elimTypeDefsM :: Type -> CovVecM Type
 elimTypeDefsM directtype@(DirectType _ _ _) = pure directtype
@@ -686,7 +687,6 @@ declaration2EnvItemM :: Declaration decl => decl -> CovVecM [EnvItem]
 declaration2EnvItemM decl = do
 	let VarDecl (VarName srcident@(Ident srcname i ni) _) _ ty = getVarDecl decl
 	ty' <- elimTypeDefsM ty
---	let srcident' = if "_" `isPrefixOf` srcname then Ident (safeZ3IdentifierPrefix:srcname) i ni else srcident
 	return $ [ (srcident,(srcident,ty')) ]
 
 mkIdentWithCNodePos :: (CNode cnode) => cnode -> String -> Ident
@@ -708,12 +708,13 @@ identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 
 -- From a list of identifiers and types (i.e. the signature of the function to be analyzed),
 -- create a list of EnvItems (representing the declarations) and CExprs
+-- the returned string list is the list of declarations/definitions for the C test harness
 
 createInterfaceM :: [(Ident,Type)] -> CovVecM Env
-createInterfaceM ty_env = concatForM ty_env $ \ (srcident,ty) ->do
+createInterfaceM ty_env = concatForM ty_env $ \ (srcident,ty) -> do
 	ty' <- elimTypeDefsM ty
-	envitem_exprs <- createInterfaceFromExprM (CVar srcident (nodeInfo srcident,ty2Z3Type ty')) ty'
-	return $ map fst envitem_exprs
+	res <- createInterfaceFromExprM (CVar srcident (nodeInfo srcident,ty2Z3Type ty')) ty
+	return $ map fst res
 
 createInterfaceFromExprM :: CExprWithType -> Type -> CovVecM [(EnvItem,CExprWithType)]
 createInterfaceFromExprM expr ty = do
@@ -721,23 +722,23 @@ createInterfaceFromExprM expr ty = do
 	printLogV 2 $ "###                          z3type = " ++ show (ty2Z3Type ty)
 	ty' <- elimTypeDefsM ty
 	case ty' of
-	
+
 		-- STRUCT* p
-		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> prepend_plainvar ty' $ do
-			member_ty_s <- getMembersM sueref
-			concatForM member_ty_s $ \ (m_ident,m_ty) ->
-				createInterfaceFromExprM (CMember expr m_ident True (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
-	
+		PtrType compty@(DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> prepend_plainvar ty' $ do
+				member_ty_s <- getMembersM sueref
+				concatForM member_ty_s $ \ (m_ident,m_ty) -> do
+					createInterfaceFromExprM (CMember expr m_ident True (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
+
 		-- ty* p
 		PtrType target_ty _ _ -> prepend_plainvar ty' $
 			createInterfaceFromExprM (CUnary CIndOp expr (extractNodeInfo expr,ty2Z3Type target_ty)) target_ty
-	
+
 		-- STRUCT expr
 		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 			member_ty_s <- getMembersM sueref
 			concatForM member_ty_s $ \ (m_ident,m_ty) -> do
 				createInterfaceFromExprM (CMember expr m_ident False (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
-	
+
 		-- direct-type expr where direct-type is no struct/union
 		DirectType _ _ _ -> prepend_plainvar ty' $ return []
 
@@ -748,16 +749,21 @@ createInterfaceFromExprM expr ty = do
 			concatForM elem_names $ \ elem_name ->
 				createInterfaceFromExprM (CVar elem_name (ni,ty2Z3Type elem_ty')) elem_ty'
 
-		_ ->
-			myError $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
+		_ -> myError $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
 
 		where
 	
+		srcident = internalIdent $ lValueToVarName expr
+
 		prepend_plainvar :: Type -> CovVecM [(EnvItem,CExprWithType)] -> CovVecM [(EnvItem,CExprWithType)]
 		prepend_plainvar ty' rest_m = do
-			let srcident = internalIdent $ lValueToVarName expr
-			rest <- rest_m
-			return $ ((srcident,(srcident,ty')),expr) : rest
+{-
+			let
+				decl_s = (render.pretty) ty ++ " " ++ (render.pretty) srcident ++ ";\n" ++
+					"sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&" ++ (render.pretty) srcident ++ ");"
+-}
+			rest1 <- rest_m
+			return $ (((srcident,(srcident,ty')),expr) : rest1)
 
 unfoldTracesM :: Type -> Bool -> [Int] -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
 unfoldTracesM ret_type toplevel break_stack envs trace cbss = do
@@ -1135,8 +1141,9 @@ cinitializer2blockitems lexpr ty initializer =
 			DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 				memberidentstypes <- getMembersM sueref
 				concatForM (zip initlist memberidentstypes) $ \case
-					(([],initializer),(memberident,memberty)) ->
-						cinitializer2blockitems (CMember lexpr memberident False (nodeInfo memberident)) memberty initializer
+					(([],initializer),(memberident,memberty)) -> do
+						memberty' <- elimTypeDefsM memberty
+						cinitializer2blockitems (CMember lexpr memberident False (nodeInfo memberident)) memberty' initializer
 					_ -> myError $ "cinitializer2blockitems: CPartDesignators not implemented yet!"
 			_ -> myError $ "cinitializer2blockitems: " ++ (render.pretty) ty ++ " at " ++ (show $ nodeInfo lexpr) ++ " is no composite type!"
 
