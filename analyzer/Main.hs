@@ -763,42 +763,59 @@ createInterfaceFromExprM expr ty = do
 {-
 			let
 				decl_s = (render.pretty) ty ++ " " ++ (render.pretty) srcident ++ ";\n" ++
-					"sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&" ++ (render.pretty) srcident ++ ");"
+					
 -}
 
 createDeclsM :: [(Ident,Type)] -> CovVecM [String]
-createDeclsM formal_params = concatForM formal_params create_decls
+createDeclsM formal_params = concatForM formal_params $ \ (ident,ty) -> create_decls (CVar ident undefNode) ty
 	where
-	create_decls (ident,ty) = case ty of
+	create_decls expr ty = case ty of
+
+		TypeDefType (TypeDefRef ident _ _) _ _ -> do
+			ty' <- lookupTypeDefM ident
+			create_decls expr ty'
 
 		-- STRUCT* p		
-		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> do
+		PtrType (target_ty@(DirectType (TyComp (CompTypeRef sueref _ _)) _ _)) _ _ -> do
 			member_ty_s <- getMembersM sueref
-			concatForM member_ty_s $ \ (m_ident,m_ty) -> do
-				createInterfaceFromExprM (CMember expr m_ident True (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
+			let
+				compound_varname = lval_varname ++ "_compound"
+			decls <- concatForM member_ty_s $ \ (m_ident,m_ty) -> do
+				create_decls (CMember expr m_ident True undefNode) m_ty
+			return $
+				[ (render.pretty) target_ty ++ " " ++ compound_varname ++ ";" ] ++
+				[ (render.pretty) ty ++ " " ++ lval_varname ++ " = &" ++ compound_varname ++ ";" ] ++
+				decls
 
 		-- target_ty* p
-		PtrType target_ty _ _ -> prepend_plainvar ty' $
-			createInterfaceFromExprM (CUnary CIndOp expr (extractNodeInfo expr,ty2Z3Type target_ty)) target_ty
+		PtrType target_ty _ _ -> do
+			decls <- create_decls (CUnary CIndOp expr undefNode) target_ty
+			return $ [ (render.pretty) target_ty ++ " " ++ lval_varname ++ ";" ] ++ decls
 
 		-- STRUCT expr
 		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 			member_ty_s <- getMembersM sueref
 			concatForM member_ty_s $ \ (m_ident,m_ty) -> do
-				createInterfaceFromExprM (CMember expr m_ident False (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
+				create_decls (CMember expr m_ident False (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
 
-		-- direct-type expr where direct-type is no struct/union
-		DirectType _ _ _ -> prepend_plainvar ty' $ return []
+		-- direct-type expr where direct-type is no struct/union or ptr.
+		DirectType _ _ _ -> return
+			[ "sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&(" ++ (render.pretty) expr ++ "));" ]
 
+{-
 		ArrayType elem_ty (ArraySize True (CConst (CIntConst cint _))) _ _ -> do
 			elem_ty' <- elimTypeDefsM elem_ty
 			let (CVar (Ident arrvar_ident _ _) (ni,_)) = expr
 			let elem_names = map (\ i -> internalIdent $ show arrvar_ident ++ "_" ++ show i) [0..(getCInteger cint - 1)]
 			concatForM elem_names $ \ elem_name ->
-				createInterfaceFromExprM (CVar elem_name (ni,ty2Z3Type elem_ty')) elem_ty'
+				create_decls (CVar elem_name (ni,ty2Z3Type elem_ty')) elem_ty'
+-}
+		_ -> myError $ "createDeclsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty ++ " not implemented"
 
-		_ -> myError $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
+		where
 		
+		lval_varname = lValueToVarName expr
+
 
 unfoldTracesM :: Type -> Bool -> [Int] -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
 unfoldTracesM ret_type toplevel break_stack envs trace cbss = do
