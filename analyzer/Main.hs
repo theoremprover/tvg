@@ -724,10 +724,10 @@ createInterfaceFromExprM expr ty = do
 	case ty' of
 
 		-- STRUCT* p
-		PtrType compty@(DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> prepend_plainvar ty' $ do
-				member_ty_s <- getMembersM sueref
-				concatForM member_ty_s $ \ (m_ident,m_ty) -> do
-					createInterfaceFromExprM (CMember expr m_ident True (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
+		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> prepend_plainvar ty' $ do
+			member_ty_s <- getMembersM sueref
+			concatForM member_ty_s $ \ (m_ident,m_ty) -> do
+				createInterfaceFromExprM (CMember expr m_ident True (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
 
 		-- ty* p
 		PtrType target_ty _ _ -> prepend_plainvar ty' $
@@ -767,8 +767,38 @@ createInterfaceFromExprM expr ty = do
 -}
 
 createDeclsM :: [(Ident,Type)] -> CovVecM [String]
-createDeclsM formal_params = do
-	return []
+createDeclsM formal_params = concatForM formal_params create_decls
+	where
+	create_decls (ident,ty) = case ty of
+
+		-- STRUCT* p		
+		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> do
+			member_ty_s <- getMembersM sueref
+			concatForM member_ty_s $ \ (m_ident,m_ty) -> do
+				createInterfaceFromExprM (CMember expr m_ident True (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
+
+		-- target_ty* p
+		PtrType target_ty _ _ -> prepend_plainvar ty' $
+			createInterfaceFromExprM (CUnary CIndOp expr (extractNodeInfo expr,ty2Z3Type target_ty)) target_ty
+
+		-- STRUCT expr
+		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
+			member_ty_s <- getMembersM sueref
+			concatForM member_ty_s $ \ (m_ident,m_ty) -> do
+				createInterfaceFromExprM (CMember expr m_ident False (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
+
+		-- direct-type expr where direct-type is no struct/union
+		DirectType _ _ _ -> prepend_plainvar ty' $ return []
+
+		ArrayType elem_ty (ArraySize True (CConst (CIntConst cint _))) _ _ -> do
+			elem_ty' <- elimTypeDefsM elem_ty
+			let (CVar (Ident arrvar_ident _ _) (ni,_)) = expr
+			let elem_names = map (\ i -> internalIdent $ show arrvar_ident ++ "_" ++ show i) [0..(getCInteger cint - 1)]
+			concatForM elem_names $ \ elem_name ->
+				createInterfaceFromExprM (CVar elem_name (ni,ty2Z3Type elem_ty')) elem_ty'
+
+		_ -> myError $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
+		
 
 unfoldTracesM :: Type -> Bool -> [Int] -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
 unfoldTracesM ret_type toplevel break_stack envs trace cbss = do
