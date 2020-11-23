@@ -361,7 +361,7 @@ covVectorsM = do
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
 	let formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
-	ext_decls <- createDecls formal_params
+	ext_decls <- createDeclsM formal_params
 	param_env <- createInterfaceM formal_params
 	modify $ \ s -> s { paramEnvCVS = Just param_env }
 	printLogV 2 $ "param_env = " ++ showEnv param_env
@@ -757,13 +757,18 @@ createInterfaceFromExprM expr ty = do
 
 		prepend_plainvar :: Type -> CovVecM [(EnvItem,CExprWithType)] -> CovVecM [(EnvItem,CExprWithType)]
 		prepend_plainvar ty' rest_m = do
+			rest1 <- rest_m
+			return $ (((srcident,(srcident,ty')),expr) : rest1)
+
 {-
 			let
 				decl_s = (render.pretty) ty ++ " " ++ (render.pretty) srcident ++ ";\n" ++
 					"sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&" ++ (render.pretty) srcident ++ ");"
 -}
-			rest1 <- rest_m
-			return $ (((srcident,(srcident,ty')),expr) : rest1)
+
+createDeclsM :: [(Ident,Type)] -> CovVecM [String]
+createDeclsM formal_params = do
+	return []
 
 unfoldTracesM :: Type -> Bool -> [Int] -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
 unfoldTracesM ret_type toplevel break_stack envs trace cbss = do
