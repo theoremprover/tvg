@@ -776,8 +776,12 @@ createDeclsM formal_params = concatForM formal_params $ \ (ident,ty) -> create_d
 			create_decls expr ty'
 
 		-- STRUCT* p		
-		PtrType (target_ty@(DirectType (TyComp (CompTypeRef sueref _ _)) _ _)) _ _ -> do
-			member_ty_s <- getMembersM sueref
+		PtrType target_ty _ _ -> do
+			member_ty_s <- case target_ty of
+				DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> getMembersM sueref
+				TypeDefType (TypeDefRef ident _ _) _ _ -> do
+					DirectType (TyComp (CompTypeRef sueref _ _)) _ _ <- lookupTypeDefM ident
+					getMembersM sueref
 			let
 				compound_varname = lval_varname ++ "_compound"
 			decls <- concatForM member_ty_s $ \ (m_ident,m_ty) -> do
@@ -786,17 +790,18 @@ createDeclsM formal_params = concatForM formal_params $ \ (ident,ty) -> create_d
 				[ (render.pretty) target_ty ++ " " ++ compound_varname ++ ";" ] ++
 				[ (render.pretty) ty ++ " " ++ lval_varname ++ " = &" ++ compound_varname ++ ";" ] ++
 				decls
-
+{-
 		-- target_ty* p
 		PtrType target_ty _ _ -> do
 			decls <- create_decls (CUnary CIndOp expr undefNode) target_ty
 			return $ [ (render.pretty) target_ty ++ " " ++ lval_varname ++ ";" ] ++ decls
+-}
 
 		-- STRUCT expr
 		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 			member_ty_s <- getMembersM sueref
 			concatForM member_ty_s $ \ (m_ident,m_ty) -> do
-				create_decls (CMember expr m_ident False (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
+				create_decls (CMember expr m_ident False undefNode) m_ty
 
 		-- direct-type expr where direct-type is no struct/union or ptr.
 		DirectType _ _ _ -> return
