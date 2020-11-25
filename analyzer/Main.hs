@@ -131,9 +131,9 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
@@ -806,8 +806,12 @@ createDeclsM formal_params = concatForM formal_params $ \ (ident,ty) -> create_d
 				create_decls (CMember expr m_ident False undefNode) m_ty
 
 		-- direct-type expr where direct-type is no struct/union or ptr.
-		DirectType _ _ _ -> return
-			[ "sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&(" ++ (render.pretty) expr ++ "));" ]
+		DirectType _ _ _ -> do
+			let decl = case expr of
+				CVar _ _ -> [(render.pretty) ty ++ " " ++ (render.pretty) expr ++ ";"]
+				_ -> []
+			return $ decl ++
+				[ "sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&(" ++ (render.pretty) expr ++ "));" ]
 
 {-
 		ArrayType elem_ty (ArraySize True (CConst (CIntConst cint _))) _ _ -> do
