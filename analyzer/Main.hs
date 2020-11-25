@@ -240,7 +240,7 @@ data CovVecState = CovVecState {
 	numTracesCVS     :: Int,
 	compilerCVS      :: String,
 	optsCVS          :: [String],
-	paramEnvCVS      :: Maybe Env,
+	paramEnvCVS      :: Maybe [(EnvItem,CExprWithType)],
 	analysisStateCVS :: ([TraceAnalysisResult],Set.Set Branch),
 	allCondPointsCVS :: Set.Set Branch,
 	statsCVS         :: Stats,
@@ -362,8 +362,9 @@ covVectorsM = do
 
 	let formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
 	ext_decls <- createDeclsM formal_params
-	param_env <- createInterfaceM formal_params
-	modify $ \ s -> s { paramEnvCVS = Just param_env }
+	param_env_exprs <- createInterfaceM formal_params
+	let param_env = map fst param_env_exprs
+	modify $ \ s -> s { paramEnvCVS = Just param_env_exprs }
 	printLogV 2 $ "param_env = " ++ showEnv param_env
 
 	let decls = map (NewDeclaration . snd) (reverse param_env ++ glob_env)
@@ -416,23 +417,31 @@ int main(int argc, char* argv[])
 
 createCHarness :: Type -> [(Ident,Type)] -> String -> String -> Type -> Env -> [String] -> CovVecM String
 createCHarness orig_rettype formal_params filename funname ret_type param_env extdecls = do
-	Just retenvexprs <- gets retEnvCVS
+	Just retenvexprs0 <- gets retEnvCVS
+	Just param_env_exprs0 <- gets paramEnvCVS
 	let
-		argnames = map ((render.pretty).fst) param_env
+		retenvexprs = filter (envItemNotPtrType.fst) retenvexprs0
+		param_env_exprs = filter (envItemNotPtrType.fst) param_env_exprs0
+		argexprs = map (\ (_,cexpr) -> (render.pretty) (fmap fst cexpr)) param_env_exprs
 		incl_srcfilename = "#include \"" ++ filename ++ "\""
-
-		argdecls = unlines extdecls
 
 		funcall = (render.pretty) orig_rettype ++ " " ++ returnval_var_name ++ " = " ++
 			funname ++ "(" ++ intercalate "," (map ((render.pretty).fst) formal_params) ++ ");"
+
 		argformats = map type_format_string $ map (snd.snd) param_env
-		argvals = intercalate "," $ for (zip argnames argformats) $ \ (argname,argformat) -> argname ++ " = " ++ argformat
+		argvals = intercalate ", " $ for (zip argexprs argformats) $ \ (argname,argformat) -> argname ++ " = " ++ argformat
+
 		ret_formatss = map (type_format_string.snd.snd.fst) retenvexprs
 		ret_vals = for retenvexprs $ \ (_,cexpr) -> (render.pretty) (fmap fst cexpr)
+
 		print_retval = "printf(\"" ++ funname ++ "(" ++ argvals ++ ") = \\n"
-			++ intercalate " " ret_formatss ++ "\\n\", " ++ intercalate "," argnames ++ "," ++
+			++ intercalate " " ret_formatss ++ "\\n\", " ++ intercalate ", " argexprs ++ "," ++
 			intercalate ", " ret_vals ++ ");"
-	return $ PPM.prettyCompact $ PPMC.ppr $ harnessAST incl_srcfilename argdecls funcall print_retval
+	return $ PPM.prettyCompact $ PPMC.ppr $ harnessAST incl_srcfilename (unlines extdecls) funcall print_retval
+
+envItemNotPtrType :: EnvItem -> Bool
+envItemNotPtrType (_,(_,PtrType _ _ _)) = False
+envItemNotPtrType _ = True
 
 type_format_string :: Type -> String
 type_format_string ty = "%" ++ case ty2Z3Type ty of
@@ -710,11 +719,10 @@ identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 -- create a list of EnvItems (representing the declarations) and CExprs
 -- the returned string list is the list of declarations/definitions for the C test harness
 
-createInterfaceM :: [(Ident,Type)] -> CovVecM Env
+createInterfaceM :: [(Ident,Type)] -> CovVecM [(EnvItem,CExprWithType)]
 createInterfaceM ty_env = concatForM ty_env $ \ (srcident,ty) -> do
 	ty' <- elimTypeDefsM ty
-	res <- createInterfaceFromExprM (CVar srcident (nodeInfo srcident,ty2Z3Type ty')) ty
-	return $ map fst res
+	createInterfaceFromExprM (CVar srcident (nodeInfo srcident,ty2Z3Type ty')) ty
 
 createInterfaceFromExprM :: CExprWithType -> Type -> CovVecM [(EnvItem,CExprWithType)]
 createInterfaceFromExprM expr ty = do
@@ -759,12 +767,6 @@ createInterfaceFromExprM expr ty = do
 		prepend_plainvar ty' rest_m = do
 			rest1 <- rest_m
 			return $ (((srcident,(srcident,ty')),expr) : rest1)
-
-{-
-			let
-				decl_s = (render.pretty) ty ++ " " ++ (render.pretty) srcident ++ ";\n" ++
-					
--}
 
 createDeclsM :: [(Ident,Type)] -> CovVecM [String]
 createDeclsM formal_params = concatForM formal_params $ \ (ident,ty) -> create_decls (CVar ident undefNode) ty
@@ -1867,8 +1869,9 @@ solveTraceM mb_ret_type traceid trace = do
 	Just retval_env  <- case mb_ret_type of
 		Nothing  -> return $ Just []
 		Just ret_type -> gets retEnvCVS
-	Just param_env <- gets paramEnvCVS
+	Just param_env_exprs <- gets paramEnvCVS
 	let
+		param_env = map fst param_env_exprs
 		param_names = map (fst.snd) param_env
 		ret_names   = map (fst.snd.fst) retval_env
 		constraints = concatMap traceitem2constr trace where
@@ -1906,7 +1909,10 @@ checkSolutionM traceid resultdata@(_,Nothing) = do
 checkSolutionM traceid resultdata@(_,Just (_,_,[])) = do
 	printLog $ "Empty solution cannot be checked for " ++ show traceid
 	return resultdata
-checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution)) = do
+checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
+	let
+		param_env = filter envItemNotPtrType param_env0
+		ret_env = filter envItemNotPtrType ret_env0
 	printLogV 2 $ "checkSolution param_env =\n" ++ showEnv param_env
 	printLogV 2 $ "checkSolution ret_env =\n" ++ showEnv ret_env
 	srcfilename <- gets srcFilenameCVS
@@ -1915,16 +1921,15 @@ checkSolutionM traceid resultdata@(_,Just (param_env,ret_env,solution)) = do
 	let
 		args = concat $ for param_env $ \ (_,(newident,ty)) -> case ty of
 			DirectType _ _ _ -> case lookup (identToString newident) solution of
-				Nothing -> ["99"]
 				Just v -> [show v]
-			PtrType target_ty _ _ -> ["65000"]
 			ty -> error $ "checkSolutionM args: type " ++ (render.pretty) ty ++ " not implemented!"
-	printLogV 2 $ "checkSolution args = " ++ show args
+	printLogV 1 $ "checkSolution args = " ++ show args
 	(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
 		readProcessWithExitCode (takeFileName filename) args ""
 	case exitcode of
 		ExitFailure _ -> myError $ "Execution of " ++ filename ++ " failed:\n" ++ stdout ++ stderr
 		ExitSuccess -> do
+			printLogV 1 $ "stdout=\n" ++ stdout ++ "\n------------" 
 			let
 				outputs = words $ last $ lines stdout
 				-- get all solution vars that are in the ret_env
