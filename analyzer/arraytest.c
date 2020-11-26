@@ -1,16 +1,3 @@
-#ifdef CALC
-#include <stdio.h>
-#include <stdlib.h>
-#endif
-
-int solver_pragma(int x,...)
-{
-    return 1;
-}
-void solver_debug(void* x)
-{
-}
-
 int f(int arr[3])
 {
     int j=0;
@@ -21,19 +8,6 @@ int f(int arr[3])
     }
     return j;
 }
-
-#ifdef CALC
-int main(int argc, char* argv[])
-{
-    int i=1;
-    int a[3];
-    sscanf(argv[i++],"%i",&a[0]);
-    sscanf(argv[i++],"%i",&a[1]);
-    sscanf(argv[i++],"%i",&a[2]);
-
-    printf("f(a0=%i, a1=%i, a2=%i) = %i\n%i\n",a[0],a[1],a[2],f(a));
-}
-#endif
 
 /*
 (set-option :pp.fp_real_literals true)
