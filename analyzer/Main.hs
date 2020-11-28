@@ -131,8 +131,8 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -769,21 +769,32 @@ createInterfaceFromExprM expr ty = do
 			return $ (((srcident,(srcident,ty')),expr) : rest1)
 
 createDeclsM :: [(Ident,Type)] -> CovVecM [String]
-createDeclsM formal_params = concatForM formal_params $ \ (ident,ty) -> create_decls (CVar ident undefNode) ty
+createDeclsM formal_params = concatForM formal_params $ \ (ident,ty) -> create_decls (CVar ident undefNode) ty []
 	where
-	create_decls expr ty = case ty of
+	create_decls expr ty decls = case ty of
 
 		TypeDefType (TypeDefRef ident _ _) _ _ -> do
 			ty' <- lookupTypeDefM ident
-			create_decls expr ty'
+			create_decls expr ty' decls
 
-		-- STRUCT* p		
+		-- <ty>* ptr
+		-- int *      :: a  ->  { int PTR_a; int * a = & PTR_a; }
+		-- struct S * :: s  ->  { struct S PTR_s; struct S * s = & PTR_s; }
 		PtrType target_ty _ _ -> do
+			let
+				subexpr = CUnary CIndOp expr undefNode
+				subexpr_varname = lValueToVarName subexpr
+			create_decls subexpr target_ty $ decls ++ [
+				(render.pretty) target_ty ++ " " ++ subexpr_varname ++ ";",
+				(render.pretty) ty ++ " " ++ lval_varname ++ " = &" ++ subexpr_varname ++ ";" ]
+
+{-
 			member_ty_s <- case target_ty of
-				DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> getMembersM sueref
+				DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
+					getMembersM sueref >>= 
 				TypeDefType (TypeDefRef ident _ _) _ _ -> do
 					DirectType (TyComp (CompTypeRef sueref _ _)) _ _ <- lookupTypeDefM ident
-					getMembersM sueref
+					getMembersM sueref >>= 
 			let
 				compound_varname = lval_varname ++ "_compound"
 			decls <- concatForM member_ty_s $ \ (m_ident,m_ty) -> do
@@ -792,8 +803,9 @@ createDeclsM formal_params = concatForM formal_params $ \ (ident,ty) -> create_d
 				[ (render.pretty) target_ty ++ " " ++ compound_varname ++ ";" ] ++
 				[ (render.pretty) ty ++ " " ++ lval_varname ++ " = &" ++ compound_varname ++ ";" ] ++
 				decls
+-}
 {-
-		-- target_ty* p
+		-- <ty>* p
 		PtrType target_ty _ _ -> do
 			decls <- create_decls (CUnary CIndOp expr undefNode) target_ty
 			return $ [ (render.pretty) target_ty ++ " " ++ lval_varname ++ ";" ] ++ decls
@@ -802,15 +814,21 @@ createDeclsM formal_params = concatForM formal_params $ \ (ident,ty) -> create_d
 		-- STRUCT expr
 		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 			member_ty_s <- getMembersM sueref
-			concatForM member_ty_s $ \ (m_ident,m_ty) -> do
-				create_decls (CMember expr m_ident False undefNode) m_ty
+			res_decls <- concatForM member_ty_s $ \ (m_ident,m_ty) -> do
+				create_decls (CMember expr m_ident False undefNode) m_ty []
+			return $ decls ++ ( ( (render.pretty) ty ++ " " ++ lval_varname ++ ";" ) : res_decls )
 
-		-- direct-type expr where direct-type is no struct/union or ptr.
+		-- direct-type expr where direct-type is no struct/union. For example:
+		-- Atomic expr:  i :: int              ->  { int i; scanf("...",&i); }
+        -- Non-atomic:   p->member1 :: double  ->  { scanf("...",&(p->member1)); }
 		DirectType _ _ _ -> do
 			let decl = case expr of
+				-- if expr is atomic, declare it.
 				CVar _ _ -> [(render.pretty) ty ++ " " ++ (render.pretty) expr ++ ";"]
+				-- if expr is not atomic, the component was declared before (and with that, all the component's elements).
+				-- Hence, no declaration needed here.
 				_ -> []
-			return $ decl ++
+			return $ decls ++ decl ++
 				[ "sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&(" ++ (render.pretty) expr ++ "));" ]
 
 {-

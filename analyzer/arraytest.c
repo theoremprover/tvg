@@ -10,6 +10,33 @@ int f(int arr[3])
 }
 
 /*
+
+i::int
+->
+int i;
+scanf("...",&i);
+
+pi :: int*
+->
+int* pi;
+scanf("...",&(*pi));
+
+s :: struct S
+->
+struct S s;
+...
+scanf("...",&s.member1);
+...
+
+p_s :: struct S *
+->
+struct S p_s_compound;
+struct S * p_s = & p_s_compound;
+...
+scanf("...",&(p_s->member1));
+...
+
+
 (set-option :pp.fp_real_literals true)
 (declare-const i Int)
 (declare-const ar (Array Int Float32))
