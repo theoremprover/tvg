@@ -131,7 +131,8 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
@@ -376,7 +377,7 @@ covVectorsM = do
 			chkexefilename = replaceExtension mainFileName "exe"
 		absolute_filename <- liftIO $ makeAbsolute filename
 
-		charness <- createCHarness ret_type formal_params srcfilename funname ret_type' param_env ext_decls
+		charness <- createCHarness ret_type formal_params srcfilename funname ext_decls
 		liftIO $ writeFile (replaceFileName filename mainFileName) charness
 
 		gcc <- gets compilerCVS
@@ -415,8 +416,8 @@ int main(int argc, char* argv[])
 	incl_stdio = "#include <stdio.h>"
 	incl_stdlib = "#include <stdlib.h>"
 
-createCHarness :: Type -> [(Ident,Type)] -> String -> String -> Type -> Env -> [String] -> CovVecM String
-createCHarness orig_rettype formal_params filename funname ret_type param_env extdecls = do
+createCHarness :: Type -> [(Ident,Type)] -> String -> String -> [String] -> CovVecM String
+createCHarness orig_rettype formal_params filename funname extdecls = do
 	Just retenvexprs0 <- gets retEnvCVS
 	Just param_env_exprs0 <- gets paramEnvCVS
 	let
@@ -428,7 +429,7 @@ createCHarness orig_rettype formal_params filename funname ret_type param_env ex
 		funcall = (render.pretty) orig_rettype ++ " " ++ returnval_var_name ++ " = " ++
 			funname ++ "(" ++ intercalate "," (map ((render.pretty).fst) formal_params) ++ ");"
 
-		argformats = map type_format_string $ map (snd.snd) param_env
+		argformats = map type_format_string $ map (snd.snd.fst) param_env_exprs
 		argvals = intercalate ", " $ for (zip argexprs argformats) $ \ (argname,argformat) -> argname ++ " = " ++ argformat
 
 		ret_formatss = map (type_format_string.snd.snd.fst) retenvexprs
@@ -769,65 +770,46 @@ createInterfaceFromExprM expr ty = do
 			return $ (((srcident,(srcident,ty')),expr) : rest1)
 
 createDeclsM :: [(Ident,Type)] -> CovVecM [String]
-createDeclsM formal_params = concatForM formal_params $ \ (ident,ty) -> create_decls (CVar ident undefNode) ty []
+createDeclsM formal_params = do
+	concatForM formal_params $ \ (ident,ty) -> create_decls (CVar ident undefNode) ty ty False []
+
 	where
-	create_decls expr ty decls = case ty of
+
+	-- ty is the not-dereferenced type used for pretty printing,
+	-- deref_ty is the dereferenced type that is to be analyzed further
+	create_decls expr ty deref_ty all_declared decls = case deref_ty of
 
 		TypeDefType (TypeDefRef ident _ _) _ _ -> do
 			ty' <- lookupTypeDefM ident
-			create_decls expr ty' decls
+			create_decls expr ty ty' all_declared decls
 
-		-- <ty>* ptr
+		-- case: deref_ty = <ty>* ptr
 		-- int *      :: a  ->  { int PTR_a; int * a = & PTR_a; }
 		-- struct S * :: s  ->  { struct S PTR_s; struct S * s = & PTR_s; }
 		PtrType target_ty _ _ -> do
 			let
 				subexpr = CUnary CIndOp expr undefNode
 				subexpr_varname = lValueToVarName subexpr
-			create_decls subexpr target_ty $ decls ++ [
+			create_decls subexpr target_ty target_ty True $ decls ++ [
+				-- if we encounter a pointer type, we have to declare it anyway.
 				(render.pretty) target_ty ++ " " ++ subexpr_varname ++ ";",
 				(render.pretty) ty ++ " " ++ lval_varname ++ " = &" ++ subexpr_varname ++ ";" ]
 
-{-
-			member_ty_s <- case target_ty of
-				DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
-					getMembersM sueref >>= 
-				TypeDefType (TypeDefRef ident _ _) _ _ -> do
-					DirectType (TyComp (CompTypeRef sueref _ _)) _ _ <- lookupTypeDefM ident
-					getMembersM sueref >>= 
-			let
-				compound_varname = lval_varname ++ "_compound"
-			decls <- concatForM member_ty_s $ \ (m_ident,m_ty) -> do
-				create_decls (CMember expr m_ident True undefNode) m_ty
-			return $
-				[ (render.pretty) target_ty ++ " " ++ compound_varname ++ ";" ] ++
-				[ (render.pretty) ty ++ " " ++ lval_varname ++ " = &" ++ compound_varname ++ ";" ] ++
-				decls
--}
-{-
-		-- <ty>* p
-		PtrType target_ty _ _ -> do
-			decls <- create_decls (CUnary CIndOp expr undefNode) target_ty
-			return $ [ (render.pretty) target_ty ++ " " ++ lval_varname ++ ";" ] ++ decls
--}
-
-		-- STRUCT expr
+		-- case: deref_ty = STRUCT expr
 		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 			member_ty_s <- getMembersM sueref
 			res_decls <- concatForM member_ty_s $ \ (m_ident,m_ty) -> do
-				create_decls (CMember expr m_ident False undefNode) m_ty []
-			return $ decls ++ ( ( (render.pretty) ty ++ " " ++ lval_varname ++ ";" ) : res_decls )
+				create_decls (CMember expr m_ident False undefNode) m_ty m_ty True []
+			let decl = case all_declared of
+				True  -> []
+				False -> [ (render.pretty) ty ++ " " ++ lval_varname ++ ";" ]
+			return $ decls ++ decl ++ res_decls
 
-		-- direct-type expr where direct-type is no struct/union. For example:
-		-- Atomic expr:  i :: int              ->  { int i; scanf("...",&i); }
-        -- Non-atomic:   p->member1 :: double  ->  { scanf("...",&(p->member1)); }
+		-- case: deref_ty = <direct-type> where <direct-type> is no struct/union.
 		DirectType _ _ _ -> do
-			let decl = case expr of
-				-- if expr is atomic, declare it.
-				CVar _ _ -> [(render.pretty) ty ++ " " ++ (render.pretty) expr ++ ";"]
-				-- if expr is not atomic, the component was declared before (and with that, all the component's elements).
-				-- Hence, no declaration needed here.
-				_ -> []
+			let decl = case all_declared of
+				False -> [ (render.pretty) ty ++ " " ++ (render.pretty) expr ++ ";" ]
+				True -> []
 			return $ decls ++ decl ++
 				[ "sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&(" ++ (render.pretty) expr ++ "));" ]
 
