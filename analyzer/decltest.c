@@ -794,7 +794,8 @@ fp_number_type * f(
     fp_number_type c_struct,
     fp_class_type my_enum,
     fp_class_type* my_enum_ptr,
-    int* p_int
+    int* p_int,
+    int arr[3]
     )
 {
     return a;

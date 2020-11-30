@@ -813,14 +813,13 @@ createDeclsM formal_params = do
 			return $ decls ++ decl ++
 				[ "sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&(" ++ (render.pretty) expr ++ "));" ]
 
-{-
 		ArrayType elem_ty (ArraySize True (CConst (CIntConst cint _))) _ _ -> do
-			elem_ty' <- elimTypeDefsM elem_ty
-			let (CVar (Ident arrvar_ident _ _) (ni,_)) = expr
+			let (CVar (Ident arrvar_ident _ _) _) = expr
 			let elem_names = map (\ i -> internalIdent $ show arrvar_ident ++ "_" ++ show i) [0..(getCInteger cint - 1)]
-			concatForM elem_names $ \ elem_name ->
-				create_decls (CVar elem_name (ni,ty2Z3Type elem_ty')) elem_ty'
--}
+			arr_decls <- concatForM elem_names $ \ elem_name ->
+				create_decls (CVar elem_name undefNode) elem_ty elem_ty False []
+			return $ decls ++ arr_decls
+			
 		_ -> myError $ "createDeclsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty ++ " not implemented"
 
 		where
