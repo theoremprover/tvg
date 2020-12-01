@@ -71,9 +71,6 @@ intType = integral TyInt :: Type
 charType = integral TyChar :: Type
 ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
 
-flags2IntType flags = integral (getIntType flags) :: Type
-string2FloatType flags = floating (getFloatType flags) :: Type
-
 showInitialTrace = False
 solveIt = True
 showModels = False
@@ -131,7 +128,8 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : ["-writeModels"] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
@@ -1561,8 +1559,8 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 			return $ CVar ident (ni,var_ty)
 
 	annotate_types (CConst ctconst) = return $ CConst $ case ctconst of
-		CIntConst cint@(CInteger _ _ flags) ni -> CIntConst cint (ni,ty2Z3Type $ flags2IntType flags)
-		CFloatConst cfloat@(CFloat s) ni       -> CFloatConst cfloat (ni,ty2Z3Type $ string2FloatType s)
+		CIntConst cint@(CInteger _ _ flags) ni -> CIntConst cint (ni,ty2Z3Type $ integral (getIntType flags))
+		CFloatConst cfloat@(CFloat s) ni       -> CFloatConst cfloat (ni,ty2Z3Type $ floating (getFloatType s))
 		CCharConst cchar@(CChar _ False) ni    -> CCharConst cchar (ni,ty2Z3Type $ charType)
 		CStrConst cstr ni                      -> CStrConst cstr (ni,ty2Z3Type $ ptrType charType)
 
@@ -1664,6 +1662,9 @@ expr2SExpr expr = expr2sexpr expr
 			sexpr <- expr2sexpr subexpr
 			return $ case (extractType subexpr,to_ty) of
 
+				-- SAMECAST: identity
+				( ty1, ty2 ) | ty1==ty2 -> sexpr
+		
 				-- Casting from Bool
 				( Z3_Bool, Z3_BitVector size_from _ ) ->
 					SExpr [ SLeaf "ite", sexpr, make_intconstant to_ty 1, make_intconstant to_ty 0 ]
@@ -1672,10 +1673,6 @@ expr2SExpr expr = expr2sexpr expr
 				( from_ty@(Z3_BitVector size_from _) , Z3_Bool ) ->
 					SExpr [ SLeaf "not", SExpr [ SLeaf "=", sexpr, make_intconstant from_ty 0 ]]
 
-				-- SAMECAST: identity
-				( Z3_Bool, Z3_Bool ) -> sexpr
-				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from == size_to -> sexpr
-		
 				-- DOWNCAST: extract bits (modulo)
 				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from > size_to -> 
 					SExpr [ SExpr [ SLeaf "_", SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0"], sexpr ]
@@ -1688,7 +1685,7 @@ expr2SExpr expr = expr2sexpr expr
 				( Z3_BitVector size_from True, Z3_BitVector size_to _ ) | size_from < size_to ->
 					SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
 		
-				(from_ty,to_ty) -> error $ "expr2sexpr " ++ show from_ty ++ " " ++ show to_ty ++ " in " ++
+				(from_ty,to_ty) -> error $ "expr2sexpr cast: " ++ show from_ty ++ " " ++ show to_ty ++ " in " ++
 					(render.pretty) castexpr ++ " " ++ " not implemented!"
 
 		ccond@(CCond cond (Just then_expr) else_expr _) -> do
@@ -1711,8 +1708,8 @@ expr2SExpr expr = expr2sexpr expr
 
 data Z3_Type =
 	Z3_Bool |
--- Z3_BitVector Int (isUnsigned::Bool), hence
--- the derived ordering intentionally coincides with the type casting ordering :-)
+-- Z3_BitVector Int (is*Un*signed::Bool), hence
+-- the derived ordering intentionally coincides with the type cast ordering :-)
 	Z3_BitVector Int Bool |
 	Z3_Float |
 	Z3_Double |
