@@ -416,6 +416,10 @@ int main(int argc, char* argv[])
 	incl_stdio = "#include <stdio.h>"
 	incl_stdlib = "#include <stdlib.h>"
 
+envItemNotPtrType :: EnvItem -> Bool
+envItemNotPtrType (_,(_,PtrType _ _ _)) = False
+envItemNotPtrType _ = True
+
 createCHarness :: Type -> [(Ident,Type)] -> String -> String -> [String] -> CovVecM String
 createCHarness orig_rettype formal_params filename funname extdecls = do
 	Just retenvexprs0 <- gets retEnvCVS
@@ -440,9 +444,64 @@ createCHarness orig_rettype formal_params filename funname extdecls = do
 			intercalate ", " ret_vals ++ ");"
 	return $ PPM.prettyCompact $ PPMC.ppr $ harnessAST incl_srcfilename (unlines extdecls) funcall print_retval
 
-envItemNotPtrType :: EnvItem -> Bool
-envItemNotPtrType (_,(_,PtrType _ _ _)) = False
-envItemNotPtrType _ = True
+createDeclsM :: [(Ident,Type)] -> CovVecM [String]
+createDeclsM formal_params = do
+	concatForM formal_params $ \ (ident,ty) -> create_decls (CVar ident undefNode) ty ty False []
+
+	where
+
+	-- ty is the not-dereferenced type used for pretty printing,
+	-- deref_ty is the dereferenced type that is to be analyzed further
+	create_decls expr ty deref_ty all_declared decls = case deref_ty of
+
+		TypeDefType (TypeDefRef ident _ _) _ _ -> do
+			ty' <- lookupTypeDefM ident
+			create_decls expr ty ty' all_declared decls
+
+		-- case: deref_ty = <ty>* ptr
+		-- int *      :: a  ->  { int PTR_a; int * a = & PTR_a; }
+		-- struct S * :: s  ->  { struct S PTR_s; struct S * s = & PTR_s; }
+		PtrType target_ty _ _ -> do
+			let
+				subexpr = CUnary CIndOp expr undefNode
+				subexpr_varname = lValueToVarName subexpr
+			create_decls subexpr target_ty target_ty True $ decls ++ [
+				-- if we encounter a pointer type, we have to declare it anyway.
+				(render.pretty) target_ty ++ " " ++ subexpr_varname ++ ";",
+				(render.pretty) ty ++ " " ++ lval_varname ++ " = &" ++ subexpr_varname ++ ";" ]
+
+		-- case: deref_ty = STRUCT expr
+		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
+			member_ty_s <- getMembersM sueref
+			res_decls <- concatForM member_ty_s $ \ (m_ident,m_ty) -> do
+				create_decls (CMember expr m_ident False undefNode) m_ty m_ty True []
+			let decl = case all_declared of
+				True  -> []
+				False -> [ (render.pretty) ty ++ " " ++ lval_varname ++ ";" ]
+			return $ decls ++ decl ++ res_decls
+
+		-- case: deref_ty = <direct-type> where <direct-type> is no struct/union.
+		DirectType _ _ _ -> do
+			let decl = case all_declared of
+				False -> [ (render.pretty) ty ++ " " ++ (render.pretty) expr ++ ";" ]
+				True -> []
+			return $ decls ++ decl ++
+				[ "sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&(" ++ (render.pretty) expr ++ "));" ]
+
+		ArrayType elem_ty (ArraySize False (CConst (CIntConst cint _))) _ _ -> do
+			let
+				(CVar (Ident _ _ _) _) = expr
+				arr_size = getCInteger cint
+				arr_decl = (render.pretty) elem_ty ++ " " ++ (render.pretty) expr ++ "[" ++ show arr_size ++ "];"
+			arr_decls <- concatForM [0..(arr_size - 1)] $ \ i ->
+				create_decls (CIndex expr (ⅈ i) undefNode) elem_ty elem_ty True []
+			return $ decls ++ [arr_decl] ++ arr_decls
+
+		_ -> myError $ "createDeclsM " ++ (render.pretty) expr ++ " " ++ show ty ++ " not implemented"
+
+		where
+		
+		lval_varname = lValueToVarName expr
 
 type_format_string :: Type -> String
 type_format_string ty = "%" ++ case ty2Z3Type ty of
@@ -611,6 +670,7 @@ lValueToVarName (CBinary binop expr1 expr2 _) =
 			Just s -> s
 lValueToVarName (CConst (CIntConst cint _)) = (if i<0 then "m" else "") ++ show (abs i) where
 	i = getCInteger cint
+lValueToVarName (CIndex arr index _) = lValueToVarName arr ++ "_INDEX_" ++ lValueToVarName index
 lValueToVarName lval = error $ "lValueToVarName " ++ show lval ++ " not implemented!"
 
 type TyEnvItem = (Ident,Type)
@@ -751,14 +811,15 @@ createInterfaceFromExprM expr ty = do
 		-- direct-type expr where direct-type is no struct/union
 		DirectType _ _ _ -> prepend_plainvar ty' $ return []
 
-		ArrayType elem_ty (ArraySize True (CConst (CIntConst cint _))) _ _ -> do
+		ArrayType elem_ty (ArraySize False (CConst (CIntConst cint _))) _ _ -> do
 			elem_ty' <- elimTypeDefsM elem_ty
-			let (CVar (Ident arrvar_ident _ _) (ni,_)) = expr
-			let elem_names = map (\ i -> internalIdent $ show arrvar_ident ++ "_" ++ show i) [0..(getCInteger cint - 1)]
-			concatForM elem_names $ \ elem_name ->
-				createInterfaceFromExprM (CVar elem_name (ni,ty2Z3Type elem_ty')) elem_ty'
+			let
+				arr_size = getCInteger cint
+				CVar (Ident _ _ _) (ni,_) = expr    -- Just to be sure...
+			concatForM [0..(getCInteger cint - 1)] $ \ i ->
+				createInterfaceFromExprM (CIndex expr (ⅈ i) (ni,ty2Z3Type elem_ty')) elem_ty'
 
-		_ -> myError $ "create_interfaceM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
+		_ -> myError $ "createInterfaceFromExprM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
 
 		where
 	
@@ -768,63 +829,6 @@ createInterfaceFromExprM expr ty = do
 		prepend_plainvar ty' rest_m = do
 			rest1 <- rest_m
 			return $ (((srcident,(srcident,ty')),expr) : rest1)
-
-createDeclsM :: [(Ident,Type)] -> CovVecM [String]
-createDeclsM formal_params = do
-	concatForM formal_params $ \ (ident,ty) -> create_decls (CVar ident undefNode) ty ty False []
-
-	where
-
-	-- ty is the not-dereferenced type used for pretty printing,
-	-- deref_ty is the dereferenced type that is to be analyzed further
-	create_decls expr ty deref_ty all_declared decls = case deref_ty of
-
-		TypeDefType (TypeDefRef ident _ _) _ _ -> do
-			ty' <- lookupTypeDefM ident
-			create_decls expr ty ty' all_declared decls
-
-		-- case: deref_ty = <ty>* ptr
-		-- int *      :: a  ->  { int PTR_a; int * a = & PTR_a; }
-		-- struct S * :: s  ->  { struct S PTR_s; struct S * s = & PTR_s; }
-		PtrType target_ty _ _ -> do
-			let
-				subexpr = CUnary CIndOp expr undefNode
-				subexpr_varname = lValueToVarName subexpr
-			create_decls subexpr target_ty target_ty True $ decls ++ [
-				-- if we encounter a pointer type, we have to declare it anyway.
-				(render.pretty) target_ty ++ " " ++ subexpr_varname ++ ";",
-				(render.pretty) ty ++ " " ++ lval_varname ++ " = &" ++ subexpr_varname ++ ";" ]
-
-		-- case: deref_ty = STRUCT expr
-		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
-			member_ty_s <- getMembersM sueref
-			res_decls <- concatForM member_ty_s $ \ (m_ident,m_ty) -> do
-				create_decls (CMember expr m_ident False undefNode) m_ty m_ty True []
-			let decl = case all_declared of
-				True  -> []
-				False -> [ (render.pretty) ty ++ " " ++ lval_varname ++ ";" ]
-			return $ decls ++ decl ++ res_decls
-
-		-- case: deref_ty = <direct-type> where <direct-type> is no struct/union.
-		DirectType _ _ _ -> do
-			let decl = case all_declared of
-				False -> [ (render.pretty) ty ++ " " ++ (render.pretty) expr ++ ";" ]
-				True -> []
-			return $ decls ++ decl ++
-				[ "sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&(" ++ (render.pretty) expr ++ "));" ]
-
-		ArrayType elem_ty (ArraySize True (CConst (CIntConst cint _))) _ _ -> do
-			let (CVar (Ident arrvar_ident _ _) _) = expr
-			let elem_names = map (\ i -> internalIdent $ show arrvar_ident ++ "_" ++ show i) [0..(getCInteger cint - 1)]
-			arr_decls <- concatForM elem_names $ \ elem_name ->
-				create_decls (CVar elem_name undefNode) elem_ty elem_ty False []
-			return $ decls ++ arr_decls
-			
-		_ -> myError $ "createDeclsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty ++ " not implemented"
-
-		where
-		
-		lval_varname = lValueToVarName expr
 
 
 unfoldTracesM :: Type -> Bool -> [Int] -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
@@ -1727,7 +1731,7 @@ ty2Z3Type ty = case ty of
 		TyComp _            -> Z3_Compound
 		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
 	PtrType target_ty _ _ -> Z3_Ptr $ ty2Z3Type target_ty
-	ArrayType elem_ty (ArraySize True (CConst (CIntConst cint _))) _ _ ->
+	ArrayType elem_ty (ArraySize False (CConst (CIntConst cint _))) _ _ ->
 		Z3_Array (ty2Z3Type elem_ty) (getCInteger cint)
 	TypeDefType (TypeDefRef _ ty _) _ _ -> ty2Z3Type ty
 --	FunctionType (FunType ret_type funparamdecls False) _ -> Z3_Fun 
