@@ -503,13 +503,13 @@ createDeclsM formal_params = do
 
 type_format_string :: Type -> String
 type_format_string ty = "%" ++ case ty2Z3Type ty of
-	Z3_Float  -> "f"
-	Z3_Double -> "lf"
-	Z3_BitVector size unsigned | size==intSize -> if unsigned then "u" else "i"
-	Z3_BitVector size unsigned | size==longIntSize -> "l" ++ if unsigned then "u" else "i"
+	Z3_Float                                           -> "f"
+	Z3_Double                                          -> "lf"
+	Z3_BitVector size unsigned | size==intSize         -> if unsigned then "u" else "i"
+	Z3_BitVector size unsigned | size==longIntSize     -> "l" ++ if unsigned then "u" else "i"
 	Z3_BitVector size unsigned | size==longLongIntSize -> "ll" ++ if unsigned then "u" else "i"
-	Z3_BitVector size unsigned -> if unsigned then "u" else "i"
-	Z3_Ptr _ -> "p"
+	Z3_BitVector size unsigned                         -> if unsigned then "u" else "i"
+	Z3_Ptr _                                           -> "p"
 	_ -> error $ "type_format_string " ++ (render.pretty) ty ++ " not implemented"
 
 type Location = (Int,Int)
@@ -932,7 +932,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		lexpr_ty <- inferLExprTypeM (envs2tyenv envs) (renameVars "CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni))" envs lexpr) >>= return.ty2Z3Type
 		transids assigned_expr' lexpr_ty trace $ \ (assigned_expr'',trace') -> do
-			[(lexpr',trace'')] <- translateExprM envs lexpr lexpr_ty
+			[(lexpr'@(CVar _ _),trace'')] <- translateExprM envs lexpr lexpr_ty
 			unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
 		where
 		assigned_expr' = case assignop of
@@ -1493,8 +1493,8 @@ annotateTypesAndCastM :: [Env] -> CExpr -> Maybe Z3_Type -> CovVecM CExprWithTyp
 annotateTypesAndCastM envs cexpr mb_target_ty = do
 	cexpr' <- annotate_types cexpr
 	let ret = case mb_target_ty of
-		Just target_ty -> mb_cast target_ty cexpr'
-		Nothing -> cexpr'
+		Just target_ty | target_ty /= extractType cexpr' -> mb_cast target_ty cexpr'
+		_ -> cexpr'
 	printLogV 2 $ "\n# " ++ (showLocation.lineColNodeInfo) cexpr
 	printLogV 2 $ "annotateTypesAndCastM [envs]\n" ++ (render.pretty) cexpr ++ "\ntarget_ty = " ++ show mb_target_ty
 	printLogV 2 $ "\n--- " ++ show cexpr ++ "\n"
@@ -1684,7 +1684,16 @@ expr2SExpr expr = expr2sexpr expr
 				-- UPCAST unsigned (to signed or unsigned): extend with zeros
 				( Z3_BitVector size_from True, Z3_BitVector size_to _ ) | size_from < size_to ->
 					SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
-		
+
+{- ((_ to_fp eb sb) RoundingMode (_ FloatingPoint mb nb) (_ FloatingPoint eb sb))
+  -  Float32 is a synonym for (_ FloatingPoint  8  24)
+  -  Float64 is a synonym for (_ FloatingPoint 11  53)
+-}
+				( Z3_Double, Z3_Float ) -> SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "8", SLeaf "24" ],
+					SLeaf "roundNearestTiesToEven", sexpr ]
+				( Z3_Float, Z3_Double ) -> SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "11", SLeaf "53" ],
+					SLeaf "roundNearestTiesToEven", sexpr ]
+
 				(from_ty,to_ty) -> error $ "expr2sexpr cast: " ++ show from_ty ++ " " ++ show to_ty ++ " in " ++
 					(render.pretty) castexpr ++ " " ++ " not implemented!"
 
