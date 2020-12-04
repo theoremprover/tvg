@@ -1615,21 +1615,12 @@ expr2SExpr expr = expr2sexpr expr
 		CBinary binop expr1 expr2 (_,to_ty) ->
 			SExpr <$> sequence [ pure $ SLeaf op_sexpr, expr2sexpr expr1, expr2sexpr expr2 ]
 				where
-				arg_ty = extractType expr1
-				unSignedTy unsigned signed = case arg_ty of
-					Z3_BitVector _ is_unsigned -> if is_unsigned then unsigned else signed
-					_ -> error $ "unSignedTy " ++ (render.pretty) expr ++ " is no bitvector!"
-				bitVectorTy bv fp = case arg_ty of
-					Z3_BitVector _ _ -> bv
-					Z3_Float -> fp
-					Z3_Double -> fp
-					_ -> error $ "bitVectorTy for " ++ show arg_ty ++ " not implemented!"
 
 				op_sexpr = case binop of
-					CMulOp -> bitVectorTy "bvmul" "fp.mul"
-					CDivOp -> bitVectorTy "bvdiv" "fp.div"
-					CAddOp -> bitVectorTy "bvadd" "fp.add"
-					CSubOp -> bitVectorTy "bvsub" "fp.sub"
+					CMulOp -> bitVectorTy "bvmul" ("fp.mul " ++ roundingMode)
+					CDivOp -> bitVectorTy "bvdiv" ("fp.div " ++ roundingMode)
+					CAddOp -> bitVectorTy "bvadd" ("fp.add " ++ roundingMode)
+					CSubOp -> bitVectorTy "bvsub" ("fp.sub " ++ roundingMode)
 					CRmdOp -> bitVectorTy (unSignedTy "bvurem" "bvsrem") "fp.rem"
 					CShlOp -> unSignedTy "bvshl" "bvshl"
 					CShrOp -> unSignedTy "bvlshr" "bvashr"
@@ -1719,6 +1710,19 @@ expr2SExpr expr = expr2sexpr expr
 		ccall@(CCall _ _ _) -> myError $ "expr2sexpr of call " ++ (render.pretty) ccall ++ " should not occur!"
 
 		other -> myError $ "expr2SExpr " ++ (render.pretty) other ++ " not implemented" 
+
+		where
+
+		operator_ty = extractType expr
+		unSignedTy unsigned signed = case operator_ty of
+			Z3_BitVector _ is_unsigned -> if is_unsigned then unsigned else signed
+			_ -> error $ "unSignedTy " ++ (render.pretty) expr ++ " is no bitvector!"
+		bitVectorTy bv fp = case operator_ty of
+			Z3_Float -> fp
+			Z3_Double -> fp
+			_ -> bv
+	--		_ -> error $ "bitVectorTy for " ++ show operator_ty ++ " not implemented!"
+
 
 data Z3_Type =
 	Z3_Bool |
@@ -1908,7 +1912,10 @@ solveTraceM mb_ret_type traceid trace = do
 		traceid
 		tyenv
 		(constraints ++ debug_constraints)
-		(for param_names $ \ name -> SExpr [SLeaf "minimize",SLeaf (identToString name)])
+		(concat $ for param_env_exprs $ \ ((_,(name,_)),expr) -> case extractType expr of
+			Z3_Float -> []
+			Z3_Double -> []
+			_ -> [ SExpr [SLeaf "minimize",SLeaf (identToString name)] ])
 		(param_names ++ ret_names ++ debug_idents)
 		(analyzerPath </> "models" </> "model_" ++ tracename ++ ".smtlib2")
 
