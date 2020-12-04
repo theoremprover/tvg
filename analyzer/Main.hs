@@ -66,7 +66,7 @@ concatForM = flip concatMapM
 intSize = 32
 longIntSize = 32
 longLongIntSize = 64
-
+roundingMode = "roundNearestTiesToEven"
 intType = integral TyInt :: Type
 charType = integral TyChar :: Type
 ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
@@ -75,7 +75,7 @@ showInitialTrace = False
 solveIt = True
 showModels = False
 showOnlySolutions = True
-don'tShowTraces = False
+don'tShowTraces = True
 showFinalTrace = False
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
@@ -87,7 +87,7 @@ cutOffs = False
 logToFile = True
 mainFileName = "main.c"
 
--- Z3 does not accept identifiers starting with an underscore, so we prefix these with a
+-- Z3 does not accept identifiers starting with an underscore, so we prefix these with an "a"
 safeZ3IdentifierPrefix = 'a'
 
 mAX_UNROLLS = 30
@@ -1601,10 +1601,6 @@ expr2SExpr expr = expr2sexpr expr
 	make_intconstant (Z3_BitVector size _) const | size `mod` 4 == 0 =
 		SLeaf (printf "#x%*.*x" (size `div` 4) (size `div` 4) const)
 
-	unSignedTy ty unsigned signed = case ty of
-		Z3_BitVector _ is_unsigned -> if is_unsigned then unsigned else signed
-		_ -> error $ "unSignedTy " ++ (render.pretty) expr ++ " is no bitvector!"
-
 	expr2sexpr :: CExprWithType -> CovVecM SExpr
 	expr2sexpr cexpr = do
 		printLogV 2 $ "expr2sexpr " ++ (render.pretty) cexpr
@@ -1620,30 +1616,39 @@ expr2SExpr expr = expr2sexpr expr
 			SExpr <$> sequence [ pure $ SLeaf op_sexpr, expr2sexpr expr1, expr2sexpr expr2 ]
 				where
 				arg_ty = extractType expr1
+				unSignedTy unsigned signed = case arg_ty of
+					Z3_BitVector _ is_unsigned -> if is_unsigned then unsigned else signed
+					_ -> error $ "unSignedTy " ++ (render.pretty) expr ++ " is no bitvector!"
+				bitVectorTy bv fp = case arg_ty of
+					Z3_BitVector _ _ -> bv
+					Z3_Float -> fp
+					Z3_Double -> fp
+					_ -> error $ "bitVectorTy for " ++ show arg_ty ++ " not implemented!"
+
 				op_sexpr = case binop of
-					CMulOp -> "bvmul"
-					CDivOp -> "bvdiv"
-					CAddOp -> "bvadd"
-					CSubOp -> "bvsub"
-					CRmdOp -> unSignedTy arg_ty "bvurem" "bvsrem"
-					CShlOp -> unSignedTy arg_ty "bvshl" "bvshl"
-					CShrOp -> unSignedTy arg_ty "bvlshr" "bvashr"
+					CMulOp -> bitVectorTy "bvmul" "fp.mul"
+					CDivOp -> bitVectorTy "bvdiv" "fp.div"
+					CAddOp -> bitVectorTy "bvadd" "fp.add"
+					CSubOp -> bitVectorTy "bvsub" "fp.sub"
+					CRmdOp -> bitVectorTy (unSignedTy "bvurem" "bvsrem") "fp.rem"
+					CShlOp -> unSignedTy "bvshl" "bvshl"
+					CShrOp -> unSignedTy "bvlshr" "bvashr"
 					CAndOp -> "bvand"
 					COrOp  -> "bvor"
 					CXorOp -> "bvxor"
 					CLndOp -> "and"
 					CLorOp -> "or"
-					CLeOp  -> unSignedTy arg_ty "bvult" "bvslt"
-					CGrOp  -> unSignedTy arg_ty "bvugt" "bvsgt"
-					CLeqOp -> unSignedTy arg_ty "bvule" "bvsle"
-					CGeqOp -> unSignedTy arg_ty "bvuge" "bvsge"
-					CEqOp  -> "="
+					CLeOp  -> bitVectorTy (unSignedTy "bvult" "bvslt") "fp.lt"
+					CGrOp  -> bitVectorTy (unSignedTy "bvugt" "bvsgt") "fp.gt"
+					CLeqOp -> bitVectorTy (unSignedTy "bvule" "bvsle") "fp.leq"
+					CGeqOp -> bitVectorTy (unSignedTy "bvuge" "bvsge") "fp.geq"
+					CEqOp  -> bitVectorTy "=" "fp.eq"
 					other  -> error $ "op_sexpr " ++ (render.pretty) binop ++ " not implemented!"
 
 		cconst@(CConst ctconst) -> return $ case ctconst of
 			CIntConst intconst (_,ty) -> make_intconstant ty (getCInteger intconst)
 			CCharConst cchar _        -> SLeaf $ (render.pretty) cconst
-			CFloatConst cfloat _      -> SLeaf $ (render.pretty) cconst
+			CFloatConst cfloat _      -> SLeaf $ (render.pretty) $ fmap fst cconst
 			CStrConst cstr _          -> SLeaf $ (render.pretty) cconst
 
 		CVar ident _ -> return $ SLeaf $ (render.pretty) ident
@@ -1690,9 +1695,9 @@ expr2SExpr expr = expr2sexpr expr
   -  Float64 is a synonym for (_ FloatingPoint 11  53)
 -}
 				( Z3_Double, Z3_Float ) -> SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "8", SLeaf "24" ],
-					SLeaf "roundNearestTiesToEven", sexpr ]
+					SLeaf roundingMode, sexpr ]
 				( Z3_Float, Z3_Double ) -> SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "11", SLeaf "53" ],
-					SLeaf "roundNearestTiesToEven", sexpr ]
+					SLeaf roundingMode, sexpr ]
 
 				(from_ty,to_ty) -> error $ "expr2sexpr cast: " ++ show from_ty ++ " " ++ show to_ty ++ " in " ++
 					(render.pretty) castexpr ++ " " ++ " not implemented!"
