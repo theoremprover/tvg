@@ -1637,10 +1637,15 @@ expr2SExpr expr = expr2sexpr expr
 					other  -> error $ "op_sexpr " ++ (render.pretty) binop ++ " not implemented!"
 
 		cconst@(CConst ctconst) -> return $ case ctconst of
-			CIntConst intconst (_,ty) -> make_intconstant ty (getCInteger intconst)
-			CCharConst cchar _        -> SLeaf $ (render.pretty) cconst
-			CFloatConst cfloat _      -> SLeaf $ (render.pretty) $ fmap fst cconst
-			CStrConst cstr _          -> SLeaf $ (render.pretty) cconst
+			CIntConst intconst (_,ty)  -> make_intconstant ty (getCInteger intconst)
+			CCharConst cchar _         -> SLeaf $ (render.pretty) cconst
+			CFloatConst (CFloat f_s) (_,ty) -> SExpr 
+				where
+				float_val :: Double = read f_s
+				(s1,s2) = case ty of
+					Z3_Float  -> (8,24)
+					Z3_Double -> (11,53)
+			CStrConst cstr _           -> SLeaf $ (render.pretty) cconst
 
 		CVar ident _ -> return $ SLeaf $ (render.pretty) ident
 
