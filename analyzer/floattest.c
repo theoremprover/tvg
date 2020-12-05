@@ -1,6 +1,6 @@
 float f(float x,int n)
 {
-    float xe = 2.0;
+    float xe = 1e-2;
 //    for(int i=0;solver_pragma(3) && i<n;i++)
     {
         xe *= 3.0;

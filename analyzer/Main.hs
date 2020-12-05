@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
-{-# LANGUAGE PackageImports,QuasiQuotes,UnicodeSyntax,LambdaCase,ScopedTypeVariables,TupleSections,TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,DeriveDataTypeable,DeriveGeneric #-}
+{-# LANGUAGE PackageImports,FunctionalDependencies,MultiParamTypeClasses,QuasiQuotes,UnicodeSyntax,LambdaCase,ScopedTypeVariables,TupleSections,TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,DeriveDataTypeable,DeriveGeneric #-}
 
 module Main where
 
@@ -34,7 +34,7 @@ import Data.Set.Unicode
 import Prelude.Unicode ((∧),(∨))
 import Text.Printf
 import Text.Regex.TDFA
-import Numeric (readHex)
+import Numeric (readHex,readInt)
 import Data.Either
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
@@ -46,6 +46,11 @@ import Data.Foldable
 import Data.List
 import Data.Maybe
 import System.IO
+import Data.Char
+import Data.Word (Word32,Word64)
+import Data.Array.ST (newArray,readArray,MArray,STUArray)
+import Data.Array.Unsafe (castSTUArray)
+import GHC.ST (runST,ST)
 
 import DataTree
 import GlobDecls
@@ -1639,12 +1644,16 @@ expr2SExpr expr = expr2sexpr expr
 		cconst@(CConst ctconst) -> return $ case ctconst of
 			CIntConst intconst (_,ty)  -> make_intconstant ty (getCInteger intconst)
 			CCharConst cchar _         -> SLeaf $ (render.pretty) cconst
-			CFloatConst (CFloat f_s) (_,ty) -> SExpr 
+			CFloatConst (CFloat f_s) (_,ty) -> SExpr [ SLeaf "fp", SLeaf s1, SLeaf s2, SLeaf s3 ]
 				where
-				float_val :: Double = read f_s
-				(s1,s2) = case ty of
-					Z3_Float  -> (8,24)
-					Z3_Double -> (11,53)
+				show_bin :: (Integral a,PrintfArg a) => Int -> a -> String
+				show_bin l i = printf "#b%0*.*b" l l i
+				(s1,s2,s3) = ( show_bin 1 sig, show_bin l2 expo, show_bin (l3-1) mantissa )
+				((l2,l3),sig,mantissa,expo) = case ty of
+					Z3_Float  -> ((8,24),)
+					Z3_Double -> (11,53),)
+
+ 
 			CStrConst cstr _           -> SLeaf $ (render.pretty) cconst
 
 		CVar ident _ -> return $ SLeaf $ (render.pretty) ident
@@ -1654,7 +1663,7 @@ expr2SExpr expr = expr2sexpr expr
 			[ pure $ SLeaf op_str, expr2sexpr subexpr ]
 			where
 			op_str = case op of
-				CMinOp  -> "bvneg"
+				CMinOp  -> bitVectorTy "bvneg" "fp.neg"
 				CCompOp -> "bvnot"
 				CNegOp  -> "not"
 				_ -> error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
@@ -1686,12 +1695,9 @@ expr2SExpr expr = expr2sexpr expr
 				( Z3_BitVector size_from True, Z3_BitVector size_to _ ) | size_from < size_to ->
 					SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
 
-{- ((_ to_fp eb sb) RoundingMode (_ FloatingPoint mb nb) (_ FloatingPoint eb sb))
-  -  Float32 is a synonym for (_ FloatingPoint  8  24)
-  -  Float64 is a synonym for (_ FloatingPoint 11  53)
--}
 				( Z3_Double, Z3_Float ) -> SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "8", SLeaf "24" ],
 					SLeaf roundingMode, sexpr ]
+
 				( Z3_Float, Z3_Double ) -> SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "11", SLeaf "53" ],
 					SLeaf roundingMode, sexpr ]
 
@@ -1726,7 +1732,7 @@ expr2SExpr expr = expr2sexpr expr
 			Z3_Float -> fp
 			Z3_Double -> fp
 			_ -> bv
-	--		_ -> error $ "bitVectorTy for " ++ show operator_ty ++ " not implemented!"
+--			_ -> error $ "bitVectorTy for " ++ show operator_ty ++ " not implemented!"
 
 
 data Z3_Type =
@@ -1878,13 +1884,56 @@ makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents m
 								IntVal $ case unsigned of
 									True -> fromIntegral i
 									False  -> fromIntegral $ if i < 2^(size-1) then i else i - 2^size
-							Z3_Float -> FloatVal (read val_string :: Float)
+							Z3_Float -> FloatVal $ parseFloating_fb val_string
+							Z3_Double -> DoubleVal $ parseFloating_fb val_string
 							Z3_Ptr _ -> PtrVal
 							other -> error $ "case ty2Z3Type " ++ show other ++ " not implemented" )
 					_ -> myError $ "Parsing z3 output: Could not find " ++ is
 			return (model_string_linenumbers,Just sol_params)
 		_ -> myError $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ output ++ "\n\n" ++
 			"Model is\n" ++ model_string_linenumbers
+
+{- ((_ to_fp eb sb) RoundingMode (_ FloatingPoint mb nb) (_ FloatingPoint eb sb))
+  -  Float32 is a synonym for (_ FloatingPoint  8  24)
+  -  Float64 is a synonym for (_ FloatingPoint 11  53)
+-}
+class FB_Lengths a b | a -> b where
+	fb_lengths :: a -> (a,(Int,Int),(b->a),(a->b))
+
+instance FB_Lengths Float Word32 where
+	fb_lengths a = (a,(8,24),wordToFloat,floatToWord)
+
+instance FB_Lengths Double Word64 where
+	fb_lengths a = (a,(11,53),wordToDouble,doubleToWord)
+
+wordToFloat :: Word32 -> Float
+wordToFloat x = runST (fb_cast x)
+floatToWord :: Float -> Word32
+floatToWord x = runST (fb_cast x)
+wordToDouble :: Word64 -> Double
+wordToDouble x = runST (fb_cast x)
+doubleToWord :: Double -> Word64
+doubleToWord x = runST (fb_cast x)
+
+{-# INLINE fb_cast #-}
+fb_cast :: (MArray (STUArray s) a (ST s), MArray (STUArray s) b (ST s)) => a -> ST s b
+fb_cast x = newArray (0::Int,0) x >>= castSTUArray >>= flip readArray 0
+
+parseFloating_fb :: (Eq b,RealFloat a,FB_Lengths a b,Num b) => String -> a
+parseFloating_fb s = f  
+	where
+	-- Thats a funny idea: Forwarding the return type to fb_lengths' argument, so Haskell can infer the type a in order
+	-- to determine which instance of FB_Lengths we have.
+	-- Has someone done something like that already?
+	(f,(l2,l3),from_word,to_word) = fb_lengths $ from_word $ sign * (2^(l2+l3-1)) + expo * (2^(l3-1)) + mantissa
+	(sign,mantissa,expo) = case s =~ ("fp #([b|x][0-9a-f]+) #([b|x][0-9a-f]+) #([b|x][0-9a-f]+)") :: (String,String,String,[String]) of
+		(_,_,_,[s1,s2,s3]) -> (parse_lit 1 s1, parse_lit l2 s2, parse_lit (l3-1) s3)
+	parse_lit :: (Num a,Eq a) => Int -> String -> a
+	parse_lit l (c:s) | length s == l = i
+		where
+		[(i,"")] = case c of
+			'b' -> readInt 2 (`elem` "01") (\ c -> ord c - ord '0') s
+			'x' -> readHex s
 
 
 -- In case of a cutoff, mb_ret_type is Nothing.
@@ -1977,9 +2026,11 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 					DirectType (TyComp _) _ _ -> return ()
 					_ -> do
 						let exec_result = case ty of
-							DirectType (TyIntegral _) _ _       -> IntVal (read s)
-							DirectType (TyFloating TyFloat) _ _ -> FloatVal (read s)
-							DirectType (TyEnum _) _ _           -> IntVal (read s)
+							DirectType (TyIntegral _) _ _       -> IntVal $ read s
+							DirectType (TyFloating floatty) _ _ -> case floatty of
+								TyFloat  -> FloatVal  $ read s
+								TyDouble -> DoubleVal $ read s
+							DirectType (TyEnum _) _ _           -> IntVal $ read s
 							_ -> error $ "checkSolutionM: parsing type " ++ (render.pretty) ty ++ " of " ++ ident_s ++ " not implemented!"
 						when (exec_result /= predicted_result) $ do
 							let txt = "ERROR in " ++ show traceid ++ " for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result

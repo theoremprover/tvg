@@ -38,6 +38,7 @@ dependencies:
 - language-c-quote
 - containers-unicode-symbols
 - mainland-pretty
+- array
 
 executables:
 #  tvg-exe:
