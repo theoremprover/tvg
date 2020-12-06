@@ -1617,53 +1617,53 @@ expr2SExpr expr = expr2sexpr expr
 	expr2sexpr' expr = case expr of
 
 		-- CNeqOp was resolved while annotateTypes
-		CBinary binop expr1 expr2 (_,to_ty) ->
+		CBinary binop expr1 expr2 _ ->
 			SExpr <$> sequence [ pure $ SLeaf op_sexpr, expr2sexpr expr1, expr2sexpr expr2 ]
 				where
-
+				op_ty = extractType expr1
 				op_sexpr = case binop of
-					CMulOp -> bitVectorTy "bvmul" ("fp.mul " ++ roundingMode)
-					CDivOp -> bitVectorTy "bvdiv" ("fp.div " ++ roundingMode)
-					CAddOp -> bitVectorTy "bvadd" ("fp.add " ++ roundingMode)
-					CSubOp -> bitVectorTy "bvsub" ("fp.sub " ++ roundingMode)
-					CRmdOp -> bitVectorTy (unSignedTy "bvurem" "bvsrem") "fp.rem"
-					CShlOp -> unSignedTy "bvshl" "bvshl"
-					CShrOp -> unSignedTy "bvlshr" "bvashr"
+					CMulOp -> bitVectorTy op_ty "bvmul" ("fp.mul " ++ roundingMode)
+					CDivOp -> bitVectorTy op_ty "bvdiv" ("fp.div " ++ roundingMode)
+					CAddOp -> bitVectorTy op_ty "bvadd" ("fp.add " ++ roundingMode)
+					CSubOp -> bitVectorTy op_ty "bvsub" ("fp.sub " ++ roundingMode)
+					CRmdOp -> bitVectorTy op_ty (unSignedTy op_ty "bvurem" "bvsrem") "fp.rem"
+					CShlOp -> unSignedTy op_ty "bvshl" "bvshl"
+					CShrOp -> unSignedTy op_ty "bvlshr" "bvashr"
 					CAndOp -> "bvand"
 					COrOp  -> "bvor"
 					CXorOp -> "bvxor"
 					CLndOp -> "and"
 					CLorOp -> "or"
-					CLeOp  -> bitVectorTy (unSignedTy "bvult" "bvslt") "fp.lt"
-					CGrOp  -> bitVectorTy (unSignedTy "bvugt" "bvsgt") "fp.gt"
-					CLeqOp -> bitVectorTy (unSignedTy "bvule" "bvsle") "fp.leq"
-					CGeqOp -> bitVectorTy (unSignedTy "bvuge" "bvsge") "fp.geq"
-					CEqOp  -> bitVectorTy "=" "fp.eq"
+					CLeOp  -> bitVectorTy op_ty (unSignedTy op_ty "bvult" "bvslt") "fp.lt"
+					CGrOp  -> bitVectorTy op_ty (unSignedTy op_ty "bvugt" "bvsgt") "fp.gt"
+					CLeqOp -> bitVectorTy op_ty (unSignedTy op_ty "bvule" "bvsle") "fp.leq"
+					CGeqOp -> bitVectorTy op_ty (unSignedTy op_ty "bvuge" "bvsge") "fp.geq"
+					CEqOp  -> bitVectorTy op_ty "=" "fp.eq"
 					other  -> error $ "op_sexpr " ++ (render.pretty) binop ++ " not implemented!"
 
 		cconst@(CConst ctconst) -> return $ case ctconst of
 			CIntConst intconst (_,ty)  -> make_intconstant ty (getCInteger intconst)
 			CCharConst cchar _         -> SLeaf $ (render.pretty) cconst
-			CFloatConst (CFloat f_s) (_,ty) -> SExpr [ SLeaf "fp", SLeaf s1, SLeaf s2, SLeaf s3 ]
+			CFloatConst (CFloat f_s) (_,ty) -> SExpr [ SLeaf "fp", SLeaf ("#b"++s1), SLeaf ("#b"++s2), SLeaf ("#b"++s3) ]
 				where
 				show_bin :: (Integral a,PrintfArg a) => Int -> a -> String
-				show_bin l i = printf "#b%0*.*b" l l i
-				(s1,s2,s3) = ( show_bin 1 sig, show_bin l2 expo, show_bin (l3-1) mantissa )
-				((l2,l3),sig,mantissa,expo) = case ty of
-					Z3_Float  -> ((8,24),)
-					Z3_Double -> (11,53),)
-
+				show_bin l i = printf "%0*.*b" l l i
+				(s1,s2,s3) = case ty of
+					Z3_Float  -> (take 1 val,take 8 $ drop 1 val,take 23 $ drop 9 val) where
+						val = show_bin 32 (floatToWord $ read f_s)
+					Z3_Double -> (take 1 val,take 11 $ drop 1 val,take 52 $ drop 12 val) where
+						val = show_bin 64 (doubleToWord $ read f_s)
  
 			CStrConst cstr _           -> SLeaf $ (render.pretty) cconst
 
 		CVar ident _ -> return $ SLeaf $ (render.pretty) ident
 
 		CUnary CPlusOp subexpr _ -> expr2sexpr subexpr
-		CUnary op subexpr (_,to_ty) -> SExpr <$> sequence
+		CUnary op subexpr _ -> SExpr <$> sequence
 			[ pure $ SLeaf op_str, expr2sexpr subexpr ]
 			where
 			op_str = case op of
-				CMinOp  -> bitVectorTy "bvneg" "fp.neg"
+				CMinOp  -> bitVectorTy (extractType subexpr) "bvneg" "fp.neg"
 				CCompOp -> "bvnot"
 				CNegOp  -> "not"
 				_ -> error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
@@ -1724,11 +1724,11 @@ expr2SExpr expr = expr2sexpr expr
 
 		where
 
-		operator_ty = extractType expr
-		unSignedTy unsigned signed = case operator_ty of
+		unSignedTy ty unsigned signed = case ty of
 			Z3_BitVector _ is_unsigned -> if is_unsigned then unsigned else signed
+			Z3_Bool -> unsigned
 			_ -> error $ "unSignedTy " ++ (render.pretty) expr ++ " is no bitvector!"
-		bitVectorTy bv fp = case operator_ty of
+		bitVectorTy ty bv fp = case ty of
 			Z3_Float -> fp
 			Z3_Double -> fp
 			_ -> bv
@@ -1823,7 +1823,7 @@ makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents m
 			prefix_a :: Ident -> Ident
 			prefix_a (Ident s@('_':_) i ni) = Ident (safeZ3IdentifierPrefix:s) i ni
 			prefix_a ident = ident
-	printLogV 2 $ "output_idents = " ++ showIdents output_idents
+	printLogV 1 $ "output_idents = " ++ showIdents output_idents
 	let
 		constraints_vars = nub $ concatMap fvar a_constraints
 	printLogV 2 $ "constraints_vars = " ++ showIdents constraints_vars
@@ -1871,9 +1871,9 @@ makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents m
 		"unsat"   : _ -> return (model_string_linenumbers,Nothing)
 		"unknown" : _ -> return (model_string_linenumbers,Nothing)
 		"sat" : rest -> do
-			sol_params <- forM a_output_idents $ \ ident -> do
+			sol_params <- forM (zip a_output_idents rest) $ \ (ident,line) -> do
 				let is = identToString ident
-				case (unlines rest) =~ ("^\\(\\(" ++ is ++ " ([^\\)]+)\\)\\)$") :: (String,String,String,[String]) of
+				case line =~ ("\\(\\(" ++ is ++ " ([^\\)]+)\\)\\)") :: (String,String,String,[String]) of
 					(_,_,_,[val_string]) -> case lookup ident tyenv of
 						Nothing -> myError $ "Parsing z3 output: Could not find type of " ++ is
 						Just ty -> return (is, case ty2Z3Type ty of
@@ -1920,16 +1920,21 @@ fb_cast :: (MArray (STUArray s) a (ST s), MArray (STUArray s) b (ST s)) => a -> 
 fb_cast x = newArray (0::Int,0) x >>= castSTUArray >>= flip readArray 0
 
 parseFloating_fb :: (Eq b,RealFloat a,FB_Lengths a b,Num b) => String -> a
-parseFloating_fb s = f  
+parseFloating_fb s = case s of
+	_ | "(_ NaN " `isPrefixOf` s -> 0.0 / 0.0
+	_ | "(_ +oo " `isPrefixOf` s -> 1.0 / 0.0
+	_ | "(_ -oo " `isPrefixOf` s -> -1.0 / 0.0
+	_ -> f  
 	where
 	-- Thats a funny idea: Forwarding the return type to fb_lengths' argument, so Haskell can infer the type a in order
 	-- to determine which instance of FB_Lengths we have.
 	-- Has someone done something like that already?
 	(f,(l2,l3),from_word,to_word) = fb_lengths $ from_word $ sign * (2^(l2+l3-1)) + expo * (2^(l3-1)) + mantissa
-	(sign,mantissa,expo) = case s =~ ("fp #([b|x][0-9a-f]+) #([b|x][0-9a-f]+) #([b|x][0-9a-f]+)") :: (String,String,String,[String]) of
-		(_,_,_,[s1,s2,s3]) -> (parse_lit 1 s1, parse_lit l2 s2, parse_lit (l3-1) s3)
-	parse_lit :: (Num a,Eq a) => Int -> String -> a
-	parse_lit l (c:s) | length s == l = i
+--	(f,(l2,l3),from_word,to_word) = error $ show (sign,expo,mantissa)
+	(sign,expo,mantissa) = case s =~ ("fp #([b|x][0-9a-f]+) #([b|x][0-9a-f]+) #([b|x][0-9a-f]+)") :: (String,String,String,[String]) of
+		(_,_,_,[s1,s2,s3]) -> (parse_lit s1, parse_lit s2, parse_lit s3)
+	parse_lit :: (Num a,Eq a) => String -> a
+	parse_lit (c:s) = i
 		where
 		[(i,"")] = case c of
 			'b' -> readInt 2 (`elem` "01") (\ c -> ord c - ord '0') s
