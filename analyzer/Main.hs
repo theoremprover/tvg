@@ -1921,9 +1921,11 @@ fb_cast x = newArray (0::Int,0) x >>= castSTUArray >>= flip readArray 0
 
 parseFloating_fb :: (Eq b,RealFloat a,FB_Lengths a b,Num b) => String -> a
 parseFloating_fb s = case s of
-	_ | "(_ NaN " `isPrefixOf` s -> 0.0 / 0.0
-	_ | "(_ +oo " `isPrefixOf` s -> 1.0 / 0.0
-	_ | "(_ -oo " `isPrefixOf` s -> -1.0 / 0.0
+	_ | "(_ NaN "  `isPrefixOf` s ->  0.0 / 0.0
+	_ | "(_ +oo "  `isPrefixOf` s ->  1.0 / 0.0
+	_ | "(_ -oo "  `isPrefixOf` s -> -1.0 / 0.0
+	_ | "(+ zero " `isPrefixOf` s ->  0.0
+	_ | "(- zero " `isPrefixOf` s -> -0.0
 	_ -> f  
 	where
 	-- Thats a funny idea: Forwarding the return type to fb_lengths' argument, so Haskell can infer the type a in order
