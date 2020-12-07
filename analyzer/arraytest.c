@@ -1,7 +1,7 @@
-int f(int arr[3])
+int f(int arr[3],int n)
 {
     int j=0;
-    for(int i=0;i<3;i++)
+    for(int i=0;i<n;i++)
     {
         if(arr[i]>0) arr[i] *= 2;
         j += arr[i];
@@ -10,31 +10,6 @@ int f(int arr[3])
 }
 
 /*
-
-i::int
-->
-int i;
-scanf("...",&i);
-
-pi :: int*
-->
-int* pi;
-scanf("...",&(*pi));
-
-s :: struct S
-->
-struct S s;
-...
-scanf("...",&s.member1);
-...
-
-p_s :: struct S *
-->
-struct S p_s_compound;
-struct S * p_s = & p_s_compound;
-...
-scanf("...",&(p_s->member1));
-...
 
 
 (set-option :pp.fp_real_literals true)
@@ -57,17 +32,19 @@ scanf("...",&(p_s->member1));
 int a[10];
 
 a[2]=7       => ar1 = store ar0 2 7
-
 a[3]=a[2]+1  => ar2 = store ar1 3 ((select ar1 2) + 1)
-
 int y = a[2]+1;
 
 
+--DECL a Array 10 Int Int
+ASSN a[2] = 7
+COND ... a[2] ...
+ASSN a[2] = a[2]+1
+COND ... a[2] ...
 
-DECL a Array Int Int
-ASSN a[i] = 7
-COND a[i]>0
-ASSN a[i] = a[i]+1
-COND a[i]==8
-
+DECL a0 Array 10 Int Int
+COND a0[2]=7
+COND ... a0[2] ...
+DECL a1 Array
+COND ... a[2] ...
 */
