@@ -1900,6 +1900,7 @@ makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents m
 class FB_Lengths a b | a -> b where
 	fb_lengths :: a -> (a,(Int,Int),(b->a),(a->b))
 
+-- floatToWord/doubleToWord currently unused in the class
 instance FB_Lengths Float Word32 where
 	fb_lengths a = (a,(8,24),wordToFloat,floatToWord)
 
@@ -1931,8 +1932,7 @@ parseFloating_fb s = case s of
 	-- Thats a funny idea: Forwarding the return type to fb_lengths' argument, so Haskell can infer the type a in order
 	-- to determine which instance of FB_Lengths we have.
 	-- Has someone done something like that already?
-	(f,(l2,l3),from_word,to_word) = fb_lengths $ from_word $ sign * (2^(l2+l3-1)) + expo * (2^(l3-1)) + mantissa
---	(f,(l2,l3),from_word,to_word) = error $ show (sign,expo,mantissa)
+	(f,(l2,l3),from_word,_) = fb_lengths $ from_word $ sign * (2^(l2+l3-1)) + expo * (2^(l3-1)) + mantissa
 	(sign,expo,mantissa) = case s =~ ("fp #([b|x][0-9a-f]+) #([b|x][0-9a-f]+) #([b|x][0-9a-f]+)") :: (String,String,String,[String]) of
 		(_,_,_,[s1,s2,s3]) -> (parse_lit s1, parse_lit s2, parse_lit s3)
 	parse_lit :: (Num a,Eq a) => String -> a
