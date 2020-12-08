@@ -44,16 +44,16 @@ COND ... a[2] ...
 
 
 
-DECL a0 Array 10 Int Int
+DECL a Array 10 Int Int     DECL a0 Array 10 Int Int
 
-                     DECL a1 Array 10 Int Int
-ASSN a[2] = 7    =>  COND a1 = store a0 2 7
+                            DECL a1 Array 10 Int Int
+ASSN a[2] = 7         =>    COND a1 = store a0 2 7
 
-COND ... a[2] ...
+COND ... a[2] ...           COND ...a1[2]...
 
-                          DECL a2 Array 10 Int Int
-ASSN a[2] = a[2]+1   =>   COND a2 = store a1 2 (select a1 2 + 1)
+                            DECL a2 Array 10 Int Int
+ASSN a[2] = a[2]+1    =>    COND a2 = store a1 2 (select a1 2 + 1)
 
-COND ... a[2] ...
+COND ... a[2] ...           COND ...a2[2]...
 
 */
