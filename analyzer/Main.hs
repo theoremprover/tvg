@@ -545,10 +545,17 @@ analyzeTraceM mb_ret_type res_line = do
 			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine trace
 
-	-- Eliminate/Expand all assignments to pointers in the later code
-	res_trace_elim_inds <- elimInds trace
+	-- Eliminate Assignments to Arrays
+	res_trace_arrelim <- elimArrayAssignsM trace
 	when (not don'tShowTraces) $ do
-		printLog $ "\n=== TRACE after elimInds " ++ show traceid ++ " =========\n" ++
+		printLog $ "\n--- TRACE after elimArrayAssignsM " ++ show traceid ++ " -----------\n" ++
+			if showBuiltins then "" else "<leaving out builtins...>\n"
+		printLog $ showLine res_trace_arrelim
+
+	-- Eliminate/Expand all assignments to pointers in the later code
+	res_trace_elim_inds <- elimInds res_trace_arrelim
+	when (not don'tShowTraces) $ do
+		printLog $ "\n--- TRACE after elimInds " ++ show traceid ++ " ----------------------\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine res_trace_elim_inds
 
@@ -1337,6 +1344,12 @@ substituteBy x y d = everywhere (mkT (substexpr x y)) d
 	substexpr :: (Eq a) => a -> a -> a -> a
 	substexpr x y found_expr | x == found_expr = y
 	substexpr _ _ found_expr                   = found_expr
+
+-- eliminate assignments to arrays, replacing them by a new array declaration
+-- and a condition that a_n+1 = store a_n ... ...
+elimArrayAssignsM :: Trace -> CovVecM Trace
+elimArrayAssignsM trace = 
+
 
 -- elimInds:
 -- Going from the end of the trace backwards,
