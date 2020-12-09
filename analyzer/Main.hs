@@ -133,10 +133,10 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : ["-writeModels"] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : ["-writeModels"] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -318,7 +318,7 @@ instance Show TraceElem where
 
 showTrace :: Trace -> String
 showTrace trace = unlines $ concatMap show_te trace where
-	show_te te | showBuiltins || not (isnotbuiltin te) = [show te]
+	show_te te | showBuiltins || isnotbuiltin te = [show te]
 	show_te _ = []
 
 covVectorsM :: CovVecM Bool
@@ -1345,11 +1345,26 @@ substituteBy x y d = everywhere (mkT (substexpr x y)) d
 	substexpr x y found_expr | x == found_expr = y
 	substexpr _ _ found_expr                   = found_expr
 
+
 -- eliminate assignments to arrays, replacing them by a new array declaration
 -- and a condition that a_n+1 = store a_n ... ...
-elimArrayAssignsM :: Trace -> CovVecM Trace
-elimArrayAssignsM trace = 
+{-
+DECL a Array 10 Int Int     DECL a0 Array 10 Int Int
 
+                            DECL a1 Array 10 Int Int
+ASSN a[2] = 7         =>    COND a1 = store a0 2 7
+
+COND ... a[2] ...           COND ...a1[2]...
+
+                            DECL a2 Array 10 Int Int
+ASSN a[2] = a[2]+1    =>    COND a2 = store a1 2 (select a1 2 + 1)
+
+COND ... a[2] ...           COND ...a2[2]...
+-}
+elimArrayAssignsM :: Trace -> CovVecM Trace
+elimArrayAssignsM trace = do
+	printLogV 1 $ showTrace trace
+	return trace
 
 -- elimInds:
 -- Going from the end of the trace backwards,
