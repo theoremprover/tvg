@@ -1349,14 +1349,17 @@ substituteBy x y d = everywhere (mkT (substexpr x y)) d
 -- eliminate assignments to arrays, replacing them by a new array declaration
 -- and a condition that a_n+1 = store a_n ... ...
 {-
-DECL a Array 10 Int Int     DECL a0 Array 10 Int Int
+DECL a Array 3 Int Int      DECL a0 Array 3 Int Int
+DECL a_INDEX_0 Int
+DECL a_INDEX_1 Int
+DECL a_INDEX_2 Int
 
                             DECL a1 Array 10 Int Int
 ASSN a[2] = 7         =>    COND a1 = store a0 2 7
 
 COND ... a[2] ...           COND ...a1[2]...
 
-                            DECL a2 Array 10 Int Int
+                            DECL a2 Array 3 Int Int
 ASSN a[2] = a[2]+1    =>    COND a2 = store a1 2 (select a1 2 + 1)
 
 COND ... a[2] ...           COND ...a2[2]...
