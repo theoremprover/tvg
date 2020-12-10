@@ -947,7 +947,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 		transids assigned_expr' lexpr_ty trace $ \ (assigned_expr'',trace') -> do
 			r <- translateExprM envs lexpr lexpr_ty
 			case r of
-				[(lexpr'@(CVar _ _),trace'')] -> 
+				[(lexpr',trace'')] -> 
 					unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
 				other -> myError $ "#### r = " ++ (render.pretty) (fst $ head r)
 		where
@@ -1368,6 +1368,7 @@ ASSN a[2] = a[2]+1    =>    COND a2 = store a1 2 (select a1 2 + 1)
 
 COND ... a[2] ...           COND ...a2[2]...
 -}
+-- trace is in the right order.
 elimArrayAssignsM :: Trace -> CovVecM Trace
 elimArrayAssignsM trace = do
 	printLogV 1 $ showTrace trace
@@ -1709,6 +1710,9 @@ expr2SExpr expr = expr2sexpr expr
 
 				-- SAMECAST: identity
 				( ty1, ty2 ) | ty1==ty2 -> sexpr
+
+				-- Casting signed to unsigned or vice versa with same size: No cast needed (Z3 interprets it)
+				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from==size_to -> sexpr
 		
 				-- Casting from Bool
 				( Z3_Bool, Z3_BitVector size_from _ ) ->
