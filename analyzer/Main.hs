@@ -135,8 +135,8 @@ main = do
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : ["-writeModels"] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -944,7 +944,9 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		lexpr_ty <- inferLExprTypeM (envs2tyenv envs) (renameVars "CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni))" envs lexpr) >>= return.ty2Z3Type
 		transids assigned_expr' lexpr_ty trace $ \ (assigned_expr'',trace') -> do
-			[(lexpr'@(CVar _ _),trace'')] <- translateExprM envs lexpr lexpr_ty
+			r <- translateExprM envs lexpr lexpr_ty
+			printLogV 1 $ "#### r = " ++ (render.pretty) (fst $ head r)
+			let [(lexpr'@(CVar _ _),trace'')] = r
 			unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
 		where
 		assigned_expr' = case assignop of
