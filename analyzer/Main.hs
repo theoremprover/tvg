@@ -135,8 +135,8 @@ main = do
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : ["-writeModels"] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -1353,10 +1353,16 @@ substituteBy x y d = everywhere (mkT (substexpr x y)) d
 -- eliminate assignments to arrays, replacing them by a new array declaration
 -- and a condition that a_n+1 = store a_n ... ...
 {-
+... f ( int a[3], ...)  =>  ... f ( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2, ... )
+
 DECL a Array 3 Int Int      DECL a0 Array 3 Int Int
 DECL a_INDEX_0 Int
 DECL a_INDEX_1 Int
 DECL a_INDEX_2 Int
+
+ASSN a[0] = a_INDEX_0       COND a0 = store a0 0 a_INDEX_0
+ASSN a[1] = a_INDEX_1       COND a0 = store a0 1 a_INDEX_1 
+ASSN a[2] = a_INDEX_2       COND a0 = store a0 2 a_INDEX_2
 
                             DECL a1 Array 10 Int Int
 ASSN a[2] = 7         =>    COND a1 = store a0 2 7
