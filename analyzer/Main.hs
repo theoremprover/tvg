@@ -360,15 +360,15 @@ covVectorsM = do
 	let
 		fun_lc = lineColNodeInfo fundef_ni
 		next_lc = case sort $ filter (> lineColNodeInfo fundef_ni) $ map lineColNodeInfo globdecls of
-			[] -> (9999999999,9999999999)
+			[] -> (maxBound,maxBound)
 			next : _ -> next
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
 	let formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
 	ext_decls <- createDeclsM formal_params
 	param_env_exprs <- createInterfaceM formal_params
-	let param_env = map fst param_env_exprs
 	modify $ \ s -> s { paramEnvCVS = Just param_env_exprs }
+	let param_env = map fst param_env_exprs
 	printLogV 2 $ "param_env = " ++ showEnv param_env
 
 	let decls = map (NewDeclaration . snd) (reverse param_env ++ glob_env)
@@ -1360,19 +1360,19 @@ DECL a_INDEX_0 Int
 DECL a_INDEX_1 Int
 DECL a_INDEX_2 Int
 
-ASSN a[0] = a_INDEX_0       COND a0 = store a0 0 a_INDEX_0
-ASSN a[1] = a_INDEX_1       COND a0 = store a0 1 a_INDEX_1 
-ASSN a[2] = a_INDEX_2       COND a0 = store a0 2 a_INDEX_2
+ASSN a[0] = a_INDEX_0       COND a1 = store a0 0 a_INDEX_0
+ASSN a[1] = a_INDEX_1       COND a2 = store a1 1 a_INDEX_1 
+ASSN a[2] = a_INDEX_2       COND a3 = store a2 2 a_INDEX_2
 
-                            DECL a1 Array 10 Int Int
-ASSN a[2] = 7         =>    COND a1 = store a0 2 7
+                            DECL a4 Array 10 Int Int
+ASSN a[2] = 7         =>    COND a4 = store a3 2 7
 
 COND ... a[2] ...           COND ...a1[2]...
 
-                            DECL a2 Array 3 Int Int
-ASSN a[2] = a[2]+1    =>    COND a2 = store a1 2 (select a1 2 + 1)
+                            DECL a5 Array 3 Int Int
+ASSN a[2] = a[2]+1    =>    COND a5 = store a4 2 (select a1 2 + 1)
 
-COND ... a[2] ...           COND ...a2[2]...
+COND ... a[2] ...           COND ...a5[2]...
 -}
 -- trace is in the right order.
 elimArrayAssignsM :: Trace -> CovVecM Trace
