@@ -309,10 +309,10 @@ instance (Pretty a) => Pretty [a] where
 
 instance Show TraceElem where
 	show te = ( case te of
-		(Assignment lvalue expr)   -> "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
-		(Condition mb_b expr)      -> "COND " ++ maybe "" (\b->if b then "(THEN) " else "(ELSE) ") mb_b ++ (render.pretty) expr
-		(NewDeclaration (lval,ty)) -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
-		(Return exprs)             -> "RET  " ++ (render.pretty) exprs
+		(Assignment lvalue expr)       -> "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
+		(Condition mb_b expr)          -> "COND " ++ maybe "" (\b->if b then "(THEN) " else "(ELSE) ") mb_b ++ (render.pretty) expr
+		(NewDeclaration (lval,ty))     -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
+		(Return exprs)                 -> "RET  " ++ (render.pretty) exprs
 		(DebugOutput varname (expr,_)) -> "DBGOUT " ++ varname ++ " " ++ (render.pretty) expr
 		) ++ "  (" ++ (showLocation.lineColNodeInfo) te ++ ")"
 
@@ -347,14 +347,13 @@ covVectorsM = do
 	
 	let condition_points = Set.fromList $ everything (++) (mkQ [] searchcondpoint) body
 		where
-		n2loc node = nodeInfo node
 		searchcondpoint :: CStat -> [Branch]
-		searchcondpoint (CWhile cond _ _ _) = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
-		searchcondpoint (CCase expr _ _) = [ Then (lineColNodeInfo expr) ]
-		searchcondpoint (CDefault stmt _) = [ Then (lineColNodeInfo stmt) ]
+		searchcondpoint (CWhile cond _ _ _)        = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
+		searchcondpoint (CCase expr _ _)           = [ Then (lineColNodeInfo expr) ]
+		searchcondpoint (CDefault stmt _)          = [ Then (lineColNodeInfo stmt) ]
 		searchcondpoint (CFor _ (Just cond) _ _ _) = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
-		searchcondpoint (CIf cond _ _ _) = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
-		searchcondpoint _ = []
+		searchcondpoint (CIf cond _ _ _)           = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
+		searchcondpoint _                          = []
 	modify $ \ s -> s { allCondPointsCVS = condition_points }
 	
 	let
