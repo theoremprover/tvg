@@ -44,12 +44,14 @@ COND ... a[2] ...           COND ...a5[2]...
 f( int a[3] )
 {
     a[1] = a[1] + 1;
+    a[1] = a[1] * 2;
     return a[1];
 }
 
 f( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2 )
 {
     ASSN a[1] = a[1] + 1
+    ASSN a[1] = a[1] * 2
     RET a[1]
 }
 
@@ -59,6 +61,8 @@ f( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2 )
 {
     ASSN a1[1] = a[1] + 1
     ASSN a1 = a
+    ASSN a2[1] = a[1] * 2
+    ASSN a2 = a
     RET a[1]
 }
 
@@ -66,9 +70,7 @@ ELIM_ASSIGNMENTS
 
 f( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2 )
 {
-    ASSN a1[1] = a[1] + 1
-    ASSN a1 = a
-    RET a[1]
+...
 }
 
 */

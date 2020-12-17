@@ -1353,32 +1353,31 @@ substituteBy x y d = everywhere (mkT (substexpr x y)) d
 -- and a condition that a_n+1 = store a_n ... ...
 {-
 ... f ( int a[3], ...)  =>  ... f ( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2, ... )
-
-DECL a Array 3 Int Int      DECL a0 Array 3 Int Int
-DECL a_INDEX_0 Int
-DECL a_INDEX_1 Int
-DECL a_INDEX_2 Int
-
-ASSN a[0] = a_INDEX_0       COND a1 = store a0 0 a_INDEX_0
-ASSN a[1] = a_INDEX_1       COND a2 = store a1 1 a_INDEX_1 
-ASSN a[2] = a_INDEX_2       COND a3 = store a2 2 a_INDEX_2
-
-                            DECL a4 Array 10 Int Int
-ASSN a[2] = 7         =>    COND a4 = store a3 2 7
-
-COND ... a[2] ...           COND ...a1[2]...
-
-                            DECL a5 Array 3 Int Int
-ASSN a[2] = a[2]+1    =>    COND a5 = store a4 2 (select a1 2 + 1)
-
-COND ... a[2] ...           COND ...a5[2]...
 -}
 -- trace is in the right order.
 elimArrayAssignsM :: Trace -> CovVecM Trace
-elimArrayAssignsM trace = do
-	printLogV 1 $ showTrace trace
-	return trace
-
+elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
+	where
+	elim_arr_assnsM :: StateT (Map.Map Ident Int) CovVecM Trace
+	elim_arr_assnsM = do
+		ls <- forM trace $ \case
+			Assignment (CIndex var index_expr index_ni) ass_expr -> case var of
+				CVar ident var_ni -> do
+					counters <- get
+					i <- case Map.lookup ident counters of
+						Nothing -> do
+							modify $ Map.insert ident 2
+							return 1
+						Just i -> do
+							modify $ Map.adjust (+1) ident
+							return i
+					let newvar = CVar (internalIdent $ identToString ident ++ "$" ++ show i) var_ni	
+					return [
+						Assignment (CIndex newvar index_expr index_ni) ass_expr,
+						Assignment newvar var ]
+				other -> myError $ "elim_arr_assnsM: not a variable in CIndex: " ++ (render.pretty) other
+			other -> return [other]
+		return $ concat ls
 -- elimInds:
 -- Going from the end of the trace backwards,
 -- for all ASSN ptr = expr where ptr is a pointer (probably expr=&...),
