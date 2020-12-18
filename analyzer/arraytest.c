@@ -6,6 +6,7 @@ int f(int arr[3],int n)
         if(arr[i]>0) arr[i] *= 2;
         j += arr[i];
     }
+/*
     switch(j)
     {
         case -1 : return(1); break;
@@ -14,6 +15,11 @@ int f(int arr[3],int n)
         default : j++;
     }
     return(j);
+*/
+    if(j==-1) return(1);
+    else if(j==0) return(2);
+    else if(j==8) return(3);
+    else return(j+1);
 }
 
 /*

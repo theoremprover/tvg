@@ -1452,7 +1452,7 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 	foldtraceM :: Trace -> Trace -> CovVecM Trace
 	foldtraceM result [] = return result
 	-- Skip assignments to array elements
-	foldtraceM result (ass@(Assignment (CIndex _ _ _) _) : rest) = foldtraceM (ass:result) rest
+--	foldtraceM result (ass@(Assignment (CIndex _ _ _) _) : rest) = foldtraceM (ass:result) rest
 	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (substituteBy lvalue expr result) rest
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
 
@@ -1483,6 +1483,8 @@ createSymbolicVarsM res_trace new_idents (ti : rest) = do
 	createSymbolicVarsM (ti' : (map NewDeclaration add_tis) ++ res_trace) (map fst add_tis ++ new_idents) rest
 	where
 	
+	tyenv = createTyEnv res_trace
+
 	create_var :: CExprWithType -> Type -> StateT [(Ident,Type)] CovVecM CExprWithType
 	create_var expr ty = do
 		let newident = mkIdentWithCNodePos (extractNodeInfo expr) $ lValueToVarName expr
@@ -1493,12 +1495,11 @@ createSymbolicVarsM res_trace new_idents (ti : rest) = do
 	createsymvar_m :: CExprWithType -> StateT [(Ident,Type)] CovVecM CExprWithType
 
 	createsymvar_m expr@(CUnary CIndOp (CVar ptr_ident _) ni) = do
-		let Just (PtrType ty _ _) = lookup ptr_ident $ createTyEnv res_trace
+		let Just (PtrType ty _ _) = lookup ptr_ident tyenv
 		create_var expr ty
 
 	--  for ptr->member   create    p1_ARROW_member :: member_type
 	createsymvar_m expr@(CMember (CVar ptr_ident _) member True _) = do
-		let tyenv = createTyEnv res_trace
 		case lookup ptr_ident tyenv of
 			Nothing -> myError $ "createsymvar_m: Could not find " ++ (render.pretty) ptr_ident ++ " of " ++ (render.pretty) expr ++ " in " ++ showTyEnv tyenv
 			Just (PtrType sue_ty _ _) -> do
@@ -1512,6 +1513,12 @@ createSymbolicVarsM res_trace new_idents (ti : rest) = do
 	createsymvar_m expr@(CUnary CAdrOp (CVar a_ident _) _) = do
 		let Just ty = lookup a_ident $ createTyEnv res_trace
 		create_var expr $ PtrType ty noTypeQuals noAttributes
+
+	createsymvar_m expr@(CIndex arrexpr _ _) = case arrexpr of
+		CVar ident _ -> do	
+			let Just (ArrayType ty _ _ _) = lookup ident tyenv
+			create_var expr ty
+		_ -> myError $ "createsymvar_m " ++ (render.pretty) expr ++ " : arrexpr is not a CVar"
 
 	createsymvar_m expr = return expr
 
@@ -1641,8 +1648,9 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 
 	annotate_types (CIndex var@(CVar ident _) ix ni) = do
 		var' <- annotate_types var
+		let Z3_Array elemty _ = extractType var'
 		ix' <- annotate_types ix
-		return $ CIndex var' (mb_cast (ty2Z3Type intType) ix') (ni,extractType var')
+		return $ CIndex var' (mb_cast (ty2Z3Type intType) ix') (ni,elemty)
 
 	annotate_types other = myError $ "annotate_types " ++ (render.pretty) other ++ " not implemented"
 
