@@ -78,7 +78,7 @@ ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
 
 showInitialTrace = False
 solveIt = True
-showModels = False
+showModels = True
 showOnlySolutions = True
 don'tShowTraces = True
 showFinalTrace = False
@@ -286,23 +286,26 @@ instance CNode TraceElem where
 
 
 instance Pretty CExprWithType where
-    pretty (CBinary op expr1 expr2 (_,ty)) = prettyCE (pretty op) [pretty expr1,pretty expr2] ty
-    pretty (CCast decl expr (_,ty)) = prettyCE (lparen <> (text $ show ty) <> rparen) [pretty expr] ty
-    pretty (CUnary op expr (_,ty)) = prettyCE (pretty op) [pretty expr] ty
-    pretty (CMember expr ident deref (_,ty)) = prettyCE (text "")
-    	[pretty expr,text (if deref then "->" else ".") <+> pretty ident] ty
-    pretty (CVar ident (_,ty)) = pretty ident <+> text "::" <+> text (show ty)
-    pretty (CConst constant) = ( text $ case constant of
+	pretty (CBinary op expr1 expr2 (_,ty)) = prettyCE (pretty op) [pretty expr1,pretty expr2] ty
+	pretty (CCast decl expr (_,ty)) = prettyCE (lparen <> (text $ show ty) <> rparen) [pretty expr] ty
+	pretty (CUnary op expr (_,ty)) = prettyCE (pretty op) [pretty expr] ty
+	pretty (CMember expr ident deref (_,ty)) = prettyCE (text "")
+		[pretty expr,text (if deref then "->" else ".") <+> pretty ident] ty
+	pretty (CVar ident (_,ty)) = pretty ident <+> text "::" <+> text (show ty)
+	pretty (CConst constant) = ( text $ case constant of
 		CIntConst cint _ -> show $ getCInteger cint
 		CCharConst cchar _ -> show $ getCChar cchar
 		CFloatConst cfloat _ -> show cfloat
 		CStrConst cstr _ -> show $ getCString cstr ) <+>
-		text "::" <+> text ((show.snd.annotation) constant)
+			prettyType ((snd.annotation) constant)
+	pretty (CIndex arrexpr indexexpr (_,ty)) = pretty arrexpr <> brackets (pretty indexexpr) <+> prettyType ty
+
+prettyType ty = text "::" <+> text (show ty)
 
 prettyCE head subs ty =
 	lparen <+> head $+$
 	(nest 4 $ vcat subs) $+$
-	rparen <+> text "::" <+> text (show ty)
+	rparen <+> prettyType ty
 
 instance (Pretty a) => Pretty [a] where
 	pretty xs = brackets $ hcat $ punctuate comma (map pretty xs)
@@ -365,12 +368,12 @@ covVectorsM = do
 
 	let formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
 	ext_decls <- createDeclsM formal_params
-	param_env_exprs <- createInterfaceM formal_params
+	(param_env_exprs,arraydecl_env) <- createInterfaceM formal_params
 	modify $ \ s -> s { paramEnvCVS = Just param_env_exprs }
 	let param_env = map fst param_env_exprs
 	printLogV 2 $ "param_env = " ++ showEnv param_env
 
-	let decls = map (NewDeclaration . snd) (reverse param_env ++ glob_env)
+	let decls = map (NewDeclaration . snd) (arraydecl_env ++ reverse param_env ++ glob_env)
 
 	when checkSolutions $ do
 		filename <- gets srcFilenameCVS
@@ -390,7 +393,7 @@ covVectorsM = do
 			ExitFailure _ -> myError $ "Compilation failed:\n" ++ stderr
 			ExitSuccess -> modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
 
-	Right all_covered <- unfoldTracesM ret_type' True [] (param_env:[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
+	Right all_covered <- unfoldTracesM ret_type' True [] ((arraydecl_env++param_env):[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
 	return all_covered
 
 harnessAST incl argdecls funcall print_retval = [cunit|
@@ -453,7 +456,7 @@ createDeclsM formal_params = do
 
 	where
 
-	-- ty is the not-dereferenced type used for pretty printing,
+	-- ty is the non-dereferenced type used for pretty printing,
 	-- deref_ty is the dereferenced type that is to be analyzed further
 	create_decls expr ty deref_ty all_declared decls = case deref_ty of
 
@@ -787,13 +790,21 @@ identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 
 
 -- From a list of identifiers and types (i.e. the signature of the function to be analyzed),
--- create a list of EnvItems (representing the declarations) and CExprs
+-- create a list of EnvItems (representing the declarations) and CExprs.
 -- the returned string list is the list of declarations/definitions for the C test harness
 
-createInterfaceM :: [(Ident,Type)] -> CovVecM [(EnvItem,CExprWithType)]
-createInterfaceM ty_env = concatForM ty_env $ \ (srcident,ty) -> do
-	ty' <- elimTypeDefsM ty
-	createInterfaceFromExprM (CVar srcident (nodeInfo srcident,ty2Z3Type ty')) ty
+createInterfaceM :: [(Ident,Type)] -> CovVecM ([(EnvItem,CExprWithType)],[EnvItem])
+createInterfaceM ty_env = runStateT cifes_m []
+	where
+	cifes_m :: StateT [EnvItem] CovVecM [(EnvItem,CExprWithType)]
+	cifes_m = do
+		res <- forM ty_env $ \ tyenvitem@(srcident,ty) -> do
+			ty' <- lift $ elimTypeDefsM ty
+			case ty' of
+				ArrayType _ _ _ _ -> modify ((srcident,tyenvitem):)
+				_ -> return ()
+			lift $ createInterfaceFromExprM (CVar srcident (nodeInfo srcident,ty2Z3Type ty')) ty
+		return $ concat res
 
 createInterfaceFromExprM :: CExprWithType -> Type -> CovVecM [(EnvItem,CExprWithType)]
 createInterfaceFromExprM expr ty = do
@@ -1230,7 +1241,7 @@ cinitializer2blockitems lexpr ty initializer =
 inferLExprTypeM :: TyEnv -> CExpr -> CovVecM Type
 inferLExprTypeM tyenv expr = case expr of
 	CVar ident _ -> case lookup ident tyenv of
-		Nothing -> error $ "inferLExprTypeM " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv tyenv
+		Nothing -> could_not_find_error ident
 		Just ty -> elimTypeDefsM ty
 	CMember objexpr member True _ -> do
 		PtrType objty _ _ <- inferLExprTypeM tyenv objexpr
@@ -1238,8 +1249,17 @@ inferLExprTypeM tyenv expr = case expr of
 	CMember objexpr member False _ -> do
 		objty <- inferLExprTypeM tyenv objexpr
 		getMemberTypeM objty member
+	CIndex (CVar ident _) _ _ -> case lookup ident tyenv of
+		Nothing -> could_not_find_error ident
+		Just (ArrayType ty _ _ _) -> return ty 
+
 	other -> myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " not implemented"
 
+	where
+
+	could_not_find_error ident =
+		error $ "inferLExprTypeM " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv tyenv
+ 
 -- Creates an CExprWithType from a CExpr
 transcribeExprM :: String -> [Env] -> Maybe Z3_Type -> CExpr -> CovVecM CExprWithType
 transcribeExprM from envs mb_target_ty expr = do
@@ -1358,6 +1378,7 @@ substituteBy x y d = everywhere (mkT (substexpr x y)) d
 elimArrayAssignsM :: Trace -> CovVecM Trace
 elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
 	where
+	ty_env = createTyEnv trace
 	elim_arr_assnsM :: StateT (Map.Map Ident Int) CovVecM Trace
 	elim_arr_assnsM = do
 		ls <- forM trace $ \case
@@ -1371,8 +1392,12 @@ elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
 						Just i -> do
 							modify $ Map.adjust (+1) ident
 							return i
-					let newvar = CVar (internalIdent $ identToString ident ++ "$" ++ show i) var_ni	
-					return [
+					let
+						newident = internalIdent $ identToString ident ++ "$" ++ show i
+						newvar   = CVar newident var_ni
+						Just array_type = lookup ident ty_env
+					return $ [
+						NewDeclaration (newident,array_type) ,
 						Assignment (CIndex newvar index_expr index_ni) ass_expr,
 						Assignment newvar var ]
 				other -> myError $ "elim_arr_assnsM: not a variable in CIndex: " ++ (render.pretty) other
