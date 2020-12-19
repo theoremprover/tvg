@@ -105,10 +105,10 @@ CREATE_ARRAY_ASSIGN_CONDS
 f( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2 )
 {
     DECL a$1
-    COND a$1 = store a  <= ASSN a$1[1] = a[1] + 1
+    COND a$1 = store a 1 (select a 1 + 1) <= ASSN a$1[1] = a[1] + 1
 
     DECL a$2
-    ASSN a$2[1+1] = a$1[1+1-1] * 2
+    COND a$2 = store a$1 (1+1) ((select a$1 1+1-1) * 2)  <=  ASSN a$2[1+1] = a$1[1+1-1] * 2
 
     RET a$2[1+1]
 }
