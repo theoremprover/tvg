@@ -56,27 +56,61 @@ f( int a[3] )
 
 f( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2 )
 {
-    ASSN a[1] = a[1] + 1
-    ASSN a[1] = a[1] * 2
-    RET a[1]
-}
-
-ELIM_ARRAY_ASSIGNMENTS
-
-f( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2 )
-{
-    ASSN a1[1] = a[1] + 1
-    ASSN a1 = a
-    ASSN a2[1] = a[1] * 2
-    ASSN a2 = a
-    RET a[1]
+    ASSN i = 1
+    ASSN a[i] = a[i] + 1
+    ASSN i = i+1
+    ASSN a[i] = a[i-1] * 2
+    RET a[i]
 }
 
 ELIM_ASSIGNMENTS
 
 f( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2 )
 {
-...
+    ASSN a[1] = a[1] + 1
+    ASSN a[1+1] = a[1+1-1] * 2
+    RET a[1+1]
+}
+
+ELIM_ARRAY_ASSIGNMENTS
+
+f( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2 )
+{
+    DECL a$1
+    ASSN a$1[1] = a[1] + 1
+    ASSN a=a$1
+
+    DECL a$2
+    ASSN a$2[1+1] = a[1+1-1] * 2
+    ASSN a=a$2
+
+    RET a[1+1]
+}
+
+ELIM_ASSIGNMENTS 2
+
+f( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2 )
+{
+    DECL a$1
+    ASSN a$1[1] = a[1] + 1
+
+    DECL a$2
+    ASSN a$2[1+1] = a$1[1+1-1] * 2
+
+    RET a$2[1+1]
+}
+
+CREATE_ARRAY_ASSIGN_CONDS
+
+f( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2 )
+{
+    DECL a$1
+    COND a$1 = store a  <= ASSN a$1[1] = a[1] + 1
+
+    DECL a$2
+    ASSN a$2[1+1] = a$1[1+1-1] * 2
+
+    RET a$2[1+1]
 }
 
 */

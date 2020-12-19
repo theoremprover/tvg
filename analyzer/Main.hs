@@ -76,11 +76,11 @@ intType = integral TyInt :: Type
 charType = integral TyChar :: Type
 ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
 
-showInitialTrace = False
+showInitialTrace = True
 solveIt = True
 showModels = True
 showOnlySolutions = True
-don'tShowTraces = True
+showTraces = True
 showFinalTrace = False
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
@@ -91,6 +91,7 @@ showBuiltins = False
 cutOffs = False
 logToFile = True
 mainFileName = "main.c"
+printTypes = False
 
 -- Z3 does not accept identifiers starting with an underscore, so we prefix these with an "a"
 safeZ3IdentifierPrefix = 'a'
@@ -197,7 +198,7 @@ main = do
 									[ "--- SOLUTION " ++ show traceid ++ " ----------------------",
 									show_solution funname mb_solution ]
 									where
-									mbshowtraces ts = if don'tShowTraces then [] else ts
+									mbshowtraces ts = if showTraces then ts else []
 	
 						printLog $ "\n===== SUMMARY =====\n"
 	
@@ -291,7 +292,7 @@ instance Pretty CExprWithType where
 	pretty (CUnary op expr (_,ty)) = prettyCE (pretty op) [pretty expr] ty
 	pretty (CMember expr ident deref (_,ty)) = prettyCE (text "")
 		[pretty expr,text (if deref then "->" else ".") <+> pretty ident] ty
-	pretty (CVar ident (_,ty)) = pretty ident <+> text "::" <+> text (show ty)
+	pretty (CVar ident (_,ty)) = pretty ident <+> prettyType ty
 	pretty (CConst constant) = ( text $ case constant of
 		CIntConst cint _ -> show $ getCInteger cint
 		CCharConst cchar _ -> show $ getCChar cchar
@@ -300,7 +301,14 @@ instance Pretty CExprWithType where
 			prettyType ((snd.annotation) constant)
 	pretty (CIndex arrexpr indexexpr (_,ty)) = pretty arrexpr <> brackets (pretty indexexpr) <+> prettyType ty
 
-prettyType ty = text "::" <+> text (show ty)
+prettyType ty = case printTypes of
+	True -> text "::" <+> text (show ty)
+	False -> Text.PrettyPrint.empty
+
+prettyCE head subs _ | not printTypes = parens $ case subs of
+	[sub] -> head <+> sub
+	[sub1,sub2] -> sub1 <+> head <+> sub2
+	_ -> head <+> hsep subs
 
 prettyCE head subs ty =
 	lparen <+> head $+$
@@ -529,11 +537,6 @@ showLocation (l,c) = "line " ++ show l ++ ", col " ++ show c
 analyzeTraceM :: Maybe Type -> [TraceElem] -> CovVecM Bool
 analyzeTraceM mb_ret_type res_line = do
 	printLogV 1 $ "Analyzing trace..."
-	let
-		trace = reverse res_line
-		traceid = concatMap extract_conds trace where
-			extract_conds (Condition (Just b) _) = [ if b then 1 else 2 ]
-			extract_conds _ = []
 
 	opts <- gets optsCVS
 	when ("-exportPaths" `elem` opts) $ liftIO $ do
@@ -542,7 +545,16 @@ analyzeTraceM mb_ret_type res_line = do
 			NewDeclaration (ident,ty) -> [ "(" ++ (render.pretty) ty ++ ") " ++ (render.pretty) ident ++ " ;" ]
 			Return expr -> [ "return " ++ (render.pretty) expr ++ " ;" ]
 			_ -> []
-			
+	
+	trace' <-		
+		showtraceM showInitialTrace "Intial" return trace >>=
+		showtraceM showTraces "elimInds" elimInds >>=
+		showtraceM showTraces "1. simplifyTraceM" simplifyTraceM >>=
+		showtraceM showTraces "elimAssignmentsM" (elimAssignmentsM False) >>=
+--		showtraceM showTraces "elimArrayAssignsM" (elimAssignmentsM True) >>=
+		showtraceM showTraces "2. simplifyTraceM" simplifyTraceM
+
+{-
 	when showInitialTrace $ do
 		printLog $ "=== TRACE " ++ show traceid ++ " ========================\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
@@ -592,12 +604,13 @@ analyzeTraceM mb_ret_type res_line = do
 		printLog $ "\n--- TRACE after createSymbolicVarsM " ++ show traceid ++ " -----------\n" ++
 			if showBuiltins then "" else "<leaving out builtins...>\n"
 		printLog $ showLine res_trace_symbolic
+-}
 
-	either_resultdata <- solveTraceM mb_ret_type traceid res_trace_symbolic
+	either_resultdata <- solveTraceM mb_ret_type traceid trace'
 	case either_resultdata of
 		Left solvable -> return solvable
 		Right resultdata@(model_string,mb_solution) -> do
-			when (not don'tShowTraces) $ printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++ model_string
+			when showTraces $ printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++ model_string
 			funname <- gets funNameCVS
 			printLogV 1 $ "--- TRACE " ++ show traceid ++ " ----------------------\n" ++
 				show_solution funname mb_solution ++ "\n"
@@ -623,6 +636,20 @@ analyzeTraceM mb_ret_type res_line = do
 							True  -> (tas,covered) }
 			return $ is_solution traceanalysisresult
 
+	where
+	
+	trace = reverse res_line
+	traceid = concatMap extract_conds trace where
+		extract_conds (Condition (Just b) _) = [ if b then 1 else 2 ]
+		extract_conds _ = []
+
+	showtraceM cond stage combinator trace = do
+		trace' <- combinator trace
+		when cond $ do
+			printLog $ "\n--- TRACE after " ++ stage ++ " " ++ show traceid ++ " -----------\n" ++
+				if showBuiltins then "" else "<leaving out builtins...>\n"
+			printLog $ showLine trace'
+		return trace'
 
 is_solution :: TraceAnalysisResult -> Bool
 is_solution (_,_,(_,Just (_,_,solution))) = not $ null solution
@@ -1369,40 +1396,6 @@ substituteBy x y d = everywhere (mkT (substexpr x y)) d
 	substexpr _ _ found_expr                   = found_expr
 
 
--- eliminate assignments to arrays, replacing them by a new array declaration
--- and a condition that a_n+1 = store a_n ... ...
-{-
-... f ( int a[3], ...)  =>  ... f ( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2, ... )
--}
--- trace is in the right order.
-elimArrayAssignsM :: Trace -> CovVecM Trace
-elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
-	where
-	ty_env = createTyEnv trace
-	elim_arr_assnsM :: StateT (Map.Map Ident Int) CovVecM Trace
-	elim_arr_assnsM = do
-		ls <- forM trace $ \case
-			Assignment (CIndex var index_expr index_ni) ass_expr -> case var of
-				CVar ident var_ni -> do
-					counters <- get
-					i <- case Map.lookup ident counters of
-						Nothing -> do
-							modify $ Map.insert ident 2
-							return 1
-						Just i -> do
-							modify $ Map.adjust (+1) ident
-							return i
-					let
-						newident = internalIdent $ identToString ident ++ "$" ++ show i
-						newvar   = CVar newident var_ni
-						Just array_type = lookup ident ty_env
-					return $ [
-						NewDeclaration (newident,array_type) ,
-						Assignment (CIndex newvar index_expr index_ni) ass_expr,
-						Assignment newvar var ]
-				other -> myError $ "elim_arr_assnsM: not a variable in CIndex: " ++ (render.pretty) other
-			other -> return [other]
-		return $ concat ls
 -- elimInds:
 -- Going from the end of the trace backwards,
 -- for all ASSN ptr = expr where ptr is a pointer (probably expr=&...),
@@ -1446,16 +1439,51 @@ elimInds trace = elim_indsM [] $ reverse trace
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
 -- trace should be given reversed!
 
-elimAssignmentsM :: Trace -> CovVecM Trace
-elimAssignmentsM trace = foldtraceM [] $ reverse trace
+elimAssignmentsM :: Bool -> Trace -> CovVecM Trace
+elimAssignmentsM elim_arr_assns trace = foldtraceM [] $ reverse trace
 	where
 	foldtraceM :: Trace -> Trace -> CovVecM Trace
 	foldtraceM result [] = return result
 	-- Skip assignments to array elements
---	foldtraceM result (ass@(Assignment (CIndex _ _ _) _) : rest) = foldtraceM (ass:result) rest
+	foldtraceM result (ass@(Assignment (CIndex _ _ _) _) : rest) | not elim_arr_assns = do
+		foldtraceM (ass : result) rest
 	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (substituteBy lvalue expr result) rest
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
 
+-- eliminate assignments to arrays, replacing them by a new array declaration
+-- and a condition that a_n+1 = store a_n ... ...
+{-
+... f ( int a[3], ...)  =>  ... f ( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2, ... )
+-}
+-- trace is in the right order.
+elimArrayAssignsM :: Trace -> CovVecM Trace
+elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
+	where
+	ty_env = createTyEnv trace
+	elim_arr_assnsM :: StateT (Map.Map Ident Int) CovVecM Trace
+	elim_arr_assnsM = do
+		ls <- forM trace $ \case
+			Assignment (CIndex var index_expr index_ni) ass_expr -> case var of
+				CVar ident var_ni -> do
+					counters <- get
+					i <- case Map.lookup ident counters of
+						Nothing -> do
+							modify $ Map.insert ident 2
+							return 1
+						Just i -> do
+							modify $ Map.adjust (+1) ident
+							return i
+					let
+						newident = internalIdent $ identToString ident ++ "$" ++ show i
+						newvar   = CVar newident var_ni
+						Just array_type = lookup ident ty_env
+					return $ [
+						NewDeclaration (newident,array_type) ,
+						Assignment (CIndex newvar index_expr index_ni) ass_expr,
+						Assignment var newvar ]
+				other -> myError $ "elim_arr_assnsM: not a variable in CIndex: " ++ (render.pretty) other
+			other -> return [other]
+		return $ concat ls
 
 -- Simplify:
 -- *(&x)  ~> x
