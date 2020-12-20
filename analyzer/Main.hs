@@ -548,11 +548,12 @@ analyzeTraceM mb_ret_type res_line = do
 	
 	trace' <-		
 		showtraceM showInitialTrace "Intial" return trace >>=
-		showtraceM showTraces "elimInds" elimInds >>=
-		showtraceM showTraces "1. simplifyTraceM" simplifyTraceM >>=
-		showtraceM showTraces "elimAssignmentsM" (elimAssignmentsM False) >>=
---		showtraceM showTraces "elimArrayAssignsM" (elimAssignmentsM True) >>=
-		showtraceM showTraces "2. simplifyTraceM" simplifyTraceM
+		showtraceM showTraces "elimInds"            elimInds          >>=
+		showtraceM showTraces "1. simplifyTraceM"   simplifyTraceM    >>=
+		showtraceM showTraces "1. elimAssignmentsM" elimAssignmentsM  >>=
+		showtraceM showTraces "elimArrayAssignsM"   elimArrayAssignsM >>=
+		showtraceM showTraces "2. elimAssignmentsM" elimAssignmentsM  >>=
+		showtraceM showTraces "2. simplifyTraceM"   simplifyTraceM
 
 {-
 	when showInitialTrace $ do
@@ -1439,14 +1440,13 @@ elimInds trace = elim_indsM [] $ reverse trace
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
 -- trace should be given reversed!
 
-elimAssignmentsM :: Bool -> Trace -> CovVecM Trace
-elimAssignmentsM elim_arr_assns trace = foldtraceM [] $ reverse trace
+elimAssignmentsM :: Trace -> CovVecM Trace
+elimAssignmentsM trace = foldtraceM [] $ reverse trace
 	where
 	foldtraceM :: Trace -> Trace -> CovVecM Trace
 	foldtraceM result [] = return result
 	-- Skip assignments to array elements
-	foldtraceM result (ass@(Assignment (CIndex _ _ _) _) : rest) | not elim_arr_assns = do
-		foldtraceM (ass : result) rest
+	foldtraceM result (ass@(Assignment (CIndex _ _ _) _) : rest) = foldtraceM (ass : result) rest
 	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (substituteBy lvalue expr result) rest
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
 
