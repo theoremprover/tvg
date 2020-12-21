@@ -58,7 +58,7 @@ import GlobDecls
 
 type Trace = [TraceElem]
 type ResultData = (String,Maybe (Env,Env,Solution))
-type TraceAnalysisResult = ([Int],Trace,ResultData)
+type TraceAnalysisResult = ([Int],Trace,Set.Set Branch,ResultData)
 type UnfoldTracesRet = Either [Trace] Bool
 type SolveFunRet = (Bool,([TraceAnalysisResult],Set.Set Branch))
 
@@ -185,7 +185,7 @@ main = do
 	
 						printLog $ "\n####### FINAL RESULT #######\n"
 	
-						forM_ testvectors $ \ (traceid,trace,(model_string,mb_solution)) -> do
+						forM_ testvectors $ \ (traceid,trace,branches,(model_string,mb_solution)) -> do
 							case not showOnlySolutions || maybe False (not.null.(\(_,_,b)->b)) mb_solution of
 								False -> return ()
 								True -> printLog $ unlines $ mbshowtraces (
@@ -205,9 +205,10 @@ main = do
 	
 						printLog $ "\n===== SUMMARY =====\n"
 	
-						forM_ testvectors $ \ (traceid,trace,(model,Just v)) -> do
-							printLog $ "Test Vector covering " ++ show traceid ++ " : "
-							printLog $ "    " ++ showTestVector funname v ++ "\n"
+						forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
+							printLog $ "Test Vector " ++ show traceid ++ " covering " ++ ": "
+							forM_ branches $ \ branch -> printLog $ "    " ++ show branch
+							printLog $ "\n    " ++ showTestVector funname v ++ "\n"
 						forM_ deaths $ \ branch -> do
 							printLog $ "DEAD " ++ show branch ++ "\n"
 	
@@ -278,8 +279,8 @@ data TraceElem =
 data Branch = Then Location | Else Location
 	deriving (Eq,Ord)
 instance Show Branch where
-	show (Then loc) = "Then branch in " ++ showLocation loc
-	show (Else loc) = "Else branch in " ++ showLocation loc
+	show (Then loc) = "Then branch at " ++ showLocation loc
+	show (Else loc) = "Else branch at " ++ showLocation loc
 
 branchLocation :: Branch -> Location
 branchLocation (Then loc) = loc
@@ -580,7 +581,7 @@ analyzeTraceM mb_ret_type res_line = do
 				to_branch _ = []
 			printLogV 2 $ "visible_trace =\n" ++ unlines (map show $ Set.toList visible_trace) 
 		
-			let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,resultdata)
+			let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
 			case is_solution traceanalysisresult of
 				False -> do
 					printLogV 2  $ "### FALSE : " ++ show traceid ++ " no solution!"
@@ -609,7 +610,7 @@ analyzeTraceM mb_ret_type res_line = do
 		return trace'
 
 is_solution :: TraceAnalysisResult -> Bool
-is_solution (_,_,(_,Just (_,_,solution))) = not $ null solution
+is_solution (_,_,_,(_,Just (_,_,solution))) = not $ null solution
 is_solution _ = False
 
 is_visible_traceelem :: (CNode a) => ((Int,Int),(Int,Int)) -> a -> Bool
