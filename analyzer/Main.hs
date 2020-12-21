@@ -1696,7 +1696,7 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 		to_anno = (extractNodeInfo cexpr,to_ty)
 
 
-type Constraint = CExprWithType
+type Constraint = TraceElem
 
 expr2SExpr :: Constraint -> CovVecM SExpr
 expr2SExpr expr = expr2sexpr expr
@@ -1707,10 +1707,15 @@ expr2SExpr expr = expr2sexpr expr
 	make_intconstant (Z3_BitVector size _) const | size `mod` 4 == 0 =
 		SLeaf (printf "#x%*.*x" (size `div` 4) (size `div` 4) const)
 
-	expr2sexpr :: CExprWithType -> CovVecM SExpr
-	expr2sexpr cexpr = do
+	expr2sexpr :: Constraint -> CovVecM SExpr
+	expr2sexpr (Condition _ cexpr) = do
 		printLogV 2 $ "expr2sexpr " ++ (render.pretty) cexpr
 		expr2sexpr' cexpr
+	expr2sexpr (Assignment (CIndex var@(CVar ident _) indexexpr) ass_expr) = do
+		var_s <- expr2sexpr' var
+		index_s <- expr2sexpr' indexexpr
+		ass_s <- expr2sexpr' ass_expr
+		return $ SExpr [ SLeaf "=", ]
 
 	-- Turns a CExprWithType into an SExpr
 	expr2sexpr' :: CExprWithType -> CovVecM SExpr
