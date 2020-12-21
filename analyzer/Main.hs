@@ -200,6 +200,9 @@ main = do
 									where
 									mbshowtraces ts = if showTraces then ts else []
 	
+						printLogV 1 $ "All decision points : "
+						forM_ (map branchLocation $ Set.toList alls) $ \ decisionpoint -> printLogV 1 $ "    " ++ show decisionpoint
+	
 						printLog $ "\n===== SUMMARY =====\n"
 	
 						forM_ testvectors $ \ (traceid,trace,(model,Just v)) -> do
@@ -208,8 +211,8 @@ main = do
 						forM_ deaths $ \ branch -> do
 							printLog $ "DEAD " ++ show branch ++ "\n"
 	
-						when (full_coverage && not (null deaths)) $ error "full coverage but deaths!"
-						when (not full_coverage && null deaths) $ error "not full_coverage and no deaths!"
+						when (full_coverage && not (null deaths)) $ myError "full coverage but deaths!"
+						when (not full_coverage && null deaths) $ myError "not full_coverage and no deaths!"
 	
 						printLog $ case full_coverage of
 							False -> "FAIL, there are coverage gaps!"
@@ -277,6 +280,10 @@ data Branch = Then Location | Else Location
 instance Show Branch where
 	show (Then loc) = "Then branch in " ++ showLocation loc
 	show (Else loc) = "Else branch in " ++ showLocation loc
+
+branchLocation :: Branch -> Location
+branchLocation (Then loc) = loc
+branchLocation (Else loc) = loc
 
 instance CNode TraceElem where
 	nodeInfo (Assignment lexpr _)       = extractNodeInfo lexpr
@@ -972,7 +979,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 
  	CWhile cond body False ni -> do
  		(mb_unrolling_depth,msg) <- infer_loopingsM cond body
- 		printLogV 2 msg
+ 		printLogV 1 msg
  		unroll_loopM $ case mb_unrolling_depth of
 			Nothing -> uNROLLING_STRATEGY
 			Just ns -> ns
@@ -1036,7 +1043,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	infer_loopingsM :: CExpr -> CStat -> CovVecM (Maybe [Int],String)
  	infer_loopingsM cond0 body = do
 		case recognizeAnnotation cond0 of
-			(real_cond,Just (ns,_)) -> return (Just ns,"Recognized LOOP annoation to " ++ (render.pretty) cond0)
+			(real_cond,Just (ns,_)) -> return (Just ns,"Recognized LOOP annotation to " ++ (render.pretty) cond0)
 			(real_cond,Nothing) -> do
 				translateExprM envs real_cond Z3_Bool >>= \case
 					[(cond,[])] -> do
