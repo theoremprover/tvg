@@ -137,7 +137,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : ["-writeModels"] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -376,12 +376,13 @@ covVectorsM = do
 
 	let formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
 	ext_decls <- createDeclsM formal_params
-	(param_env_exprs,arraydecl_env) <- createInterfaceM formal_params
+	(param_env_exprs,(arraydecl_env,arrayitem_conds)) <- createInterfaceM formal_params
 	modify $ \ s -> s { paramEnvCVS = Just param_env_exprs }
 	let param_env = map fst param_env_exprs
 	printLogV 2 $ "param_env = " ++ showEnv param_env
 
-	let decls = map (NewDeclaration . snd) (arraydecl_env ++ reverse param_env ++ glob_env)
+	let
+		decls = arrayitem_conds ++ map (NewDeclaration . snd) (arraydecl_env ++ reverse param_env ++ glob_env)
 
 	when checkSolutions $ do
 		filename <- gets srcFilenameCVS
@@ -547,65 +548,13 @@ analyzeTraceM mb_ret_type res_line = do
 			_ -> []
 	
 	trace' <-		
-		showtraceM showInitialTrace "Intial" return trace >>=
-		showtraceM showTraces "elimInds"            elimInds          >>=
-		showtraceM showTraces "1. simplifyTraceM"   simplifyTraceM    >>=
-		showtraceM showTraces "1. elimAssignmentsM" elimAssignmentsM  >>=
-		showtraceM showTraces "elimArrayAssignsM"   elimArrayAssignsM >>=
-		showtraceM showTraces "2. elimAssignmentsM" elimAssignmentsM  >>=
-		showtraceM showTraces "2. simplifyTraceM"   simplifyTraceM
-
-{-
-	when showInitialTrace $ do
-		printLog $ "=== TRACE " ++ show traceid ++ " ========================\n" ++
-			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine trace
-
-	-- Eliminate Assignments to Arrays
-	res_trace_arrelim <- elimArrayAssignsM trace
-	when (not don'tShowTraces) $ do
-		printLog $ "\n--- TRACE after elimArrayAssignsM " ++ show traceid ++ " -----------\n" ++
-			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_trace_arrelim
-
-	-- Eliminate/Expand all assignments to pointers in the later code
-	res_trace_elim_inds <- elimInds res_trace_arrelim
-	when (not don'tShowTraces) $ do
-		printLog $ "\n--- TRACE after elimInds " ++ show traceid ++ " ----------------------\n" ++
-			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_trace_elim_inds
-
-	-- Eliminate (*&), & and * in members
-	res_trace_simplified1 <- simplifyTraceM res_trace_elim_inds
-	when (not don'tShowTraces) $ do
-		printLog $ "\n--- TRACE after simplifyTraceM 1 " ++ show traceid ++ " -----------\n" ++
-			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_trace_simplified1
-
-	-- Eliminate Assignments
-	res_trace_elim'd_assigns <- elimAssignmentsM res_trace_simplified1
-	when (not don'tShowTraces) $ do
-		printLog $ "\n--- TRACE after elimAssignmentsM " ++ show traceid ++ " -----------\n" ++
-			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_trace_elim'd_assigns
-
-	-- Eliminate (*&), & and * in members
-	res_trace_simplified2 <- simplifyTraceM res_trace_elim'd_assigns
-	when (not don'tShowTraces) $ do
-		printLog $ "\n--- TRACE after simplifyTraceM 2 " ++ show traceid ++ " -----------\n" ++
-			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_trace_simplified2
-
-	-- Create variables for leftover members and addressOfs:
-	-- p->m ~> p_ARROW_m
-	-- a.m  ~> a_DOT_m
-	-- &a   ~> ADR_a
-	res_trace_symbolic <- createSymbolicVarsM [] (map fst $ createTyEnv res_trace_simplified2) res_trace_simplified2
-	when showFinalTrace $ do
-		printLog $ "\n--- TRACE after createSymbolicVarsM " ++ show traceid ++ " -----------\n" ++
-			if showBuiltins then "" else "<leaving out builtins...>\n"
-		printLog $ showLine res_trace_symbolic
--}
+		showtraceM showInitialTrace "Initial" return trace >>=
+		showtraceM showTraces       "elimInds"            elimInds          >>=
+		showtraceM showTraces       "1. simplifyTraceM"   simplifyTraceM    >>=
+		showtraceM showTraces       "1. elimAssignmentsM" elimAssignmentsM  >>=
+		showtraceM showTraces       "elimArrayAssignsM"   elimArrayAssignsM >>=
+		showtraceM showTraces       "2. elimAssignmentsM" elimAssignmentsM  >>=
+		showtraceM showTraces       "2. simplifyTraceM"   simplifyTraceM
 
 	either_resultdata <- solveTraceM mb_ret_type traceid trace'
 	case either_resultdata of
@@ -821,52 +770,65 @@ identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 -- create a list of EnvItems (representing the declarations) and CExprs.
 -- the returned string list is the list of declarations/definitions for the C test harness
 
-createInterfaceM :: [(Ident,Type)] -> CovVecM ([(EnvItem,CExprWithType)],[EnvItem])
-createInterfaceM ty_env = runStateT cifes_m []
+createInterfaceM :: [(Ident,Type)] -> CovVecM ([(EnvItem,CExprWithType)],([EnvItem],[TraceElem]))
+createInterfaceM ty_env = runStateT cifes_m ([],[])
 	where
-	cifes_m :: StateT [EnvItem] CovVecM [(EnvItem,CExprWithType)]
+	cifes_m :: CIFE
 	cifes_m = do
 		res <- forM ty_env $ \ tyenvitem@(srcident,ty) -> do
 			ty' <- lift $ elimTypeDefsM ty
 			case ty' of
-				ArrayType _ _ _ _ -> modify ((srcident,tyenvitem):)
+				ArrayType _ _ _ _ -> modify $ \ (envitems,traceitems) -> ((srcident,tyenvitem):envitems,traceitems)
 				_ -> return ()
-			lift $ createInterfaceFromExprM (CVar srcident (nodeInfo srcident,ty2Z3Type ty')) ty
+			createInterfaceFromExpr_WithEnvItemsM (CVar srcident (nodeInfo srcident,ty2Z3Type ty')) ty
 		return $ concat res
 
 createInterfaceFromExprM :: CExprWithType -> Type -> CovVecM [(EnvItem,CExprWithType)]
-createInterfaceFromExprM expr ty = do
-	printLogV 2 $ "### createInterfaceFromExprM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty
-	printLogV 2 $ "###                          z3type = " ++ show (ty2Z3Type ty)
-	ty' <- elimTypeDefsM ty
+createInterfaceFromExprM expr ty = evalStateT (createInterfaceFromExpr_WithEnvItemsM expr ty) ([],[])
+
+type CIFE = StateT ([EnvItem],[TraceElem]) CovVecM [(EnvItem,CExprWithType)]
+
+createInterfaceFromExpr_WithEnvItemsM :: CExprWithType -> Type -> CIFE
+createInterfaceFromExpr_WithEnvItemsM expr ty = do
+	printLogV 2 $ "### createInterfaceFromExpr_WithEnvItemsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty
+	printLogV 2 $ "###                                z3type = " ++ show (ty2Z3Type ty)
+	ty' <- lift $ elimTypeDefsM ty
 	case ty' of
 
 		-- STRUCT* p
 		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> prepend_plainvar ty' $ do
-			member_ty_s <- getMembersM sueref
-			concatForM member_ty_s $ \ (m_ident,m_ty) -> do
-				createInterfaceFromExprM (CMember expr m_ident True (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
-
+			member_ty_s <- lift $ getMembersM sueref
+			ress <- forM member_ty_s $ \ (m_ident,m_ty) -> do
+				createInterfaceFromExpr_WithEnvItemsM (CMember expr m_ident True (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
+			return $ concat ress
 		-- ty* p
 		PtrType target_ty _ _ -> prepend_plainvar ty' $
-			createInterfaceFromExprM (CUnary CIndOp expr (extractNodeInfo expr,ty2Z3Type target_ty)) target_ty
+			createInterfaceFromExpr_WithEnvItemsM (CUnary CIndOp expr (extractNodeInfo expr,ty2Z3Type target_ty)) target_ty
 
 		-- STRUCT expr
 		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
-			member_ty_s <- getMembersM sueref
-			concatForM member_ty_s $ \ (m_ident,m_ty) -> do
-				createInterfaceFromExprM (CMember expr m_ident False (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
+			member_ty_s <- lift $ getMembersM sueref
+			ress <- forM member_ty_s $ \ (m_ident,m_ty) -> do
+				createInterfaceFromExpr_WithEnvItemsM (CMember expr m_ident False (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
+			return $ concat ress
 
 		-- direct-type expr where direct-type is no struct/union
 		DirectType _ _ _ -> prepend_plainvar ty' $ return []
 
 		ArrayType elem_ty (ArraySize False (CConst (CIntConst cint _))) _ _ -> do
-			elem_ty' <- elimTypeDefsM elem_ty
+			elem_ty' <- lift $ elimTypeDefsM elem_ty
 			let
 				arr_size = getCInteger cint
 				CVar (Ident _ _ _) (ni,_) = expr    -- Just to be sure...
-			concatForM [0..(getCInteger cint - 1)] $ \ i ->
-				createInterfaceFromExprM (CIndex expr (ⅈ i) (ni,ty2Z3Type elem_ty')) elem_ty'
+			ress <- forM [0..(getCInteger cint - 1)] $ \ i -> do
+				let
+					elem_ty = ty2Z3Type elem_ty'
+					arrayelemexpr = CIndex expr (CConst $ CIntConst (cInteger i) (undefNode,Z3_Int)) (ni,elem_ty)
+					arrayelem_var = CVar (internalIdent $ lValueToVarName arrayelemexpr) (ni,elem_ty)
+					eqcond = Condition Nothing $ CBinary CEqOp arrayelem_var arrayelemexpr (ni,Z3_Bool)
+				modify $ \ (envitems,traceitems) -> ( envitems,traceitems ++ [eqcond] )
+				createInterfaceFromExpr_WithEnvItemsM arrayelemexpr elem_ty'
+			return $ concat ress
 
 		_ -> myError $ "createInterfaceFromExprM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
 
@@ -874,7 +836,7 @@ createInterfaceFromExprM expr ty = do
 	
 		srcident = internalIdent $ lValueToVarName expr
 
-		prepend_plainvar :: Type -> CovVecM [(EnvItem,CExprWithType)] -> CovVecM [(EnvItem,CExprWithType)]
+		prepend_plainvar :: Type -> CIFE -> CIFE
 		prepend_plainvar ty' rest_m = do
 			rest1 <- rest_m
 			return $ (((srcident,(srcident,ty')),expr) : rest1)
@@ -1676,22 +1638,20 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 
 	annotate_types (CIndex var@(CVar ident _) ix ni) = do
 		var' <- annotate_types var
-		let Z3_Array elemty _ = extractType var'
+		let Z3_Array index_ty elemty _ = extractType var'
 		ix' <- annotate_types ix
-		return $ CIndex var' (mb_cast (ty2Z3Type intType) ix') (ni,elemty)
+		return $ CIndex var' (mb_cast index_ty ix') (ni,elemty)
 
 	annotate_types other = myError $ "annotate_types " ++ (render.pretty) other ++ " not implemented"
 
 	mb_cast :: Z3_Type -> CExprWithType -> CExprWithType
 	mb_cast to_ty cexpr = case (extractType cexpr,to_ty) of
-		( Z3_Bool, Z3_Bool ) -> cexpr
-		( Z3_Compound, Z3_Compound) -> cexpr
-		( Z3_Ptr ty1, Z3_Ptr ty2 ) | ty1==ty2 -> cexpr
+		( ty1, ty2 ) | ty1==ty2 -> cexpr
 		( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from == size_to -> cexpr
 		_ -> cast cexpr to_ty
 	
 	cast :: CExprWithType -> Z3_Type -> CExprWithType
-	cast cexpr to_ty = CCast (CDecl [] [] to_anno) {-(z3typedecls to_ty to_anno)-} cexpr to_anno
+	cast cexpr to_ty = CCast (CDecl [] [] to_anno) cexpr to_anno
 		where
 		to_anno = (extractNodeInfo cexpr,to_ty)
 
@@ -1704,6 +1664,7 @@ expr2SExpr expr = expr2sexpr expr
 	where
 
 	make_intconstant :: Z3_Type -> Integer -> SExpr
+	make_intconstant Z3_Int const = SLeaf $ show const
 	make_intconstant (Z3_BitVector size _) const | size `mod` 4 == 0 =
 		SLeaf (printf "#x%*.*x" (size `div` 4) (size `div` 4) const)
 
@@ -1711,20 +1672,28 @@ expr2SExpr expr = expr2sexpr expr
 	expr2sexpr (Condition _ cexpr) = do
 		printLogV 2 $ "expr2sexpr " ++ (render.pretty) cexpr
 		expr2sexpr' cexpr
-	expr2sexpr (Assignment (CIndex var@(CVar ident _) indexexpr) ass_expr) = do
+	expr2sexpr (Assignment (CIndex var@(CVar ident _) indexexpr _) ass_expr) = do
 		var_s <- expr2sexpr' var
 		index_s <- expr2sexpr' indexexpr
 		ass_s <- expr2sexpr' ass_expr
-		return $ SExpr [ SLeaf "=", ]
+		let [array_expr] = everything (++) (mkQ [] search_arrays) ass_expr where
+			search_arrays :: CExprWithType -> [CExprWithType]
+			search_arrays (CIndex var@(CVar _ _) _ _) = [var]
+			search_arrays _ = []
+		arr_s <- expr2sexpr' array_expr
+		return $ SExpr [ SLeaf "=", var_s, SExpr [ SLeaf "store", arr_s, index_s, ass_s ] ]
 
 	-- Turns a CExprWithType into an SExpr
 	expr2sexpr' :: CExprWithType -> CovVecM SExpr
 
 	expr2sexpr' expr = case expr of
 
+		CIndex arr_expr@(CVar _ _) index_expr _ ->
+			SExpr <$> sequence [ pure $ SLeaf "select", expr2sexpr' arr_expr, expr2sexpr' index_expr ]
+
 		-- CNeqOp was resolved while annotateTypes
 		CBinary binop expr1 expr2 _ ->
-			SExpr <$> sequence [ pure $ SLeaf op_sexpr, expr2sexpr expr1, expr2sexpr expr2 ]
+			SExpr <$> sequence [ pure $ SLeaf op_sexpr, expr2sexpr' expr1, expr2sexpr' expr2 ]
 				where
 				op_ty = extractType expr1
 				op_sexpr = case binop of
@@ -1764,9 +1733,9 @@ expr2SExpr expr = expr2sexpr expr
 
 		CVar ident _ -> return $ SLeaf $ (render.pretty) ident
 
-		CUnary CPlusOp subexpr _ -> expr2sexpr subexpr
+		CUnary CPlusOp subexpr _ -> expr2sexpr' subexpr
 		CUnary op subexpr _ -> SExpr <$> sequence
-			[ pure $ SLeaf op_str, expr2sexpr subexpr ]
+			[ pure $ SLeaf op_str, expr2sexpr' subexpr ]
 			where
 			op_str = case op of
 				CMinOp  -> bitVectorTy (extractType subexpr) "bvneg" "fp.neg"
@@ -1775,15 +1744,17 @@ expr2SExpr expr = expr2sexpr expr
 				_ -> error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
 
 		castexpr@(CCast _ subexpr (_,to_ty)) -> do
-			sexpr <- expr2sexpr subexpr
+			sexpr <- expr2sexpr' subexpr
 			return $ case (extractType subexpr,to_ty) of
 
 				-- SAMECAST: identity
 				( ty1, ty2 ) | ty1==ty2 -> sexpr
 
+				( Z3_BitVector size unsigned, Z3_Int ) -> SExpr [ SLeaf "bv2int", sexpr ]
+
 				-- Casting signed to unsigned or vice versa with same size: No cast needed (Z3 interprets it)
 				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from==size_to -> sexpr
-		
+
 				-- Casting from Bool
 				( Z3_Bool, Z3_BitVector size_from _ ) ->
 					SExpr [ SLeaf "ite", sexpr, make_intconstant to_ty 1, make_intconstant to_ty 0 ]
@@ -1816,14 +1787,9 @@ expr2SExpr expr = expr2sexpr expr
 		ccond@(CCond cond (Just then_expr) else_expr _) -> do
 			SExpr <$> sequence [
 				pure $ SLeaf "ite",
-				expr2sexpr cond,
-				expr2sexpr then_expr,
-				expr2sexpr else_expr ]
-
-		CIndex var@(CVar _ _) ix _ -> do
-			var_sexpr <- expr2sexpr var
-			ix_sexpr <- expr2sexpr ix
-			return $ SExpr [ SLeaf "select", var_sexpr, ix_sexpr ]
+				expr2sexpr' cond,
+				expr2sexpr' then_expr,
+				expr2sexpr' else_expr ]
 
 		cmember@(CMember _ _ _ _) -> myError $ "expr2sexpr of member " ++ (render.pretty) cmember ++ " should not occur!"
 	
@@ -1846,13 +1812,14 @@ expr2SExpr expr = expr2sexpr expr
 
 data Z3_Type =
 	Z3_Bool |
+	Z3_Int |
 -- Z3_BitVector Int (is*Un*signed::Bool), hence
 -- the derived ordering intentionally coincides with the type cast ordering :-)
 	Z3_BitVector Int Bool |
 	Z3_Float |
 	Z3_Double |
 	Z3_Ptr Z3_Type |
-	Z3_Array Z3_Type Integer |
+	Z3_Array Z3_Type Z3_Type Integer |
 	Z3_Compound
 	deriving (Show,Eq,Ord,Data)
 
@@ -1867,7 +1834,7 @@ ty2Z3Type ty = case ty of
 		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
 	PtrType target_ty _ _ -> Z3_Ptr $ ty2Z3Type target_ty
 	ArrayType elem_ty (ArraySize False (CConst (CIntConst cint _))) _ _ ->
-		Z3_Array (ty2Z3Type elem_ty) (getCInteger cint)
+		Z3_Array Z3_Int (ty2Z3Type elem_ty) (getCInteger cint)
 	TypeDefType (TypeDefRef _ ty _) _ _ -> ty2Z3Type ty
 --	FunctionType (FunType ret_type funparamdecls False) _ -> Z3_Fun 
 	_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
@@ -1901,13 +1868,14 @@ ty2Z3TypeM ty = return $ ty2Z3Type ty
 
 z3Ty2SExpr :: Z3_Type -> SExpr
 z3Ty2SExpr ty = case ty of
-	Z3_BitVector size _   -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
-	Z3_Float              -> SLeaf "Float32"
-	Z3_Double             -> SLeaf "Float64"
-	Z3_Bool               -> SLeaf "Bool"
-	Z3_Ptr _              -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show 1) ]
-	Z3_Array elem_ty size -> SExpr [ SLeaf "Array", SLeaf "Int", z3Ty2SExpr elem_ty ]
-	other                 -> error $ "z3Ty2SExpr " ++ show other ++ " should not occur!"
+	Z3_BitVector size _            -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
+	Z3_Float                       -> SLeaf "Float32"
+	Z3_Double                      -> SLeaf "Float64"
+	Z3_Bool                        -> SLeaf "Bool"
+	Z3_Int                         -> SLeaf "Int"
+	Z3_Ptr _                       -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show 1) ]
+	Z3_Array index_ty elem_ty size -> SExpr [ SLeaf "Array", z3Ty2SExpr index_ty, z3Ty2SExpr elem_ty ]
+	other                          -> error $ "z3Ty2SExpr " ++ show other ++ " should not occur!"
 
 type Solution = [(String,SolutionVal)]
 
@@ -1924,7 +1892,7 @@ instance Show SolutionVal where
 	show (DoubleVal f) = show f
 	show PtrVal        = "<SOME_PTR>"
 
-makeAndSolveZ3ModelM :: [Int] -> TyEnv -> [CExprWithType] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
+makeAndSolveZ3ModelM :: [Int] -> TyEnv -> [Constraint] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents modelpathfile = do
 	opts <- gets optsCVS
 	let  -- prefix a "a_" for identifiers starting with underscore (Z3 does not like leading underscores...)
@@ -1934,19 +1902,19 @@ makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents m
 			prefix_a ident = ident
 	printLogV 1 $ "output_idents = " ++ showIdents output_idents
 	let
-		constraints_vars = nub $ concatMap fvar a_constraints
+		constraints_vars = nub $ concat $ for a_constraints $ \case
+			Condition _ expr -> fvar expr
+			Assignment lexpr@(CIndex _ _ _) ass_expr -> fvar lexpr ++ fvar ass_expr
 	printLogV 2 $ "constraints_vars = " ++ showIdents constraints_vars
 
 	let
 		varsZ3 :: [SCompound] = for (filter ((`elem` (constraints_vars ++ a_output_idents)).fst) tyenv) $ \ (ident,ty) ->
 			SExprLine $ SOnOneLine $ SExpr [ SLeaf "declare-const", SLeaf (identToString ident), z3Ty2SExpr $ ty2Z3Type ty ]
-	constraintsZ3 :: [SCompound] <- concatForM a_constraints $ \ expr -> do
-		assert_sexpr <- expr2SExpr expr
+	constraintsZ3 :: [SCompound] <- concatForM a_constraints $ \ constraint -> do
+		assert_sexpr <- expr2SExpr constraint
 		return $ [ SEmptyLine,
 			SComment "----------------------------------------------",
-			SComment $ showLocation (lineColNodeInfo $ extractNodeInfo expr) ++ " : ",
-			SComment $ (render.pretty) (fmap fst expr) ] ++
-		 	map SComment (lines $ (render.pretty) expr) ++
+			SComment $ show constraint ] ++
 			[ SComment "----------------------------------------------",
 			SExprLine $ SExpr [SLeaf "assert", assert_sexpr] ]
 	let
@@ -2067,14 +2035,15 @@ solveTraceM mb_ret_type traceid trace = do
 		param_names = map (fst.snd) param_env
 		ret_names   = map (fst.snd.fst) retval_env
 		constraints = concatMap traceitem2constr trace where
-		traceitem2constr (Condition _ expr) = [expr]
+		traceitem2constr constraint@(Condition _ _) = [constraint]
+		traceitem2constr constraint@(Assignment (CIndex _ _ _) _) = [constraint]
 		traceitem2constr _ = []
 		debug_outputs = concatMap is_debug_output trace where
 			is_debug_output (DebugOutput name (expr,ty)) = [(name,expr,ty)]
 			is_debug_output _ = []
 		(debug_idents,debug_constraints,debug_tyenv) = unzip3 $ for (zip [1..] debug_outputs) $ \ (i,(name,expr,ty)) ->
 			let name_id = internalIdent (name ++ "_" ++ show i) in
-			(name_id,CBinary CEqOp (CVar name_id (annotation expr)) expr (annotation expr),(name_id,ty))
+			(name_id,Condition Nothing $ CBinary CEqOp (CVar name_id (annotation expr)) expr (annotation expr),(name_id,ty))
 
 		tyenv = createTyEnv trace ++ debug_tyenv
 

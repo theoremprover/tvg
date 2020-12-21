@@ -1,7 +1,7 @@
 int f(int arr[3],int n)
 {
     int j=0;
-    for(int i=0;i<(n%3);i++)
+    for(int i=0;solver_pragma(0,1,2) && i<(n%3);i++)
     {
         if(arr[i]>0) arr[i] *= 2;
         j += arr[i];
