@@ -47,6 +47,8 @@ import Data.List
 import Data.Maybe
 import System.IO
 import Data.Char
+
+-- This is for conversion of Z3 floats to Haskell Floating Point
 import Data.Word (Word32,Word64)
 import Data.Array.ST (newArray,readArray,MArray,STUArray)
 import Data.Array.Unsafe (castSTUArray)
@@ -467,6 +469,7 @@ createCHarness orig_rettype formal_params filename funname extdecls = do
 			intercalate ", " ret_vals ++ ");"
 	return $ PPM.prettyCompact $ PPMC.ppr $ harnessAST incl_srcfilename (unlines extdecls) funcall print_retval
 
+-- Create declarations for the function under test in the C test harness
 createDeclsM :: [(Ident,Type)] -> CovVecM [String]
 createDeclsM formal_params = do
 	concatForM formal_params $ \ (ident,ty) -> create_decls (CVar ident undefNode) ty ty False []
@@ -589,6 +592,8 @@ analyzeTraceM mb_ret_type res_line = do
 					printLogV 2  $ "### TRUE : " ++ show traceid ++ " is Solution"
 					when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
 					modify $ \ s -> s { analysisStateCVS = let (tas,covered) = analysisStateCVS s in
+						-- Are all the decision points are already covered?
+						-- If yes, this trace does not contribute to full coverage...
 						case visible_trace ⊆ covered of
 							False -> (traceanalysisresult:tas,visible_trace ∪ covered)
 							True  -> (tas,covered) }
@@ -999,7 +1004,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			concat ( replicate n [ CBlockStmt (CGotoPtr while_cond undefNode), CBlockStmt body ] ) ++
 			[ CBlockStmt $ CGotoPtr (not_c while_cond) ni ]
 
-	-- Reduce the for loop to a bismimular while loop
+	-- Express the for loop as a bismimular while loop
 	CFor (Right decl) mb_cond mb_inc_expr stmt ni -> do
 		unfoldTracesM ret_type toplevel break_stack envs trace ((CBlockStmt stmt' : rest) : rest2)
 		where
@@ -1559,9 +1564,6 @@ extractNodeInfo = fst.annotation
 type NodeInfoWithType = (NodeInfo,Z3_Type)
 type CExprWithType = CExpression NodeInfoWithType
 
--- all these operators return Bool
-isBoolResultBinop = (`elem` [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp])
-
 -- adds Z3 types to the annotation that the expressions should have
 -- (making a CExprWithType from a CExpr), also insertsimplicit casts
 annotateTypesAndCastM :: [Env] -> CExpr -> Maybe Z3_Type -> CovVecM CExprWithType
@@ -1592,7 +1594,7 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 			common_ty = case binop `elem` [CLndOp,CLorOp] of
 				False -> max (extractType expr1') (extractType expr2')
 				True  -> Z3_Bool
-			result_ty = case isBoolResultBinop binop of
+			result_ty = case binop `elem` [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp] of
 				True  -> Z3_Bool
 				False -> common_ty
 		return $ CBinary binop (mb_cast common_ty expr1') (mb_cast common_ty expr2') (ni,result_ty)
@@ -2012,7 +2014,7 @@ parseFloating_fb s = case s of
 	_ | "(_ -oo "  `isPrefixOf` s -> -1.0 / 0.0
 	_ | "(+ zero " `isPrefixOf` s ->  0.0
 	_ | "(- zero " `isPrefixOf` s -> -0.0
-	_ -> f  
+	_ -> f
 	where
 	-- Thats a funny idea: Forwarding the return type to fb_lengths' argument, so Haskell can infer the type a in order
 	-- to determine which instance of FB_Lengths we have.
