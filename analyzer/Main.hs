@@ -548,7 +548,7 @@ showLocation (l,c) = "line " ++ show l ++ ", col " ++ show c
 -- In case of a cutoff, mb_ret_type is Nothing.
 analyzeTraceM :: Maybe Type -> [TraceElem] -> CovVecM Bool
 analyzeTraceM mb_ret_type res_line = do
-	printLogV 1 $ "Analyzing trace..."
+	printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
 
 	opts <- gets optsCVS
 	when ("-exportPaths" `elem` opts) $ liftIO $ do
@@ -560,20 +560,20 @@ analyzeTraceM mb_ret_type res_line = do
 	
 	trace' <-		
 		showtraceM showInitialTrace "Initial" return trace >>=
-		showtraceM showTraces       "elimInds"            elimInds          >>=
-		showtraceM showTraces       "1. simplifyTraceM"   simplifyTraceM    >>=
-		showtraceM showTraces       "1. elimAssignmentsM" elimAssignmentsM  >>=
-		showtraceM showTraces       "elimArrayAssignsM"   elimArrayAssignsM >>=
-		showtraceM showTraces       "2. elimAssignmentsM" elimAssignmentsM  >>=
-		showtraceM showTraces       "2. simplifyTraceM"   simplifyTraceM
+		showtraceM showTraces "elimInds"            elimInds          >>=
+		showtraceM showTraces "1. simplifyTraceM"   simplifyTraceM    >>=
+		showtraceM showTraces "1. elimAssignmentsM" elimAssignmentsM  >>=
+		showtraceM showTraces "elimArrayAssignsM"   elimArrayAssignsM >>=
+		showtraceM showTraces "2. elimAssignmentsM" elimAssignmentsM  >>=
+		showtraceM showTraces "2. simplifyTraceM"   simplifyTraceM
 
 	either_resultdata <- solveTraceM mb_ret_type traceid trace'
 	case either_resultdata of
 		Left solvable -> return solvable
 		Right resultdata@(model_string,mb_solution) -> do
-			when showTraces $ printLog $ "\n--- MODEL " ++ show traceid ++ " -------------------------\n" ++ model_string
+--			when showTraces $ printLog $ "\n--- Result of " ++ show traceid ++ " : \n"
 			funname <- gets funNameCVS
-			printLogV 1 $ "--- TRACE " ++ show traceid ++ " ----------------------\n" ++
+			printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n" ++
 				show_solution funname mb_solution ++ "\n"
 		
 			startend <- gets funStartEndCVS
@@ -651,11 +651,12 @@ instance Eq (CExpression a) where
 	(CConst const1) == (CConst const2) = const1==const2
 	_ == _ = False
 
+-- Cannot use "deriving Eq" because we have to ignore the NodeInfo for the desired equality...
 instance Eq (CConstant a) where
-	(CIntConst c1 _)   == (CIntConst c2 _)   = c1==c2
-	(CCharConst c1 _)  == (CCharConst c2 _)  = c1==c2
+	(CIntConst   c1 _) == (CIntConst   c2 _) = c1==c2
+	(CCharConst  c1 _) == (CCharConst  c2 _) = c1==c2
 	(CFloatConst c1 _) == (CFloatConst c2 _) = c1==c2
-	(CStrConst c1 _)   == (CStrConst c2 _)   = c1==c2
+	(CStrConst   c1 _) == (CStrConst   c2 _) = c1==c2
 
 lValueToVarName :: (Show a) => CExpression a -> String
 lValueToVarName (CVar ident _) = identToString ident
@@ -843,7 +844,8 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 				createInterfaceFromExpr_WithEnvItemsM arrayelemexpr elem_ty'
 			return $ concat ress
 
-		_ -> myError $ "createInterfaceFromExprM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty' ++ " not implemented"
+		_ -> myError $ "createInterfaceFromExprM " ++ (render.pretty) expr ++ " " ++
+			(render.pretty) ty' ++ " not implemented"
 
 		where
 	
@@ -874,7 +876,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			cond_var = CVar cond_var_ident cond_ni
 
 			filtercases = map $ \case
-				CBlockStmt (CCase _ stmt _) -> CBlockStmt stmt
+				CBlockStmt (CCase _ stmt _)  -> CBlockStmt stmt
 				CBlockStmt (CDefault stmt _) -> CBlockStmt stmt
 				cbi -> cbi
 
@@ -882,14 +884,17 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			collect_stmts [] = []
 			collect_stmts [ CBlockStmt (CDefault stmt _) ] = [
 				CBlockStmt $ CGotoPtr (CConst $ CIntConst (cInteger 1) (nodeInfo stmt)) undefNode, CBlockStmt stmt ]
-			collect_stmts (CBlockStmt (CCase caseexpr stmt _) : rest) = [ CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr (nodeInfo caseexpr))
-				(CCompound [] (CBlockStmt stmt : filtercases rest) undefNode) (Just $ CCompound [] (collect_stmts rest) undefNode) undefNode ]
+			collect_stmts (CBlockStmt (CCase caseexpr stmt _) : rest) = [
+				CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr (nodeInfo caseexpr))
+				(CCompound [] (CBlockStmt stmt : filtercases rest) undefNode)
+				(Just $ CCompound [] (collect_stmts rest) undefNode) undefNode ]
 			collect_stmts (_:rest) = collect_stmts rest
 
 			case_replacement = collect_stmts cbis
 		unfoldTracesM ret_type toplevel (length bstss : break_stack) envs trace ( (
 			CBlockDecl (CDecl [CTypeSpec $ CLongType cond_ni]
-				[(Just $ CDeclr (Just cond_var_ident) [] Nothing [] cond_ni, Just $ CInitExpr condexpr cond_ni, Nothing)] cond_ni) :
+				[(Just $ CDeclr (Just cond_var_ident) [] Nothing [] cond_ni,
+				Just $ CInitExpr condexpr cond_ni, Nothing)] cond_ni) :
 			case_replacement ++
 			rest) : rest2 )
 
