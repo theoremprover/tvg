@@ -173,7 +173,7 @@ main = do
 						when ("-writeGlobalDecls" `elem` opts) $
 							writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 	
-						(full_coverage,s) <- runStateT covVectorsM $
+						(every_branch_covered,s) <- runStateT covVectorsM $
 							CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc opts
 								Nothing ([],Set.empty) Set.empty intialStats Nothing
 						let
@@ -213,11 +213,11 @@ main = do
 							printLog $ "\n    " ++ showTestVector funname v ++ "\n"
 						forM_ deaths $ \ branch -> do
 							printLog $ "DEAD " ++ show branch ++ "\n"
+
+						printLog $ "Every branch combination covered: " ++ show every_branch_covered ++ "\n"
+						when (every_branch_covered && not (null deaths)) $ myError "Every branch covered but deaths!"
 	
-						when (full_coverage && not (null deaths)) $ myError "full coverage but deaths!"
-						when (not full_coverage && null deaths) $ myError "not full_coverage and no deaths!"
-	
-						printLog $ case full_coverage of
+						printLog $ case null deaths of
 							False -> "FAIL, there are coverage gaps!"
 							True  -> "OK, we have full branch coverage."
 
@@ -412,8 +412,8 @@ covVectorsM = do
 			ExitFailure _ -> myError $ "Compilation failed:\n" ++ stderr
 			ExitSuccess -> modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
 
-	Right all_covered <- unfoldTracesM ret_type' True [] ((arraydecl_env++param_env):[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
-	return all_covered
+	Right every_branch_covered <- unfoldTracesM ret_type' True [] ((arraydecl_env++param_env):[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
+	return every_branch_covered
 
 harnessAST incl argdecls funcall print_retval = [cunit|
 $esc:incl_stdio
@@ -584,8 +584,10 @@ analyzeTraceM mb_ret_type res_line = do
 				to_branch _ = []
 			printLogV 2 $ "visible_trace =\n" ++ unlines (map show $ Set.toList visible_trace) 
 		
-			let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
-			case is_solution traceanalysisresult of
+			let
+				traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
+				solved = is_solution traceanalysisresult
+			case solved of
 				False -> do
 					printLogV 2  $ "### FALSE : " ++ show traceid ++ " no solution!"
 				True  -> do
@@ -597,14 +599,13 @@ analyzeTraceM mb_ret_type res_line = do
 						case visible_trace ⊆ covered of
 							False -> (traceanalysisresult:tas,visible_trace ∪ covered)
 							True  -> (tas,covered) }
-			return $ is_solution traceanalysisresult
+			printLogV 1 $ "*** " ++ show traceid ++ " is " ++ show solved
+			return solved
 
 	where
 	
 	trace = reverse res_line
-	traceid = concatMap extract_conds trace where
-		extract_conds (Condition (Just b) _) = [ if b then 1 else 2 ]
-		extract_conds _ = []
+	traceid = trace2traceid trace
 
 	showtraceM cond stage combinator trace = do
 		trace' <- combinator trace
@@ -613,6 +614,10 @@ analyzeTraceM mb_ret_type res_line = do
 				if showBuiltins then "" else "<leaving out builtins...>\n"
 			printLog $ showLine trace'
 		return trace'
+
+trace2traceid trace = concatMap extract_conds trace where
+	extract_conds (Condition (Just b) _) = [ if b then 1 else 2 ]
+	extract_conds _ = []
 
 is_solution :: TraceAnalysisResult -> Bool
 is_solution (_,_,_,(_,Just (_,_,solution))) = not $ null solution
