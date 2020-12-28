@@ -10,7 +10,6 @@
 #include "xdnorm.c"
 #include "errno.c"
 #include "memcpy.c"
-#include <stdlib.h>
 
 //gcc xsin.c xdtest.c xferaise.c xquad.c xvalues.c xdunscal.c xdscale.c xdint.c xprec.c xdnorm.c errno.c memcpy.c
 
@@ -81,13 +80,3 @@ double _Sinx(double x, unsigned int qoff, int quads)
   return (x);
   }
  }
-
-int main(int argc, char* argv[])
-{
-    int i = 1 ;
-    int arga1 = atof(argv[i++]);
-    int arga2 = atoi(argv[i++]);
-    int arga3 = atoi(argv[i++]);
-    printf("_Sinx(%f,%i,%i) =\n%f\n",arga1,arga2,arga3,_Sinx(arga1,arga2,arga3));
-    return 0;
-}
