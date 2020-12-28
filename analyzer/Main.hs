@@ -1663,13 +1663,6 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 		pexpr' <- annotate_types pexpr
 		return $ CMember pexpr' member_ident is_p (ni,ty2Z3Type lexpr_ty)
 
-{-
-	annotate_types (CIndex var@(CVar ident _) ix ni) = do
-		var' <- annotate_types var
-		let Z3_Array index_ty elemty _ = extractType var'
-		ix' <- annotate_types ix
-		return $ CIndex var' (mb_cast index_ty ix') (ni,elemty)
--}
 	annotate_types (CIndex arr_expr ix ni) = do
 		arr_expr' <- annotate_types arr_expr
 		let Z3_Array index_ty elemty _ = extractType arr_expr'
