@@ -988,7 +988,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	CExpr (Just expr) _ -> do
 		myError $ "unfoldTraces: " ++ (render.pretty) stmt ++ " not implemented yet."
 
-	-- That's cheating: Insert condition into trace (for loop unrolling)
+	-- That's cheating: Insert condition into trace (for loop unrolling) via GOTO
 	CGotoPtr cond ni -> do
 		transids cond Z3_Bool trace $ \ (cond',trace') -> do
 			unfoldTracesM ret_type toplevel break_stack envs (Condition (Just $ isUndefNode ni) cond' : trace') ( rest : rest2 )
@@ -1240,31 +1240,38 @@ cinitializer2blockitems :: CExpr -> Type -> CInit -> CovVecM [CBlockItem]
 cinitializer2blockitems lexpr ty initializer =
 	case initializer of
 		CInitExpr expr ni_init -> return [ CBlockStmt $ CExpr (Just $ lexpr ≔ expr ) ni_init ]
-		CInitList initlist _ -> case ty of
+		CInitList initlist ni_init -> case ty of
 			DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 				memberidentstypes <- getMembersM sueref
 				concatForM (zip initlist memberidentstypes) $ \case
 					(([],initializer),(memberident,memberty)) -> do
 						memberty' <- elimTypeDefsM memberty
 						cinitializer2blockitems (CMember lexpr memberident False (nodeInfo memberident)) memberty' initializer
-					_ -> myError $ "cinitializer2blockitems: CPartDesignators not implemented yet!"
-			_ -> myError $ "cinitializer2blockitems: " ++ (render.pretty) ty ++ " at " ++ (show $ nodeInfo lexpr) ++ " is no composite type!"
+					_ -> myError $ "cinitializer2blockitems DirectType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
+			ArrayType elem_ty _ _ _ -> concatForM (zip [0..] initlist) $ \ (i,(partdesigs,cinitializer)) -> case partdesigs of
+				[] -> cinitializer2blockitems (CIndex lexpr (ⅈ i) ni_init) elem_ty cinitializer
+				_ -> myError $ "cinitializer2blockitems ArrayType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
+			_ -> myError $ "cinitializer2blockitems: " ++ (render.pretty) ty ++ " at " ++ (show $ nodeInfo lexpr) ++ " not implemented!"
 
 
 inferLExprTypeM :: TyEnv -> CExpr -> CovVecM Type
 inferLExprTypeM tyenv expr = case expr of
+
 	CVar ident _ -> case lookup ident tyenv of
 		Nothing -> could_not_find_error ident
 		Just ty -> elimTypeDefsM ty
+
 	CMember objexpr member True _ -> do
 		PtrType objty _ _ <- inferLExprTypeM tyenv objexpr
 		getMemberTypeM objty member
+
 	CMember objexpr member False _ -> do
 		objty <- inferLExprTypeM tyenv objexpr
 		getMemberTypeM objty member
-	CIndex (CVar ident _) _ _ -> case lookup ident tyenv of
-		Nothing -> could_not_find_error ident
-		Just (ArrayType ty _ _ _) -> return ty 
+
+	CIndex sub_expr _ _ -> do
+		ArrayType sub_ty _ _ _ <- inferLExprTypeM tyenv sub_expr
+		return sub_ty
 
 	other -> myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " not implemented"
 
@@ -1656,11 +1663,18 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 		pexpr' <- annotate_types pexpr
 		return $ CMember pexpr' member_ident is_p (ni,ty2Z3Type lexpr_ty)
 
+{-
 	annotate_types (CIndex var@(CVar ident _) ix ni) = do
 		var' <- annotate_types var
 		let Z3_Array index_ty elemty _ = extractType var'
 		ix' <- annotate_types ix
 		return $ CIndex var' (mb_cast index_ty ix') (ni,elemty)
+-}
+	annotate_types (CIndex arr_expr ix ni) = do
+		arr_expr' <- annotate_types arr_expr
+		let Z3_Array index_ty elemty _ = extractType arr_expr'
+		ix' <- annotate_types ix
+		return $ CIndex arr_expr' (mb_cast index_ty ix') (ni,elemty)
 
 	annotate_types other = myError $ "annotate_types " ++ (render.pretty) other ++ " not implemented"
 
