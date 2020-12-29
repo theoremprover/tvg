@@ -964,23 +964,10 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			return $ DebugOutput ("solver_debug_" ++ lValueToVarName expr') expr'
 		unfoldTracesM ret_type toplevel break_stack envs (reverse dbgouts ++ trace) (rest:rest2)
 
-{-
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		lexpr_ty <- inferLExprTypeM (envs2tyenv envs) (renameVars "CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni))" envs lexpr) >>= return.ty2Z3Type
 		transids assigned_expr' lexpr_ty trace $ \ (assigned_expr'',trace') -> do
 			r <- translateExprM envs lexpr lexpr_ty
-			case r of
-				[(lexpr',trace'')] -> 
-					unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
-				other -> myError $ "#### r = " ++ (render.pretty) (fst $ head r)
-		where
-		assigned_expr' = case assignop of
-			CAssignOp -> assigned_expr
-			ass_op -> CBinary (assignBinop ass_op) lexpr assigned_expr ni
--}
-	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
-		transids assigned_expr' Nothing trace $ \ (assigned_expr'',trace') -> do
-			r <- translateExprM envs lexpr Nothing
 			case r of
 				[(lexpr',trace'')] -> 
 					unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
