@@ -910,9 +910,9 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			unfoldTracesM ret_type toplevel rest (drop through_compounds envs) trace (drop through_compounds bstss)
 
 	CIf cond then_stmt mb_else_stmt ni -> do
-		let then_trace_m real_cond = transids real_cond Z3_Bool trace $ \ (cond',trace') -> do
+		let then_trace_m real_cond = transids real_cond (Just Z3_Bool) trace $ \ (cond',trace') -> do
 			unfoldTracesM ret_type toplevel break_stack envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
-		let else_trace_m real_cond = transids (CUnary CNegOp real_cond (annotation real_cond)) Z3_Bool trace $ \ (ncond',trace') -> do			
+		let else_trace_m real_cond = transids (CUnary CNegOp real_cond (annotation real_cond)) (Just Z3_Bool) trace $ \ (ncond',trace') -> do			
 			printLogV 2 $ "### real_cond = " ++ (render.pretty) real_cond
 			printLogV 2 $ "### ncond'    = " ++ (render.pretty) ncond'
 			let not_cond = Condition (Just False) ncond'
@@ -941,7 +941,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	CReturn Nothing _            -> return $ Left [trace]
 
 	CReturn (Just ret_expr) _ -> do
-		transids ret_expr (ty2Z3Type ret_type) trace $ \ (ret_expr',trace') -> do
+		transids ret_expr (Just $ ty2Z3Type ret_type) trace $ \ (ret_expr',trace') -> do
 			case toplevel of
 				False -> return $ Left [ Return ret_expr' : trace' ]
 				True  -> do
@@ -964,10 +964,23 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			return $ DebugOutput ("solver_debug_" ++ lValueToVarName expr') expr'
 		unfoldTracesM ret_type toplevel break_stack envs (reverse dbgouts ++ trace) (rest:rest2)
 
+{-
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		lexpr_ty <- inferLExprTypeM (envs2tyenv envs) (renameVars "CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni))" envs lexpr) >>= return.ty2Z3Type
 		transids assigned_expr' lexpr_ty trace $ \ (assigned_expr'',trace') -> do
 			r <- translateExprM envs lexpr lexpr_ty
+			case r of
+				[(lexpr',trace'')] -> 
+					unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
+				other -> myError $ "#### r = " ++ (render.pretty) (fst $ head r)
+		where
+		assigned_expr' = case assignop of
+			CAssignOp -> assigned_expr
+			ass_op -> CBinary (assignBinop ass_op) lexpr assigned_expr ni
+-}
+	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
+		transids assigned_expr' Nothing trace $ \ (assigned_expr'',trace') -> do
+			r <- translateExprM envs lexpr Nothing
 			case r of
 				[(lexpr',trace'')] -> 
 					unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
@@ -989,7 +1002,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 
 	-- That's cheating: Insert condition into trace (for loop unrolling) via GOTO
 	CGotoPtr cond ni -> do
-		transids cond Z3_Bool trace $ \ (cond',trace') -> do
+		transids cond (Just Z3_Bool) trace $ \ (cond',trace') -> do
 			unfoldTracesM ret_type toplevel break_stack envs (Condition (Just $ isUndefNode ni) cond' : trace') ( rest : rest2 )
 
  	CWhile cond body False ni -> do
@@ -1060,7 +1073,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 		case recognizeAnnotation cond0 of
 			(real_cond,Just (ns,_)) -> return (Just ns,"Recognized LOOP annotation to " ++ (render.pretty) cond0)
 			(real_cond,Nothing) -> do
-				translateExprM envs real_cond Z3_Bool >>= \case
+				translateExprM envs real_cond (Just Z3_Bool) >>= \case
 					[(cond,[])] -> do
 						let
 							-- get all variables used in the condition
@@ -1135,9 +1148,10 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 						
 					_ -> return (Nothing,"condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!")
 
-	transids :: CExpr -> Z3_Type -> Trace -> ((CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
-	transids expr ty trace cont = do
-		additional_expr_traces :: [(CExprWithType,Trace)] <- translateExprM envs expr ty
+	-- mb_ty is Nothing if the type of expr is not fixed, i.e. no casting necessary.
+	transids :: CExpr -> Maybe Z3_Type -> Trace -> ((CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
+	transids expr mb_ty trace cont = do
+		additional_expr_traces :: [(CExprWithType,Trace)] <- translateExprM envs expr mb_ty
 		printLogV 2 $ "### transids " ++ (render.pretty) expr
 		printLogV 2 $ "### -> additional_expr_traces = " ++ (render.pretty) (map fst additional_expr_traces)
 		case toplevel of
@@ -1305,9 +1319,9 @@ transcribeExprM from envs mb_target_ty expr = do
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls. Finally, transcribeExprM.
 -- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
-translateExprM :: [Env] -> CExpr -> Z3_Type -> CovVecM [(CExprWithType,Trace)]
-translateExprM envs expr0 target_ty = do
-	printLogV 2 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ show target_ty
+translateExprM :: [Env] -> CExpr -> Maybe Z3_Type -> CovVecM [(CExprWithType,Trace)]
+translateExprM envs expr0 mb_target_ty = do
+	printLogV 2 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ show mb_target_ty
 
 	-- extract a list of all calls from the input expression expr0
 	-- (including fun-identifier, the arguments, and NodeInfo)
@@ -1368,7 +1382,7 @@ translateExprM envs expr0 target_ty = do
 	-- iterate over all possible traces in a called (sub-)function and concatenate their traces 
 	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExprWithType)])] -> CovVecM [(CExprWithType,Trace)]
 	create_combinations expr trace [] = do
-		expr' <- transcribeExprM "create_combinations" envs (Just target_ty) expr
+		expr' <- transcribeExprM "create_combinations" envs mb_target_ty expr
 		return [(set_node_info expr',trace)]
 	-- replace the place-holder in the expr with the return expression of each sub-function's trace,
 	-- concatenating all possibilities (but it does not matter which one, since we only fully cover the top level function)
@@ -1378,7 +1392,6 @@ translateExprM envs expr0 target_ty = do
 				-- substitute the function call by the return expression
 				expr' = everywhere (mkT subst_ret_expr) expr where
 					subst_ret_expr :: CExpr -> CExpr
-					-- this functor mapping "fmap fst ret_expr" is the MOAH
 					subst_ret_expr (CConst (CStrConst (CString ni_s False) ni)) | tes_ni == ni && show ni == ni_s =
 						fmap fst ret_expr
 					subst_ret_expr expr = expr
