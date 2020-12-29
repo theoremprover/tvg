@@ -136,15 +136,15 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
+		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\test.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
@@ -275,7 +275,7 @@ data TraceElem =
 	Condition (Maybe Bool) CExprWithType |
 	NewDeclaration (Ident,Type) |
 	Return CExprWithType |
-	DebugOutput String (CExprWithType,Type)
+	DebugOutput String CExprWithType
 	deriving Data
 
 data Branch = Then Location | Else Location
@@ -330,11 +330,11 @@ instance (Pretty a) => Pretty [a] where
 
 instance Show TraceElem where
 	show te = ( case te of
-		(Assignment lvalue expr)       -> "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
-		(Condition mb_b expr)          -> "COND " ++ maybe "" (\b->if b then "(THEN) " else "(ELSE) ") mb_b ++ (render.pretty) expr
-		(NewDeclaration (lval,ty))     -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
-		(Return exprs)                 -> "RET  " ++ (render.pretty) exprs
-		(DebugOutput varname (expr,_)) -> "DBGOUT " ++ varname ++ " " ++ (render.pretty) expr
+		Assignment lvalue expr   -> "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
+		Condition mb_b expr      -> "COND " ++ maybe "" (\b->if b then "(THEN) " else "(ELSE) ") mb_b ++ (render.pretty) expr
+		NewDeclaration (lval,ty) -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
+		Return exprs             -> "RET  " ++ (render.pretty) exprs
+		DebugOutput varname expr -> "DBGOUT " ++ varname ++ " " ++ (render.pretty) expr
 		) ++ "  (" ++ (showLocation.lineColNodeInfo) te ++ ")"
 
 showTrace :: Trace -> String
@@ -960,15 +960,27 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 
 	CExpr (Just (CCall (CVar (Ident "solver_debug" _ _) _) args ni)) _ -> do
 		dbgouts <- forM args $ \ arg -> do
-			ty <- inferLExprTypeM (envs2tyenv envs) (renameVars "CExpr (Just (CCall (CVar (Ident solver_debug _ _) _)" envs arg)
 			expr' <- transcribeExprM "CExpr (Just (CCall (CVar (Ident solver_debug _ _) _) args ni))" envs Nothing arg
-			return $ DebugOutput ("solver_debug_" ++ lValueToVarName expr') (expr',ty)
+			return $ DebugOutput ("solver_debug_" ++ lValueToVarName expr') expr'
 		unfoldTracesM ret_type toplevel break_stack envs (reverse dbgouts ++ trace) (rest:rest2)
 
+{-
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 		lexpr_ty <- inferLExprTypeM (envs2tyenv envs) (renameVars "CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni))" envs lexpr) >>= return.ty2Z3Type
 		transids assigned_expr' lexpr_ty trace $ \ (assigned_expr'',trace') -> do
 			r <- translateExprM envs lexpr lexpr_ty
+			case r of
+				[(lexpr',trace'')] -> 
+					unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
+				other -> myError $ "#### r = " ++ (render.pretty) (fst $ head r)
+		where
+		assigned_expr' = case assignop of
+			CAssignOp -> assigned_expr
+			ass_op -> CBinary (assignBinop ass_op) lexpr assigned_expr ni
+-}
+	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
+		transids assigned_expr' Nothing trace $ \ (assigned_expr'',trace') -> do
+			r <- translateExprM envs lexpr Nothing
 			case r of
 				[(lexpr',trace'')] -> 
 					unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
@@ -1284,6 +1296,24 @@ inferLExprTypeM tyenv expr = case expr of
 transcribeExprM :: String -> [Env] -> Maybe Z3_Type -> CExpr -> CovVecM CExprWithType
 transcribeExprM from envs mb_target_ty expr = do
 	annotateTypesAndCastM envs (renameVars (from ++ " transcribeExprM") envs expr) mb_target_ty
+	where
+	-- Renames Variables to unique names, looking up their unique name (wíth a number suffix)
+	
+	-- The renaming should be reflected in the type, smth. like
+	-- newtype IsRenamed = IsRenamed NodeInfo
+	-- type CExprRenamed = CExpression IsRenamed
+	--
+	-- But the above would be over-engineering, since renameVars is only used here.
+	renameVars :: String -> [Env] -> CExpr -> CExpr
+	renameVars from envs expr = everywhere (mkT subst_var) expr where
+		subst_var :: CExpr -> CExpr
+		subst_var (CVar ident ni) = case lookup ident (concat envs) of
+			Just (ident',_) -> CVar ident' ni
+			Nothing -> error $ " in subst_var " ++ from ++ " : Could not find " ++ (render.pretty) ident ++
+				" when renaming " ++ (render.pretty) expr ++ " at " ++ show (nodeInfo expr) ++ "\n" ++
+				"env = \n" ++ envToString (concat envs)
+		subst_var expr = expr
+
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls. Finally, transcribeExprM.
@@ -1350,7 +1380,6 @@ translateExprM envs expr0 target_ty = do
 
 	-- iterate over all possible traces in a called (sub-)function and concatenate their traces 
 	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExprWithType)])] -> CovVecM [(CExprWithType,Trace)]
-	-- return the completely fixed expression 
 	create_combinations expr trace [] = do
 		expr' <- transcribeExprM "create_combinations" envs (Just target_ty) expr
 		return [(set_node_info expr',trace)]
@@ -1369,16 +1398,6 @@ translateExprM envs expr0 target_ty = do
 --			printLog $ "fun_trace=" ++ show fun_trace
 			create_combinations expr' (fun_trace++trace) rest
 
-
--- Renames Variables to unique names, looking up their unique name (wíth a number suffix)
-
-renameVars :: String -> [Env] -> CExpr -> CExpr
-renameVars from envs expr = everywhere (mkT subst_var) expr where
-	subst_var :: CExpr -> CExpr
-	subst_var (CVar ident ni) = case lookup ident (concat envs) of
-		Just (ident',_) -> CVar ident' ni
-		Nothing -> error $ " in subst_var " ++ from ++ " : Could not find " ++ (render.pretty) ident ++ " in\n" ++ envToString (concat envs)
-	subst_var expr = expr
 
 -- Substitutes an expression x by y everywhere in a
 substituteBy :: (Eq a,Data a,Data d) => a -> a -> d -> d
@@ -1919,8 +1938,8 @@ instance Show SolutionVal where
 	show (DoubleVal f) = show f
 	show PtrVal        = "<SOME_PTR>"
 
-makeAndSolveZ3ModelM :: [Int] -> TyEnv -> [Constraint] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
-makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents modelpathfile = do
+makeAndSolveZ3ModelM :: [Int] -> [(Ident,Z3_Type)] -> [Constraint] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
+makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents modelpathfile = do
 	opts <- gets optsCVS
 	let  -- prefix a "a_" for identifiers starting with underscore (Z3 does not like leading underscores...)
 		(a_constraints,a_output_idents) = everywhere (mkT prefix_a) (constraints,output_idents) where
@@ -1935,8 +1954,8 @@ makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents m
 	printLogV 2 $ "constraints_vars = " ++ showIdents constraints_vars
 
 	let
-		varsZ3 :: [SCompound] = for (filter ((`elem` (constraints_vars ++ a_output_idents)).fst) tyenv) $ \ (ident,ty) ->
-			SExprLine $ SOnOneLine $ SExpr [ SLeaf "declare-const", SLeaf (identToString ident), z3Ty2SExpr $ ty2Z3Type ty ]
+		varsZ3 :: [SCompound] = for (filter ((`elem` (constraints_vars ++ a_output_idents)).fst) z3tyenv) $ \ (ident,ty) ->
+			SExprLine $ SOnOneLine $ SExpr [ SLeaf "declare-const", SLeaf (identToString ident), z3Ty2SExpr ty ]
 	constraintsZ3 :: [SCompound] <- concatForM a_constraints $ \ constraint -> do
 		assert_sexpr <- expr2SExpr constraint
 		return $ [ SEmptyLine,
@@ -1978,9 +1997,9 @@ makeAndSolveZ3ModelM traceid tyenv constraints additional_sexprs output_idents m
 			sol_params <- forM (zip a_output_idents rest) $ \ (ident,line) -> do
 				let is = identToString ident
 				case line =~ ("\\(\\(" ++ is ++ " ([^\\)]+)\\)\\)") :: (String,String,String,[String]) of
-					(_,_,_,[val_string]) -> case lookup ident tyenv of
+					(_,_,_,[val_string]) -> case lookup ident z3tyenv of
 						Nothing -> myError $ "Parsing z3 output: Could not find type of " ++ is
-						Just ty -> return (is, case ty2Z3Type ty of
+						Just ty -> return (is, case ty of
 							Z3_BitVector size unsigned -> let
 								'#':'x':hexdigits = val_string
 								[(i :: Integer,"")] = readHex hexdigits
@@ -2066,13 +2085,13 @@ solveTraceM mb_ret_type traceid trace = do
 		traceitem2constr constraint@(Assignment (CIndex _ _ _) _) = [constraint]
 		traceitem2constr _ = []
 		debug_outputs = concatMap is_debug_output trace where
-			is_debug_output (DebugOutput name (expr,ty)) = [(name,expr,ty)]
+			is_debug_output (DebugOutput name expr) = [(name,expr)]
 			is_debug_output _ = []
-		(debug_idents,debug_constraints,debug_tyenv) = unzip3 $ for (zip [1..] debug_outputs) $ \ (i,(name,expr,ty)) ->
+		(debug_idents,debug_constraints,debug_tyenv) = unzip3 $ for (zip [1..] debug_outputs) $ \ (i,(name,expr)) ->
 			let name_id = internalIdent (name ++ "_" ++ show i) in
-			(name_id,Condition Nothing $ CBinary CEqOp (CVar name_id (annotation expr)) expr (annotation expr),(name_id,ty))
+			(name_id,Condition Nothing $ CBinary CEqOp (CVar name_id (annotation expr)) expr (annotation expr),(name_id,extractType expr))
 
-		tyenv = createTyEnv trace ++ debug_tyenv
+		tyenv = (map (\ (e,t) -> (e,ty2Z3Type t)) (createTyEnv trace)) ++ debug_tyenv
 
 	(model_string,mb_sol) <- makeAndSolveZ3ModelM
 		traceid
