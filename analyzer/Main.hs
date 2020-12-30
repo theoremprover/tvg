@@ -136,11 +136,11 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -565,7 +565,8 @@ analyzeTraceM mb_ret_type res_line = do
 		showtraceM showTraces "1. elimAssignmentsM" elimAssignmentsM  >>=
 		showtraceM showTraces "elimArrayAssignsM"   elimArrayAssignsM >>=
 		showtraceM showTraces "2. elimAssignmentsM" elimAssignmentsM  >>=
-		showtraceM showTraces "2. simplifyTraceM"   simplifyTraceM
+		showtraceM showTraces "2. simplifyTraceM"   simplifyTraceM    >>=
+		showtraceM showTraces "createSymbolicVarsM" createSymbolicVarsM
 
 	either_resultdata <- solveTraceM mb_ret_type traceid trace'
 	case either_resultdata of
@@ -966,9 +967,9 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 
 {-
 	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
-		lexpr_ty <- inferLExprTypeM (envs2tyenv envs) (renameVars "CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni))" envs lexpr) >>= return.ty2Z3Type
-		transids assigned_expr' lexpr_ty trace $ \ (assigned_expr'',trace') -> do
-			r <- translateExprM envs lexpr lexpr_ty
+		lexpr_ty <- inferLExprTypeM (map (\(ident,(_,ty)) -> (ident,ty)) $ concat envs) lexpr >>= return.ty2Z3Type
+		transids assigned_expr' (Just lexpr_ty) trace $ \ (assigned_expr'',trace') -> do
+			r <- translateExprM envs lexpr (Just lexpr_ty)
 			case r of
 				[(lexpr',trace'')] -> 
 					unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
@@ -978,17 +979,14 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			CAssignOp -> assigned_expr
 			ass_op -> CBinary (assignBinop ass_op) lexpr assigned_expr ni
 -}
-	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
-		transids assigned_expr' Nothing trace $ \ (assigned_expr'',trace') -> do
-			r <- translateExprM envs lexpr Nothing
-			case r of
-				[(lexpr',trace'')] -> 
-					unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
-				other -> myError $ "#### r = " ++ (render.pretty) (fst $ head r)
+	CExpr (Just (CAssign assignop lexpr assigned_expr ni)) _ -> do
+		transids (CAssign CAssignOp lexpr assigned_expr' ni) Nothing trace $
+			\ (CAssign CAssignOp lexpr' assigned_expr'' ni,trace') -> do
+				unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace') (rest:rest2)
 		where
 		assigned_expr' = case assignop of
 			CAssignOp -> assigned_expr
-			ass_op -> CBinary (assignBinop ass_op) lexpr assigned_expr ni
+			ass_op    -> CBinary (assignBinop ass_op) lexpr assigned_expr ni
 
 	CExpr (Just (CUnary unaryop expr ni_op)) ni | unaryop `elem` (map fst unaryops) -> do
 		unfoldTracesM ret_type toplevel break_stack envs trace ( (CBlockStmt stmt' : rest) : rest2 )
@@ -1515,51 +1513,54 @@ simplifyTraceM trace = everywhereM (mkM simplify) trace where
 
 -- Create symbolic vars for leftover expressions
 
-createSymbolicVarsM :: Trace -> [Ident] -> Trace -> CovVecM Trace
-createSymbolicVarsM res_trace _ [] = return $ reverse res_trace
-createSymbolicVarsM res_trace new_idents (ti : rest) = do
-	(ti',add_tis) <- runStateT (everywhereM (mkM createsymvar_m) ti) []
-	createSymbolicVarsM (ti' : (map NewDeclaration add_tis) ++ res_trace) (map fst add_tis ++ new_idents) rest
+createSymbolicVarsM :: Trace -> CovVecM Trace
+createSymbolicVarsM trace = create_symbolic_vars [] (map fst $ createTyEnv trace) trace
 	where
+	create_symbolic_vars :: Trace -> [Ident] -> Trace -> CovVecM Trace
+	create_symbolic_vars res_trace _ [] = return $ reverse res_trace
+	create_symbolic_vars res_trace new_idents (ti : rest) = do
+		(ti',add_tis) <- runStateT (everywhereM (mkM createsymvar_m) ti) []
+		create_symbolic_vars (ti' : (map NewDeclaration add_tis) ++ res_trace) (map fst add_tis ++ new_idents) rest
+		where
+		
+		tyenv = createTyEnv res_trace
 	
-	tyenv = createTyEnv res_trace
-
-	create_var :: CExprWithType -> Type -> StateT [(Ident,Type)] CovVecM CExprWithType
-	create_var expr ty = do
-		let newident = mkIdentWithCNodePos (extractNodeInfo expr) $ lValueToVarName expr
-		when (not $ newident `elem` new_idents) $
-			modify ((newident,ty) : )
-		return $ CVar newident (annotation expr)
-
-	createsymvar_m :: CExprWithType -> StateT [(Ident,Type)] CovVecM CExprWithType
-
-	createsymvar_m expr@(CUnary CIndOp (CVar ptr_ident _) ni) = do
-		let Just (PtrType ty _ _) = lookup ptr_ident tyenv
-		create_var expr ty
-
-	--  for ptr->member   create    p1_ARROW_member :: member_type
-	createsymvar_m expr@(CMember (CVar ptr_ident _) member True _) = do
-		case lookup ptr_ident tyenv of
-			Nothing -> myError $ "createsymvar_m: Could not find " ++ (render.pretty) ptr_ident ++ " of " ++ (render.pretty) expr ++ " in " ++ showTyEnv tyenv
-			Just (PtrType sue_ty _ _) -> do
-				member_ty <- lift $ getMemberTypeM sue_ty member
-				create_var expr member_ty
-
-	--  for a.member   create    a_DOT_member :: member_type
-	createsymvar_m expr@(CMember (CVar a_ident _) member False ni) = do
-		return $ CVar (mkIdentWithCNodePos (extractNodeInfo expr) $ lValueToVarName expr) ni
-
-	createsymvar_m expr@(CUnary CAdrOp (CVar a_ident _) _) = do
-		let Just ty = lookup a_ident $ createTyEnv res_trace
-		create_var expr $ PtrType ty noTypeQuals noAttributes
-
-	createsymvar_m expr@(CIndex arrexpr _ _) = case arrexpr of
-		CVar ident _ -> do	
-			let Just (ArrayType ty _ _ _) = lookup ident tyenv
+		create_var :: CExprWithType -> Type -> StateT [(Ident,Type)] CovVecM CExprWithType
+		create_var expr ty = do
+			let newident = mkIdentWithCNodePos (extractNodeInfo expr) $ lValueToVarName expr
+			when (not $ newident `elem` new_idents) $
+				modify ((newident,ty) : )
+			return $ CVar newident (annotation expr)
+	
+		createsymvar_m :: CExprWithType -> StateT [(Ident,Type)] CovVecM CExprWithType
+	
+		createsymvar_m expr@(CUnary CIndOp (CVar ptr_ident _) ni) = do
+			let Just (PtrType ty _ _) = lookup ptr_ident tyenv
 			create_var expr ty
-		_ -> myError $ "createsymvar_m " ++ (render.pretty) expr ++ " : arrexpr is not a CVar"
-
-	createsymvar_m expr = return expr
+	
+		--  for ptr->member   create    p1_ARROW_member :: member_type
+		createsymvar_m expr@(CMember (CVar ptr_ident _) member True _) = do
+			case lookup ptr_ident tyenv of
+				Nothing -> myError $ "createsymvar_m: Could not find " ++ (render.pretty) ptr_ident ++ " of " ++ (render.pretty) expr ++ " in " ++ showTyEnv tyenv
+				Just (PtrType sue_ty _ _) -> do
+					member_ty <- lift $ getMemberTypeM sue_ty member
+					create_var expr member_ty
+	
+		--  for a.member   create    a_DOT_member :: member_type
+		createsymvar_m expr@(CMember (CVar a_ident _) member False ni) = do
+			return $ CVar (mkIdentWithCNodePos (extractNodeInfo expr) $ lValueToVarName expr) ni
+	
+		createsymvar_m expr@(CUnary CAdrOp (CVar a_ident _) _) = do
+			let Just ty = lookup a_ident $ createTyEnv res_trace
+			create_var expr $ PtrType ty noTypeQuals noAttributes
+	
+		createsymvar_m expr@(CIndex arrexpr _ _) = case arrexpr of
+			CVar ident _ -> do	
+				let Just (ArrayType ty _ _ _) = lookup ident tyenv
+				create_var expr ty
+			_ -> myError $ "createsymvar_m " ++ (render.pretty) expr ++ " : arrexpr is not a CVar"
+	
+		createsymvar_m expr = return expr
 
 
 type TyEnv = [(Ident,Type)]
@@ -1601,7 +1602,8 @@ type NodeInfoWithType = (NodeInfo,Z3_Type)
 type CExprWithType = CExpression NodeInfoWithType
 
 -- adds Z3 types to the annotation that the expressions should have
--- (making a CExprWithType from a CExpr), also insertsimplicit casts
+-- (making a CExprWithType from a CExpr), also inserts implicit casts
+-- if mb_target_ty is Nothing, the result CExprWithType will not be casted to the mb_target_ty type.
 annotateTypesAndCastM :: [Env] -> CExpr -> Maybe Z3_Type -> CovVecM CExprWithType
 annotateTypesAndCastM envs cexpr mb_target_ty = do
 	cexpr' <- annotate_types cexpr
