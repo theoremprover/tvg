@@ -136,11 +136,11 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
---		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -779,10 +779,13 @@ identTy2EnvItemM :: Ident -> Type -> CovVecM [EnvItem]
 identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 	ty' <- elimTypeDefsM ty
 	new_var_num <- gets newNameIndexCVS
+	-- strictly monotone newNameIndexCVS assures uniqueness of new identifiers:
 	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
 	let
 		name_prefix = identToString srcident
-		newident = Ident (name_prefix ++ "_" ++ show new_var_num) i ni
+		-- a dollar sign is not allowed in a C identifier, but Z3 allows for it.
+		-- By inserting one in new names we avoid unlucky name collisions with already existing names in the source file
+		newident = Ident (name_prefix ++ "$" ++ show new_var_num) i ni
 	return $ [ (srcident,(newident,ty')) ]
 
 
@@ -897,6 +900,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			collect_stmts (_:rest) = collect_stmts rest
 
 			case_replacement = collect_stmts cbis
+
 		unfoldTracesM ret_type toplevel (length bstss : break_stack) envs trace ( (
 			CBlockDecl (CDecl [CTypeSpec $ CLongType cond_ni]
 				[(Just $ CDeclr (Just cond_var_ident) [] Nothing [] cond_ni,
@@ -965,20 +969,6 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			return $ DebugOutput ("solver_debug_" ++ lValueToVarName expr') expr'
 		unfoldTracesM ret_type toplevel break_stack envs (reverse dbgouts ++ trace) (rest:rest2)
 
-{-
-	CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
-		lexpr_ty <- inferLExprTypeM (map (\(ident,(_,ty)) -> (ident,ty)) $ concat envs) lexpr >>= return.ty2Z3Type
-		transids assigned_expr' (Just lexpr_ty) trace $ \ (assigned_expr'',trace') -> do
-			r <- translateExprM envs lexpr (Just lexpr_ty)
-			case r of
-				[(lexpr',trace'')] -> 
-					unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace''++trace') (rest:rest2)
-				other -> myError $ "#### r = " ++ (render.pretty) (fst $ head r)
-		where
-		assigned_expr' = case assignop of
-			CAssignOp -> assigned_expr
-			ass_op -> CBinary (assignBinop ass_op) lexpr assigned_expr ni
--}
 	CExpr (Just (CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids (CAssign CAssignOp lexpr assigned_expr' ni) Nothing trace $
 			\ (CAssign CAssignOp lexpr' assigned_expr'' ni,trace') -> do
@@ -1193,6 +1183,9 @@ unfoldTraces1M ret_type True  _ _ trace [] = analyzeTraceM (Just ret_type) trace
 unfoldTraces1M _ _ _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
 
+-- The following  definitions are only for CExpr's, since CExprWithType's also need correct type information, i.e.
+-- casting n'stuff...
+
 infix 4 ⩵
 (⩵) :: CExpr -> CExpr -> CExpr
 a ⩵ b = CBinary CEqOp a b (annotation a)
@@ -1350,7 +1343,7 @@ translateExprM envs expr0 mb_target_ty = do
 		let funtraces_rets = concat $ for funtraces $ \case
 			(Return retexpr : tr) -> [(tr,retexpr)]
 			tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
-		return (ni,funtraces_rets) 
+		return (ni,funtraces_rets)
 
 	printLogV 2 $ "creating combinations..."
 	create_combinations expr [] funcalls_traces
