@@ -136,7 +136,7 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -145,7 +145,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -882,25 +882,38 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			cond_ni = nodeInfo condexpr
 			(l,c) = lineColNodeInfo condexpr
 			cond_var_ident = mkIdentWithCNodePos condexpr $ "cond_" ++ show l ++ "_" ++ show c
+			-- we have to evaluate the switch'ed expression only once, and in the beginning,
+			-- since there could be side effects in it! (May God damn them...)
 			cond_var = CVar cond_var_ident cond_ni
 
-			filtercases = map $ \case
+			-- Eliminate the case/default "prefixes" from a statement list.
+			filtercases :: [CBlockItem] -> [CBlockItem]
+			filtercases stmts = for stmts $ \case
 				CBlockStmt (CCase _ stmt _)  -> CBlockStmt stmt
 				CBlockStmt (CDefault stmt _) -> CBlockStmt stmt
 				cbi -> cbi
 
+			-- Go through all the switch's items (only the cases and default)...
 			collect_stmts :: [CBlockItem] -> [CBlockItem]
 			collect_stmts [] = []
+			collect_stmts (CBlockStmt (CDefault _ _) : _ : _) = error
+				"collect_stmts: the case when 'default' is not the last item in the switch is not implemented"
+			-- if we have a "default", insert a "goto 1", which will later be translated into "Condition (Just True) 1"
+			-- and append the default statement
 			collect_stmts [ CBlockStmt (CDefault stmt _) ] = [
 				CBlockStmt $ CGotoPtr (CConst $ CIntConst (cInteger 1) (nodeInfo stmt)) undefNode, CBlockStmt stmt ]
+			-- if we have a "case <expr>: stmt", insert "if (expr==cond_var) { stmt; rest } else <recurse_collect_stmts>"
 			collect_stmts (CBlockStmt (CCase caseexpr stmt _) : rest) = [
 				CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr (nodeInfo caseexpr))
 				(CCompound [] (CBlockStmt stmt : filtercases rest) undefNode)
 				(Just $ CCompound [] (collect_stmts rest) undefNode) undefNode ]
+			-- if it was neither a "case" or "default", skip it.
 			collect_stmts (_:rest) = collect_stmts rest
 
+			-- This is the whole switch, rewritten as nested if-then-elses
 			case_replacement = collect_stmts cbis
 
+		-- add the current scope depth to the break_stack and continue with unfoldTracesM
 		unfoldTracesM ret_type toplevel (length bstss : break_stack) envs trace ( (
 			CBlockDecl (CDecl [CTypeSpec $ CLongType cond_ni]
 				[(Just $ CDeclr (Just cond_var_ident) [] Nothing [] cond_ni,
@@ -909,9 +922,12 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			rest) : rest2 )
 
 	CBreak _ -> case break_stack of
-		[] -> error $ "unfoldTraces1M " ++ (render.pretty) stmt ++ " : empty break stack!"
+		[] -> error $ "unfoldTraces1M " ++ (render.pretty) stmt ++ " but empty break stack!"
 		(b:rest) -> do
+			-- calculate the number of switch/loop scopes that the break breaks through (sic!)
 			let through_compounds = length bstss - b
+			printLogV 1 $ "### through_compounds = " ++ show through_compounds
+			-- drop the envs and 
 			unfoldTracesM ret_type toplevel rest (drop through_compounds envs) trace (drop through_compounds bstss)
 
 	CIf cond then_stmt mb_else_stmt ni -> do
@@ -988,7 +1004,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	CExpr (Just expr) _ -> do
 		myError $ "unfoldTraces: " ++ (render.pretty) stmt ++ " not implemented yet."
 
-	-- That's cheating: Insert condition into trace (for loop unrolling) via GOTO
+	-- That's cheating: Insert condition into trace (for loop unrolling and switch) via GOTO
 	CGotoPtr cond ni -> do
 		transids cond (Just Z3_Bool) trace $ \ (cond',trace') -> do
 			unfoldTracesM ret_type toplevel break_stack envs (Condition (Just $ isUndefNode ni) cond' : trace') ( rest : rest2 )

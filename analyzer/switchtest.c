@@ -1,8 +1,3 @@
-#ifdef CALC
-#include <stdio.h>
-#include <stdlib.h>
-#endif
-
 int f(int x,int y)
 {
     int a = 0;
@@ -31,7 +26,11 @@ int f(int x,int y)
             }
             else
             {
-                a = a+2;
+                for(int i=0;solver_pragma(0,1,2,3,4) && i<4;i++)
+                {
+                    if(i>=2) break;
+                    a++;
+                }
                 break;
             }
             a = a + 3;
@@ -42,13 +41,3 @@ int f(int x,int y)
     }
     return a;
 }
-
-#ifdef CALC
-int main(int argc, char* argv[])
-{
-    int x = atoi(argv[1]);
-    int y = atoi(argv[2]);
-    printf("f(x=%i,y=%i) =\n%i\n",x,y,f(x,y));
-    return 0;
-}
-#endif
