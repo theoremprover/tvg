@@ -873,7 +873,6 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 			rest1 <- rest_m
 			return $ (((srcident,(srcident,ty')),expr) : rest1)
 
-
 unfoldTracesM :: Type -> Bool -> [Int] -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
 unfoldTracesM ret_type toplevel break_stack envs trace cbss = do
 	unfoldTraces1M ret_type toplevel break_stack envs trace cbss
