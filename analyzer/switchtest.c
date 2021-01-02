@@ -1,3 +1,15 @@
+/*
+int f(int x)
+{
+    switch(x)
+    {
+        case 1: return 0;
+        case 2: x++; break;
+        default: x+=
+    }
+}
+*/
+
 int f(int x,int y)
 {
     int a = 0;
@@ -7,6 +19,7 @@ int f(int x,int y)
             a = a+1;
             a = a+0;
             break;
+            a = a+1;
         case 2:
             if(y>0)
             {
@@ -26,18 +39,21 @@ int f(int x,int y)
             }
             else
             {
-                for(int i=0;solver_pragma(0,1,2,3,4) && i<4;i++)
+                for(int i=0;solver_pragma(4) && i<4;i++)
                 {
                     if(i>=2) break;
                     a++;
                 }
+                a++;
                 break;
             }
             a = a + 3;
         case 3:
             a = a + 4;
+            break;
         default:
             a = a + 10;
     }
+    a++;
     return a;
 }

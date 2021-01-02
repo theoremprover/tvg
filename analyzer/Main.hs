@@ -203,7 +203,7 @@ main = do
 									mbshowtraces ts = if showTraces then ts else []
 	
 						printLogV 1 $ "All decision points : "
-						forM_ (map branchLocation $ Set.toList alls) $ \ decisionpoint -> printLogV 1 $ "    " ++ show decisionpoint
+						forM_ (Set.toList alls) $ \ decisionpoint -> printLogV 1 $ "    " ++ show decisionpoint
 	
 						printLog $ "\n===== SUMMARY =====\n"
 	
@@ -279,7 +279,13 @@ data TraceElem =
 	deriving Data
 
 data Branch = Then Location | Else Location
-	deriving (Eq,Ord)
+	deriving Eq
+-- Order decision points first by location, and second by the constructor (Then/Else)
+instance Ord Branch where
+	Then b1 <= Then b2 = b1 <= b2
+	Then b1 <= Else b2 = if b1==b2 then True else b1 < b2
+	Else b1 <= Then b2 = if b1==b2 then False else b1 < b2
+	Else b1 <= Else b2 = b1 <= b2
 instance Show Branch where
 	show (Then loc) = "Then branch at " ++ showLocation loc
 	show (Else loc) = "Else branch at " ++ showLocation loc
@@ -366,13 +372,15 @@ covVectorsM = do
 	ret_env_exprs <- createInterfaceFromExprM (CVar srcident (nodeInfo srcident,ty2Z3Type ret_type')) ret_type'
 	modify $ \ s -> s { retEnvCVS = Just ret_env_exprs }
 	
+	-- Go through the body of the function and determine all decision points
 	let condition_points = Set.fromList $ everything (++) (mkQ [] searchcondpoint) body
 		where
 		searchcondpoint :: CStat -> [Branch]
 		searchcondpoint (CWhile cond _ _ _)        = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
-		searchcondpoint (CCase expr _ _)           = [ Then (lineColNodeInfo expr) ]
-		searchcondpoint (CDefault stmt _)          = [ Then (lineColNodeInfo stmt) ]
+		searchcondpoint ccase@(CCase _ _ _)        = [ Then (lineColNodeInfo ccase) ]
+		searchcondpoint cdefault@(CDefault stmt _) = [ Then (lineColNodeInfo cdefault) ]
 		searchcondpoint (CFor _ (Just cond) _ _ _) = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
+		searchcondpoint (CFor _ Nothing _ _ _)     = error $ "searchcondpoint: for(_,,_) not implemented!"
 		searchcondpoint (CIf cond _ _ _)           = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
 		searchcondpoint _                          = []
 	modify $ \ s -> s { allCondPointsCVS = condition_points }
@@ -770,7 +778,7 @@ declaration2EnvItemM decl = do
 	return $ [ (srcident,(srcident,ty')) ]
 
 mkIdentWithCNodePos :: (CNode cnode) => cnode -> String -> Ident
-mkIdentWithCNodePos cnode name = mkIdent (posOfNode $ nodeInfo cnode) name (Name 99999)
+mkIdentWithCNodePos cnode name = mkIdent (posOfNode $ nodeInfo cnode) name (Name 9999999)
 
 
 -- Takes an identifier and a type, and creates env item(s) from that.
@@ -886,35 +894,38 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			-- since there could be side effects in it! (May God damn them...)
 			cond_var = CVar cond_var_ident cond_ni
 
-			-- Eliminate the case/default "prefixes" from a statement list.
-			filtercases :: [CBlockItem] -> [CBlockItem]
-			filtercases stmts = for stmts $ \case
-				CBlockStmt (CCase _ stmt _)  -> CBlockStmt stmt
-				CBlockStmt (CDefault stmt _) -> CBlockStmt stmt
-				cbi -> cbi
-
-			-- Go through all the switch's items (only the cases and default)...
+			-- Go through all the switch's "case"s and "default"s...
 			collect_stmts :: [CBlockItem] -> [CBlockItem]
 			collect_stmts [] = []
 			collect_stmts (CBlockStmt (CDefault _ _) : _ : _) = error
 				"collect_stmts: the case when 'default' is not the last item in the switch is not implemented"
 			-- if we have a "default", insert a "goto 1", which will later be translated into "Condition (Just True) 1"
 			-- and append the default statement
-			collect_stmts [ CBlockStmt (CDefault stmt _) ] = [
-				CBlockStmt $ CGotoPtr (CConst $ CIntConst (cInteger 1) (nodeInfo stmt)) undefNode, CBlockStmt stmt ]
+			collect_stmts [ CBlockStmt (CDefault stmt default_ni) ] = [
+				CBlockStmt $ CGotoPtr (CConst $ CIntConst (cInteger 1) default_ni) undefNode, CBlockStmt stmt ]
 			-- if we have a "case <expr>: stmt", insert "if (expr==cond_var) { stmt; rest } else <recurse_collect_stmts>"
-			collect_stmts (CBlockStmt (CCase caseexpr stmt _) : rest) = [
-				CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr (nodeInfo caseexpr))
-				(CCompound [] (CBlockStmt stmt : filtercases rest) undefNode)
+			collect_stmts (CBlockStmt (CCase caseexpr stmt case_ni) : rest) = [
+				CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr case_ni)
+				(CCompound [] (CBlockStmt stmt : filtercases rest ++ break_cbss) undefNode)
 				(Just $ CCompound [] (collect_stmts rest) undefNode) undefNode ]
+				where
+				-- Eliminate the case/default "prefixes" from a statement list.
+				-- append a "break;" in order to pop from the break stack after the switch
+				filtercases :: [CBlockItem] -> [CBlockItem]
+				filtercases cbis = for cbis $ \case
+					CBlockStmt (CCase _ stmt _)  -> CBlockStmt stmt
+					CBlockStmt (CDefault stmt _) -> CBlockStmt stmt
+					cbi -> cbi
+
+
 			-- if it was neither a "case" or "default", skip it.
 			collect_stmts (_:rest) = collect_stmts rest
 
-			-- This is the whole switch, rewritten as nested if-then-elses
+			-- This is the whole switch, rewritten as nested if-then-elses.
 			case_replacement = collect_stmts cbis
 
-		-- add the current scope depth to the break_stack and continue with unfoldTracesM
-		unfoldTracesM ret_type toplevel (length bstss : break_stack) envs trace ( (
+		-- add the current loop/switch-scope depth to the break_stack and continue with unfoldTracesM
+		unfoldTracesM ret_type toplevel (pushBreak break_stack) envs trace ( (
 			CBlockDecl (CDecl [CTypeSpec $ CLongType cond_ni]
 				[(Just $ CDeclr (Just cond_var_ident) [] Nothing [] cond_ni,
 				Just $ CInitExpr condexpr cond_ni, Nothing)] cond_ni) :
@@ -924,10 +935,9 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	CBreak _ -> case break_stack of
 		[] -> error $ "unfoldTraces1M " ++ (render.pretty) stmt ++ " but empty break stack!"
 		(b:rest) -> do
-			-- calculate the number of switch/loop scopes that the break breaks through (sic!)
+			-- calculate the number of scopes that the break breaks through (sic!)
 			let through_compounds = length bstss - b
-			printLogV 1 $ "### through_compounds = " ++ show through_compounds
-			-- drop the envs and 
+			-- drop the envs, the statements after the break, and pop the break_stack
 			unfoldTracesM ret_type toplevel rest (drop through_compounds envs) trace (drop through_compounds bstss)
 
 	CIf cond then_stmt mb_else_stmt ni -> do
@@ -1020,28 +1030,32 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 
 		unroll_loopM :: [Int] -> CovVecM UnfoldTracesRet
 		unroll_loopM depths = do
-			ress <- forM depths $ \ depth -> unfoldTracesM ret_type toplevel break_stack envs trace ((unroll cond depth ++ rest) : rest2 )
+			ress <- forM depths $ \ depth ->
+				unfoldTracesM ret_type toplevel (pushBreak break_stack) ([]:envs) trace ((unroll cond depth ++ rest) : rest2 )
 			return $ case toplevel of
-				False -> Left (concat $ lefts ress)
-				True  -> Right (any id $ rights ress)
+				False -> Left $ concat $ lefts ress
+				True  -> Right $ any id $ rights ress
 
 		unroll :: CExpr -> Int -> [CBlockItem]
 		unroll while_cond n = 
 			concat ( replicate n [ CBlockStmt (CGotoPtr while_cond undefNode), CBlockStmt body ] ) ++
-			[ CBlockStmt $ CGotoPtr (not_c while_cond) ni ]
+			[ CBlockStmt $ CGotoPtr (not_c while_cond) ni ] ++ break_cbss
 
-	-- Express the for loop as a bismimular while loop
+	-- Express the for loop as a bisimular while loop
 	CFor (Right decl) mb_cond mb_inc_expr stmt ni -> do
 		unfoldTracesM ret_type toplevel break_stack envs trace ((CBlockStmt stmt' : rest) : rest2)
 		where
 		stmt' = CCompound [] [ CBlockDecl decl, CBlockStmt body_stmt ] ni
 		body_stmt = CWhile (maybe (ⅈ 1) id mb_cond) while_body False ni
 		while_body = CCompound [] ( CBlockStmt stmt :
-			maybe [] (\ expr -> [ CBlockStmt $ CExpr (Just expr) (nodeInfo expr) ]) mb_inc_expr ) (nodeInfo stmt)
+			maybe [] (\ expr -> [ CBlockStmt $ CExpr (Just expr) (nodeInfo expr) ]) mb_inc_expr) (nodeInfo stmt)
 
 	_ -> myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 
 	where
+
+	break_cbss = [CBlockStmt $ CBreak undefNode]
+	pushBreak bs = length bstss : bs
 
 	recognizeAnnotation :: CExpr -> (CExpr,Maybe ([Int],Int))
 	recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) =
