@@ -420,7 +420,7 @@ covVectorsM = do
 			ExitFailure _ -> myError $ "Compilation failed:\n" ++ stderr
 			ExitSuccess -> modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
 
-	Right every_branch_covered <- unfoldTracesM ret_type' True [] ((arraydecl_env++param_env):[glob_env]) decls [ defs ++ [ CBlockStmt body ] ]
+	Right every_branch_covered <- unfoldTracesM ret_type' True ((arraydecl_env++param_env):[glob_env]) decls [ (defs ++ [ CBlockStmt body ],False) ]
 	return every_branch_covered
 
 harnessAST incl argdecls funcall print_retval = [cunit|
@@ -699,6 +699,10 @@ instance Pretty EnvItem where
 	pretty (idold,tyenvitem) = pretty idold <+> text " |-> " <+> pretty tyenvitem
 type Env = [EnvItem]
 
+dumpEnvs :: [Env] -> String
+dumpEnvs envs = unlines $ for envs $ \ env ->
+	concat $ intersperse ", " $ for env $ \ (a,(at,ty)) -> (render.pretty) a ++ "->" ++ (render.pretty) at
+
 envToString :: Env -> String
 envToString env = unlines $ map (render.pretty) $ filter (isnotbuiltinIdent.fst) env
 
@@ -873,16 +877,16 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 			rest1 <- rest_m
 			return $ (((srcident,(srcident,ty')),expr) : rest1)
 
-unfoldTracesM :: Type -> Bool -> [Int] -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
-unfoldTracesM ret_type toplevel break_stack envs trace cbss = do
-	unfoldTraces1M ret_type toplevel break_stack envs trace cbss
+unfoldTracesM :: Type -> Bool -> [Env] -> Trace -> [([CBlockItem],Bool)] -> CovVecM UnfoldTracesRet
+unfoldTracesM ret_type toplevel envs trace cbss = do
+	unfoldTraces1M ret_type toplevel envs trace cbss
 
-unfoldTraces1M :: Type -> Bool -> [Int] -> [Env] -> Trace -> [[CBlockItem]] -> CovVecM UnfoldTracesRet
-unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt : rest) : rest2) = case stmt of
+unfoldTraces1M :: Type -> Bool -> [Env] -> Trace -> [([CBlockItem],Bool)] -> CovVecM UnfoldTracesRet
+unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),breakable) : rest2) = case stmt of
 
-	CLabel _ cstat _ _ -> unfoldTracesM ret_type toplevel break_stack envs trace ((CBlockStmt cstat : rest) : rest2)
+	CLabel _ cstat _ _ -> unfoldTracesM ret_type toplevel envs trace (((CBlockStmt cstat : rest, breakable)) : rest2)
 
-	CCompound _ cbis _ -> unfoldTracesM ret_type toplevel break_stack ([]:envs) trace (cbis : (rest : rest2))
+	CCompound _ cbis _ -> unfoldTracesM ret_type toplevel ([]:envs) trace ((cbis,False) : (rest,breakable) : rest2)
 
 	CSwitch condexpr (CCompound [] cbis _) switch_ni -> do
 		let
@@ -905,7 +909,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			-- if we have a "case <expr>: stmt", insert "if (expr==cond_var) { stmt; rest } else <recurse_collect_stmts>"
 			collect_stmts (CBlockStmt (CCase caseexpr stmt case_ni) : rest) = [
 				CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr case_ni)
-				(CCompound [] (CBlockStmt stmt : filtercases rest ++ break_cbss) undefNode)
+				(CCompound [] (CBlockStmt stmt : filtercases rest) undefNode)
 				(Just $ CCompound [] (collect_stmts rest) undefNode) undefNode ]
 				where
 				-- Eliminate the case/default "prefixes" from a statement list.
@@ -923,32 +927,34 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 			-- This is the whole switch, rewritten as nested if-then-elses.
 			case_replacement = collect_stmts cbis
 
-		-- add the current loop/switch-scope depth to the break_stack and continue with unfoldTracesM
-		unfoldTracesM ret_type toplevel (pushBreak break_stack) envs trace ( (
-			CBlockDecl (CDecl [CTypeSpec $ CLongType cond_ni]
+		unfoldTracesM ret_type toplevel envs trace (
+			(CBlockDecl (CDecl [CTypeSpec $ CLongType cond_ni]
 				[(Just $ CDeclr (Just cond_var_ident) [] Nothing [] cond_ni,
 				Just $ CInitExpr condexpr cond_ni, Nothing)] cond_ni) :
-			case_replacement ++
-			rest) : rest2 )
+			case_replacement,True) :
+			(rest,breakable) : rest2 )
 
-	CBreak _ -> case break_stack of
-		[] -> error $ "unfoldTraces1M " ++ (render.pretty) stmt ++ " but empty break stack!"
-		(b:rest) -> do
-			-- calculate the number of scopes that the break breaks through (sic!)
-			let through_compounds = length bstss - b
-			-- drop the envs, the statements after the break, and pop the break_stack
-			unfoldTracesM ret_type toplevel rest (drop through_compounds envs) trace (drop through_compounds bstss)
+	CBreak ni -> do
+		-- calculate the number of scopes that are broken through.
+		-- The scope that break reaches is the successor of the first "breakable" scope
+		let
+			drop_after_true (_:l1s) ((_,False):l2s) = drop_after_true l1s l2s
+			drop_after_true (_:l1s) ((l2,True):l2s) = (l1s,l2s)
+			(new_envs,new_bstss) = drop_after_true envs bstss
+		printLogV 1 $ "### CBreak at " ++ (showLocation.lineColNodeInfo) ni ++ " dropped " ++ show (length envs - length new_envs) ++ " envs"
+		printLogV 1 $ "### new_envs = \n " ++ dumpEnvs envs
+		unfoldTracesM ret_type toplevel new_envs trace new_bstss
 
 	CIf cond then_stmt mb_else_stmt ni -> do
 		let then_trace_m real_cond = transids real_cond (Just Z3_Bool) trace $ \ (cond',trace') -> do
-			unfoldTracesM ret_type toplevel break_stack envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest) : rest2 )
+			unfoldTracesM ret_type toplevel envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest,breakable) : rest2 )
 		let else_trace_m real_cond = transids (CUnary CNegOp real_cond (annotation real_cond)) (Just Z3_Bool) trace $ \ (ncond',trace') -> do			
 			printLogV 2 $ "### real_cond = " ++ (render.pretty) real_cond
 			printLogV 2 $ "### ncond'    = " ++ (render.pretty) ncond'
 			let not_cond = Condition (Just False) ncond'
 			case mb_else_stmt of
-				Nothing        -> unfoldTracesM ret_type toplevel break_stack envs (not_cond : trace') ( rest : rest2 )
-				Just else_stmt -> unfoldTracesM ret_type toplevel break_stack envs (not_cond : trace') ( (CBlockStmt else_stmt : rest) : rest2 )
+				Nothing        -> unfoldTracesM ret_type toplevel envs (not_cond : trace') ( (rest,breakable) : rest2 )
+				Just else_stmt -> unfoldTracesM ret_type toplevel envs (not_cond : trace') ( (CBlockStmt else_stmt : rest,breakable) : rest2 )
 		case recognizeAnnotation cond of
 			-- 12 is a wildcard in the choice list
 			-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
@@ -992,19 +998,19 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 		dbgouts <- forM args $ \ arg -> do
 			expr' <- transcribeExprM "CExpr (Just (CCall (CVar (Ident solver_debug _ _) _) args ni))" envs Nothing arg
 			return $ DebugOutput ("solver_debug_" ++ lValueToVarName expr') expr'
-		unfoldTracesM ret_type toplevel break_stack envs (reverse dbgouts ++ trace) (rest:rest2)
+		unfoldTracesM ret_type toplevel envs (reverse dbgouts ++ trace) ((rest,breakable):rest2)
 
 	CExpr (Just (CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids (CAssign CAssignOp lexpr assigned_expr' ni) Nothing trace $
 			\ (CAssign CAssignOp lexpr' assigned_expr'' ni,trace') -> do
-				unfoldTracesM ret_type toplevel break_stack envs (Assignment lexpr' assigned_expr'' : trace') (rest:rest2)
+				unfoldTracesM ret_type toplevel envs (Assignment lexpr' assigned_expr'' : trace') ((rest,breakable):rest2)
 		where
 		assigned_expr' = case assignop of
 			CAssignOp -> assigned_expr
 			ass_op    -> CBinary (assignBinop ass_op) lexpr assigned_expr ni
 
 	CExpr (Just (CUnary unaryop expr ni_op)) ni | unaryop `elem` (map fst unaryops) -> do
-		unfoldTracesM ret_type toplevel break_stack envs trace ( (CBlockStmt stmt' : rest) : rest2 )
+		unfoldTracesM ret_type toplevel envs trace ( (CBlockStmt stmt' : rest,breakable) : rest2 )
 		where
 		stmt' = CExpr (Just $ CAssign assignop expr (ⅈ 1) ni) ni
 		Just assignop = lookup unaryop unaryops
@@ -1016,7 +1022,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	-- That's cheating: Insert condition into trace (for loop unrolling and switch) via GOTO
 	CGotoPtr cond ni -> do
 		transids cond (Just Z3_Bool) trace $ \ (cond',trace') -> do
-			unfoldTracesM ret_type toplevel break_stack envs (Condition (Just $ isUndefNode ni) cond' : trace') ( rest : rest2 )
+			unfoldTracesM ret_type toplevel envs (Condition (Just $ isUndefNode ni) cond' : trace') ( (rest,breakable) : rest2 )
 
  	CWhile cond body False ni -> do
  		(mb_unrolling_depth,msg) <- infer_loopingsM cond body
@@ -1030,7 +1036,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 		unroll_loopM :: [Int] -> CovVecM UnfoldTracesRet
 		unroll_loopM depths = do
 			ress <- forM depths $ \ depth ->
-				unfoldTracesM ret_type toplevel (pushBreak break_stack) ([]:envs) trace ((unroll cond depth ++ rest) : rest2 )
+				unfoldTracesM ret_type toplevel ([]:envs) trace ((unroll cond depth,True) : (rest,breakable) : rest2 )
 			return $ case toplevel of
 				False -> Left $ concat $ lefts ress
 				True  -> Right $ any id $ rights ress
@@ -1038,11 +1044,11 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 		unroll :: CExpr -> Int -> [CBlockItem]
 		unroll while_cond n = 
 			concat ( replicate n [ CBlockStmt (CGotoPtr while_cond undefNode), CBlockStmt body ] ) ++
-			[ CBlockStmt $ CGotoPtr (not_c while_cond) ni ] ++ break_cbss
+			[ CBlockStmt $ CGotoPtr (not_c while_cond) ni ]
 
 	-- Express the for loop as a bisimular while loop
 	CFor (Right decl) mb_cond mb_inc_expr stmt ni -> do
-		unfoldTracesM ret_type toplevel break_stack envs trace ((CBlockStmt stmt' : rest) : rest2)
+		unfoldTracesM ret_type toplevel envs trace ((CBlockStmt stmt' : rest,breakable) : rest2)
 		where
 		stmt' = CCompound [] [ CBlockDecl decl, CBlockStmt body_stmt ] ni
 		body_stmt = CWhile (maybe (ⅈ 1) id mb_cond) while_body False ni
@@ -1052,9 +1058,6 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 	_ -> myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 
 	where
-
-	break_cbss = [CBlockStmt $ CBreak undefNode]
-	pushBreak bs = length bstss : bs
 
 	recognizeAnnotation :: CExpr -> (CExpr,Maybe ([Int],Int))
 	recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) =
@@ -1096,7 +1099,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 							-- get all variables used in the condition
 							cond_idents = fvar cond
 						-- unfold body to all body traces and filter for all Assignments to variables from the condition
-						Left body_traces <- unfoldTracesM ret_type False [] envs [] [[CBlockStmt body]]
+						Left body_traces <- unfoldTracesM ret_type False envs [] [([CBlockStmt body],False)]
 						let
 							body_traces_ass = map (concatMap from_ass) body_traces where
 								from_ass (Assignment a@(CVar i _) b) | i `elem` cond_idents = [(a,b)]
@@ -1185,7 +1188,7 @@ unfoldTraces1M ret_type toplevel break_stack envs trace bstss@((CBlockStmt stmt 
 							True -> return $ Right True
 							False -> try_next rest
 
-unfoldTraces1M ret_type toplevel break_stack (env:envs) trace ( (CBlockDecl decl@(CDecl typespecs triples _) : rest) : rest2 ) = do
+unfoldTraces1M ret_type toplevel (env:envs) trace ( (CBlockDecl decl@(CDecl typespecs triples _) : rest, breakable) : rest2 ) = do
 	ty <- decl2TypeM "unfoldTraces1M ret_type" decl
 	new_env_items <- forM triples $ \case
 		(Just (CDeclr (Just ident) derivdeclrs _ _ ni),mb_init,Nothing) -> do
@@ -1200,16 +1203,15 @@ unfoldTraces1M ret_type toplevel break_stack (env:envs) trace ( (CBlockDecl decl
 			return (newenvitems,newdecls,initializers)
 		triple -> myError $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 	let (newenvs,newitems,initializerss) = unzip3 $ reverse new_env_items
-	unfoldTracesM ret_type toplevel break_stack ((concat newenvs ++ env) : envs) (concat newitems ++ trace) ((concat initializerss ++ rest):rest2)
+	unfoldTracesM ret_type toplevel ((concat newenvs ++ env) : envs) (concat newitems ++ trace) ((concat initializerss ++ rest,breakable):rest2)
 
-unfoldTraces1M ret_type toplevel break_stack (_:restenvs) trace ([]:rest2) = do
-	let break_stack' = dropWhile (> (length rest2)) break_stack
-	unfoldTracesM ret_type toplevel break_stack' restenvs trace rest2
+unfoldTraces1M ret_type toplevel (_:restenvs) trace (([],_):rest2) = do
+	unfoldTracesM ret_type toplevel restenvs trace rest2
 
-unfoldTraces1M ret_type False _ envs trace [] = return $ Left [trace]
-unfoldTraces1M ret_type True  _ _ trace [] = analyzeTraceM (Just ret_type) trace >>= return.Right
+unfoldTraces1M ret_type False envs trace [] = return $ Left [trace]
+unfoldTraces1M ret_type True  _    trace [] = analyzeTraceM (Just ret_type) trace >>= return.Right
 
-unfoldTraces1M _ _ _ _ _ ((cbi:_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
+unfoldTraces1M _ _ _ _ ((cbi:_,_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
 
 -- The following  definitions are only for CExpr's, since CExprWithType's also need correct type information, i.e.
@@ -1367,7 +1369,7 @@ translateExprM envs expr0 mb_target_ty = do
 		-- β-reduction of the arguments:
 		let body' = replace_param_with_arg expanded_params_args body
 		printLogV 2 $ "body'= " ++ (render.pretty) body'
-		Left funtraces <- unfoldTracesM ret_ty False [] envs [] [ [ CBlockStmt body' ] ]
+		Left funtraces <- unfoldTracesM ret_ty False envs [] [ ([ CBlockStmt body' ],False) ]
 		forM_ funtraces $ \ tr -> printLogV 2 $ "funtrace = " ++ showTrace tr
 		let funtraces_rets = concat $ for funtraces $ \case
 			(Return retexpr : tr) -> [(tr,retexpr)]
