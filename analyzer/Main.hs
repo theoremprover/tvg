@@ -34,6 +34,7 @@ import Data.Set.Unicode
 import Prelude.Unicode ((∧),(∨))
 import Text.Printf
 import Text.Regex.TDFA
+import Text.Regex.TDFA.String
 import Numeric (readHex,readInt)
 import Data.Either
 import Control.Monad.IO.Class (liftIO,MonadIO)
@@ -78,6 +79,7 @@ intType = integral TyInt :: Type
 charType = integral TyChar :: Type
 ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
 
+outputVerbosity = 1
 showInitialTrace = True
 solveIt = True
 showModels = True
@@ -86,7 +88,6 @@ showTraces = True
 showFinalTrace = False
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
-outputVerbosity = 1
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
@@ -136,7 +137,7 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
---		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -145,7 +146,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -316,6 +317,8 @@ instance Pretty CExprWithType where
 		CStrConst cstr _ -> show $ getCString cstr ) <+>
 			prettyType ((snd.annotation) constant)
 	pretty (CIndex arrexpr indexexpr (_,ty)) = pretty arrexpr <> brackets (pretty indexexpr) <+> prettyType ty
+	pretty (CAssign op lexpr assexpr (_,ty)) = prettyCE (pretty lexpr <+> pretty op) [pretty assexpr] ty
+	pretty other = error $ "instance Pretty CExprWithType not implemented for " ++ show other
 
 prettyType ty = case printTypes of
 	True -> text "::" <+> text (show ty)
@@ -700,8 +703,8 @@ instance Pretty EnvItem where
 type Env = [EnvItem]
 
 dumpEnvs :: [Env] -> String
-dumpEnvs envs = unlines $ for envs $ \ env ->
-	concat $ intersperse ", " $ for env $ \ (a,(at,ty)) -> (render.pretty) a ++ "->" ++ (render.pretty) at
+dumpEnvs envs = unlines $ for envs $ \ env -> "[ " ++
+	(concat $ intersperse ", " $ for env $ \ (a,(at,ty)) -> (render.pretty) a ++ "->" ++ (render.pretty) at) ++ " ]"
 
 envToString :: Env -> String
 envToString env = unlines $ map (render.pretty) $ filter (isnotbuiltinIdent.fst) env
@@ -927,7 +930,7 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 			-- This is the whole switch, rewritten as nested if-then-elses.
 			case_replacement = collect_stmts cbis
 
-		unfoldTracesM ret_type toplevel envs trace (
+		unfoldTracesM ret_type toplevel ([]:envs) trace (
 			(CBlockDecl (CDecl [CTypeSpec $ CLongType cond_ni]
 				[(Just $ CDeclr (Just cond_var_ident) [] Nothing [] cond_ni,
 				Just $ CInitExpr condexpr cond_ni, Nothing)] cond_ni) :
@@ -935,14 +938,16 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 			(rest,breakable) : rest2 )
 
 	CBreak ni -> do
-		-- calculate the number of scopes that are broken through.
 		-- The scope that break reaches is the successor of the first "breakable" scope
 		let
 			drop_after_true (_:l1s) ((_,False):l2s) = drop_after_true l1s l2s
 			drop_after_true (_:l1s) ((l2,True):l2s) = (l1s,l2s)
 			(new_envs,new_bstss) = drop_after_true envs bstss
 		printLogV 1 $ "### CBreak at " ++ (showLocation.lineColNodeInfo) ni ++ " dropped " ++ show (length envs - length new_envs) ++ " envs"
-		printLogV 1 $ "### new_envs = \n " ++ dumpEnvs envs
+		printLogV 1 $ "### new_envs = \n" ++ dumpEnvs envs
+--		printLogV 1 $ "### head new_bstss = " ++ (render.pretty) (head $ fst $ head new_bstss)
+		printLogV 1 $ "### length new_envs  = " ++ show (length new_envs)
+		printLogV 1 $ "### length new_bstss = " ++ show (length new_bstss)
 		unfoldTracesM ret_type toplevel new_envs trace new_bstss
 
 	CIf cond then_stmt mb_else_stmt ni -> do
@@ -1318,7 +1323,7 @@ inferLExprTypeM tyenv expr = case expr of
 -- Creates an CExprWithType from a CExpr
 transcribeExprM :: String -> [Env] -> Maybe Z3_Type -> CExpr -> CovVecM CExprWithType
 transcribeExprM from envs mb_target_ty expr = do
-	annotateTypesAndCastM envs (renameVars (from ++ " transcribeExprM") envs expr) mb_target_ty
+	annotateTypesAndCastM envs (renameVars (from ++ " transcribeExprM " ++ (render.pretty) expr) envs expr) mb_target_ty
 	where
 	-- Renames Variables to unique names, looking up their unique name (wíth a number suffix)
 	
@@ -1344,7 +1349,7 @@ transcribeExprM from envs mb_target_ty expr = do
 translateExprM :: [Env] -> CExpr -> Maybe Z3_Type -> CovVecM [(CExprWithType,Trace)]
 translateExprM envs expr0 mb_target_ty = do
 	printLogV 2 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ show mb_target_ty
-
+	printLogV 2 $ "   envs=\n" ++ dumpEnvs envs
 	-- extract a list of all calls from the input expression expr0
 	-- (including fun-identifier, the arguments, and NodeInfo)
 	let	
