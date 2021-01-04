@@ -1007,7 +1007,7 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 
 	CExpr (Just (CAssign assignop lexpr assigned_expr ni)) _ -> do
 		transids (CAssign CAssignOp lexpr assigned_expr' ni) Nothing trace $
-			\ (CAssign CAssignOp lexpr' assigned_expr'' ni,trace') -> do
+			\ (CAssign CAssignOp lexpr' assigned_expr'' _,trace') -> do
 				unfoldTracesM ret_type toplevel envs (Assignment lexpr' assigned_expr'' : trace') ((rest,breakable):rest2)
 		where
 		assigned_expr' = case assignop of
@@ -1173,7 +1173,7 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 						
 					_ -> return (Nothing,"condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!")
 
-	-- mb_ty is Nothing if the type of expr is not fixed, i.e. no casting necessary.
+	-- mb_ty is Nothing if the result type of expr is not known, i.e. no casting necessary.
 	transids :: CExpr -> Maybe Z3_Type -> Trace -> ((CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
 	transids expr mb_ty trace cont = do
 		additional_expr_traces :: [(CExprWithType,Trace)] <- translateExprM envs expr mb_ty
