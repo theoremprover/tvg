@@ -137,7 +137,7 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -146,7 +146,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -1364,6 +1364,7 @@ translateExprM envs expr0 mb_target_ty = do
 			_  -> myError $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call expr = return expr
 	(expr,calls) <- runStateT (everywhereM (mkM to_call) expr0) []
+	expr' <- transcribeExprM "expr0" envs mb_target_ty expr
 
 	-- construct all possible traces in called (sub-)functions and return them together with the returned expression
 	funcalls_traces :: [(NodeInfo,[(Trace,CExprWithType)])] <- forM calls $ \ (funident,args,ni) -> do
@@ -1382,7 +1383,7 @@ translateExprM envs expr0 mb_target_ty = do
 		return (ni,funtraces_rets)
 
 	printLogV 2 $ "creating combinations..."
-	create_combinations expr [] funcalls_traces
+	create_combinations expr' [] funcalls_traces
 
 	where
 
@@ -1401,16 +1402,15 @@ translateExprM envs expr0 mb_target_ty = do
 		stmt
 		iexprs
 
+{-
 	set_node_info :: CExprWithType -> CExprWithType
 	set_node_info cexpr = everywhere (mkT subst_ni) cexpr where
 		subst_ni :: NodeInfo -> NodeInfo
 		subst_ni _ = nodeInfo expr0
-
+-}
 	-- iterate over all possible traces in a called (sub-)function and concatenate their traces 
-	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(Trace,CExprWithType)])] -> CovVecM [(CExprWithType,Trace)]
-	create_combinations expr trace [] = do
-		expr' <- transcribeExprM "create_combinations" envs mb_target_ty expr
-		return [(set_node_info expr',trace)]
+	create_combinations :: CExprWithType -> Trace -> [(NodeInfo,[(Trace,CExprWithType)])] -> CovVecM [(CExprWithType,Trace)]
+	create_combinations expr trace [] = return [({--set_node_info -}expr,trace)]
 	-- replace the place-holder in the expr with the return expression of each sub-function's trace,
 	-- concatenating all possibilities (but it does not matter which one, since we only fully cover the top level function)
 	create_combinations expr trace ((tes_ni,tes):rest) = do
@@ -1418,15 +1418,15 @@ translateExprM envs expr0 mb_target_ty = do
 			let
 				-- substitute the function call by the return expression
 				expr' = everywhere (mkT subst_ret_expr) expr where
-					subst_ret_expr :: CExpr -> CExpr
-					subst_ret_expr (CConst (CStrConst (CString ni_s False) ni)) | tes_ni == ni && show ni == ni_s =
-						fmap fst ret_expr
+					subst_ret_expr :: CExprWithType -> CExprWithType
+					subst_ret_expr (CConst (CStrConst (CString ni_s False) (ni,_))) | tes_ni == ni && show ni == ni_s =
+						ret_expr
 					subst_ret_expr expr = expr
 --			printLog $ "fun_trace=" ++ show fun_trace
 			create_combinations expr' (fun_trace++trace) rest
 
 
--- Substitutes an expression x by y everywhere in a
+-- Substitutes an expression x by y everywhere in d
 substituteBy :: (Eq a,Data a,Data d) => a -> a -> d -> d
 substituteBy x y d = everywhere (mkT (substexpr x y)) d
 	where
@@ -1858,7 +1858,7 @@ expr2SExpr expr = expr2sexpr expr
 				( Z3_Float, Z3_Double ) -> SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "11", SLeaf "53" ],
 					SLeaf roundingMode, sexpr ]
 
-				(from_ty,to_ty) -> error $ "expr2sexpr cast: " ++ show from_ty ++ " " ++ show to_ty ++ " in " ++
+				(from_ty,to_ty) -> error $ "expr2sexpr cast: " ++ show from_ty ++ " => " ++ show to_ty ++ " in " ++
 					(render.pretty) castexpr ++ " " ++ " not implemented!"
 
 		ccond@(CCond cond (Just then_expr) else_expr _) -> do
