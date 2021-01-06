@@ -913,10 +913,10 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 				arr_size = getCInteger cint
 				CVar (Ident _ _ _) (ni,_) = expr    -- Just to be sure...
 			ress <- forM [0..(getCInteger cint - 1)] $ \ i -> do
-				elem_ty <- lift $ ty2Z3Type elem_ty'
+				elem_ty2 <- lift $ ty2Z3Type elem_ty'
 				let
-					arrayelemexpr = CIndex expr (CConst $ CIntConst (cInteger i) (undefNode,Z3_Int)) (ni,elem_ty)
-					arrayelem_var = CVar (internalIdent $ lValueToVarName arrayelemexpr) (ni,elem_ty)
+					arrayelemexpr = CIndex expr (CConst $ CIntConst (cInteger i) (undefNode,Z3_Int)) (ni,elem_ty2)
+					arrayelem_var = CVar (internalIdent $ lValueToVarName arrayelemexpr) (ni,elem_ty2)
 					eqcond = Condition Nothing $ CBinary CEqOp arrayelem_var arrayelemexpr (ni,Z3_Bool)
 				modify $ \ (envitems,traceitems) -> ( envitems,traceitems ++ [eqcond] )
 				createInterfaceFromExpr_WithEnvItemsM arrayelemexpr elem_ty'
