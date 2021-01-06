@@ -1,5 +1,5 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
-{-# LANGUAGE PackageImports,FunctionalDependencies,MultiParamTypeClasses,QuasiQuotes,UnicodeSyntax,LambdaCase,ScopedTypeVariables,TupleSections,TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,DeriveDataTypeable,DeriveGeneric #-}
+{-# LANGUAGE PackageImports,RecordWildCards,FunctionalDependencies,MultiParamTypeClasses,QuasiQuotes,UnicodeSyntax,LambdaCase,ScopedTypeVariables,TupleSections,TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,DeriveDataTypeable,DeriveGeneric #-}
 
 module Main where
 
@@ -71,9 +71,9 @@ for = flip map
 
 concatForM = flip concatMapM
 
-intSize = 32
-longIntSize = 32
-longLongIntSize = 64
+--intSize = 32
+--longIntSize = 32
+--longLongIntSize = 64
 roundingMode = "roundNearestTiesToEven"
 intType = integral TyInt :: Type
 charType = integral TyChar :: Type
@@ -95,6 +95,47 @@ cutOffs = False
 logToFile = True
 mainFileName = "main.c"
 printTypes = False
+
+compileHereM :: [String] -> String -> String -> CovVecM (String,String)
+compileHereM args filename src = do
+	liftIO $ writeFile filename src
+	gcc <- gets compilerCVS
+	runHereM (takeDirectory filename) gcc args
+
+runHereM :: String -> String -> [String] -> CovVecM (String,String)
+runHereM rundir exefilename args = liftIO $ withCurrentDirectory rundir $ do
+	(retcode,sout,serr) <- readProcessWithExitCode (takeFileName exefilename) args ""
+	case retcode of
+		ExitFailure exitcode -> myError $
+			"ExitCode " ++ show exitcode ++ " of runHereM " ++ exefilename ++ "\n" ++ sout ++ serr
+		ExitSuccess -> return (sout,serr)
+
+data IntSizes = IntSizes { intSize::Int, longSize::Int, longLongSize::Int } deriving (Read,Show)
+
+find_out_sizes_name = "find_out_sizes" :: String
+
+find_out_sizesM :: CovVecM IntSizes
+find_out_sizesM = do
+	let
+		srcfilename = find_out_sizes_name <.> "c"
+		exefilename = find_out_sizes_name <.> "exe"
+	compileHereM ["-o",exefilename,srcfilename] srcfilename (PPM.prettyCompact $ PPMC.ppr find_out_sizes_src)
+	(sizes_s,"") <- runHereM (takeDirectory srcfilename) exefilename []
+	printLogV 1 $ "SIZES=" ++ sizes_s
+	let sizes = read sizes_s
+	printLogV 1 $ show sizes
+	return sizes
+	where
+	incl_stdio = "#include <stdio.h>"
+	find_out_sizes_src = [cunit|
+$esc:incl_stdio
+
+int main(void)
+{
+    printf("IntSizes { intSize=%i, longSize=%i, longLongSize=%i }\n",sizeof(int),sizeof(long int),sizeof(long long));
+    return 0;
+}
+|]
 
 -- Z3 does not accept identifiers starting with an underscore, so we prefix these with an "a"
 safeZ3IdentifierPrefix = 'a'
@@ -176,7 +217,7 @@ main = do
 	
 						(every_branch_covered,s) <- runStateT covVectorsM $
 							CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc opts
-								Nothing ([],Set.empty) Set.empty intialStats Nothing
+								Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing
 						let
 							(testvectors_rev,covered) = analysisStateCVS s
 							testvectors = reverse testvectors_rev
@@ -256,7 +297,8 @@ data CovVecState = CovVecState {
 	analysisStateCVS :: ([TraceAnalysisResult],Set.Set Branch),
 	allCondPointsCVS :: Set.Set Branch,
 	statsCVS         :: Stats,
-	retEnvCVS        :: Maybe [(EnvItem,CExprWithType)]
+	retEnvCVS        :: Maybe [(EnvItem,CExprWithType)],
+	sizesCVS         :: Maybe IntSizes
 	}
 
 data Stats = Stats { cutoffTries :: Int, cutoffsS :: Int }
@@ -353,6 +395,9 @@ showTrace trace = unlines $ concatMap show_te trace where
 
 covVectorsM :: CovVecM Bool
 covVectorsM = do
+	sizes <- find_out_sizesM
+	modify $ \ s -> s { sizesCVS = Just sizes }
+
 	funname <- gets funNameCVS
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
 	glob_env <- concatMapM declaration2EnvItemM globdecls
@@ -372,7 +417,8 @@ covVectorsM = do
 	ret_type' <- elimTypeDefsM ret_type
 
 	let srcident = internalIdent returnval_var_name
-	ret_env_exprs <- createInterfaceFromExprM (CVar srcident (nodeInfo srcident,ty2Z3Type ret_type')) ret_type'
+	z3_ret_type' <- ty2Z3Type ret_type'
+	ret_env_exprs <- createInterfaceFromExprM (CVar srcident (nodeInfo srcident,z3_ret_type')) ret_type'
 	modify $ \ s -> s { retEnvCVS = Just ret_env_exprs }
 	
 	-- Go through the body of the function and determine all decision points
@@ -408,20 +454,14 @@ covVectorsM = do
 	when checkSolutions $ do
 		filename <- gets srcFilenameCVS
 		let
-			srcfilename = takeFileName filename
 			chkexefilename = replaceExtension mainFileName "exe"
-		absolute_filename <- liftIO $ makeAbsolute filename
+			mainfilename = replaceFileName filename mainFileName
+		srcabsfilename <- liftIO $ makeAbsolute $ mainfilename
 
-		charness <- createCHarness ret_type formal_params srcfilename funname ext_decls
-		liftIO $ writeFile (replaceFileName filename mainFileName) charness
-
-		gcc <- gets compilerCVS
-		(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
-			readProcessWithExitCode gcc ["-Wno-builtin-declaration-mismatch","-Wno-int-conversion","-Wno-incompatible-pointer-types","-o",
-				chkexefilename,mainFileName] ""
-		case exitcode of
-			ExitFailure _ -> myError $ "Compilation failed:\n" ++ stderr
-			ExitSuccess -> modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
+		charness <- createCHarness ret_type formal_params (takeFileName filename) funname ext_decls
+		compileHereM ["-Wno-builtin-declaration-mismatch","-Wno-int-conversion","-Wno-incompatible-pointer-types",
+			"-o",chkexefilename,mainFileName] srcabsfilename charness
+		modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
 
 	Right every_branch_covered <- unfoldTracesM ret_type' True ((arraydecl_env++param_env):[glob_env]) decls [ (defs ++ [ CBlockStmt body ],False) ]
 	return every_branch_covered
@@ -469,10 +509,13 @@ createCHarness orig_rettype formal_params filename funname extdecls = do
 		funcall = (render.pretty) orig_rettype ++ " " ++ returnval_var_name ++ " = " ++
 			funname ++ "(" ++ intercalate "," (map ((render.pretty).fst) formal_params) ++ ");"
 
-		argformats = map type_format_string $ map (snd.snd.fst) param_env_exprs
+--		argformats = map type_format_string $ map (snd.snd.fst) param_env_exprs
+	argformats <- mapM type_format_string $ map (snd.snd.fst) param_env_exprs	
+	let
 		argvals = intercalate ", " $ for (zip argexprs argformats) $ \ (argname,argformat) -> argname ++ " = " ++ argformat
 
-		ret_formatss = map (type_format_string.snd.snd.fst) retenvexprs
+	ret_formatss <- mapM type_format_string $ map (snd.snd.fst) retenvexprs
+	let
 		ret_vals = for retenvexprs $ \ (_,cexpr) -> (render.pretty) (fmap fst cexpr)
 
 		print_retval = "printf(\"" ++ funname ++ "(" ++ argvals ++ ") = \\n"
@@ -522,16 +565,18 @@ createDeclsM formal_params = do
 			let decl = case all_declared of
 				False -> [ (render.pretty) ty ++ " " ++ (render.pretty) expr ++ ";" ]
 				True -> []
+			tyfs <- type_format_string ty
 			return $ decls ++ decl ++
-				[ "sscanf(argv[i++],\"" ++ type_format_string ty ++ "\",&(" ++ (render.pretty) expr ++ "));" ]
+				[ "sscanf(argv[i++],\"" ++ tyfs ++ "\",&(" ++ (render.pretty) expr ++ "));" ]
 
 		ArrayType elem_ty (ArraySize False (CConst (CIntConst cint _))) _ _ -> do
 			let
 				(CVar (Ident _ _ _) _) = expr
 				arr_size = getCInteger cint
 				arr_decl = (render.pretty) elem_ty ++ " " ++ (render.pretty) expr ++ "[" ++ show arr_size ++ "];"
-			arr_decls <- concatForM [0..(arr_size - 1)] $ \ i ->
-				create_decls (CIndex expr (ⅈ i) undefNode) elem_ty elem_ty True []
+			arr_decls <- concatForM [0..(arr_size - 1)] $ \ i -> do
+				ii <- ⅈ i
+				create_decls (CIndex expr ii undefNode) elem_ty elem_ty True []
 			return $ decls ++ [arr_decl] ++ arr_decls
 
 		_ -> myError $ "createDeclsM " ++ (render.pretty) expr ++ " " ++ show ty ++ " not implemented"
@@ -540,16 +585,19 @@ createDeclsM formal_params = do
 		
 		lval_varname = lValueToVarName expr
 
-type_format_string :: Type -> String
-type_format_string ty = "%" ++ case ty2Z3Type ty of
-	Z3_Float                                           -> "f"
-	Z3_Double                                          -> "lf"
-	Z3_BitVector size unsigned | size==intSize         -> if unsigned then "u" else "i"
-	Z3_BitVector size unsigned | size==longIntSize     -> "l" ++ if unsigned then "u" else "i"
-	Z3_BitVector size unsigned | size==longLongIntSize -> "ll" ++ if unsigned then "u" else "i"
-	Z3_BitVector size unsigned                         -> if unsigned then "u" else "i"
-	Z3_Ptr _                                           -> "p"
-	_ -> error $ "type_format_string " ++ (render.pretty) ty ++ " not implemented"
+type_format_string :: Type -> CovVecM String
+type_format_string ty = do
+	Just IntSizes{..} <- gets sizesCVS
+	z3ty <- ty2Z3Type ty
+	return $ "%" ++ case z3ty of
+		Z3_Float                                        -> "f"
+		Z3_Double                                       -> "lf"
+		Z3_BitVector size unsigned | size==intSize      -> if unsigned then "u" else "i"
+		Z3_BitVector size unsigned | size==longSize     -> "l" ++ if unsigned then "u" else "i"
+		Z3_BitVector size unsigned | size==longLongSize -> "ll" ++ if unsigned then "u" else "i"
+		Z3_BitVector size unsigned                      -> if unsigned then "u" else "i"
+		Z3_Ptr _                                        -> "p"
+		_ -> error $ "type_format_string " ++ (render.pretty) ty ++ " not implemented"
 
 type Location = (Int,Int)
 
@@ -818,7 +866,8 @@ createInterfaceM ty_env = runStateT cifes_m ([],[])
 			case ty' of
 				ArrayType _ _ _ _ -> modify $ \ (envitems,traceitems) -> ((srcident,tyenvitem):envitems,traceitems)
 				_ -> return ()
-			createInterfaceFromExpr_WithEnvItemsM (CVar srcident (nodeInfo srcident,ty2Z3Type ty')) ty
+			z3ty' <- lift $ ty2Z3Type ty'
+			createInterfaceFromExpr_WithEnvItemsM (CVar srcident (nodeInfo srcident,z3ty')) ty
 		return $ concat res
 
 createInterfaceFromExprM :: CExprWithType -> Type -> CovVecM [(EnvItem,CExprWithType)]
@@ -829,7 +878,8 @@ type CIFE = StateT ([EnvItem],[TraceElem]) CovVecM [(EnvItem,CExprWithType)]
 createInterfaceFromExpr_WithEnvItemsM :: CExprWithType -> Type -> CIFE
 createInterfaceFromExpr_WithEnvItemsM expr ty = do
 	printLogV 2 $ "### createInterfaceFromExpr_WithEnvItemsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty
-	printLogV 2 $ "###                                z3type = " ++ show (ty2Z3Type ty)
+	z3_ty <- lift $ ty2Z3Type ty
+	printLogV 2 $ "###                                z3type = " ++ show z3_ty
 	ty' <- lift $ elimTypeDefsM ty
 	case ty' of
 
@@ -837,17 +887,21 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> prepend_plainvar ty' $ do
 			member_ty_s <- lift $ getMembersM sueref
 			ress <- forM member_ty_s $ \ (m_ident,m_ty) -> do
-				createInterfaceFromExpr_WithEnvItemsM (CMember expr m_ident True (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
+				z3_m_ty <- lift $ ty2Z3Type m_ty
+				createInterfaceFromExpr_WithEnvItemsM (CMember expr m_ident True (extractNodeInfo expr,z3_m_ty)) m_ty
 			return $ concat ress
 		-- ty* p
-		PtrType target_ty _ _ -> prepend_plainvar ty' $
-			createInterfaceFromExpr_WithEnvItemsM (CUnary CIndOp expr (extractNodeInfo expr,ty2Z3Type target_ty)) target_ty
+		PtrType target_ty _ _ -> do
+			z3_target_ty <- lift $ ty2Z3Type target_ty
+			prepend_plainvar ty' $
+				createInterfaceFromExpr_WithEnvItemsM (CUnary CIndOp expr (extractNodeInfo expr,z3_target_ty)) target_ty
 
 		-- STRUCT expr
 		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 			member_ty_s <- lift $ getMembersM sueref
 			ress <- forM member_ty_s $ \ (m_ident,m_ty) -> do
-				createInterfaceFromExpr_WithEnvItemsM (CMember expr m_ident False (extractNodeInfo expr,ty2Z3Type m_ty)) m_ty
+				z3_m_ty <- lift $ ty2Z3Type m_ty
+				createInterfaceFromExpr_WithEnvItemsM (CMember expr m_ident False (extractNodeInfo expr,z3_m_ty)) m_ty
 			return $ concat ress
 
 		-- direct-type expr where direct-type is no struct/union
@@ -859,8 +913,8 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 				arr_size = getCInteger cint
 				CVar (Ident _ _ _) (ni,_) = expr    -- Just to be sure...
 			ress <- forM [0..(getCInteger cint - 1)] $ \ i -> do
+				elem_ty <- lift $ ty2Z3Type elem_ty'
 				let
-					elem_ty = ty2Z3Type elem_ty'
 					arrayelemexpr = CIndex expr (CConst $ CIntConst (cInteger i) (undefNode,Z3_Int)) (ni,elem_ty)
 					arrayelem_var = CVar (internalIdent $ lValueToVarName arrayelemexpr) (ni,elem_ty)
 					eqcond = Condition Nothing $ CBinary CEqOp arrayelem_var arrayelemexpr (ni,Z3_Bool)
@@ -982,7 +1036,8 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 	CReturn Nothing _            -> return $ Left [trace]
 
 	CReturn (Just ret_expr) _ -> do
-		transids ret_expr (Just $ ty2Z3Type ret_type) trace $ \ (ret_expr',trace') -> do
+		z3_ret_type <- ty2Z3Type ret_type
+		transids ret_expr (Just z3_ret_type) trace $ \ (ret_expr',trace') -> do
 			case toplevel of
 				False -> return $ Left [ Return ret_expr' : trace' ]
 				True  -> do
@@ -991,8 +1046,9 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 					when (length ret_var_expr /= length ret_env_expr) $ error "unfoldTraces1M CReturn: length ret_var_expr /= length ret_env_expr !"
 					ret_trace <- concatForM (zip ret_var_expr ret_env_expr) $
 						\ ( ((_,(ret_var_ident,ret_var_ty)),_) , (_,ret_member_expr)) -> do
+							z3_ret_var_ty <- ty2Z3Type ret_var_ty
 							let ret_val_cond = CBinary CEqOp
-								(CVar ret_var_ident (nodeInfo ret_var_ident,ty2Z3Type ret_var_ty))
+								(CVar ret_var_ident (nodeInfo ret_var_ident,z3_ret_var_ty))
 								ret_member_expr
 								(undefNode,Z3_Bool)
 							return [ Condition Nothing ret_val_cond, NewDeclaration (ret_var_ident,ret_var_ty) ]
@@ -1015,9 +1071,10 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 			ass_op    -> CBinary (assignBinop ass_op) lexpr assigned_expr ni
 
 	CExpr (Just (CUnary unaryop expr ni_op)) ni | unaryop `elem` (map fst unaryops) -> do
+		ii <- ⅈ 1
+		let stmt' = CExpr (Just $ CAssign assignop expr ii ni) ni
 		unfoldTracesM ret_type toplevel envs trace ( (CBlockStmt stmt' : rest,breakable) : rest2 )
 		where
-		stmt' = CExpr (Just $ CAssign assignop expr (ⅈ 1) ni) ni
 		Just assignop = lookup unaryop unaryops
 		unaryops = [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
 
@@ -1053,12 +1110,13 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 
 	-- Express the for loop as a bisimular while loop
 	CFor (Right decl) mb_cond mb_inc_expr stmt ni -> do
+		ii <- ⅈ 1
+		let
+			body_stmt = CWhile (maybe ii id mb_cond) while_body False ni
+			while_body = CCompound [] ( CBlockStmt stmt :
+				maybe [] (\ expr -> [ CBlockStmt $ CExpr (Just expr) (nodeInfo expr) ]) mb_inc_expr) (nodeInfo stmt)
+			stmt' = CCompound [] [ CBlockDecl decl, CBlockStmt body_stmt ] ni
 		unfoldTracesM ret_type toplevel envs trace ((CBlockStmt stmt' : rest,breakable) : rest2)
-		where
-		stmt' = CCompound [] [ CBlockDecl decl, CBlockStmt body_stmt ] ni
-		body_stmt = CWhile (maybe (ⅈ 1) id mb_cond) while_body False ni
-		while_body = CCompound [] ( CBlockStmt stmt :
-			maybe [] (\ expr -> [ CBlockStmt $ CExpr (Just expr) (nodeInfo expr) ]) mb_inc_expr) (nodeInfo stmt)
 
 	_ -> myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 
@@ -1254,11 +1312,13 @@ not_c :: CExpr -> CExpr
 not_c e = CUnary CNegOp e (annotation e)
 
 class CreateInt a where
-	ⅈ :: Integer -> a
+	ⅈ :: Integer -> CovVecM a
 instance CreateInt CExpr where
-	ⅈ i = CConst $ CIntConst (cInteger i) undefNode
+	ⅈ i = return $ CConst $ CIntConst (cInteger i) undefNode
 instance CreateInt CExprWithType where
-	ⅈ i = CConst $ CIntConst (cInteger i) (undefNode,ty2Z3Type intType)
+	ⅈ i = do
+		inttype <- ty2Z3Type intType
+		return $ CConst $ CIntConst (cInteger i) (undefNode,inttype)
 
 infix 1 ≔
 (≔) :: CExpression a -> CExpression a -> CExpression a
@@ -1288,9 +1348,12 @@ cinitializer2blockitems lexpr ty initializer =
 						memberty' <- elimTypeDefsM memberty
 						cinitializer2blockitems (CMember lexpr memberident False (nodeInfo memberident)) memberty' initializer
 					_ -> myError $ "cinitializer2blockitems DirectType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
-			ArrayType elem_ty _ _ _ -> concatForM (zip [0..] initlist) $ \ (i,(partdesigs,cinitializer)) -> case partdesigs of
-				[] -> cinitializer2blockitems (CIndex lexpr (ⅈ i) ni_init) elem_ty cinitializer
-				_ -> myError $ "cinitializer2blockitems ArrayType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
+			ArrayType elem_ty _ _ _ -> concatForM (zip [0..] initlist) $ \ (i,(partdesigs,cinitializer)) -> do
+				case partdesigs of
+					[] -> do
+						ii <- ⅈ i
+						cinitializer2blockitems (CIndex lexpr ii ni_init) elem_ty cinitializer
+					_ -> myError $ "cinitializer2blockitems ArrayType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
 			_ -> myError $ "cinitializer2blockitems: " ++ (render.pretty) ty ++ " at " ++ (show $ nodeInfo lexpr) ++ " not implemented!"
 
 
@@ -1356,7 +1419,7 @@ translateExprM envs expr0 mb_target_ty = do
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
 			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
-			CVar (Ident "solver_pragma" _ _) _ -> return $ ⅈ 1
+			CVar (Ident "solver_pragma" _ _) _ -> lift $ ⅈ 1
 			CVar funident _ -> do
 				modify ( (funident,args,ni): )
 				-- Replace the call by a placeholder with the same NodeInfo
@@ -1669,7 +1732,7 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 	-- Skip empty casts
 	annotate_types (CCast (CDecl [] [] _) expr _) = annotate_types expr
 	annotate_types ccast@(CCast decl expr ni) = do
-		ty' <- decl2TypeM ("annotate_types " ++ (render.pretty) ccast) decl >>= elimTypeDefsM >>= return.ty2Z3Type
+		ty' <- decl2TypeM ("annotate_types " ++ (render.pretty) ccast) decl >>= elimTypeDefsM >>= ty2Z3Type
 		expr' <- annotate_types expr
 		return $ cast expr' ty'
 
@@ -1683,7 +1746,7 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 		return $ CUnary unop (mb_cast arg_ty expr') (ni,result_ty)
 
 	annotate_types (CAssign assign_op lexpr ass_expr ni) = do
-		lexpr_z3ty <- inferLExprTypeM tyenv lexpr >>= return.ty2Z3Type
+		lexpr_z3ty <- inferLExprTypeM tyenv lexpr >>= ty2Z3Type
 		lexpr' <- annotate_types lexpr
 		ass_expr' <- annotate_types ass_expr
 		return $ CAssign assign_op lexpr' (mb_cast lexpr_z3ty ass_expr') (ni,lexpr_z3ty)
@@ -1699,19 +1762,28 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 	annotate_types cvar@(CVar ident ni) = case lookup ident tyenv of
 		Nothing -> error $ "Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv tyenv
 		Just ty -> do
-			var_ty <- elimTypeDefsM ty >>= return . ty2Z3Type
+			var_ty <- elimTypeDefsM ty >>= ty2Z3Type
 			return $ CVar ident (ni,var_ty)
 
-	annotate_types (CConst ctconst) = return $ CConst $ case ctconst of
-		CIntConst cint@(CInteger _ _ flags) ni -> CIntConst cint (ni,ty2Z3Type $ integral (getIntType flags))
-		CFloatConst cfloat@(CFloat s) ni       -> CFloatConst cfloat (ni,ty2Z3Type $ floating (getFloatType s))
-		CCharConst cchar@(CChar _ False) ni    -> CCharConst cchar (ni,ty2Z3Type $ charType)
-		CStrConst cstr ni                      -> CStrConst cstr (ni,ty2Z3Type $ ptrType charType)
+	annotate_types (CConst ctconst) = case ctconst of
+		CIntConst cint@(CInteger _ _ flags) ni -> do
+			z3_ty <- ty2Z3Type $ integral (getIntType flags)
+			return $ CConst $ CIntConst cint (ni,z3_ty)
+		CFloatConst cfloat@(CFloat s) ni       -> do
+			z3_ty <- ty2Z3Type $ floating (getFloatType s)
+			return $ CConst $ CFloatConst cfloat (ni,z3_ty)
+		CCharConst cchar@(CChar _ False) ni    -> do
+			z3_ty <- ty2Z3Type $ charType
+			return $ CConst $ CCharConst cchar (ni,z3_ty)
+		CStrConst cstr ni                      -> do
+			z3_ty <- ty2Z3Type $ ptrType charType
+			return $ CConst $ CStrConst cstr (ni,z3_ty)
 
 	annotate_types lexpr@(CMember pexpr member_ident is_p ni) = do
 		lexpr_ty <- inferLExprTypeM tyenv lexpr
 		pexpr' <- annotate_types pexpr
-		return $ CMember pexpr' member_ident is_p (ni,ty2Z3Type lexpr_ty)
+		z3_lexpr_ty <- ty2Z3Type lexpr_ty
+		return $ CMember pexpr' member_ident is_p (ni,z3_lexpr_ty)
 
 	annotate_types (CIndex arr_expr ix ni) = do
 		arr_expr' <- annotate_types arr_expr
@@ -1900,48 +1972,51 @@ data Z3_Type =
 	Z3_Compound
 	deriving (Show,Eq,Ord,Data)
 
-ty2Z3Type :: Type -> Z3_Type
-ty2Z3Type ty = case ty of
-	DirectType tyname _ attrs -> case tyname of
-		TyIntegral intty    -> Z3_BitVector (sizeofIntTy ty) $ intty `elem` [TyChar,TyUChar,TyUShort,TyUInt,TyULong,TyULLong]
-		TyFloating TyFloat  -> Z3_Float
-		TyFloating TyDouble -> Z3_Double
-		TyEnum _            -> Z3_BitVector intSize True
-		TyComp _            -> Z3_Compound
-		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
-	PtrType target_ty _ _ -> Z3_Ptr $ ty2Z3Type target_ty
-	ArrayType elem_ty (ArraySize False (CConst (CIntConst cint _))) _ _ ->
-		Z3_Array Z3_Int (ty2Z3Type elem_ty) (getCInteger cint)
-	TypeDefType (TypeDefRef _ ty _) _ _ -> ty2Z3Type ty
---	FunctionType (FunType ret_type funparamdecls False) _ -> Z3_Fun 
-	_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
+ty2Z3Type :: Type -> CovVecM Z3_Type
+ty2Z3Type ty = do
+	Just IntSizes{..} <- gets sizesCVS
+	case ty of
+		DirectType tyname _ attrs -> case tyname of
+			TyIntegral intty    -> do
+				sizeofintty <- sizeofIntTy ty
+				return $ Z3_BitVector sizeofintty $ intty `elem` [TyChar,TyUChar,TyUShort,TyUInt,TyULong,TyULLong]
+			TyFloating TyFloat  -> return $ Z3_Float
+			TyFloating TyDouble -> return $ Z3_Double
+			TyEnum _            -> return $ Z3_BitVector intSize True
+			TyComp _            -> return $ Z3_Compound
+			_ -> myError $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
+		PtrType target_ty _ _ -> Z3_Ptr <$> ty2Z3Type target_ty
+		ArrayType elem_ty (ArraySize False (CConst (CIntConst cint _))) _ _ ->
+			Z3_Array <$> pure Z3_Int <*> ty2Z3Type elem_ty <*> pure (getCInteger cint)
+		TypeDefType (TypeDefRef _ ty _) _ _ -> ty2Z3Type ty
+	--	FunctionType (FunType ret_type funparamdecls False) _ -> Z3_Fun 
+		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
 
-sizeofIntTy :: Type -> Int
-sizeofIntTy ty@(DirectType tyname _ attrs) = case tyname of
-	TyIntegral intty -> case (intty,map to_mode attrs) of
-		(TyChar,[])     -> 8
-		(TySChar,[])    -> 8
-		(TyUChar,[])    -> 8
-		(TyShort,[])    -> 16
-		(TyUShort,[])   -> 16
-		(TyInt,[])      -> intSize
-		(TyInt,["SI"])  -> 32
-		(TyInt,["DI"])  -> 64
-		(TyUInt,[])     -> intSize
-		(TyUInt,["SI"]) -> 32
-		(TyUInt,["DI"]) -> 64
-		(TyLong,[])     -> longIntSize
-		(TyULong,[])    -> longIntSize
-		(TyLLong,[])    -> 64
-		(TyULLong,[])   -> 64
-		other           -> error $ "sizeofIntTy " ++ show other ++ " not implemented!"
-	other -> error $ "sizeofIntTy: " ++ (render.pretty) ty ++ " is not an Integral type"
+sizeofIntTy :: Type -> CovVecM Int
+sizeofIntTy ty@(DirectType tyname _ attrs) = do
+	Just IntSizes{..} <- gets sizesCVS
+	return $ case tyname of
+		TyIntegral intty -> case (intty,map to_mode attrs) of
+			(TyChar,[])     -> 8
+			(TySChar,[])    -> 8
+			(TyUChar,[])    -> 8
+			(TyShort,[])    -> 16
+			(TyUShort,[])   -> 16
+			(TyInt,[])      -> intSize
+			(TyInt,["SI"])  -> 32
+			(TyInt,["DI"])  -> 64
+			(TyUInt,[])     -> intSize
+			(TyUInt,["SI"]) -> 32
+			(TyUInt,["DI"]) -> 64
+			(TyLong,[])     -> longSize
+			(TyULong,[])    -> longSize
+			(TyLLong,[])    -> longLongSize
+			(TyULLong,[])   -> longLongSize
+			other           -> error $ "sizeofIntTy " ++ show other ++ " not implemented!"
+		other -> error $ "sizeofIntTy: " ++ (render.pretty) ty ++ " is not an Integral type"
 	where
 	to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
 	to_mode attr = error $ "attrs2modes: unknown attr " ++ (render.pretty) attr
-
-ty2Z3TypeM :: Type -> CovVecM Z3_Type 
-ty2Z3TypeM ty = return $ ty2Z3Type ty
 
 z3Ty2SExpr :: Z3_Type -> SExpr
 z3Ty2SExpr ty = case ty of
@@ -2122,7 +2197,10 @@ solveTraceM mb_ret_type traceid trace = do
 			let name_id = internalIdent (name ++ "_" ++ show i) in
 			(name_id,Condition Nothing $ CBinary CEqOp (CVar name_id (annotation expr)) expr (annotation expr),(name_id,extractType expr))
 
-		tyenv = (map (\ (e,t) -> (e,ty2Z3Type t)) (createTyEnv trace)) ++ debug_tyenv
+	tyenv1 <- forM (createTyEnv trace) $ \ (e,t) -> do
+		z3_t <- ty2Z3Type t
+		return (e,z3_t)
+	let tyenv = tyenv1 ++ debug_tyenv
 
 	(model_string,mb_sol) <- makeAndSolveZ3ModelM
 		traceid
@@ -2165,38 +2243,35 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 				Just v -> [show v]
 			ty -> error $ "checkSolutionM args: type " ++ (render.pretty) ty ++ " not implemented!"
 	printLogV 1 $ "checkSolution args = " ++ show args
-	(exitcode,stdout,stderr) <- liftIO $ withCurrentDirectory (takeDirectory absolute_filename) $ do
-		readProcessWithExitCode (takeFileName filename) args ""
-	case exitcode of
-		ExitFailure _ -> myError $ "Execution of " ++ filename ++ " failed:\n" ++ stdout ++ stderr
-		ExitSuccess -> do
-			printLogV 1 $ "stdout=\n" ++ stdout ++ "\n------------" 
-			let
-				outputs = words $ last $ lines stdout
-				-- get all solution vars that are in the ret_env
-				ret_solution = filter ((`elem` (map (identToString.fst) ret_env)).fst) solution
-			when (length ret_env /= length outputs || length outputs /= length ret_solution) $
-				myError $ "checkSolutionM: lengths of ret_env, solution, outputs differ:\n" ++
-					"ret_env = " ++ showEnv ret_env ++ "\n" ++
-					"ret_solution = " ++ show ret_solution ++ "\n" ++
-					"outputs = " ++ show outputs ++ "\n"
-			forM_ (zip3 ret_env outputs ret_solution) $ \ ((sourceident,(ident,ty)),s,(ident_s,predicted_result)) -> do
-				when (identToString ident /= ident_s) $
-					myError $ "checkSolutionM: ident=" ++ identToString ident ++ " and ident_s=" ++ ident_s ++ " mismatch"
-				case ty of
-					PtrType _ _ _ -> return ()
-					DirectType (TyComp _) _ _ -> return ()
-					_ -> do
-						let exec_result = case ty of
-							DirectType (TyIntegral _) _ _       -> IntVal $ read s
-							DirectType (TyFloating floatty) _ _ -> case floatty of
-								TyFloat  -> FloatVal  $ read s
-								TyDouble -> DoubleVal $ read s
-							DirectType (TyEnum _) _ _           -> IntVal $ read s
-							_ -> error $ "checkSolutionM: parsing type " ++ (render.pretty) ty ++ " of " ++ ident_s ++ " not implemented!"
-						when (exec_result /= predicted_result) $ do
-							let txt = "ERROR in " ++ show traceid ++ " for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result
-							myError txt
+	(stdout,stderr) <- runHereM (takeDirectory absolute_filename) (takeFileName filename) args
+	printLogV 1 $ "stdout=\n" ++ stdout ++ "\n------------" 
 
-			printLog $ "checkSolutionM " ++ show traceid ++ " OK."
-			return resultdata
+	let
+		outputs = words $ last $ lines stdout
+		-- get all solution vars that are in the ret_env
+		ret_solution = filter ((`elem` (map (identToString.fst) ret_env)).fst) solution
+	when (length ret_env /= length outputs || length outputs /= length ret_solution) $
+		myError $ "checkSolutionM: lengths of ret_env, solution, outputs differ:\n" ++
+			"ret_env = " ++ showEnv ret_env ++ "\n" ++
+			"ret_solution = " ++ show ret_solution ++ "\n" ++
+			"outputs = " ++ show outputs ++ "\n"
+	forM_ (zip3 ret_env outputs ret_solution) $ \ ((sourceident,(ident,ty)),s,(ident_s,predicted_result)) -> do
+		when (identToString ident /= ident_s) $
+			myError $ "checkSolutionM: ident=" ++ identToString ident ++ " and ident_s=" ++ ident_s ++ " mismatch"
+		case ty of
+			PtrType _ _ _ -> return ()
+			DirectType (TyComp _) _ _ -> return ()
+			_ -> do
+				let exec_result = case ty of
+					DirectType (TyIntegral _) _ _       -> IntVal $ read s
+					DirectType (TyFloating floatty) _ _ -> case floatty of
+						TyFloat  -> FloatVal  $ read s
+						TyDouble -> DoubleVal $ read s
+					DirectType (TyEnum _) _ _           -> IntVal $ read s
+					_ -> error $ "checkSolutionM: parsing type " ++ (render.pretty) ty ++ " of " ++ ident_s ++ " not implemented!"
+				when (exec_result /= predicted_result) $ do
+					let txt = "ERROR in " ++ show traceid ++ " for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result
+					myError txt
+
+	printLog $ "checkSolutionM " ++ show traceid ++ " OK."
+	return resultdata
