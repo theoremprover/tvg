@@ -175,7 +175,8 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -419,7 +420,9 @@ covVectorsM = do
 	modify $ \ s -> s { retEnvCVS = Just ret_env_exprs }
 	
 	-- Go through the body of the function and determine all decision points
-	let condition_points = Set.fromList $ everything (++) (mkQ [] searchcondpoint) body
+	let condition_points = Set.fromList (
+		everything (++) (mkQ [] searchcondpoint) body ++
+		everything (++) (mkQ [] searchexprcondpoint) body ) 
 		where
 		searchcondpoint :: CStat -> [Branch]
 		searchcondpoint (CWhile cond _ _ _)        = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
@@ -429,6 +432,11 @@ covVectorsM = do
 		searchcondpoint (CFor _ Nothing _ _ _)     = error $ "searchcondpoint: for(_,,_) not implemented!"
 		searchcondpoint (CIf cond _ _ _)           = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
 		searchcondpoint _                          = []
+		
+		searchexprcondpoint :: CExpr -> [Branch]
+		searchexprcondpoint (CCond cond _ _ _)     = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
+		searchexprcondpoint _                      = []
+
 	modify $ \ s -> s { allCondPointsCVS = condition_points }
 	
 	let
@@ -1412,35 +1420,52 @@ translateExprM envs expr0 mb_target_ty = do
 	printLogV 2 $ "   envs=\n" ++ dumpEnvs envs
 	-- extract a list of all calls from the input expression expr0
 	-- (including fun-identifier, the arguments, and NodeInfo)
+	-- a conditional expression a ? b : c can be regarded as a function call
 	let	
-		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
+		to_call :: CExpr -> StateT [Either (Ident,[CExpr],NodeInfo) (CExpr,CExpr,CExpr,NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
 			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
 			CVar (Ident "solver_pragma" _ _) _ -> lift $ ⅈ 1
 			CVar funident _ -> do
-				modify ( (funident,args,ni): )
+				modify ( Left (funident,args,ni) : )
 				-- Replace the call by a placeholder with the same NodeInfo
 				return $ CConst $ CStrConst (CString (show ni) False) ni
 			_  -> myError $ "is_call: found call " ++ (render.pretty) funexpr
+		to_call (CCond cond (Just true_expr) false_expr ni) = do
+			modify ( Right (cond,true_expr,false_expr,ni) : )
+			return $ CConst $ CStrConst (CString (show ni) False) ni
 		to_call expr = return expr
 	(expr,calls) <- runStateT (everywhereM (mkM to_call) expr0) []
 	expr' <- transcribeExprM "expr0" envs mb_target_ty expr
 
 	-- construct all possible traces in called (sub-)functions and return them together with the returned expression
-	funcalls_traces :: [(NodeInfo,[(Trace,CExprWithType)])] <- forM calls $ \ (funident,args,ni) -> do
-		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
-		expanded_params_args <- expand_params_argsM paramdecls args
-		printLogV 2 $ "body = " ++ (render.pretty) body
-		printLogV 2 $ "expanded_params_args = " ++ show expanded_params_args
-		-- β-reduction of the arguments:
-		let body' = replace_param_with_arg expanded_params_args body
-		printLogV 2 $ "body'= " ++ (render.pretty) body'
-		Left funtraces <- unfoldTracesM ret_ty False envs [] [ ([ CBlockStmt body' ],False) ]
-		forM_ funtraces $ \ tr -> printLogV 2 $ "funtrace = " ++ showTrace tr
-		let funtraces_rets = concat $ for funtraces $ \case
-			(Return retexpr : tr) -> [(tr,retexpr)]
-			tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
-		return (ni,funtraces_rets)
+	funcalls_traces :: [(NodeInfo,[(CExprWithType,Trace)])] <- forM calls $ \ call -> do
+		case call of
+			Left (funident,args,ni) -> do
+				FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
+				expanded_params_args <- expand_params_argsM paramdecls args
+				printLogV 2 $ "body = " ++ (render.pretty) body
+				printLogV 2 $ "expanded_params_args = " ++ show expanded_params_args
+				-- β-reduction of the arguments:
+				let body' = replace_param_with_arg expanded_params_args body
+				printLogV 2 $ "body'= " ++ (render.pretty) body'
+				Left funtraces <- unfoldTracesM ret_ty False envs [] [ ([ CBlockStmt body' ],False) ]
+				forM_ funtraces $ \ tr -> printLogV 2 $ "funtrace = " ++ showTrace tr
+				let funtraces_rets = concat $ for funtraces $ \case
+					(Return retexpr : tr) -> [(retexpr,tr)]
+					tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
+				return (ni,funtraces_rets)
+			-- TODO: This might not work in the presence of assignment expressions!
+			-- Probably one can fix that using the unfoldTracesM combinator...
+			Right (cond,true_expr,false_expr,ni) -> do
+				cond_trues  <- translateExprM envs cond (Just Z3_Bool)
+				cond_falses <- translateExprM envs (not_c cond) (Just Z3_Bool)
+				true_exprs  <- translateExprM envs true_expr Nothing
+				false_exprs <- translateExprM envs false_expr Nothing
+				let
+					trues  = [ (e2,t2++t1++[Condition (Just True)  e1]) | (e1,t1) <- cond_trues,  (e2,t2) <- true_exprs  ]
+					falses = [ (e2,t2++t1++[Condition (Just False) e1]) | (e1,t1) <- cond_falses, (e2,t2) <- false_exprs ]
+				return (ni,trues++falses)
 
 	printLogV 2 $ "creating combinations..."
 	create_combinations expr' [] funcalls_traces
@@ -1462,19 +1487,13 @@ translateExprM envs expr0 mb_target_ty = do
 		stmt
 		iexprs
 
-{-
-	set_node_info :: CExprWithType -> CExprWithType
-	set_node_info cexpr = everywhere (mkT subst_ni) cexpr where
-		subst_ni :: NodeInfo -> NodeInfo
-		subst_ni _ = nodeInfo expr0
--}
 	-- iterate over all possible traces in a called (sub-)function and concatenate their traces 
-	create_combinations :: CExprWithType -> Trace -> [(NodeInfo,[(Trace,CExprWithType)])] -> CovVecM [(CExprWithType,Trace)]
-	create_combinations expr trace [] = return [({--set_node_info -}expr,trace)]
+	create_combinations :: CExprWithType -> Trace -> [(NodeInfo,[(CExprWithType,Trace)])] -> CovVecM [(CExprWithType,Trace)]
+	create_combinations expr trace [] = return [(expr,trace)]
 	-- replace the place-holder in the expr with the return expression of each sub-function's trace,
 	-- concatenating all possibilities (but it does not matter which one, since we only fully cover the top level function)
 	create_combinations expr trace ((tes_ni,tes):rest) = do
-		concatForM tes $ \ (fun_trace,ret_expr) -> do
+		concatForM tes $ \ (ret_expr,fun_trace) -> do
 			let
 				-- substitute the function call by the return expression
 				expr' = everywhere (mkT subst_ret_expr) expr where
