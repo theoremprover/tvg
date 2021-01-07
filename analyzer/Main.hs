@@ -118,7 +118,6 @@ find_out_sizesM = do
 		exefilename = find_out_sizes_name <.> "exe"
 	compileHereM ["-o",exefilename,srcfilename] srcfilename (PPM.prettyCompact $ PPMC.ppr find_out_sizes_src)
 	(sizes_s,"") <- runHereM (takeDirectory srcfilename) exefilename []
-	printLogV 1 $ "SIZES=" ++ sizes_s
 	let sizes = read sizes_s
 	printLogV 1 $ show sizes
 	return sizes
@@ -176,7 +175,7 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -184,7 +183,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -357,6 +356,7 @@ instance Pretty CExprWithType where
 			prettyType ((snd.annotation) constant)
 	pretty (CIndex arrexpr indexexpr (_,ty)) = pretty arrexpr <> brackets (pretty indexexpr) <+> prettyType ty
 	pretty (CAssign op lexpr assexpr (_,ty)) = prettyCE (pretty lexpr <+> pretty op) [pretty assexpr] ty
+	pretty (CCond cond (Just true_expr) false_expr (_,ty)) = prettyCE (pretty cond <+> text "?") [pretty true_expr,pretty false_expr] ty
 	pretty other = error $ "instance Pretty CExprWithType not implemented for " ++ show other
 
 prettyType ty = case printTypes of
@@ -995,11 +995,10 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 			drop_after_true (_:l1s) ((_,False):l2s) = drop_after_true l1s l2s
 			drop_after_true (_:l1s) ((l2,True):l2s) = (l1s,l2s)
 			(new_envs,new_bstss) = drop_after_true envs bstss
-		printLogV 1 $ "### CBreak at " ++ (showLocation.lineColNodeInfo) ni ++ " dropped " ++ show (length envs - length new_envs) ++ " envs"
-		printLogV 1 $ "### new_envs = \n" ++ dumpEnvs envs
---		printLogV 1 $ "### head new_bstss = " ++ (render.pretty) (head $ fst $ head new_bstss)
-		printLogV 1 $ "### length new_envs  = " ++ show (length new_envs)
-		printLogV 1 $ "### length new_bstss = " ++ show (length new_bstss)
+		printLogV 2 $ "### CBreak at " ++ (showLocation.lineColNodeInfo) ni ++ " dropped " ++ show (length envs - length new_envs) ++ " envs"
+		printLogV 2 $ "### new_envs = \n" ++ dumpEnvs envs
+		printLogV 2 $ "### length new_envs  = " ++ show (length new_envs)
+		printLogV 2 $ "### length new_bstss = " ++ show (length new_bstss)
 		unfoldTracesM ret_type toplevel new_envs trace new_bstss
 
 	CIf cond then_stmt mb_else_stmt ni -> do
