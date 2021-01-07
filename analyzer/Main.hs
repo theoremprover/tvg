@@ -71,9 +71,6 @@ for = flip map
 
 concatForM = flip concatMapM
 
---intSize = 32
---longIntSize = 32
---longLongIntSize = 64
 roundingMode = "roundNearestTiesToEven"
 intType = integral TyInt :: Type
 charType = integral TyChar :: Type
@@ -132,7 +129,7 @@ $esc:incl_stdio
 
 int main(void)
 {
-    printf("IntSizes { intSize=%i, longSize=%i, longLongSize=%i }\n",sizeof(int),sizeof(long int),sizeof(long long));
+    printf("IntSizes { intSize=%i, longSize=%i, longLongSize=%i }\n",sizeof(int)*8,sizeof(long int)*8,sizeof(long long)*8);
     return 0;
 }
 |]
@@ -592,6 +589,7 @@ type_format_string ty = do
 	return $ "%" ++ case z3ty of
 		Z3_Float                                        -> "f"
 		Z3_Double                                       -> "lf"
+		Z3_LDouble                                      -> "Lf"
 		Z3_BitVector size unsigned | size==intSize      -> if unsigned then "u" else "i"
 		Z3_BitVector size unsigned | size==longSize     -> "l" ++ if unsigned then "u" else "i"
 		Z3_BitVector size unsigned | size==longLongSize -> "ll" ++ if unsigned then "u" else "i"
@@ -1877,6 +1875,7 @@ expr2SExpr expr = expr2sexpr expr
 						val = show_bin 32 (floatToWord $ read f_s)
 					Z3_Double -> (take 1 val,take 11 $ drop 1 val,take 52 $ drop 12 val) where
 						val = show_bin 64 (doubleToWord $ read f_s)
+					Z3_LDouble -> error "long double is not supported"
  
 			CStrConst cstr _           -> SLeaf $ (render.pretty) cconst
 
@@ -1960,6 +1959,7 @@ expr2SExpr expr = expr2sexpr expr
 
 
 data Z3_Type =
+	Z3_Unit |   -- The proper type-theoretical name for C's void is 1 (i.e. "unit")
 	Z3_Bool |
 	Z3_Int |
 -- Z3_BitVector Int (is*Un*signed::Bool), hence
@@ -1967,9 +1967,14 @@ data Z3_Type =
 	Z3_BitVector Int Bool |
 	Z3_Float |
 	Z3_Double |
+	Z3_LDouble |
 	Z3_Ptr Z3_Type |
-	Z3_Array Z3_Type Z3_Type Integer |
-	Z3_Compound
+	Z3_Array Z3_Type Z3_Type (Maybe Integer) |
+	Z3_Compound |
+	Z3_Fun Z3_Type [Z3_Type] Bool |
+	Z3_FunIncomplete Z3_Type |
+	Z3_VaList |
+	Z3_Any
 	deriving (Show,Eq,Ord,Data)
 
 ty2Z3Type :: Type -> CovVecM Z3_Type
@@ -1977,20 +1982,30 @@ ty2Z3Type ty = do
 	Just IntSizes{..} <- gets sizesCVS
 	case ty of
 		DirectType tyname _ attrs -> case tyname of
+			TyVoid -> return Z3_Unit
 			TyIntegral intty    -> do
 				sizeofintty <- sizeofIntTy ty
 				return $ Z3_BitVector sizeofintty $ intty `elem` [TyChar,TyUChar,TyUShort,TyUInt,TyULong,TyULLong]
-			TyFloating TyFloat  -> return $ Z3_Float
-			TyFloating TyDouble -> return $ Z3_Double
+			TyFloating floatingty -> return $ case floatingty of
+				TyFloat   -> Z3_Float
+				TyDouble  -> Z3_Double
+				TyLDouble -> Z3_LDouble
 			TyEnum _            -> return $ Z3_BitVector intSize True
 			TyComp _            -> return $ Z3_Compound
+			TyBuiltin TyVaList  -> return $ Z3_VaList
+			TyBuiltin TyAny     -> return $ Z3_Any
 			_ -> myError $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
 		PtrType target_ty _ _ -> Z3_Ptr <$> ty2Z3Type target_ty
-		ArrayType elem_ty (ArraySize False (CConst (CIntConst cint _))) _ _ ->
-			Z3_Array <$> pure Z3_Int <*> ty2Z3Type elem_ty <*> pure (getCInteger cint)
+		ArrayType elem_ty arraysize _ _ ->
+			Z3_Array <$> pure Z3_Int <*> ty2Z3Type elem_ty <*> pure ( case arraysize of
+				ArraySize False (CConst (CIntConst cint _)) -> Just $ getCInteger cint
+				UnknownArraySize _                          -> Nothing )
 		TypeDefType (TypeDefRef _ ty _) _ _ -> ty2Z3Type ty
-	--	FunctionType (FunType ret_type funparamdecls False) _ -> Z3_Fun 
-		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
+		FunctionType (FunTypeIncomplete ret_type) _ -> Z3_FunIncomplete <$> ty2Z3Type ret_type
+		FunctionType (FunType ret_type funparamdecls is_variadic) _ -> do
+			let arg_types = for (map getVarDecl funparamdecls) $ \ (VarDecl _ _ ty) -> ty
+			Z3_Fun <$> ty2Z3Type ret_type <*> mapM ty2Z3Type arg_types <*> pure is_variadic
+--		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
 
 sizeofIntTy :: Type -> CovVecM Int
 sizeofIntTy ty@(DirectType tyname _ attrs) = do
@@ -2023,6 +2038,7 @@ z3Ty2SExpr ty = case ty of
 	Z3_BitVector size _            -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
 	Z3_Float                       -> SLeaf "Float32"
 	Z3_Double                      -> SLeaf "Float64"
+	Z3_LDouble                     -> SLeaf "Float128"
 	Z3_Bool                        -> SLeaf "Bool"
 	Z3_Int                         -> SLeaf "Int"
 	Z3_Ptr _                       -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show 1) ]
@@ -2115,6 +2131,7 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 									False  -> fromIntegral $ if i < 2^(size-1) then i else i - 2^size
 							Z3_Float -> FloatVal $ parseFloating_fb val_string
 							Z3_Double -> DoubleVal $ parseFloating_fb val_string
+							Z3_LDouble -> error $ "long double is not supported"
 							Z3_Ptr _ -> PtrVal
 							other -> error $ "case ty2Z3Type " ++ show other ++ " not implemented" )
 					_ -> myError $ "Parsing z3 output: Could not find " ++ is
@@ -2200,15 +2217,15 @@ solveTraceM mb_ret_type traceid trace = do
 	tyenv1 <- forM (createTyEnv trace) $ \ (e,t) -> do
 		z3_t <- ty2Z3Type t
 		return (e,z3_t)
-	let tyenv = tyenv1 ++ debug_tyenv
 
 	(model_string,mb_sol) <- makeAndSolveZ3ModelM
 		traceid
-		tyenv
+		(tyenv1 ++ debug_tyenv)
 		(constraints ++ debug_constraints)
 		(concat $ for param_env_exprs $ \ ((_,(name,_)),expr) -> case extractType expr of
 			Z3_Float -> []
 			Z3_Double -> []
+			Z3_LDouble -> []
 			_ -> [ SExpr [SLeaf "minimize",SLeaf (identToString name)] ])
 		(param_names ++ ret_names ++ debug_idents)
 		(analyzerPath </> "models" </> "model_" ++ tracename ++ ".smtlib2")
