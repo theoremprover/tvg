@@ -941,6 +941,28 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 			return $ (((srcident,(srcident,ty')),expr) : rest1)
 
 unfoldTracesM :: Type -> Bool -> [Env] -> Trace -> [([CBlockItem],Bool)] -> CovVecM UnfoldTracesRet
+unfoldTracesM ret_type toplevel envs trace ((cblockitem : rest,breakable) : rest2) = do
+{-
+	search for all CConds in the cblockitem,
+	replacing ...( a ? b : c )... by
+	<T> condexpr$10_12;
+	if(a) condexpr$10_12 = b; else condexpr$10_12 = c;
+	...condexpr$10_12...
+-}
+	let
+		to_condexpr :: CExpr -> StateT [CBlockItem] CovVecM CExpr
+		to_condexpr ccond@(CCond cond (Just true_expr) false_expr ni) = do
+			let var = CVar (internalIdent $ "condexpr$" ++ (showLocation.lineColNodeInfo) ccond) ni
+			-- cewt <- annotateTypesM envs ccond
+			-- let ty = snd $ annotation cewt
+			let cbis = [ ]
+			modify ( cbis ++ )
+			-- Replace the condexpr by a variable
+			return var
+	(cblockitem',add_cbis) <- runStateT (everywhereM (mkM to_condexpr) cblockitem) []
+
+	unfoldTraces1M ret_type toplevel envs trace ((add_cbis ++ (cblockitem' : rest),breakable) : rest2)
+
 unfoldTracesM ret_type toplevel envs trace cbss = do
 	unfoldTraces1M ret_type toplevel envs trace cbss
 
@@ -1422,50 +1444,34 @@ translateExprM envs expr0 mb_target_ty = do
 	-- (including fun-identifier, the arguments, and NodeInfo)
 	-- a conditional expression a ? b : c can be regarded as a function call
 	let	
-		to_call :: CExpr -> StateT [Either (Ident,[CExpr],NodeInfo) (CExpr,CExpr,CExpr,NodeInfo)] CovVecM CExpr
+		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
 			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
 			CVar (Ident "solver_pragma" _ _) _ -> lift $ ⅈ 1
 			CVar funident _ -> do
-				modify ( Left (funident,args,ni) : )
+				modify ( (funident,args,ni) : )
 				-- Replace the call by a placeholder with the same NodeInfo
 				return $ CConst $ CStrConst (CString (show ni) False) ni
 			_  -> myError $ "is_call: found call " ++ (render.pretty) funexpr
-		to_call (CCond cond (Just true_expr) false_expr ni) = do
-			modify ( Right (cond,true_expr,false_expr,ni) : )
-			return $ CConst $ CStrConst (CString (show ni) False) ni
 		to_call expr = return expr
 	(expr,calls) <- runStateT (everywhereM (mkM to_call) expr0) []
 	expr' <- transcribeExprM "expr0" envs mb_target_ty expr
 
 	-- construct all possible traces in called (sub-)functions and return them together with the returned expression
-	funcalls_traces :: [(NodeInfo,[(CExprWithType,Trace)])] <- forM calls $ \ call -> do
-		case call of
-			Left (funident,args,ni) -> do
-				FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
-				expanded_params_args <- expand_params_argsM paramdecls args
-				printLogV 2 $ "body = " ++ (render.pretty) body
-				printLogV 2 $ "expanded_params_args = " ++ show expanded_params_args
-				-- β-reduction of the arguments:
-				let body' = replace_param_with_arg expanded_params_args body
-				printLogV 2 $ "body'= " ++ (render.pretty) body'
-				Left funtraces <- unfoldTracesM ret_ty False envs [] [ ([ CBlockStmt body' ],False) ]
-				forM_ funtraces $ \ tr -> printLogV 2 $ "funtrace = " ++ showTrace tr
-				let funtraces_rets = concat $ for funtraces $ \case
-					(Return retexpr : tr) -> [(retexpr,tr)]
-					tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
-				return (ni,funtraces_rets)
-			-- TODO: This might not work in the presence of assignment expressions!
-			-- Probably one can fix that using the unfoldTracesM combinator...
-			Right (cond,true_expr,false_expr,ni) -> do
-				cond_trues  <- translateExprM envs cond (Just Z3_Bool)
-				cond_falses <- translateExprM envs (not_c cond) (Just Z3_Bool)
-				true_exprs  <- translateExprM envs true_expr Nothing
-				false_exprs <- translateExprM envs false_expr Nothing
-				let
-					trues  = [ (e2,t2++t1++[Condition (Just True)  e1]) | (e1,t1) <- cond_trues,  (e2,t2) <- true_exprs  ]
-					falses = [ (e2,t2++t1++[Condition (Just False) e1]) | (e1,t1) <- cond_falses, (e2,t2) <- false_exprs ]
-				return (ni,trues++falses)
+	funcalls_traces :: [(NodeInfo,[(CExprWithType,Trace)])] <- forM calls $ \ (funident,args,ni) -> do
+		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
+		expanded_params_args <- expand_params_argsM paramdecls args
+		printLogV 2 $ "body = " ++ (render.pretty) body
+		printLogV 2 $ "expanded_params_args = " ++ show expanded_params_args
+		-- β-reduction of the arguments:
+		let body' = replace_param_with_arg expanded_params_args body
+		printLogV 2 $ "body'= " ++ (render.pretty) body'
+		Left funtraces <- unfoldTracesM ret_ty False envs [] [ ([ CBlockStmt body' ],False) ]
+		forM_ funtraces $ \ tr -> printLogV 2 $ "funtrace = " ++ showTrace tr
+		let funtraces_rets = concat $ for funtraces $ \case
+			(Return retexpr : tr) -> [(retexpr,tr)]
+			tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
+		return (ni,funtraces_rets)
 
 	printLogV 2 $ "creating combinations..."
 	create_combinations expr' [] funcalls_traces
@@ -1709,12 +1715,11 @@ extractNodeInfo = fst.annotation
 type NodeInfoWithType = (NodeInfo,Z3_Type)
 type CExprWithType = CExpression NodeInfoWithType
 
--- adds Z3 types to the annotation that the expressions should have
--- (making a CExprWithType from a CExpr), also inserts implicit casts
 -- if mb_target_ty is Nothing, the result CExprWithType will not be casted to the mb_target_ty type.
 annotateTypesAndCastM :: [Env] -> CExpr -> Maybe Z3_Type -> CovVecM CExprWithType
 annotateTypesAndCastM envs cexpr mb_target_ty = do
-	cexpr' <- annotate_types cexpr
+	cexpr'ty <- annotateTypesM envs cexpr
+	let cexpr' = fmap fst cexpr'ty
 	let ret = case mb_target_ty of
 		Just target_ty | target_ty /= extractType cexpr' -> mb_cast target_ty cexpr'
 		_ -> cexpr'
@@ -1724,12 +1729,18 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 	printLogV 2 $ "==>\n" ++ (render.pretty) ret ++ "\n"
 
 	return ret
+
+-- adds Z3 types and Language.C.Type's to the annotation that the expressions have
+-- also inserts implicit casts
+annotateTypesM :: [Env] -> CExpr -> CovVecM (CExpression (NodeInfoWithType,Type))
+annotateTypesM envs cexpr = do
+	annotate_types cexpr
 	
 	where
 
 	tyenv = envs2tyenv envs
 
-	annotate_types :: CExpr -> CovVecM CExprWithType
+	annotate_types :: CExpr -> CovVecM (CExpression (NodeInfoWithType,Type))
 
 	-- Get rid of CNeqOp now, later in expr2sexpr it will be more difficult...
 	annotate_types (CBinary CNeqOp expr1 expr2 ni) = annotate_types $ expr1 !⩵ expr2
@@ -1809,12 +1820,12 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 
 	annotate_types other = myError $ "annotate_types " ++ (render.pretty) other ++ " not implemented"
 
-	mb_cast :: Z3_Type -> CExprWithType -> CExprWithType
-	mb_cast to_ty cexpr = case (extractType cexpr,to_ty) of
-		( ty1, ty2 ) | ty1==ty2 -> cexpr
-		( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from == size_to -> cexpr
-		_ -> cast cexpr to_ty
-	
+mb_cast :: Z3_Type -> CExprWithType -> CExprWithType
+mb_cast to_ty cexpr = case (extractType cexpr,to_ty) of
+	( ty1, ty2 ) | ty1==ty2 -> cexpr
+	( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from == size_to -> cexpr
+	_ -> cast cexpr to_ty
+	where
 	cast :: CExprWithType -> Z3_Type -> CExprWithType
 	cast cexpr to_ty = CCast (CDecl [] [] to_anno) cexpr to_anno
 		where
