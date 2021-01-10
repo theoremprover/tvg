@@ -1857,7 +1857,7 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 		_ -> cast cexpr to_ty
 		where
 		cast :: CExprWithType -> Types -> CExprWithType
-		cast cexpr to_ty = CCast (CDecl [] [] to_anno) cexpr to_anno
+		cast cexpr to_ty = CCast (CDecl [{-HERE-}] [] to_anno) cexpr to_anno
 			where
 			to_anno = (extractNodeInfo cexpr,to_ty)
 
