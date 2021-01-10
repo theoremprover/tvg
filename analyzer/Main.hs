@@ -76,7 +76,7 @@ intType = integral TyInt :: Type
 charType = integral TyChar :: Type
 ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
 
-outputVerbosity = 1
+outputVerbosity = 10
 showInitialTrace = True
 solveIt = True
 showModels = True
@@ -91,7 +91,7 @@ showBuiltins = False
 cutOffs = False
 logToFile = True
 mainFileName = "main.c"
-printTypes = False
+printTypes = True
 
 compileHereM :: [String] -> String -> String -> CovVecM (String,String)
 compileHereM args filename src = do
@@ -175,11 +175,11 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -593,7 +593,7 @@ createDeclsM formal_params = do
 type_format_string :: Type -> CovVecM String
 type_format_string ty = do
 	Just IntSizes{..} <- gets sizesCVS
-	z3ty <- ty2Z3Type ty
+	(z3ty,_) <- ty2Z3Type ty
 	return $ "%" ++ case z3ty of
 		Z3_Float                                        -> "f"
 		Z3_Double                                       -> "lf"
@@ -920,10 +920,11 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 				CVar (Ident _ _ _) (ni,_) = expr    -- Just to be sure...
 			ress <- forM [0..(getCInteger cint - 1)] $ \ i -> do
 				elem_ty2 <- lift $ ty2Z3Type elem_ty'
+				intty <- lift $ ty2Z3Type intType
 				let
-					arrayelemexpr = CIndex expr (CConst $ CIntConst (cInteger i) (undefNode,Z3_Int)) (ni,elem_ty2)
+					arrayelemexpr = CIndex expr (CConst $ CIntConst (cInteger i) (undefNode,intty)) (ni,elem_ty2)
 					arrayelem_var = CVar (internalIdent $ lValueToVarName arrayelemexpr) (ni,elem_ty2)
-					eqcond = Condition Nothing $ CBinary CEqOp arrayelem_var arrayelemexpr (ni,Z3_Bool)
+					eqcond = Condition Nothing $ CBinary CEqOp arrayelem_var arrayelemexpr (ni,_BoolTypes)
 				modify $ \ (envitems,traceitems) -> ( envitems,traceitems ++ [eqcond] )
 				createInterfaceFromExpr_WithEnvItemsM arrayelemexpr elem_ty'
 			return $ concat ress
@@ -953,12 +954,18 @@ unfoldTracesM ret_type toplevel envs trace ((cblockitem : rest,breakable) : rest
 		to_condexpr :: CExpr -> StateT [CBlockItem] CovVecM CExpr
 		to_condexpr ccond@(CCond cond (Just true_expr) false_expr ni) = do
 			let var = CVar (internalIdent $ "condexpr$" ++ (showLocation.lineColNodeInfo) ccond) ni
-			-- cewt <- annotateTypesM envs ccond
-			-- let ty = snd $ annotation cewt
-			let cbis = [ ]
+			ccond' <- lift $ annotateTypesAndCastM envs ccond Nothing
+			let
+				(_,ty) = extractTypes ccond'
+				-- Isn't there a QuasiQuoter for language-c?
+				cbis = [
+--					CBlockDecl $ CDecl [CTypeSpec ],
+--					CBlockStmt $
+					]
 			modify ( cbis ++ )
-			-- Replace the condexpr by a variable
+			-- Replace the condexpr by the new variable "var"
 			return var
+		to_condexpr expr = return expr
 	(cblockitem',add_cbis) <- runStateT (everywhereM (mkM to_condexpr) cblockitem) []
 
 	unfoldTraces1M ret_type toplevel envs trace ((add_cbis ++ (cblockitem' : rest),breakable) : rest2)
@@ -1032,9 +1039,9 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 		unfoldTracesM ret_type toplevel new_envs trace new_bstss
 
 	CIf cond then_stmt mb_else_stmt ni -> do
-		let then_trace_m real_cond = transids real_cond (Just Z3_Bool) trace $ \ (cond',trace') -> do
+		let then_trace_m real_cond = transids real_cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
 			unfoldTracesM ret_type toplevel envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest,breakable) : rest2 )
-		let else_trace_m real_cond = transids (CUnary CNegOp real_cond (annotation real_cond)) (Just Z3_Bool) trace $ \ (ncond',trace') -> do			
+		let else_trace_m real_cond = transids (CUnary CNegOp real_cond (annotation real_cond)) (Just _BoolTypes) trace $ \ (ncond',trace') -> do			
 			printLogV 2 $ "### real_cond = " ++ (render.pretty) real_cond
 			printLogV 2 $ "### ncond'    = " ++ (render.pretty) ncond'
 			let not_cond = Condition (Just False) ncond'
@@ -1077,7 +1084,7 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 							let ret_val_cond = CBinary CEqOp
 								(CVar ret_var_ident (nodeInfo ret_var_ident,z3_ret_var_ty))
 								ret_member_expr
-								(undefNode,Z3_Bool)
+								(undefNode,_BoolTypes)
 							return [ Condition Nothing ret_val_cond, NewDeclaration (ret_var_ident,ret_var_ty) ]
 					analyzeTraceM (Just ret_type) (Return ret_expr' : (ret_trace ++ trace'))
 						>>= return.Right
@@ -1110,7 +1117,7 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 
 	-- That's cheating: Insert condition into trace (for loop unrolling and switch) via GOTO
 	CGotoPtr cond ni -> do
-		transids cond (Just Z3_Bool) trace $ \ (cond',trace') -> do
+		transids cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
 			unfoldTracesM ret_type toplevel envs (Condition (Just $ isUndefNode ni) cond' : trace') ( (rest,breakable) : rest2 )
 
  	CWhile cond body False ni -> do
@@ -1183,7 +1190,7 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 		case recognizeAnnotation cond0 of
 			(real_cond,Just (ns,_)) -> return (Just ns,"Recognized LOOP annotation to " ++ (render.pretty) cond0)
 			(real_cond,Nothing) -> do
-				translateExprM envs real_cond (Just Z3_Bool) >>= \case
+				translateExprM envs real_cond (Just _BoolTypes) >>= \case
 					[(cond,[])] -> do
 						let
 							-- get all variables used in the condition
@@ -1259,10 +1266,10 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 					_ -> return (Nothing,"condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!")
 
 	-- mb_ty is Nothing if the result type of expr is not known, i.e. no casting necessary.
-	transids :: CExpr -> Maybe Z3_Type -> Trace -> ((CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
+	transids :: CExpr -> Maybe Types -> Trace -> ((CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
 	transids expr mb_ty trace cont = do
-		additional_expr_traces :: [(CExprWithType,Trace)] <- translateExprM envs expr mb_ty
 		printLogV 2 $ "### transids " ++ (render.pretty) expr
+		additional_expr_traces :: [(CExprWithType,Trace)] <- translateExprM envs expr mb_ty
 		printLogV 2 $ "### -> additional_expr_traces = " ++ (render.pretty) (map fst additional_expr_traces)
 		case toplevel of
 			False -> do
@@ -1411,7 +1418,7 @@ inferLExprTypeM tyenv expr = case expr of
 		error $ "inferLExprTypeM " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv tyenv
  
 -- Creates an CExprWithType from a CExpr
-transcribeExprM :: String -> [Env] -> Maybe Z3_Type -> CExpr -> CovVecM CExprWithType
+transcribeExprM :: String -> [Env] -> Maybe Types -> CExpr -> CovVecM CExprWithType
 transcribeExprM from envs mb_target_ty expr = do
 	annotateTypesAndCastM envs (renameVars (from ++ " transcribeExprM " ++ (render.pretty) expr) envs expr) mb_target_ty
 	where
@@ -1434,15 +1441,14 @@ transcribeExprM from envs mb_target_ty expr = do
 
 
 -- Translates all identifiers in an expression to fresh ones,
--- and expands function calls. Finally, transcribeExprM.
+-- and expands function calls. Translates to CExprWithType's.
 -- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
-translateExprM :: [Env] -> CExpr -> Maybe Z3_Type -> CovVecM [(CExprWithType,Trace)]
+translateExprM :: [Env] -> CExpr -> Maybe Types -> CovVecM [(CExprWithType,Trace)]
 translateExprM envs expr0 mb_target_ty = do
 	printLogV 2 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ show mb_target_ty
 	printLogV 2 $ "   envs=\n" ++ dumpEnvs envs
 	-- extract a list of all calls from the input expression expr0
 	-- (including fun-identifier, the arguments, and NodeInfo)
-	-- a conditional expression a ? b : c can be regarded as a function call
 	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call (CCall funexpr args ni) = case funexpr of
@@ -1495,7 +1501,8 @@ translateExprM envs expr0 mb_target_ty = do
 
 	-- iterate over all possible traces in a called (sub-)function and concatenate their traces 
 	create_combinations :: CExprWithType -> Trace -> [(NodeInfo,[(CExprWithType,Trace)])] -> CovVecM [(CExprWithType,Trace)]
-	create_combinations expr trace [] = return [(expr,trace)]
+	create_combinations expr trace [] = do
+		return [(expr,trace)]
 	-- replace the place-holder in the expr with the return expression of each sub-function's trace,
 	-- concatenating all possibilities (but it does not matter which one, since we only fully cover the top level function)
 	create_combinations expr trace ((tes_ni,tes):rest) = do
@@ -1706,41 +1713,57 @@ prettyOneLine (SExpr (sexpr:sexprs)) =
 	lparen <> prettyOneLine sexpr <+> hsep (map prettyOneLine sexprs) <> rparen
 prettyOneLine s = error $ "In prettyOneLine: " ++ show s
 
+type Types = (Z3_Type,Type)
+
+-- TODO: Avoid overlapping instance here
+instance {-# OVERLAPPING #-} Ord Types where
+	(t1,_) <= (t2,_) = t1 <= t2
+
+-- TODO: Avoid overlapping instance here
+instance {-# OVERLAPPING #-} Eq Types where
+	(t1,_) == (t2,_) = t1 == t2
+
+-- TODO: Avoid overlapping instance here
+instance {-# OVERLAPPING #-} Show Types where
+	show (t1,_) = show t1
+
+_BoolTypes = (Z3_Bool,intType) :: Types
+_IntTypeM :: CovVecM Types
+_IntTypeM = ty2Z3Type intType
+
+extractTypes :: CExprWithType -> Types
+extractTypes = snd.annotation
+
 extractType :: CExprWithType -> Z3_Type
-extractType = snd.annotation
+extractType = fst.snd.annotation
 
 extractNodeInfo :: CExprWithType -> NodeInfo
 extractNodeInfo = fst.annotation
 
-type NodeInfoWithType = (NodeInfo,Z3_Type)
+type NodeInfoWithType = (NodeInfo,Types)
 type CExprWithType = CExpression NodeInfoWithType
-
--- if mb_target_ty is Nothing, the result CExprWithType will not be casted to the mb_target_ty type.
-annotateTypesAndCastM :: [Env] -> CExpr -> Maybe Z3_Type -> CovVecM CExprWithType
-annotateTypesAndCastM envs cexpr mb_target_ty = do
-	cexpr'ty <- annotateTypesM envs cexpr
-	let cexpr' = fmap fst cexpr'ty
-	let ret = case mb_target_ty of
-		Just target_ty | target_ty /= extractType cexpr' -> mb_cast target_ty cexpr'
-		_ -> cexpr'
-	printLogV 2 $ "\n# " ++ (showLocation.lineColNodeInfo) cexpr
-	printLogV 2 $ "annotateTypesAndCastM [envs]\n" ++ (render.pretty) cexpr ++ "\ntarget_ty = " ++ show mb_target_ty
-	printLogV 2 $ "\n--- " ++ show cexpr ++ "\n"
-	printLogV 2 $ "==>\n" ++ (render.pretty) ret ++ "\n"
-
-	return ret
 
 -- adds Z3 types and Language.C.Type's to the annotation that the expressions have
 -- also inserts implicit casts
-annotateTypesM :: [Env] -> CExpr -> CovVecM (CExpression (NodeInfoWithType,Type))
-annotateTypesM envs cexpr = do
-	annotate_types cexpr
-	
+-- if mb_target_ty is Nothing, the result CExprWithType will not be casted to the mb_target_ty type.
+annotateTypesAndCastM :: [Env] -> CExpr -> Maybe Types -> CovVecM CExprWithType
+annotateTypesAndCastM envs cexpr mb_target_ty = do
+	cexpr' <- annotate_types cexpr
+	let ret = case mb_target_ty of
+		Just target_ty -> mb_cast target_ty cexpr'
+		_ -> cexpr'
+	printLogV 2 $ "\n# cexpr = " ++ (showLocation.lineColNodeInfo) cexpr
+	printLogV 2 $ "annotateTypesAndCastM [envs] " ++ (render.pretty) cexpr ++ "\ntarget_ty = " ++ show mb_target_ty
+	printLogV 2 $ "    cexpr' = " ++ (render.pretty) cexpr'
+	printLogV 2 $ "==>\n" ++ (render.pretty) ret ++ "\n"
+
+	return $ ret
+
 	where
 
 	tyenv = envs2tyenv envs
 
-	annotate_types :: CExpr -> CovVecM (CExpression (NodeInfoWithType,Type))
+	annotate_types :: CExpr -> CovVecM CExprWithType
 
 	-- Get rid of CNeqOp now, later in expr2sexpr it will be more difficult...
 	annotate_types (CBinary CNeqOp expr1 expr2 ni) = annotate_types $ expr1 !⩵ expr2
@@ -1749,41 +1772,47 @@ annotateTypesM envs cexpr = do
 		expr2' <- annotate_types expr2
 		let
 			common_ty = case binop `elem` [CLndOp,CLorOp] of
-				False -> max (extractType expr1') (extractType expr2')
-				True  -> Z3_Bool
+				False -> max (extractTypes expr1') (extractTypes expr2')
+				True  -> _BoolTypes
 			result_ty = case binop `elem` [CLndOp,CLorOp,CLeOp,CGrOp,CLeqOp,CGeqOp,CEqOp,CNeqOp] of
-				True  -> Z3_Bool
+				True  -> _BoolTypes
 				False -> common_ty
 		return $ CBinary binop (mb_cast common_ty expr1') (mb_cast common_ty expr2') (ni,result_ty)
 
-	-- Skip empty casts
+	-- Skip empty casts (whereever they might come from...)
 	annotate_types (CCast (CDecl [] [] _) expr _) = annotate_types expr
 	annotate_types ccast@(CCast decl expr ni) = do
 		ty' <- decl2TypeM ("annotate_types " ++ (render.pretty) ccast) decl >>= elimTypeDefsM >>= ty2Z3Type
 		expr' <- annotate_types expr
-		return $ cast expr' ty'
+		return $ mb_cast ty' expr'
 
-	annotate_types (CUnary unop expr ni) = do
+	annotate_types cunary@(CUnary unop expr ni) = do
+		printLogV 1 $ "### annotate_types " ++ (render.pretty) cunary
 		expr' <- annotate_types expr
-		let (arg_ty,result_ty) = case (unop,extractType expr') of
-			(CNegOp, _)         -> (Z3_Bool,Z3_Bool)
-			(CAdrOp, ty)        -> (ty,Z3_Ptr ty)
-			(CIndOp, Z3_Ptr ty) -> (Z3_Ptr ty,ty)
-			(_,      ty)        -> (ty,ty)
-		return $ CUnary unop (mb_cast arg_ty expr') (ni,result_ty)
+		printLogV 1 $ "### expr' = " ++ (render.pretty) expr'
+		let (arg_ty,result_ty) = case (unop,extractTypes expr') of
+			(CNegOp, _)                                -> (_BoolTypes,_BoolTypes)
+			(CAdrOp, ty@(z3ty,cty))                    -> (ty,(Z3_Ptr z3ty,ptrType cty))
+			(CIndOp, ty@(Z3_Ptr z3ty,PtrType cty _ _)) -> (ty,(z3ty,cty))
+			(CIndOp, _) -> error $ "annotate_types: argument type of " ++ (render.pretty) cunary ++ " is no Ptr!"
+			(_,      ty)                               -> (ty,ty)
+		printLogV 1 $ "### (arg_ty,result_ty) = " ++ show (arg_ty,result_ty)
+		let erg = CUnary unop (mb_cast arg_ty expr') (ni,result_ty)
+		printLogV 1 $ "### erg = " ++ (render.pretty) erg
+		return erg
 
 	annotate_types (CAssign assign_op lexpr ass_expr ni) = do
-		lexpr_z3ty <- inferLExprTypeM tyenv lexpr >>= ty2Z3Type
+		lexpr_ty <- inferLExprTypeM tyenv lexpr >>= ty2Z3Type
 		lexpr' <- annotate_types lexpr
 		ass_expr' <- annotate_types ass_expr
-		return $ CAssign assign_op lexpr' (mb_cast lexpr_z3ty ass_expr') (ni,lexpr_z3ty)
+		return $ CAssign assign_op lexpr' (mb_cast lexpr_ty ass_expr') (ni,lexpr_ty)
 
 	annotate_types (CCond cond_expr (Just then_expr) else_expr ni) = do
 		cond_expr' <- annotate_types cond_expr
 		then_expr' <- annotate_types then_expr
 		else_expr' <- annotate_types else_expr
-		let common_ty = max (extractType then_expr') (extractType else_expr')
-		return $ CCond (mb_cast Z3_Bool cond_expr')
+		let common_ty = max (extractTypes then_expr') (extractTypes else_expr')
+		return $ CCond (mb_cast _BoolTypes cond_expr')
 			(Just $ mb_cast common_ty then_expr') (mb_cast common_ty else_expr') (ni,common_ty)
 
 	annotate_types cvar@(CVar ident ni) = case lookup ident tyenv of
@@ -1814,22 +1843,23 @@ annotateTypesM envs cexpr = do
 
 	annotate_types (CIndex arr_expr ix ni) = do
 		arr_expr' <- annotate_types arr_expr
-		let Z3_Array index_ty elemty _ = extractType arr_expr'
+		let (Z3_Array elemty _,ArrayType elemcty _ _ _) = extractTypes arr_expr'
 		ix' <- annotate_types ix
-		return $ CIndex arr_expr' (mb_cast index_ty ix') (ni,elemty)
+		intty <- _IntTypeM
+		return $ CIndex arr_expr' (mb_cast intty ix') (ni,(elemty,elemcty))
 
 	annotate_types other = myError $ "annotate_types " ++ (render.pretty) other ++ " not implemented"
 
-mb_cast :: Z3_Type -> CExprWithType -> CExprWithType
-mb_cast to_ty cexpr = case (extractType cexpr,to_ty) of
-	( ty1, ty2 ) | ty1==ty2 -> cexpr
-	( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from == size_to -> cexpr
-	_ -> cast cexpr to_ty
-	where
-	cast :: CExprWithType -> Z3_Type -> CExprWithType
-	cast cexpr to_ty = CCast (CDecl [] [] to_anno) cexpr to_anno
+	mb_cast :: (Z3_Type,Type) -> CExprWithType -> CExprWithType
+	mb_cast to_ty cexpr = case (extractType cexpr,fst to_ty) of
+		( ty1, ty2 ) | ty1==ty2 -> cexpr
+		( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from == size_to -> cexpr
+		_ -> cast cexpr to_ty
 		where
-		to_anno = (extractNodeInfo cexpr,to_ty)
+		cast :: CExprWithType -> Types -> CExprWithType
+		cast cexpr to_ty = CCast (CDecl [] [] to_anno) cexpr to_anno
+			where
+			to_anno = (extractNodeInfo cexpr,to_ty)
 
 
 type Constraint = TraceElem
@@ -1839,9 +1869,9 @@ expr2SExpr expr = expr2sexpr expr
 
 	where
 
-	make_intconstant :: Z3_Type -> Integer -> SExpr
-	make_intconstant Z3_Int const = SLeaf $ show const
-	make_intconstant (Z3_BitVector size _) const | size `mod` 4 == 0 =
+	make_intconstant :: Types -> Integer -> SExpr
+	make_intconstant (Z3_Index,_) const = SLeaf $ show const
+	make_intconstant (Z3_BitVector size _,_) const | size `mod` 4 == 0 =
 		SLeaf (printf "#x%*.*x" (size `div` 4) (size `div` 4) const)
 
 	expr2sexpr :: Constraint -> CovVecM SExpr
@@ -1899,7 +1929,7 @@ expr2SExpr expr = expr2sexpr expr
 				where
 				show_bin :: (Integral a,PrintfArg a) => Int -> a -> String
 				show_bin l i = printf "%0*.*b" l l i
-				(s1,s2,s3) = case ty of
+				(s1,s2,s3) = case fst ty of
 					Z3_Float  -> (take 1 val,take 8 $ drop 1 val,take 23 $ drop 9 val) where
 						val = show_bin 32 (floatToWord $ read f_s)
 					Z3_Double -> (take 1 val,take 11 $ drop 1 val,take 52 $ drop 12 val) where
@@ -1922,12 +1952,13 @@ expr2SExpr expr = expr2sexpr expr
 
 		castexpr@(CCast _ subexpr (_,to_ty)) -> do
 			sexpr <- expr2sexpr' subexpr
-			return $ case (extractType subexpr,to_ty) of
+			let from_ty = extractTypes subexpr
+			return $ case (fst from_ty,fst to_ty) of
 
 				-- SAMECAST: identity
 				( ty1, ty2 ) | ty1==ty2 -> sexpr
 
-				( Z3_BitVector size unsigned, Z3_Int ) -> SExpr [ SLeaf "bv2int", sexpr ]
+				( Z3_BitVector size unsigned, Z3_Index ) -> SExpr [ SLeaf "bv2int", sexpr ]
 
 				-- Casting signed to unsigned or vice versa with same size: No cast needed (Z3 interprets it)
 				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from==size_to -> sexpr
@@ -1937,7 +1968,7 @@ expr2SExpr expr = expr2sexpr expr
 					SExpr [ SLeaf "ite", sexpr, make_intconstant to_ty 1, make_intconstant to_ty 0 ]
 
 				-- Casting to Bool
-				( from_ty@(Z3_BitVector size_from _) , Z3_Bool ) ->
+				( Z3_BitVector size_from _ , Z3_Bool ) ->
 					SExpr [ SLeaf "not", SExpr [ SLeaf "=", sexpr, make_intconstant from_ty 0 ]]
 
 				-- DOWNCAST: extract bits (modulo)
@@ -1990,7 +2021,7 @@ expr2SExpr expr = expr2sexpr expr
 data Z3_Type =
 	Z3_Unit |   -- The proper type-theoretical name for C's void is 1 (i.e. "unit")
 	Z3_Bool |
-	Z3_Int |
+	Z3_Index |   -- This is used to distingush between array indices and integers (used by expr2SExpr)
 -- Z3_BitVector Int (is*Un*signed::Bool), hence
 -- the derived ordering intentionally coincides with the type cast ordering :-)
 	Z3_BitVector Int Bool |
@@ -1998,7 +2029,7 @@ data Z3_Type =
 	Z3_Double |
 	Z3_LDouble |
 	Z3_Ptr Z3_Type |
-	Z3_Array Z3_Type Z3_Type (Maybe Integer) |
+	Z3_Array Z3_Type (Maybe Integer) |
 	Z3_Compound |
 	Z3_Fun Z3_Type [Z3_Type] Bool |
 	Z3_FunIncomplete Z3_Type |
@@ -2006,10 +2037,10 @@ data Z3_Type =
 	Z3_Any
 	deriving (Show,Eq,Ord,Data)
 
-ty2Z3Type :: Type -> CovVecM Z3_Type
+ty2Z3Type :: Type -> CovVecM (Z3_Type,Type)
 ty2Z3Type ty = do
 	Just IntSizes{..} <- gets sizesCVS
-	case ty of
+	z3_ty <- case ty of
 		DirectType tyname _ attrs -> case tyname of
 			TyVoid -> return Z3_Unit
 			TyIntegral intty    -> do
@@ -2024,17 +2055,21 @@ ty2Z3Type ty = do
 			TyBuiltin TyVaList  -> return $ Z3_VaList
 			TyBuiltin TyAny     -> return $ Z3_Any
 			_ -> myError $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
-		PtrType target_ty _ _ -> Z3_Ptr <$> ty2Z3Type target_ty
+		PtrType target_ty _ _ -> Z3_Ptr <$> ty2Z3TypeOnly target_ty
 		ArrayType elem_ty arraysize _ _ ->
-			Z3_Array <$> pure Z3_Int <*> ty2Z3Type elem_ty <*> pure ( case arraysize of
+			Z3_Array <$> ty2Z3TypeOnly elem_ty <*> pure ( case arraysize of
 				ArraySize False (CConst (CIntConst cint _)) -> Just $ getCInteger cint
 				UnknownArraySize _                          -> Nothing )
-		TypeDefType (TypeDefRef _ ty _) _ _ -> ty2Z3Type ty
-		FunctionType (FunTypeIncomplete ret_type) _ -> Z3_FunIncomplete <$> ty2Z3Type ret_type
+		TypeDefType (TypeDefRef _ ty _) _ _ -> ty2Z3TypeOnly ty
+		FunctionType (FunTypeIncomplete ret_type) _ -> Z3_FunIncomplete <$> ty2Z3TypeOnly ret_type
 		FunctionType (FunType ret_type funparamdecls is_variadic) _ -> do
 			let arg_types = for (map getVarDecl funparamdecls) $ \ (VarDecl _ _ ty) -> ty
-			Z3_Fun <$> ty2Z3Type ret_type <*> mapM ty2Z3Type arg_types <*> pure is_variadic
+			Z3_Fun <$> ty2Z3TypeOnly ret_type <*> mapM ty2Z3TypeOnly arg_types <*> pure is_variadic
 --		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
+	return (z3_ty,ty)
+
+ty2Z3TypeOnly :: Type -> CovVecM Z3_Type
+ty2Z3TypeOnly ty = ty2Z3Type ty >>= return.fst
 
 sizeofIntTy :: Type -> CovVecM Int
 sizeofIntTy ty@(DirectType tyname _ attrs) = do
@@ -2064,15 +2099,15 @@ sizeofIntTy ty@(DirectType tyname _ attrs) = do
 
 z3Ty2SExpr :: Z3_Type -> SExpr
 z3Ty2SExpr ty = case ty of
-	Z3_BitVector size _            -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
-	Z3_Float                       -> SLeaf "Float32"
-	Z3_Double                      -> SLeaf "Float64"
-	Z3_LDouble                     -> SLeaf "Float128"
-	Z3_Bool                        -> SLeaf "Bool"
-	Z3_Int                         -> SLeaf "Int"
-	Z3_Ptr _                       -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show 1) ]
-	Z3_Array index_ty elem_ty size -> SExpr [ SLeaf "Array", z3Ty2SExpr index_ty, z3Ty2SExpr elem_ty ]
-	other                          -> error $ "z3Ty2SExpr " ++ show other ++ " should not occur!"
+	Z3_BitVector size _   -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
+	Z3_Float              -> SLeaf "Float32"
+	Z3_Double             -> SLeaf "Float64"
+	Z3_LDouble            -> SLeaf "Float128"
+	Z3_Bool               -> SLeaf "Bool"
+	Z3_Index              -> SLeaf "Int"
+	Z3_Ptr _              -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show 1) ]
+	Z3_Array elem_ty size -> SExpr [ SLeaf "Array", z3Ty2SExpr elem_ty ]
+	other                 -> error $ "z3Ty2SExpr " ++ show other ++ " should not occur!"
 
 type Solution = [(String,SolutionVal)]
 
@@ -2110,8 +2145,8 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 	constraintsZ3 :: [SCompound] <- concatForM a_constraints $ \ constraint -> do
 		assert_sexpr <- expr2SExpr constraint
 		return $ [ SEmptyLine,
-			SComment "----------------------------------------------",
-			SComment $ show constraint ] ++
+			SComment "----------------------------------------------" ] ++
+			(map SComment $ lines $ show constraint) ++
 			[ SComment "----------------------------------------------",
 			SExprLine $ SExpr [SLeaf "assert", assert_sexpr] ]
 	let
@@ -2244,7 +2279,7 @@ solveTraceM mb_ret_type traceid trace = do
 			(name_id,Condition Nothing $ CBinary CEqOp (CVar name_id (annotation expr)) expr (annotation expr),(name_id,extractType expr))
 
 	tyenv1 <- forM (createTyEnv trace) $ \ (e,t) -> do
-		z3_t <- ty2Z3Type t
+		z3_t <- ty2Z3TypeOnly t
 		return (e,z3_t)
 
 	(model_string,mb_sol) <- makeAndSolveZ3ModelM
