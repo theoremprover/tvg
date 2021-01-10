@@ -1,22 +1,6 @@
-int g(int y)
-{
-    int z = 2*y;
+int b = 20;
 
-    return z;
-}
-
-int f(int x)
+int* f(int* a)
 {
-    if(g(x)) return 0;
-    return 1;
-}
-
-int h(int x)
-{
-    switch(g(x))
-    {
-        case 1: return 1;
-        case 2: return 2;
-        default: return 0;
-    }
+  return (&b);
 }

@@ -174,12 +174,12 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
---		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -524,7 +524,7 @@ createCHarness orig_rettype formal_params filename funname extdecls = do
 		ret_vals = for retenvexprs $ \ (_,cexpr) -> (render.pretty) (fmap fst cexpr)
 
 		print_retval = "printf(\"" ++ funname ++ "(" ++ argvals ++ ") = \\n"
-			++ intercalate " " ret_formatss ++ "\\n\", " ++ intercalate ", " argexprs ++ "," ++
+			++ intercalate " " ret_formatss ++ "\\n\", " ++ (if null argexprs then "" else (intercalate ", " argexprs) ++ ",") ++
 			intercalate ", " ret_vals ++ ");"
 	return $ PPM.prettyCompact $ PPMC.ppr $ harnessAST incl_srcfilename (unlines extdecls) funcall print_retval
 
@@ -883,9 +883,9 @@ type CIFE = StateT ([EnvItem],[TraceElem]) CovVecM [(EnvItem,CExprWithType)]
 
 createInterfaceFromExpr_WithEnvItemsM :: CExprWithType -> Type -> CIFE
 createInterfaceFromExpr_WithEnvItemsM expr ty = do
-	printLogV 2 $ "### createInterfaceFromExpr_WithEnvItemsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty
+	printLogV 20 $ "### createInterfaceFromExpr_WithEnvItemsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty
 	z3_ty <- lift $ ty2Z3Type ty
-	printLogV 2 $ "###                                z3type = " ++ show z3_ty
+	printLogV 20 $ "###                                z3type = " ++ show z3_ty
 	ty' <- lift $ elimTypeDefsM ty
 	case ty' of
 
@@ -1857,7 +1857,8 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 		_ -> cast cexpr to_ty
 		where
 		cast :: CExprWithType -> Types -> CExprWithType
-		cast cexpr to_ty = CCast (CDecl [{-HERE-}] [] to_anno) cexpr to_anno
+		-- The NodeInfo of the CDecl will contain the cast target type (we do not want to convert to DeclSpecs...)
+		cast cexpr to_ty = CCast (CDecl [] [] to_anno) cexpr to_anno
 			where
 			to_anno = (extractNodeInfo cexpr,to_ty)
 
