@@ -778,7 +778,13 @@ lookupTypeDefM ident = do
 envs2tyenv :: [Env] -> TyEnv
 envs2tyenv envs = map snd $ concat envs
 
-decl2TypeM :: (Show a) => String -> CDeclaration a -> CovVecM Type
+decl2TypeM :: String -> CDecl -> CovVecM Type
+decl2TypeM from decl = do
+	case runTrav_ (analyseTypeDecl decl) of
+		Right (ty,[]) -> return ty
+		Right (ty,errs) -> myError $ show errs
+		Left errs -> myError $ show errs
+{-
 decl2TypeM from (CDecl declspecs _ _) = case declspecs of
 	[CTypeSpec (CVoidType _)]      -> return $ DirectType TyVoid noTypeQuals noAttributes
 	[CTypeSpec (CCharType _)]      -> return $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes
@@ -795,6 +801,7 @@ decl2TypeM from (CDecl declspecs _ _) = case declspecs of
 	[CTypeSpec (CTypeDef ident _)] -> lookupTypeDefM ident
 	[CTypeSpec (CSUType (CStruct _ (Just ident) _ _ _) _)] -> return $ DirectType (TyComp $ CompTypeRef (NamedRef ident) StructTag undefNode) noTypeQuals noAttributes
 	other -> myError $ "decl2TypeM " ++ from ++ " : " ++ show other ++ " not implemented yet."
+-}
 
 lookupTagM :: SUERef -> CovVecM TagDef
 lookupTagM ident = do
@@ -1753,9 +1760,10 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 		Just target_ty -> mb_cast target_ty cexpr'
 		_ -> cexpr'
 	printLogV 2 $ "\n# cexpr = " ++ (showLocation.lineColNodeInfo) cexpr
-	printLogV 2 $ "annotateTypesAndCastM [envs] " ++ (render.pretty) cexpr ++ "\ntarget_ty = " ++ show mb_target_ty
-	printLogV 2 $ "    cexpr' = " ++ (render.pretty) cexpr'
-	printLogV 2 $ "==>\n" ++ (render.pretty) ret ++ "\n"
+	printLogV 2 $ "# annotateTypesAndCastM [envs] " ++ (render.pretty) cexpr
+	printLogV 2 $ "# target_ty = " ++ show mb_target_ty
+	printLogV 2 $ "#   cexpr' = " ++ (render.pretty) cexpr'
+	printLogV 2 $ "# ==>\n" ++ (render.pretty) ret ++ "\n"
 
 	return $ ret
 
@@ -1782,8 +1790,15 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 	-- Skip empty casts (whereever they might come from...)
 	annotate_types (CCast (CDecl [] [] _) expr _) = annotate_types expr
 	annotate_types ccast@(CCast decl expr ni) = do
-		ty' <- decl2TypeM ("annotate_types " ++ (render.pretty) ccast) decl >>= elimTypeDefsM >>= ty2Z3Type
+		ty1' <- decl2TypeM ("annotate_types " ++ (render.pretty) ccast) decl
+		printLogV 1 $ "XXX  decl2TypeM ( " ++ (render.pretty) decl ++ ") = " ++ show ty1'
+		ty2' <- elimTypeDefsM ty1'
+		printLogV 1 $ "XXX  elimTypeDefsM ( " ++ (render.pretty) ty1' ++ ") = " ++ show ty2'
+		ty' <- ty2Z3Type ty2'
+		printLogV 1 $ "XXX  ty2Z3Type ( " ++ (render.pretty) ty2' ++ ") = " ++ show ty'
 		expr' <- annotate_types expr
+		printLogV 1 $ "XXX  annotate_types " ++ (render.pretty) expr ++ " = " ++ (render.pretty) expr'
+		printLogV 1 $ "XXX  mb_cast " ++ show ty' ++ " " ++ (render.pretty) expr' ++ " = " ++ (render.pretty) (mb_cast ty' expr')
 		return $ mb_cast ty' expr'
 
 	annotate_types cunary@(CUnary unop expr ni) = do
