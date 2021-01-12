@@ -24,7 +24,6 @@ import Language.C.Analysis.Export
 import Language.C.Syntax.Ops
 import Language.C.System.GCC
 import "language-c-quote" Language.C.Quote.GCC
---import "language-c-quote" Language.C.Pretty
 import qualified Text.PrettyPrint.Mainland as PPM
 import qualified Text.PrettyPrint.Mainland.Class as PPMC
 import Control.Monad
@@ -175,12 +174,12 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -446,13 +445,16 @@ covVectorsM = do
 	modify $ \ s -> s { allCondPointsCVS = condition_points }
 	
 	let
-		is_in_src_file identdecl = posFile (posOf identdecl) == posFile (posOf fundef)
+		srcfilename cnode | isNoPos (posOf cnode) = Nothing
+		srcfilename cnode | isBuiltinPos (posOf cnode) = Nothing
+		srcfilename cnode | isInternalPos (posOf cnode) = Nothing
+		srcfilename cnode = Just $ posFile $ posOf cnode
+		is_in_src_file identdecl = srcfilename identdecl == srcfilename fundef
 		fun_lc = lineColNodeInfo fundef_ni
 		next_lc = case sort $ filter (> lineColNodeInfo fundef_ni) $ map lineColNodeInfo $ filter is_in_src_file globdecls of
 			[] -> (maxBound,maxBound)
 			next : _ -> next
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
-	printLogV 1 $ "s=\n" ++ unlines (take 10 $ map show globdecls)
 
 	let formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
 	ext_decls <- createDeclsM formal_params
