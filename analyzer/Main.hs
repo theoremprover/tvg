@@ -15,6 +15,7 @@ import Language.C.Data.Node
 import Language.C.Data.Position
 import Language.C.Analysis.AstAnalysis
 import Language.C.Analysis.DeclAnalysis
+import Language.C.Analysis.DefTable
 import Language.C.Analysis.TypeUtils
 import Language.C.Analysis.TypeConversions
 import Language.C.Analysis.TravMonad
@@ -76,12 +77,12 @@ intType = integral TyInt :: Type
 charType = integral TyChar :: Type
 ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
 
-outputVerbosity = 10
+outputVerbosity = 1
 showInitialTrace = True
 solveIt = True
 showModels = True
 showOnlySolutions = True
-showTraces = True
+showTraces = False
 showFinalTrace = False
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
@@ -205,16 +206,20 @@ main = do
 			Right translunit -> do
 				when ("-writeAST" `elem` opts) $
 					writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
-				case runTrav_ $ analyseAST translunit of
+				case runTrav_ $ do
+						res <- analyseAST translunit
+						deftable <- getDefTable
+						return (res,deftable)
+					of
 					Left errs -> putStrLn "ERRORS:" >> forM_ errs print
-					Right (globdecls,soft_errors) -> do
+					Right ((globdecls,deftable),soft_errors) -> do
 						when (not $ null soft_errors) $ putStrLn "Soft errors:" >> forM_ soft_errors print
 						when ("-writeGlobalDecls" `elem` opts) $
 							writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 	
 						(every_branch_covered,s) <- runStateT covVectorsM $
 							CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc opts
-								Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing
+								Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable
 						let
 							(testvectors_rev,covered) = analysisStateCVS s
 							testvectors = reverse testvectors_rev
@@ -295,7 +300,8 @@ data CovVecState = CovVecState {
 	allCondPointsCVS :: Set.Set Branch,
 	statsCVS         :: Stats,
 	retEnvCVS        :: Maybe [(EnvItem,CExprWithType)],
-	sizesCVS         :: Maybe IntSizes
+	sizesCVS         :: Maybe IntSizes,
+	defTableCVS      :: DefTable
 	}
 
 data Stats = Stats { cutoffTries :: Int, cutoffsS :: Int }
@@ -410,7 +416,7 @@ covVectorsM = do
 	-- creates the assignment statements from the global context
 	defs <- concatMapM def2stmt globdecls
 
-	FunDef (VarDecl _ _ (FunctionType (FunType ret_type funparamdecls False) _)) body fundef_ni <-
+	fundef@(FunDef (VarDecl _ _ (FunctionType (FunType ret_type funparamdecls False) _)) body fundef_ni) <-
 		lookupFunM (builtinIdent funname)
 	ret_type' <- elimTypeDefsM ret_type
 
@@ -440,11 +446,13 @@ covVectorsM = do
 	modify $ \ s -> s { allCondPointsCVS = condition_points }
 	
 	let
+		is_in_src_file identdecl = posFile (posOf identdecl) == posFile (posOf fundef)
 		fun_lc = lineColNodeInfo fundef_ni
-		next_lc = case sort $ filter (> lineColNodeInfo fundef_ni) $ map lineColNodeInfo globdecls of
+		next_lc = case sort $ filter (> lineColNodeInfo fundef_ni) $ map lineColNodeInfo $ filter is_in_src_file globdecls of
 			[] -> (maxBound,maxBound)
 			next : _ -> next
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
+	printLogV 1 $ "s=\n" ++ unlines (take 10 $ map show globdecls)
 
 	let formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
 	ext_decls <- createDeclsM formal_params
@@ -643,12 +651,16 @@ analyzeTraceM mb_ret_type res_line = do
 				show_solution funname mb_solution ++ "\n"
 		
 			startend <- gets funStartEndCVS
+			printLogV 1 $ "startend =" ++ show startend
 			let visible_trace = Set.fromList $ concatMap to_branch res_line
 				where
-				to_branch cond@(Condition (Just b) _) | is_visible_traceelem startend cond =
-					[ (if b then Then else Else) (lineColNodeInfo cond) ]
+				is_visible_traceelem :: ((Int,Int),(Int,Int)) -> CExprWithType -> Bool
+				is_visible_traceelem (start,end) expr = start <= lc && lc < end where
+					lc = lineColNodeInfo $ extractNodeInfo expr
+				to_branch (Condition (Just b) cond) | is_visible_traceelem startend cond =
+					[ (if b then Then else Else) (lineColNodeInfo $ extractNodeInfo cond) ]
 				to_branch _ = []
-			printLogV 2 $ "visible_trace =\n" ++ unlines (map show $ Set.toList visible_trace) 
+			printLogV 1 $ "visible_trace =\n" ++ unlines (map show $ Set.toList visible_trace) 
 		
 			let
 				traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
@@ -665,7 +677,7 @@ analyzeTraceM mb_ret_type res_line = do
 						case visible_trace ⊆ covered of
 							False -> (traceanalysisresult:tas,visible_trace ∪ covered)
 							True  -> (tas,covered) }
-			printLogV 1 $ "*** " ++ show traceid ++ " is " ++ show solved
+			printLogV 10 $ "*** " ++ show traceid ++ " is " ++ show solved
 			return solved
 
 	where
@@ -688,10 +700,6 @@ trace2traceid trace = concatMap extract_conds trace where
 is_solution :: TraceAnalysisResult -> Bool
 is_solution (_,_,_,(_,Just (_,_,solution))) = not $ null solution
 is_solution _ = False
-
-is_visible_traceelem :: (CNode a) => ((Int,Int),(Int,Int)) -> a -> Bool
-is_visible_traceelem (start,end) cnode = start <= lc && lc < end where
-	lc = lineColNodeInfo cnode
 
 lineColNodeInfo :: (CNode a) => a -> Location
 lineColNodeInfo cnode = if isSourcePos pos_te then (posRow pos_te,posColumn pos_te) else (-1,-1)
@@ -780,9 +788,10 @@ envs2tyenv envs = map snd $ concat envs
 
 decl2TypeM :: String -> CDecl -> CovVecM Type
 decl2TypeM from decl = do
-	case runTrav_ (analyseTypeDecl decl) of
+	deftable <- gets defTableCVS
+	case runTrav_ (withDefTable (\_->((),deftable)) >> analyseTypeDecl decl) of
 		Right (ty,[]) -> return ty
-		Right (ty,errs) -> myError $ show errs
+		Right (ty,_) -> return ty
 		Left errs -> myError $ show errs
 {-
 decl2TypeM from (CDecl declspecs _ _) = case declspecs of
@@ -1626,7 +1635,8 @@ elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
 -- *(&x)  ~> x
 -- &s->m  ~> s.m
 -- (*p).m ~> p->m
--- (t*) p ~> p
+-- (A)a   ~> a  if a::A
+-- -- Do this?: (t*) p ~> p
 
 simplifyTraceM :: Trace -> CovVecM Trace
 simplifyTraceM trace = everywhereM (mkM simplify) trace where
@@ -1634,8 +1644,11 @@ simplifyTraceM trace = everywhereM (mkM simplify) trace where
 	simplify (CUnary CIndOp (CUnary CAdrOp expr _) _) = return expr
 	simplify (CMember (CUnary CAdrOp s _) member True ni) = return $ CMember s member False ni
 	simplify (CMember (CUnary CIndOp p _) member False ni) = return $ CMember p member True ni
+	simplify (CCast _ expr (_,(z3ty,_))) | extractType expr == z3ty = return expr
+{-
 	simplify (CCast (CDecl _ [(Just (CDeclr Nothing [CPtrDeclr [] _] Nothing [] _),Nothing,Nothing)] _) subexpr _) =
 		return subexpr
+-}
 	simplify expr = return expr
 
 
@@ -1787,33 +1800,35 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 				False -> common_ty
 		return $ CBinary binop (mb_cast common_ty expr1') (mb_cast common_ty expr2') (ni,result_ty)
 
+{--
 	-- Skip empty casts (whereever they might come from...)
 	annotate_types (CCast (CDecl [] [] _) expr _) = annotate_types expr
+-}
 	annotate_types ccast@(CCast decl expr ni) = do
 		ty1' <- decl2TypeM ("annotate_types " ++ (render.pretty) ccast) decl
-		printLogV 1 $ "XXX  decl2TypeM ( " ++ (render.pretty) decl ++ ") = " ++ show ty1'
+		printLogV 5 $ "XXX  decl2TypeM ( " ++ (render.pretty) decl ++ ") = " ++ show ty1'
 		ty2' <- elimTypeDefsM ty1'
-		printLogV 1 $ "XXX  elimTypeDefsM ( " ++ (render.pretty) ty1' ++ ") = " ++ show ty2'
+		printLogV 5 $ "XXX  elimTypeDefsM ( " ++ (render.pretty) ty1' ++ ") = " ++ show ty2'
 		ty' <- ty2Z3Type ty2'
-		printLogV 1 $ "XXX  ty2Z3Type ( " ++ (render.pretty) ty2' ++ ") = " ++ show ty'
+		printLogV 5 $ "XXX  ty2Z3Type ( " ++ (render.pretty) ty2' ++ ") = " ++ show ty'
 		expr' <- annotate_types expr
-		printLogV 1 $ "XXX  annotate_types " ++ (render.pretty) expr ++ " = " ++ (render.pretty) expr'
-		printLogV 1 $ "XXX  mb_cast " ++ show ty' ++ " " ++ (render.pretty) expr' ++ " = " ++ (render.pretty) (mb_cast ty' expr')
+		printLogV 5 $ "XXX  annotate_types " ++ (render.pretty) expr ++ " = " ++ (render.pretty) expr'
+		printLogV 5 $ "XXX  mb_cast " ++ show ty' ++ " " ++ (render.pretty) expr' ++ " = " ++ (render.pretty) (mb_cast ty' expr')
 		return $ mb_cast ty' expr'
 
 	annotate_types cunary@(CUnary unop expr ni) = do
-		printLogV 1 $ "### annotate_types " ++ (render.pretty) cunary
+		printLogV 10 $ "### annotate_types " ++ (render.pretty) cunary
 		expr' <- annotate_types expr
-		printLogV 1 $ "### expr' = " ++ (render.pretty) expr'
+		printLogV 10 $ "### expr' = " ++ (render.pretty) expr'
 		let (arg_ty,result_ty) = case (unop,extractTypes expr') of
 			(CNegOp, _)                                -> (_BoolTypes,_BoolTypes)
 			(CAdrOp, ty@(z3ty,cty))                    -> (ty,(Z3_Ptr z3ty,ptrType cty))
 			(CIndOp, ty@(Z3_Ptr z3ty,PtrType cty _ _)) -> (ty,(z3ty,cty))
 			(CIndOp, _) -> error $ "annotate_types: argument type of " ++ (render.pretty) cunary ++ " is no Ptr!"
 			(_,      ty)                               -> (ty,ty)
-		printLogV 1 $ "### (arg_ty,result_ty) = " ++ show (arg_ty,result_ty)
+		printLogV 10 $ "### (arg_ty,result_ty) = " ++ show (arg_ty,result_ty)
 		let erg = CUnary unop (mb_cast arg_ty expr') (ni,result_ty)
-		printLogV 1 $ "### erg = " ++ (render.pretty) erg
+		printLogV 10 $ "### erg = " ++ (render.pretty) erg
 		return erg
 
 	annotate_types (CAssign assign_op lexpr ass_expr ni) = do
