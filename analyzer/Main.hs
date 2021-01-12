@@ -199,70 +199,69 @@ main = do
 
 	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
 	
-	parseCFile (newGCC gcc) Nothing [] filename
-		>>= \case
-			Left err -> myError $ show err
-			Right translunit -> do
-				when ("-writeAST" `elem` opts) $
-					writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
-				case runTrav_ $ do
-						res <- analyseAST translunit
-						deftable <- getDefTable
-						return (res,deftable)
-					of
-					Left errs -> putStrLn "ERRORS:" >> forM_ errs print
-					Right ((globdecls,deftable),soft_errors) -> do
-						when (not $ null soft_errors) $ putStrLn "Soft errors:" >> forM_ soft_errors print
-						when ("-writeGlobalDecls" `elem` opts) $
-							writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
-	
-						(every_branch_covered,s) <- runStateT covVectorsM $
-							CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc opts
-								Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable
-						let
-							(testvectors_rev,covered) = analysisStateCVS s
-							testvectors = reverse testvectors_rev
-							alls = allCondPointsCVS s
-	
-						printLog ""
-	
-						let deaths = Set.toList $ alls ∖ covered
-	
-						printLog $ "\n####### FINAL RESULT #######\n"
-	
-						forM_ testvectors $ \ (traceid,trace,branches,(model_string,mb_solution)) -> do
-							case not showOnlySolutions || maybe False (not.null.(\(_,_,b)->b)) mb_solution of
-								False -> return ()
-								True -> printLog $ unlines $ mbshowtraces (
-									[ "","=== TRACE " ++ show traceid ++ " ========================","<leaving out builtins...>" ] ++
-									[ showLine trace ] ++
-									[ "",
-									"--- MODEL " ++ show traceid ++ " -------------------------",
-									model_string,
-									"" ]) ++
-									[ "--- SOLUTION " ++ show traceid ++ " ----------------------",
-									show_solution funname mb_solution ]
-									where
-									mbshowtraces ts = if showTraces then ts else []
-	
-						printLogV 1 $ "All decision points : "
-						forM_ (Set.toList alls) $ \ decisionpoint -> printLogV 1 $ "    " ++ show decisionpoint
-	
-						printLog $ "\n===== SUMMARY =====\n"
-	
-						forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
-							printLog $ "Test Vector " ++ show traceid ++ " covering " ++ ": "
-							forM_ branches $ \ branch -> printLog $ "    " ++ show branch
-							printLog $ "\n    " ++ showTestVector funname v ++ "\n"
-						forM_ deaths $ \ branch -> do
-							printLog $ "DEAD " ++ show branch ++ "\n"
+	parseCFile (newGCC gcc) Nothing [] filename >>= \case
+		Left err -> myError $ show err
+		Right translunit -> do
+			when ("-writeAST" `elem` opts) $
+				writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
+			case runTrav_ $ do
+					res <- analyseAST translunit
+					deftable <- getDefTable
+					return (res,deftable)
+				of
+				Left errs -> putStrLn "ERRORS:" >> forM_ errs print
+				Right ((globdecls,deftable),soft_errors) -> do
+					when (not $ null soft_errors) $ putStrLn "Soft errors:" >> forM_ soft_errors print
+					when ("-writeGlobalDecls" `elem` opts) $
+						writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 
-						printLog $ "Every branch combination covered: " ++ show every_branch_covered ++ "\n"
-						when (every_branch_covered && not (null deaths)) $ myError "Every branch covered but deaths!"
-	
-						printLog $ case null deaths of
-							False -> "FAIL, there are coverage gaps!"
-							True  -> "OK, we have full branch coverage."
+					(every_branch_covered,s) <- runStateT covVectorsM $
+						CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc opts
+							Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable
+					let
+						(testvectors_rev,covered) = analysisStateCVS s
+						testvectors = reverse testvectors_rev
+						alls = allCondPointsCVS s
+
+					printLog ""
+
+					let deaths = Set.toList $ alls ∖ covered
+
+					printLog $ "\n####### FINAL RESULT #######\n"
+
+					forM_ testvectors $ \ (traceid,trace,branches,(model_string,mb_solution)) -> do
+						case not showOnlySolutions || maybe False (not.null.(\(_,_,b)->b)) mb_solution of
+							False -> return ()
+							True -> printLog $ unlines $ mbshowtraces (
+								[ "","=== TRACE " ++ show traceid ++ " ========================","<leaving out builtins...>" ] ++
+								[ showLine trace ] ++
+								[ "",
+								"--- MODEL " ++ show traceid ++ " -------------------------",
+								model_string,
+								"" ]) ++
+								[ "--- SOLUTION " ++ show traceid ++ " ----------------------",
+								show_solution funname mb_solution ]
+								where
+								mbshowtraces ts = if showTraces then ts else []
+
+					printLogV 1 $ "All decision points : "
+					forM_ (Set.toList alls) $ \ decisionpoint -> printLogV 1 $ "    " ++ show decisionpoint
+
+					printLog $ "\n===== SUMMARY =====\n"
+
+					forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
+						printLog $ "Test Vector " ++ show traceid ++ " covering " ++ ": "
+						forM_ branches $ \ branch -> printLog $ "    " ++ show branch
+						printLog $ "\n    " ++ showTestVector funname v ++ "\n"
+					forM_ deaths $ \ branch -> do
+						printLog $ "DEAD " ++ show branch ++ "\n"
+
+					printLog $ "Every branch combination covered: " ++ show every_branch_covered ++ "\n"
+					when (every_branch_covered && not (null deaths)) $ myError "Every branch covered but deaths!"
+
+					printLog $ case null deaths of
+						False -> "FAIL, there are coverage gaps!"
+						True  -> "OK, we have full branch coverage."
 
 showEnv :: Env -> String
 showEnv env = "{\n    " ++ intercalate " ,\n    " (map (render.pretty) env) ++ "\n    }"
