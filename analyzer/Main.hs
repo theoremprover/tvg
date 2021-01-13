@@ -179,8 +179,8 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : ["-writeAST"] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
@@ -794,23 +794,22 @@ decl2TypeM from decl = do
 		Right (ty,[]) -> return ty
 		Right (ty,_) -> return ty
 		Left errs -> myError $ show errs
-
--- taken from Language/C/Analysis/DeclAnalysis.hs, added handling of initializers
-myAnalyseTypeDecl :: (MonadTrav m) => CDecl -> m Type
-myAnalyseTypeDecl (CDecl declspecs declrs node) = case declrs of
-	[] -> analyseTyDeclr (CDeclr Nothing [] Nothing [] node)
-	[(Just declr,_,Nothing)] -> analyseTyDeclr declr
 	where
-	analyseTyDeclr (CDeclr _ derived_declrs Nothing attrs _declrnode) = do
-		canonTySpecs <- canonicalTypeSpec typespecs
-		t <- tType True node (map CAttrQual (attrs++attrs_decl) ++ typequals) canonTySpecs derived_declrs []
-		case nameOfNode node of
-			Just n -> withDefTable (\dt -> (t, insertType dt n t))
-			Nothing -> return t
+	-- taken from Language/C/Analysis/DeclAnalysis.hs, added handling of initializers
+	myAnalyseTypeDecl :: (MonadTrav m) => CDecl -> m Type
+	myAnalyseTypeDecl (CDecl declspecs declrs node) = case declrs of
+		[] -> analyseTyDeclr (CDeclr Nothing [] Nothing [] node)
+		[(Just declr,_,Nothing)] -> analyseTyDeclr declr
 		where
-		(storagespec, attrs_decl, typequals, typespecs, funspecs, alignspecs) = partitionDeclSpecs declspecs
-	analyseTyDeclr other = error $ "analyseTyDeclr " ++ show other
-
+		analyseTyDeclr (CDeclr _ derived_declrs Nothing attrs _declrnode) = do
+			canonTySpecs <- canonicalTypeSpec typespecs
+			t <- tType True node (map CAttrQual (attrs++attrs_decl) ++ typequals) canonTySpecs derived_declrs []
+			case nameOfNode node of
+				Just n -> withDefTable (\dt -> (t, insertType dt n t))
+				Nothing -> return t
+			where
+			(storagespec, attrs_decl, typequals, typespecs, funspecs, alignspecs) = partitionDeclSpecs declspecs
+		analyseTyDeclr other = error $ "analyseTyDeclr " ++ show other
 {-
 decl2TypeM from (CDecl declspecs _ _) = case declspecs of
 	[CTypeSpec (CVoidType _)]      -> return $ DirectType TyVoid noTypeQuals noAttributes
