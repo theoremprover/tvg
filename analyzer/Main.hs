@@ -81,7 +81,7 @@ showInitialTrace = True
 solveIt = True
 showModels = True
 showOnlySolutions = True
-showTraces = False
+showTraces = True
 showFinalTrace = False
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
@@ -91,7 +91,7 @@ showBuiltins = False
 cutOffs = False
 logToFile = True
 mainFileName = "main.c"
-printTypes = True
+printTypes = False
 
 compileHereM :: [String] -> String -> String -> CovVecM (String,String)
 compileHereM args filename src = do
@@ -480,7 +480,7 @@ covVectorsM = do
 	Right every_branch_covered <- unfoldTracesM ret_type' True ((arraydecl_env++param_env):[glob_env]) decls [ (defs ++ [ CBlockStmt body ],False) ]
 	return every_branch_covered
 
-harnessAST incl argdecls funcall print_retval = [cunit|
+harnessAST incl argdecls funcall print_retval1 print_retval2 = [cunit|
 $esc:incl_stdio
 $esc:incl_stdlib
 
@@ -496,8 +496,9 @@ int main(int argc, char* argv[])
 
 	$escstm:argdecls
 
+	$escstm:print_retval1
 	$escstm:funcall
-	$escstm:print_retval
+	$escstm:print_retval2
 	
 	return 0;
 }
@@ -532,10 +533,12 @@ createCHarness orig_rettype formal_params filename funname extdecls = do
 	let
 		ret_vals = for retenvexprs $ \ (_,cexpr) -> (render.pretty) (fmap fst cexpr)
 
-		print_retval = "printf(\"" ++ funname ++ "(" ++ argvals ++ ") = \\n"
-			++ intercalate " " ret_formatss ++ "\\n\", " ++ (if null argexprs then "" else (intercalate ", " argexprs) ++ ",") ++
+		print_retval1 = "printf(\"" ++ funname ++ "(" ++ argvals ++ ") = \\n\"," ++
+			(if null argexprs then "" else (intercalate ", " argexprs)) ++ ");"
+		print_retval2 = "printf(\"" ++
+			intercalate " " ret_formatss ++ "\\n\", " ++
 			intercalate ", " ret_vals ++ ");"
-	return $ PPM.prettyCompact $ PPMC.ppr $ harnessAST incl_srcfilename (unlines extdecls) funcall print_retval
+	return $ PPM.prettyCompact $ PPMC.ppr $ harnessAST incl_srcfilename (unlines extdecls) funcall print_retval1 print_retval2
 
 -- Create declarations for the function under test in the C test harness
 createDeclsM :: [(Ident,Type)] -> CovVecM [String]
@@ -1711,13 +1714,13 @@ createSymbolicVarsM trace = create_symbolic_vars [] (map fst $ createTyEnv trace
 		createsymvar_m expr@(CUnary CAdrOp (CVar a_ident _) _) = do
 			let Just ty = lookup a_ident $ createTyEnv res_trace
 			create_var expr $ PtrType ty noTypeQuals noAttributes
-	
+{-	
 		createsymvar_m expr@(CIndex arrexpr _ _) = case arrexpr of
 			CVar ident _ -> do	
 				let Just (ArrayType ty _ _ _) = lookup ident tyenv
 				create_var expr ty
 			_ -> myError $ "createsymvar_m " ++ (render.pretty) expr ++ " : arrexpr is not a CVar"
-	
+-}	
 		createsymvar_m expr = return expr
 
 
@@ -2154,7 +2157,7 @@ z3Ty2SExpr ty = case ty of
 	Z3_Bool               -> SLeaf "Bool"
 	Z3_Index              -> SLeaf "Int"
 	Z3_Ptr _              -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show 1) ]
-	Z3_Array elem_ty size -> SExpr [ SLeaf "Array", z3Ty2SExpr elem_ty ]
+	Z3_Array elem_ty size -> SExpr [ SLeaf "Array", z3Ty2SExpr Z3_Index, z3Ty2SExpr elem_ty ]
 	other                 -> error $ "z3Ty2SExpr " ++ show other ++ " should not occur!"
 
 type Solution = [(String,SolutionVal)]
