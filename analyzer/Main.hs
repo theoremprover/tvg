@@ -1714,13 +1714,7 @@ createSymbolicVarsM trace = create_symbolic_vars [] (map fst $ createTyEnv trace
 		createsymvar_m expr@(CUnary CAdrOp (CVar a_ident _) _) = do
 			let Just ty = lookup a_ident $ createTyEnv res_trace
 			create_var expr $ PtrType ty noTypeQuals noAttributes
-{-	
-		createsymvar_m expr@(CIndex arrexpr _ _) = case arrexpr of
-			CVar ident _ -> do	
-				let Just (ArrayType ty _ _ _) = lookup ident tyenv
-				create_var expr ty
-			_ -> myError $ "createsymvar_m " ++ (render.pretty) expr ++ " : arrexpr is not a CVar"
--}	
+
 		createsymvar_m expr = return expr
 
 
@@ -1768,8 +1762,8 @@ instance {-# OVERLAPPING #-} Show Types where
 	show (t1,_) = show t1
 
 _BoolTypes = (Z3_Bool,intType) :: Types
-_IntTypeM :: CovVecM Types
-_IntTypeM = ty2Z3Type intType
+_IntTypesM :: CovVecM Types
+_IntTypesM = ty2Z3Type intType
 
 extractTypes :: CExprWithType -> Types
 extractTypes = snd.annotation
@@ -1895,7 +1889,7 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 		arr_expr' <- annotate_types arr_expr
 		let (Z3_Array elemty _,ArrayType elemcty _ _ _) = extractTypes arr_expr'
 		ix' <- annotate_types ix
-		intty <- _IntTypeM
+		intty <- _IntTypesM
 		return $ CIndex arr_expr' (mb_cast intty ix') (ni,(elemty,elemcty))
 
 	annotate_types other = myError $ "annotate_types " ++ (render.pretty) other ++ " not implemented"
@@ -1921,7 +1915,6 @@ expr2SExpr expr = expr2sexpr expr
 	where
 
 	make_intconstant :: Types -> Integer -> SExpr
-	make_intconstant (Z3_Index,_) const = SLeaf $ show const
 	make_intconstant (Z3_BitVector size _,_) const | size `mod` 4 == 0 =
 		SLeaf (printf "#x%*.*x" (size `div` 4) (size `div` 4) const)
 
@@ -2009,8 +2002,6 @@ expr2SExpr expr = expr2sexpr expr
 				-- SAMECAST: identity
 				( ty1, ty2 ) | ty1==ty2 -> sexpr
 
-				( Z3_BitVector size unsigned, Z3_Index ) -> SExpr [ SLeaf "bv2int", sexpr ]
-
 				-- Casting signed to unsigned or vice versa with same size: No cast needed (Z3 interprets it)
 				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from==size_to -> sexpr
 
@@ -2072,7 +2063,6 @@ expr2SExpr expr = expr2sexpr expr
 data Z3_Type =
 	Z3_Unit |   -- The proper type-theoretical name for C's void is 1 (i.e. "unit")
 	Z3_Bool |
-	Z3_Index |   -- This is used to distingush between array indices and integers (used by expr2SExpr)
 -- Z3_BitVector Int (is*Un*signed::Bool), hence
 -- the derived ordering intentionally coincides with the type cast ordering :-)
 	Z3_BitVector Int Bool |
@@ -2148,17 +2138,20 @@ sizeofIntTy ty@(DirectType tyname _ attrs) = do
 	to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
 	to_mode attr = error $ "attrs2modes: unknown attr " ++ (render.pretty) attr
 
-z3Ty2SExpr :: Z3_Type -> SExpr
+z3Ty2SExpr :: Z3_Type -> CovVecM SExpr
 z3Ty2SExpr ty = case ty of
-	Z3_BitVector size _   -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
-	Z3_Float              -> SLeaf "Float32"
-	Z3_Double             -> SLeaf "Float64"
-	Z3_LDouble            -> SLeaf "Float128"
-	Z3_Bool               -> SLeaf "Bool"
-	Z3_Index              -> SLeaf "Int"
-	Z3_Ptr _              -> SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show 1) ]
-	Z3_Array elem_ty size -> SExpr [ SLeaf "Array", z3Ty2SExpr Z3_Index, z3Ty2SExpr elem_ty ]
-	other                 -> error $ "z3Ty2SExpr " ++ show other ++ " should not occur!"
+	Z3_BitVector size _      -> return $ SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show size) ]
+	Z3_Float                 -> return $ SLeaf "Float32"
+	Z3_Double                -> return $ SLeaf "Float64"
+	Z3_LDouble               -> return $ SLeaf "Float128"
+	Z3_Bool                  -> return $ SLeaf "Bool"
+	Z3_Ptr _                 -> return $ SExpr [ SLeaf "_", SLeaf "BitVec", SLeaf (show 1) ]
+	Z3_Array elem_ty mb_size -> do
+		(z3_inttype,_) <- _IntTypesM
+		inttysexpr <- z3Ty2SExpr z3_inttype
+		elem_ty_sexpr <- z3Ty2SExpr elem_ty
+		return $ SExpr [ SLeaf "Array", inttysexpr, elem_ty_sexpr ]
+	other                    -> myError $ "z3Ty2SExpr " ++ show other ++ " should not occur!"
 
 type Solution = [(String,SolutionVal)]
 
@@ -2190,9 +2183,8 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 			Assignment lexpr@(CIndex _ _ _) ass_expr -> fvar lexpr ++ fvar ass_expr
 	printLogV 2 $ "constraints_vars = " ++ showIdents constraints_vars
 
-	let
-		varsZ3 :: [SCompound] = for (filter ((`elem` (constraints_vars ++ a_output_idents)).fst) z3tyenv) $ \ (ident,ty) ->
-			SExprLine $ SOnOneLine $ SExpr [ SLeaf "declare-const", SLeaf (identToString ident), z3Ty2SExpr ty ]
+	varsZ3 :: [SCompound] <- forM (filter ((`elem` (constraints_vars ++ a_output_idents)).fst) z3tyenv) $ \ (ident,ty) ->
+		SExprLine <$> (SOnOneLine <$> (SExpr <$> sequence [ pure (SLeaf "declare-const"), pure (SLeaf (identToString ident)), z3Ty2SExpr ty ]))
 	constraintsZ3 :: [SCompound] <- concatForM a_constraints $ \ constraint -> do
 		assert_sexpr <- expr2SExpr constraint
 		return $ [ SEmptyLine,
