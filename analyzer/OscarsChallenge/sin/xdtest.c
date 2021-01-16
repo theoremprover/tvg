@@ -1,5 +1,13 @@
 #include "defs.h"
 
+/*
+typedef union
+ {
+ unsigned short _Sh[8];
+ double _Val;
+ } _Dval;
+*/
+
 short _Dtest(double *px)
  {
  _Dval *ps = (_Dval *)(char *)px;

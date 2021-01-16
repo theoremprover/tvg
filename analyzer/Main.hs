@@ -1647,7 +1647,7 @@ elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
 -- &s->m  ~> s.m
 -- (*p).m ~> p->m
 -- (A)a   ~> a  if a::A
--- (t*) p ~> p   (pointer casts do not change values, they are only to make the type system happy)
+-- NOT DONE: (t*) p ~> p   (pointer casts do not change values, they are only to make the type system happy)
 
 simplifyTraceM :: Trace -> CovVecM Trace
 simplifyTraceM trace = everywhereM (mkM simplify) trace where
@@ -1656,7 +1656,7 @@ simplifyTraceM trace = everywhereM (mkM simplify) trace where
 	simplify (CMember (CUnary CAdrOp s _) member True ni) = return $ CMember s member False ni
 	simplify (CMember (CUnary CIndOp p _) member False ni) = return $ CMember p member True ni
 	simplify (CCast _ expr (_,(z3ty,_))) | extractType expr == z3ty = return expr
-	simplify (CCast _ subexpr (_,(Z3_Ptr _,_))) = return subexpr
+--	simplify (CCast _ subexpr (_,(Z3_Ptr _,_))) = return subexpr
 	simplify expr = return expr
 
 
