@@ -6,20 +6,17 @@ return 1;
 }
 void solver_debug(void *x)
 { }
-#include "oscar.c"
+#include "xdtest.c"
 int main(int argc, char *argv[])
 {
 int i = 1;
 
-double x;
-sscanf(argv[i++],"%lf",&(x));
-unsigned int qoff;
-sscanf(argv[i++],"%u",&(qoff));
-int quads;
-sscanf(argv[i++],"%i",&(quads));
+double PTR_px;
+double * px = &PTR_px;
+sscanf(argv[i++],"%lf",&(*px));
 
-printf("_Sinx(x = %lf, qoff = %u, quads = %i) = \n",x, qoff, quads);
-double return_val = _Sinx(x,qoff,quads);
-printf("%lf\n", return_val);
+printf("_Dtest(*px = %lf) = \n",*px);
+short return_val = _Dtest(px);
+printf("%i\n", return_val);
 return 0;
 }

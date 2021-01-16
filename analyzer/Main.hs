@@ -74,9 +74,10 @@ main = do
 	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -145,7 +146,11 @@ main = do
 								mbshowtraces ts = if showTraces then ts else []
 
 					printLogV 1 $ "All decision points : "
-					forM_ (Set.toList alls) $ \ decisionpoint -> printLogV 1 $ "    " ++ show decisionpoint
+					let decisionpoints = Set.toList alls
+					case null decisionpoints of
+						True  -> printLogV 1 "<none>"
+						False -> forM_ decisionpoints $ \ decisionpoint ->
+							printLogV 1 $ "    " ++ show decisionpoint
 
 					printLog $ "\n===== SUMMARY =====\n"
 
@@ -156,7 +161,7 @@ main = do
 					forM_ deaths $ \ branch -> do
 						printLog $ "DEAD " ++ show branch ++ "\n"
 
-					printLog $ "Every branch combination covered: " ++ show every_branch_covered ++ "\n"
+					printLog $ "Full path coverage: " ++ show every_branch_covered ++ "\n"
 					when (every_branch_covered && not (null deaths)) $ myError "Every branch covered but deaths!"
 
 					printLog $ case null deaths of
@@ -798,7 +803,7 @@ decl2TypeM from decl = do
 		Right (ty,_) -> return ty
 		Left errs -> myError $ show errs
 	where
-	-- taken from Language/C/Analysis/DeclAnalysis.hs, added handling of initializers
+	-- taken from Language/C/Analysis/DeclAnalysis.hs, added proper handling of initializers
 	myAnalyseTypeDecl :: (MonadTrav m) => CDecl -> m Type
 	myAnalyseTypeDecl (CDecl declspecs declrs node) = case declrs of
 		[] -> analyseTyDeclr (CDeclr Nothing [] Nothing [] node)
@@ -813,24 +818,6 @@ decl2TypeM from decl = do
 			where
 			(storagespec, attrs_decl, typequals, typespecs, funspecs, alignspecs) = partitionDeclSpecs declspecs
 		analyseTyDeclr other = error $ "analyseTyDeclr " ++ show other
-{-
-decl2TypeM from (CDecl declspecs _ _) = case declspecs of
-	[CTypeSpec (CVoidType _)]      -> return $ DirectType TyVoid noTypeQuals noAttributes
-	[CTypeSpec (CCharType _)]      -> return $ DirectType (TyIntegral TyChar) noTypeQuals noAttributes
-	[CTypeSpec (CUnsigType _), CTypeSpec (CCharType _)] -> return $ DirectType (TyIntegral TyUChar) noTypeQuals noAttributes
-	[CTypeSpec (CSignedType _), CTypeSpec (CCharType _)] -> return $ DirectType (TyIntegral TySChar) noTypeQuals noAttributes
-	[CTypeSpec (CShortType _)]     -> return $ DirectType (TyIntegral TyShort) noTypeQuals noAttributes
-	[CTypeSpec (CUnsigType _), CTypeSpec (CShortType _)] -> return $ DirectType (TyIntegral TyUShort) noTypeQuals noAttributes
-	[CTypeSpec (CIntType _)]       -> return $ DirectType (TyIntegral TyInt) noTypeQuals noAttributes
-	[CTypeSpec (CUnsigType _), CTypeSpec (CIntType _)] -> return $ DirectType (TyIntegral TyUInt) noTypeQuals noAttributes
-	[CTypeSpec (CLongType _)]      -> return $ DirectType (TyIntegral TyLong) noTypeQuals noAttributes
-	[CTypeSpec (CUnsigType _), CTypeSpec (CLongType _)] -> return $ DirectType (TyIntegral TyULong) noTypeQuals noAttributes
-	[CTypeSpec (CFloatType _)]     -> return $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
-	[CTypeSpec (CDoubleType _)]    -> return $ DirectType (TyFloating TyDouble) noTypeQuals noAttributes
-	[CTypeSpec (CTypeDef ident _)] -> lookupTypeDefM ident
-	[CTypeSpec (CSUType (CStruct _ (Just ident) _ _ _) _)] -> return $ DirectType (TyComp $ CompTypeRef (NamedRef ident) StructTag undefNode) noTypeQuals noAttributes
-	other -> myError $ "decl2TypeM " ++ from ++ " : " ++ show other ++ " not implemented yet."
--}
 
 lookupTagM :: SUERef -> CovVecM TagDef
 lookupTagM ident = do
@@ -845,6 +832,8 @@ getMemberTypeM ty@(DirectType (TyComp (CompTypeRef sueref _ _)) _ _) member = do
 	case lookup member mem_tys of
 		Nothing -> myError $ "getMemberTypeM: Could not find member " ++ (render.pretty) member ++ " in " ++ (render.pretty) ty
 		Just mem_ty -> elimTypeDefsM mem_ty
+getMemberTypeM ty member = myError $ "getMemberTypeM " ++ (render.pretty) ty ++ "\n    " ++ (render.pretty) member ++
+	" not implemented!"
 
 getMembersM :: SUERef -> CovVecM [(Ident,Type)]
 getMembersM sueref = do
@@ -1658,7 +1647,7 @@ elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
 -- &s->m  ~> s.m
 -- (*p).m ~> p->m
 -- (A)a   ~> a  if a::A
--- -- Do this?: (t*) p ~> p
+-- (t*) p ~> p   (pointer casts do not change values, they are only to make the type system happy)
 
 simplifyTraceM :: Trace -> CovVecM Trace
 simplifyTraceM trace = everywhereM (mkM simplify) trace where
@@ -1667,10 +1656,7 @@ simplifyTraceM trace = everywhereM (mkM simplify) trace where
 	simplify (CMember (CUnary CAdrOp s _) member True ni) = return $ CMember s member False ni
 	simplify (CMember (CUnary CIndOp p _) member False ni) = return $ CMember p member True ni
 	simplify (CCast _ expr (_,(z3ty,_))) | extractType expr == z3ty = return expr
-{-
-	simplify (CCast (CDecl _ [(Just (CDeclr Nothing [CPtrDeclr [] _] Nothing [] _),Nothing,Nothing)] _) subexpr _) =
-		return subexpr
--}
+	simplify (CCast _ subexpr (_,(Z3_Ptr _,_))) = return subexpr
 	simplify expr = return expr
 
 
