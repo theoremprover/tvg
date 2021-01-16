@@ -18,7 +18,8 @@ sscanf(argv[i++],"%u",&(qoff));
 int quads;
 sscanf(argv[i++],"%i",&(quads));
 
+printf("_Sinx(x = %lf, qoff = %u, quads = %i) = \n",x, qoff, quads);
 double return_val = _Sinx(x,qoff,quads);
-printf("_Sinx(x = %lf, qoff = %u, quads = %i) = \n%lf\n", x, qoff, quads,return_val);
+printf("%lf\n", return_val);
 return 0;
 }

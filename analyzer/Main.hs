@@ -66,6 +66,103 @@ type UnfoldTracesRet = Either [Trace] Bool
 type SolveFunRet = (Bool,([TraceAnalysisResult],Set.Set Branch))
 
 
+main :: IO ()
+main = do
+	-- when there is an error, we'd like to have *all* output till then
+	hSetBuffering stdout NoBuffering
+
+	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
+
+	gcc:filename:funname:opts <- getArgs >>= return . \case
+		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
+--		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST"]
+--		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\ptrrettest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : ["-writeTraceTree"] --["-writeAST","-writeGlobalDecls"]
+		args -> args
+
+	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
+
+	parseCFile (newGCC gcc) Nothing [] filename >>= \case
+		Left err -> myError $ show err
+		Right translunit -> do
+			when ("-writeAST" `elem` opts) $
+				writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
+			case runTrav_ $ do
+					res <- analyseAST translunit
+					deftable <- getDefTable
+					return (res,deftable)
+				of
+				Left errs -> putStrLn "ERRORS:" >> forM_ errs print
+				Right ((globdecls,deftable),soft_errors) -> do
+					when (not $ null soft_errors) $ putStrLn "Soft errors:" >> forM_ soft_errors print
+					when ("-writeGlobalDecls" `elem` opts) $
+						writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
+
+					(every_branch_covered,s) <- runStateT covVectorsM $
+						CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc opts
+							Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable
+					let
+						(testvectors_rev,covered) = analysisStateCVS s
+						testvectors = reverse testvectors_rev
+						alls = allCondPointsCVS s
+
+					printLog ""
+
+					let deaths = Set.toList $ alls ∖ covered
+
+					printLog $ "\n####### FINAL RESULT #######\n"
+
+					forM_ testvectors $ \ (traceid,trace,branches,(model_string,mb_solution)) -> do
+						case not showOnlySolutions || maybe False (not.null.(\(_,_,b)->b)) mb_solution of
+							False -> return ()
+							True -> printLog $ unlines $ mbshowtraces (
+								[ "","=== TRACE " ++ show traceid ++ " ========================","<leaving out builtins...>" ] ++
+								[ showLine trace ] ++
+								[ "",
+								"--- MODEL " ++ show traceid ++ " -------------------------",
+								model_string,
+								"" ]) ++
+								[ "--- SOLUTION " ++ show traceid ++ " ----------------------",
+								show_solution funname mb_solution ]
+								where
+								mbshowtraces ts = if showTraces then ts else []
+
+					printLogV 1 $ "All decision points : "
+					forM_ (Set.toList alls) $ \ decisionpoint -> printLogV 1 $ "    " ++ show decisionpoint
+
+					printLog $ "\n===== SUMMARY =====\n"
+
+					forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
+						printLog $ "Test Vector " ++ show traceid ++ " covering " ++ ": "
+						forM_ branches $ \ branch -> printLog $ "    " ++ show branch
+						printLog $ "\n    " ++ showTestVector funname v ++ "\n"
+					forM_ deaths $ \ branch -> do
+						printLog $ "DEAD " ++ show branch ++ "\n"
+
+					printLog $ "Every branch combination covered: " ++ show every_branch_covered ++ "\n"
+					when (every_branch_covered && not (null deaths)) $ myError "Every branch covered but deaths!"
+
+					printLog $ case null deaths of
+						False -> "FAIL, there are coverage gaps!"
+						True  -> "OK, we have full branch coverage."
+
 for :: [a] -> (a -> b) -> [b]
 for = flip map
 
@@ -165,103 +262,6 @@ showLine trace = unlines $ map show (filter isnotbuiltin trace)
 show_solution _ Nothing = "No solution"
 show_solution _ (Just (_,_,[])) = "Empty solution"
 show_solution funname (Just v@(_,_,solution)) = unlines $ map show solution ++ [ showTestVector funname v ]
-
-main :: IO ()
-main = do
-	-- when there is an error, we'd like to have *all* output till then
-	hSetBuffering stdout NoBuffering
-
-	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
-
-	gcc:filename:funname:opts <- getArgs >>= return . \case
---		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\deadtest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\whiletest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\ptrtest_flat.c") : "f" : ["-writeAST"]
---		[] -> "gcc" : (analyzerPath++"\\ptrtest.c") : "f" : [] --["-writeAST"]
---		[] -> "gcc" : (analyzerPath++"\\assigntest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\ptrrettest.c") : "g" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : ["-writeTraceTree"] --["-writeAST","-writeGlobalDecls"]
-		args -> args
-
-	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
-	
-	parseCFile (newGCC gcc) Nothing [] filename >>= \case
-		Left err -> myError $ show err
-		Right translunit -> do
-			when ("-writeAST" `elem` opts) $
-				writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
-			case runTrav_ $ do
-					res <- analyseAST translunit
-					deftable <- getDefTable
-					return (res,deftable)
-				of
-				Left errs -> putStrLn "ERRORS:" >> forM_ errs print
-				Right ((globdecls,deftable),soft_errors) -> do
-					when (not $ null soft_errors) $ putStrLn "Soft errors:" >> forM_ soft_errors print
-					when ("-writeGlobalDecls" `elem` opts) $
-						writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
-
-					(every_branch_covered,s) <- runStateT covVectorsM $
-						CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc opts
-							Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable
-					let
-						(testvectors_rev,covered) = analysisStateCVS s
-						testvectors = reverse testvectors_rev
-						alls = allCondPointsCVS s
-
-					printLog ""
-
-					let deaths = Set.toList $ alls ∖ covered
-
-					printLog $ "\n####### FINAL RESULT #######\n"
-
-					forM_ testvectors $ \ (traceid,trace,branches,(model_string,mb_solution)) -> do
-						case not showOnlySolutions || maybe False (not.null.(\(_,_,b)->b)) mb_solution of
-							False -> return ()
-							True -> printLog $ unlines $ mbshowtraces (
-								[ "","=== TRACE " ++ show traceid ++ " ========================","<leaving out builtins...>" ] ++
-								[ showLine trace ] ++
-								[ "",
-								"--- MODEL " ++ show traceid ++ " -------------------------",
-								model_string,
-								"" ]) ++
-								[ "--- SOLUTION " ++ show traceid ++ " ----------------------",
-								show_solution funname mb_solution ]
-								where
-								mbshowtraces ts = if showTraces then ts else []
-
-					printLogV 1 $ "All decision points : "
-					forM_ (Set.toList alls) $ \ decisionpoint -> printLogV 1 $ "    " ++ show decisionpoint
-
-					printLog $ "\n===== SUMMARY =====\n"
-
-					forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
-						printLog $ "Test Vector " ++ show traceid ++ " covering " ++ ": "
-						forM_ branches $ \ branch -> printLog $ "    " ++ show branch
-						printLog $ "\n    " ++ showTestVector funname v ++ "\n"
-					forM_ deaths $ \ branch -> do
-						printLog $ "DEAD " ++ show branch ++ "\n"
-
-					printLog $ "Every branch combination covered: " ++ show every_branch_covered ++ "\n"
-					when (every_branch_covered && not (null deaths)) $ myError "Every branch covered but deaths!"
-
-					printLog $ case null deaths of
-						False -> "FAIL, there are coverage gaps!"
-						True  -> "OK, we have full branch coverage."
 
 showEnv :: Env -> String
 showEnv env = "{\n    " ++ intercalate " ,\n    " (map (render.pretty) env) ++ "\n    }"
@@ -1325,14 +1325,11 @@ unfoldTraces1M ret_type toplevel (env:envs) trace ( (CBlockDecl decl@(CDecl type
 	ty <- decl2TypeM "unfoldTraces1M ret_type" decl
 	new_env_items <- forM triples $ \case
 		(Just (CDeclr (Just ident) derivdeclrs _ _ ni),mb_init,Nothing) -> do
-			let ty' = case derivdeclrs of
-				[] -> ty
-				[CPtrDeclr _ _] -> PtrType ty noTypeQuals noAttributes
-			newenvitems <- identTy2EnvItemM ident ty'
+			newenvitems <- identTy2EnvItemM ident ty
 			let newdecls = map (NewDeclaration . snd) newenvitems
 			initializers <- case mb_init of
 				Nothing -> return []
-				Just initializer -> cinitializer2blockitems (CVar ident ni) ty' initializer
+				Just initializer -> cinitializer2blockitems (CVar ident ni) ty initializer
 			return (newenvitems,newdecls,initializers)
 		triple -> myError $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 	let (newenvs,newitems,initializerss) = unzip3 $ reverse new_env_items
@@ -1446,13 +1443,18 @@ inferLExprTypeM tyenv expr = case expr of
 		ArrayType sub_ty _ _ _ <- inferLExprTypeM tyenv sub_expr
 		return sub_ty
 
-	other -> myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " not implemented"
+	other -> myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " at " ++
+		showFullLocation expr ++ " not implemented"
 
 	where
 
 	could_not_find_error ident =
-		error $ "inferLExprTypeM " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident ++ " in " ++ showTyEnv tyenv
- 
+		myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident ++ " at " ++
+			showFullLocation expr ++ " in " ++ showTyEnv tyenv
+
+showFullLocation :: (CNode a) => a -> String
+showFullLocation cnode = (posFile $ posOfNode $ nodeInfo cnode) ++ " : " ++ (showLocation.lineColNodeInfo) cnode
+
 -- Creates an CExprWithType from a CExpr
 transcribeExprM :: String -> [Env] -> Maybe Types -> CExpr -> CovVecM CExprWithType
 transcribeExprM from envs mb_target_ty expr = do
@@ -1471,7 +1473,7 @@ transcribeExprM from envs mb_target_ty expr = do
 		subst_var (CVar ident ni) = case lookup ident (concat envs) of
 			Just (ident',_) -> CVar ident' ni
 			Nothing -> error $ " in subst_var " ++ from ++ " : Could not find " ++ (render.pretty) ident ++
-				" when renaming " ++ (render.pretty) expr ++ " at " ++ show (nodeInfo expr) ++ "\n" ++
+				" when renaming " ++ (render.pretty) expr ++ " at " ++ showFullLocation expr ++ "\n" ++
 				"env = \n" ++ envToString (concat envs)
 		subst_var expr = expr
 
@@ -1814,10 +1816,6 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 				False -> common_ty
 		return $ CBinary binop (mb_cast common_ty expr1') (mb_cast common_ty expr2') (ni,result_ty)
 
-{--
-	-- Skip empty casts (whereever they might come from...)
-	annotate_types (CCast (CDecl [] [] _) expr _) = annotate_types expr
--}
 	annotate_types ccast@(CCast decl expr ni) = do
 		ty1' <- decl2TypeM ("annotate_types " ++ (render.pretty) ccast) decl
 		printLogV 5 $ "XXX  decl2TypeM ( " ++ (render.pretty) decl ++ ") = " ++ show ty1'
