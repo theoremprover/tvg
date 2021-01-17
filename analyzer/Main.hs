@@ -1906,6 +1906,8 @@ expr2SExpr expr = expr2sexpr expr
 	expr2sexpr (Condition _ cexpr) = do
 		printLogV 2 $ "expr2sexpr " ++ (render.pretty) cexpr
 		expr2sexpr' cexpr
+		
+	-- Assignment to an array member
 	expr2sexpr (Assignment (CIndex var@(CVar ident _) indexexpr _) ass_expr) = do
 		var_s <- expr2sexpr' var
 		index_s <- expr2sexpr' indexexpr
@@ -2045,7 +2047,7 @@ expr2SExpr expr = expr2sexpr expr
 
 
 data Z3_Type =
-	Z3_Unit |   -- The proper type-theoretical name for C's void is 1 (i.e. "unit")
+	Z3_Unit |   -- The proper type-theoretical name for C's void is "1" (i.e. "unit")
 	Z3_Bool |
 -- Z3_BitVector Int (is*Un*signed::Bool), hence
 -- the derived ordering intentionally coincides with the type cast ordering :-)
@@ -2055,7 +2057,7 @@ data Z3_Type =
 	Z3_LDouble |
 	Z3_Ptr Z3_Type |
 	Z3_Array Z3_Type (Maybe Integer) |
-	Z3_Compound |
+	Z3_Compound CompTyKind |
 	Z3_Fun Z3_Type [Z3_Type] Bool |
 	Z3_FunIncomplete Z3_Type |
 	Z3_VaList |
@@ -2076,7 +2078,7 @@ ty2Z3Type ty = do
 				TyDouble  -> Z3_Double
 				TyLDouble -> Z3_LDouble
 			TyEnum _            -> return $ Z3_BitVector intSize True
-			TyComp _            -> return $ Z3_Compound
+			TyComp (CompTypeRef _ comptykind _) -> return $ Z3_Compound comptykind
 			TyBuiltin TyVaList  -> return $ Z3_VaList
 			TyBuiltin TyAny     -> return $ Z3_Any
 			_ -> myError $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
