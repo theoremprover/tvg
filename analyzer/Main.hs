@@ -75,7 +75,8 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -827,13 +828,16 @@ lookupTagM ident = do
 		Nothing -> myError $ "Tag " ++ (show ident) ++ " not found"
 
 getMemberTypeM :: Type -> Ident -> CovVecM Type
-getMemberTypeM ty@(DirectType (TyComp (CompTypeRef sueref _ _)) _ _) member = do
-	mem_tys <- getMembersM sueref
-	case lookup member mem_tys of
-		Nothing -> myError $ "getMemberTypeM: Could not find member " ++ (render.pretty) member ++ " in " ++ (render.pretty) ty
-		Just mem_ty -> elimTypeDefsM mem_ty
-getMemberTypeM ty member = myError $ "getMemberTypeM " ++ (render.pretty) ty ++ "\n    " ++ (render.pretty) member ++
-	" not implemented!"
+getMemberTypeM ty member = do
+	ty' <- elimTypeDefsM ty
+	case ty' of
+		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
+			mem_tys <- getMembersM sueref
+			case lookup member mem_tys of
+				Nothing -> myError $ "getMemberTypeM: Could not find member " ++ (render.pretty) member ++ " in " ++ (render.pretty) ty
+				Just mem_ty -> elimTypeDefsM mem_ty
+		other -> myError $ "getMemberTypeM " ++ (render.pretty) ty' ++ "\n    " ++ (render.pretty) other ++
+			" not implemented!"
 
 getMembersM :: SUERef -> CovVecM [(Ident,Type)]
 getMembersM sueref = do
@@ -1431,6 +1435,8 @@ inferLExprTypeM tyenv expr = case expr of
 	CIndex sub_expr _ _ -> do
 		ArrayType sub_ty _ _ _ <- inferLExprTypeM tyenv sub_expr
 		return sub_ty
+
+	CCast decl expr _ -> decl2TypeM "inferLExpr CCast" decl
 
 	other -> myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " at " ++
 		showFullLocation expr ++ " not implemented"

@@ -1,13 +1,12 @@
-struct mystruct
+union mystruct
 {
-    int a_s;
-    float b_s;
+    int i_s;
+    float f_s;
 };
 
-typedef struct mystruct MyStruct;
+typedef union mystruct MyStruct;
 
-int f(MyStruct* x)
+float f(int* x)
 {
-    MyStruct* ps = x;
-    return (ps->a_s);
+    return ( ((MyStruct*)(char*)x) -> f_s );
 }
