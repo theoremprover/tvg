@@ -75,13 +75,13 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -643,12 +643,12 @@ analyzeTraceM mb_ret_type res_line = do
 	
 	trace' <-		
 		showtraceM showInitialTrace "Initial" return trace >>=
-		showtraceM showTraces "elimInds"            elimInds          >>=
-		showtraceM showTraces "1. simplifyTraceM"   simplifyTraceM    >>=
-		showtraceM showTraces "1. elimAssignmentsM" elimAssignmentsM  >>=
-		showtraceM showTraces "elimArrayAssignsM"   elimArrayAssignsM >>=
-		showtraceM showTraces "2. elimAssignmentsM" elimAssignmentsM  >>=
-		showtraceM showTraces "2. simplifyTraceM"   simplifyTraceM    >>=
+		showtraceM showTraces "elimInds"            elimInds            >>=
+		showtraceM showTraces "1. simplifyTraceM"   simplifyTraceM      >>=
+		showtraceM showTraces "1. elimAssignmentsM" elimAssignmentsM    >>=
+		showtraceM showTraces "elimArrayAssignsM"   elimArrayAssignsM   >>=
+		showtraceM showTraces "2. elimAssignmentsM" elimAssignmentsM    >>=
+		showtraceM showTraces "2. simplifyTraceM"   simplifyTraceM      >>=
 		showtraceM showTraces "createSymbolicVarsM" createSymbolicVarsM
 
 	either_resultdata <- solveTraceM mb_ret_type traceid trace'
@@ -1422,38 +1422,6 @@ cinitializer2blockitems lexpr ty initializer =
 					_ -> myError $ "cinitializer2blockitems ArrayType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
 			_ -> myError $ "cinitializer2blockitems: " ++ (render.pretty) ty ++ " at " ++ (show $ nodeInfo lexpr) ++ " not implemented!"
 
-{-
-inferLExprTypeM :: TyEnv -> CExpr -> CovVecM Type
-inferLExprTypeM tyenv expr = case expr of
-
-	CVar ident _ -> case lookup ident tyenv of
-		Nothing -> could_not_find_error ident
-		Just ty -> elimTypeDefsM ty
-
-	CMember objexpr member True _ -> do
-		PtrType objty _ _ <- inferLExprTypeM tyenv objexpr
-		getMemberTypeM objty member
-
-	CMember objexpr member False _ -> do
-		objty <- inferLExprTypeM tyenv objexpr
-		getMemberTypeM objty member
-
-	CIndex sub_expr _ _ -> do
-		ArrayType sub_ty _ _ _ <- inferLExprTypeM tyenv sub_expr
-		return sub_ty
-
-	CCast decl expr _ -> decl2TypeM "inferLExpr CCast" decl
-
-	other -> myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " at " ++
-		showFullLocation expr ++ " not implemented"
-
-	where
-
-	could_not_find_error ident =
-		myError $ "inferLExprTypeM " ++ (render.pretty) expr ++ " : Could not find " ++ (render.pretty) ident ++ " at " ++
-			showFullLocation expr ++ " in " ++ showTyEnv tyenv
--}
-
 showFullLocation :: (CNode a) => a -> String
 showFullLocation cnode = (posFile $ posOfNode $ nodeInfo cnode) ++ " : " ++ (showLocation.lineColNodeInfo) cnode
 
@@ -1660,6 +1628,7 @@ elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
 -- &s->m  ~> s.m
 -- (*p).m ~> p->m
 -- (A)a   ~> a  if a::A
+-- (A*)x  ~> x
 
 simplifyTraceM :: Trace -> CovVecM Trace
 simplifyTraceM trace = everywhereM (mkM simplify) trace where
@@ -1668,6 +1637,8 @@ simplifyTraceM trace = everywhereM (mkM simplify) trace where
 	simplify (CMember (CUnary CAdrOp s _) member True ni) = return $ CMember s member False ni
 	simplify (CMember (CUnary CIndOp p _) member False ni) = return $ CMember p member True ni
 	simplify (CCast _ expr (_,(z3ty,_))) | extractZ3Type expr == z3ty = return expr
+-- This one:
+	simplify (CCast _ expr (_,(Z3_Ptr z3ty,_))) = return expr
 	simplify expr = return expr
 
 
@@ -1768,10 +1739,10 @@ extractTypes :: CExprWithType -> Types
 extractTypes = snd.annotation
 
 extractZ3Type :: CExprWithType -> Z3_Type
-extractZ3Type = fst.snd.annotation
+extractZ3Type = fst.extractTypes
 
 extractType :: CExprWithType -> Type
-extractType = snd.snd.annotation
+extractType = snd.extractTypes
 
 extractNodeInfo :: CExprWithType -> NodeInfo
 extractNodeInfo = fst.annotation
