@@ -75,8 +75,8 @@ main = do
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -643,13 +643,14 @@ analyzeTraceM mb_ret_type res_line = do
 	
 	trace' <-		
 		showtraceM showInitialTrace "Initial" return trace >>=
-		showtraceM showTraces "elimInds"            elimInds            >>=
-		showtraceM showTraces "1. simplifyTraceM"   simplifyTraceM      >>=
-		showtraceM showTraces "1. elimAssignmentsM" elimAssignmentsM    >>=
-		showtraceM showTraces "elimArrayAssignsM"   elimArrayAssignsM   >>=
-		showtraceM showTraces "2. elimAssignmentsM" elimAssignmentsM    >>=
-		showtraceM showTraces "2. simplifyTraceM"   simplifyTraceM      >>=
-		showtraceM showTraces "createSymbolicVarsM" createSymbolicVarsM
+		showtraceM showTraces "elimInds"             elimInds >>=
+		showtraceM showTraces "1. simplifyTraceM"    simplifyTraceM >>=
+		showtraceM showTraces "1. elimAssignmentsM"  elimAssignmentsM >>=
+		showtraceM showTraces "elimArrayAssignsM"    elimArrayAssignsM >>=
+		showtraceM showTraces "2. elimAssignmentsM"  elimAssignmentsM >>=
+		showtraceM showTraces "2. simplifyTraceM"    simplifyTraceM >>=
+		showtraceM showTraces "addUnionConstraintsM" addUnionConstraintsM >>=
+		showtraceM showTraces "createSymbolicVarsM"  createSymbolicVarsM
 
 	either_resultdata <- solveTraceM mb_ret_type traceid trace'
 	case either_resultdata of
@@ -1556,13 +1557,11 @@ substituteBy x y d = everywhere (mkT (substexpr x y)) d
 elimInds :: Trace -> CovVecM Trace
 elimInds trace = elim_indsM [] $ reverse trace
 	where
-	tyenv = createTyEnv trace
 	elim_indsM :: Trace -> Trace -> CovVecM Trace
 	elim_indsM res_trace [] = return res_trace
 	elim_indsM res_trace (ti@(Assignment ptr@(CVar ptr_ident _) expr) : rest) = do
-		case lookup ptr_ident tyenv of
-			Nothing -> myError $ "elemInds: could not find " ++ (render.pretty) ptr_ident
-			Just (PtrType _ _ _) -> elim_indsM (cancel_ind_adrs $ substituteBy ptr expr res_trace) rest
+		case extractType ptr of
+			PtrType _ _ _ -> elim_indsM (cancel_ind_adrs $ substituteBy ptr expr res_trace) rest
 			_ -> elim_indsM (ti : res_trace) rest
 	elim_indsM res_trace (ti : rest) = elim_indsM (ti : res_trace) rest
 
@@ -1597,7 +1596,6 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 elimArrayAssignsM :: Trace -> CovVecM Trace
 elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
 	where
-	ty_env = createTyEnv trace
 	elim_arr_assnsM :: StateT (Map.Map Ident Int) CovVecM Trace
 	elim_arr_assnsM = do
 		ls <- forM trace $ \case
@@ -1614,9 +1612,8 @@ elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
 					let
 						newident = internalIdent $ identToString ident ++ "$" ++ show i
 						newvar   = CVar newident var_ni
-						Just array_type = lookup ident ty_env
 					return $ [
-						NewDeclaration (newident,array_type) ,
+						NewDeclaration (newident,extractType var) ,
 						Assignment (CIndex newvar index_expr index_ni) ass_expr,
 						Assignment var newvar ]
 				other -> myError $ "elim_arr_assnsM: not a variable in CIndex: " ++ (render.pretty) other
@@ -1628,7 +1625,7 @@ elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
 -- &s->m  ~> s.m
 -- (*p).m ~> p->m
 -- (A)a   ~> a  if a::A
--- (A*)x  ~> x
+-- (A*)x  ~> x::(A*)
 
 simplifyTraceM :: Trace -> CovVecM Trace
 simplifyTraceM trace = everywhereM (mkM simplify) trace where
@@ -1638,9 +1635,27 @@ simplifyTraceM trace = everywhereM (mkM simplify) trace where
 	simplify (CMember (CUnary CIndOp p _) member False ni) = return $ CMember p member True ni
 	simplify (CCast _ expr (_,(z3ty,_))) | extractZ3Type expr == z3ty = return expr
 -- This one:
-	simplify (CCast _ expr (_,(Z3_Ptr z3ty,_))) = return expr
+	simplify (CCast _ expr (_,tys@(Z3_Ptr _,_))) = return $ amap (\(ni,_)->(ni,tys)) expr
 	simplify expr = return expr
 
+
+addUnionConstraintsM :: Trace -> CovVecM Trace
+addUnionConstraintsM trace = do
+	-- collect all CMembers
+	let members = everything (++) (mkQ [] search_members) trace where
+		search_members :: CExprWithType -> [?]
+		search_members cmember@(CMember _ _ _ _) = [cmember]
+		search_members _ = []
+
+	-- filter the ones referring to a union and extract exprs and members from the CMember
+	union_members <- concatForM is_union_member members where
+		is_union_member :: CExprWithType -> CovVecM Bool
+		is_union_member cmember@(CMember cvar@(CVar ident _) member True  _)
+			| Z3_Ptr (Z3_Compound sueref CUnionTag) <- extractZ3Type expr = return [(sueref,expr,member,cmember)]
+		is_union_member (CMember expr member False _)
+			| Z3_Compound sueref CUnionTag <- extractZ3Type expr = return [(sueref,expr,member,cmember)]
+
+	return trace
 
 -- Create symbolic vars for leftover expressions
 
@@ -1654,8 +1669,6 @@ createSymbolicVarsM trace = create_symbolic_vars [] (map fst $ createTyEnv trace
 		create_symbolic_vars (ti' : (map NewDeclaration add_tis) ++ res_trace) (map fst add_tis ++ new_idents) rest
 		where
 		
-		tyenv = createTyEnv res_trace
-	
 		create_var :: CExprWithType -> Type -> StateT [(Ident,Type)] CovVecM CExprWithType
 		create_var expr ty = do
 			let newident = mkIdentWithCNodePos (extractNodeInfo expr) $ lValueToVarName expr
@@ -1665,17 +1678,15 @@ createSymbolicVarsM trace = create_symbolic_vars [] (map fst $ createTyEnv trace
 	
 		createsymvar_m :: CExprWithType -> StateT [(Ident,Type)] CovVecM CExprWithType
 	
-		createsymvar_m expr@(CUnary CIndOp (CVar ptr_ident _) ni) = do
-			let Just (PtrType ty _ _) = lookup ptr_ident tyenv
+		createsymvar_m expr@(CUnary CIndOp cvar@(CVar ptr_ident _) ni) = do
+			let PtrType ty _ _ = extractType cvar
 			create_var expr ty
 	
 		--  for ptr->member   create    p1_ARROW_member :: member_type
-		createsymvar_m expr@(CMember (CVar ptr_ident _) member True _) = do
-			case lookup ptr_ident tyenv of
-				Nothing -> myError $ "createsymvar_m: Could not find " ++ (render.pretty) ptr_ident ++ " of " ++ (render.pretty) expr ++ " in " ++ showTyEnv tyenv
-				Just (PtrType sue_ty _ _) -> do
-					member_ty <- lift $ getMemberTypeM sue_ty member
-					create_var expr member_ty
+		createsymvar_m expr@(CMember cvar@(CVar ptr_ident _) member True _) = do
+			let PtrType sue_ty _ _ = extractType cvar
+			member_ty <- lift $ getMemberTypeM sue_ty member
+			create_var expr member_ty
 	
 		--  for a.member   create    a_DOT_member :: member_type
 		createsymvar_m expr@(CMember (CVar a_ident _) member False ni) = do
@@ -2049,7 +2060,7 @@ data Z3_Type =
 	Z3_LDouble |
 	Z3_Ptr Z3_Type |
 	Z3_Array Z3_Type (Maybe Integer) |
-	Z3_Compound CompTyKind |
+	Z3_Compound SUERef CompTyKind |
 	Z3_Fun Z3_Type [Z3_Type] Bool |
 	Z3_FunIncomplete Z3_Type |
 	Z3_VaList |
@@ -2070,7 +2081,7 @@ ty2Z3Type ty = do
 				TyDouble  -> Z3_Double
 				TyLDouble -> Z3_LDouble
 			TyEnum _            -> return $ Z3_BitVector intSize True
-			TyComp (CompTypeRef _ comptykind _) -> return $ Z3_Compound comptykind
+			TyComp (CompTypeRef sueref comptykind _) -> return $ Z3_Compound sueref comptykind
 			TyBuiltin TyVaList  -> return $ Z3_VaList
 			TyBuiltin TyAny     -> return $ Z3_Any
 			_ -> myError $ "ty2Z3Type " ++ (render.pretty) ty ++ " not implemented!"
