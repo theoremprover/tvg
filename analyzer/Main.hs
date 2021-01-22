@@ -1646,20 +1646,23 @@ simplifyTraceM trace = everywhereM (mkM simplify) trace where
 addUnionConstraintsM :: Trace -> CovVecM Trace
 addUnionConstraintsM trace = do
 	-- collect all CMembers
-	let members = everything (++) (mkQ [] search_members) trace where
+	let members = everything (++) (mkQ [] search_members) trace
+		where
 		search_members :: CExprWithType -> [CExprWithType]
 		search_members cmember@(CMember _ _ _ _) = [cmember]
 		search_members _ = []
 
 	-- filter the ones referring to a union and extract exprs and members from the CMember
-	union_members <- concatForM is_union_member members where
-		is_union_member :: CExprWithType -> CovVecM [(SUERef,CExprWithType,Ident,CExprWithType)]
-		is_union_member cmember@(CMember cvar@(CVar ident _) member True  _)
-			| Z3_Ptr (Z3_Compound sueref CUnionTag) <- extractZ3Type expr =
-				return [(sueref,expr,member,cmember)]
-		is_union_member (CMember expr member False _)
-			| Z3_Compound sueref CUnionTag <- extractZ3Type expr =
-				return [(sueref,expr,member,cmember)]
+	union_members <- concatForM members $ \case
+		cmember@(CMember cvar@(CVar ident _) member True  _)
+			| Z3_Ptr (Z3_Compound sueref UnionTag) <- extractZ3Type cvar ->
+				return [(sueref,ident,member,cmember)]
+		cmember@(CMember cvar@(CVar ident _) member False _)
+			| Z3_Compound sueref UnionTag <- extractZ3Type cvar ->
+				return [(sueref,ident,member,cmember)]
+	let unique_members = nubBy (\ (_,ident1,member1,_) (_,ident2,member2,_) -> ident1==ident2 && member1==member2) union_members
+
+	printLogV 1 $ "unique_members=\n" ++ unlines (map (\(_,ident,member,_)->show (ident,member)) unique_members)
 
 	return trace
 
