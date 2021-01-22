@@ -1,5 +1,9 @@
 {-# OPTIONS_GHC -fno-warn-tabs #-}
-{-# LANGUAGE PackageImports,RecordWildCards,FunctionalDependencies,MultiParamTypeClasses,QuasiQuotes,UnicodeSyntax,LambdaCase,ScopedTypeVariables,TupleSections,TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,DeriveDataTypeable,DeriveGeneric #-}
+{-# LANGUAGE
+	PackageImports,RecordWildCards,FunctionalDependencies,MultiParamTypeClasses,
+	QuasiQuotes,UnicodeSyntax,LambdaCase,ScopedTypeVariables,TupleSections,
+	TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,
+	DeriveDataTypeable,DeriveGeneric,PatternGuards #-}
 
 module Main where
 
@@ -875,7 +879,7 @@ declaration2EnvItemM decl = do
 	return $ [ (srcident,(srcident,ty')) ]
 
 mkIdentWithCNodePos :: (CNode cnode) => cnode -> String -> Ident
-mkIdentWithCNodePos cnode name = mkIdent (posOfNode $ nodeInfo cnode) name (Name 9999999)
+mkIdentWithCNodePos cnode name = mkIdent (posOfNode $ nodeInfo cnode) name (Name 9999)
 
 
 -- Takes an identifier and a type, and creates env item(s) from that.
@@ -1643,17 +1647,19 @@ addUnionConstraintsM :: Trace -> CovVecM Trace
 addUnionConstraintsM trace = do
 	-- collect all CMembers
 	let members = everything (++) (mkQ [] search_members) trace where
-		search_members :: CExprWithType -> [?]
+		search_members :: CExprWithType -> [CExprWithType]
 		search_members cmember@(CMember _ _ _ _) = [cmember]
 		search_members _ = []
 
 	-- filter the ones referring to a union and extract exprs and members from the CMember
 	union_members <- concatForM is_union_member members where
-		is_union_member :: CExprWithType -> CovVecM Bool
+		is_union_member :: CExprWithType -> CovVecM [(SUERef,CExprWithType,Ident,CExprWithType)]
 		is_union_member cmember@(CMember cvar@(CVar ident _) member True  _)
-			| Z3_Ptr (Z3_Compound sueref CUnionTag) <- extractZ3Type expr = return [(sueref,expr,member,cmember)]
+			| Z3_Ptr (Z3_Compound sueref CUnionTag) <- extractZ3Type expr =
+				return [(sueref,expr,member,cmember)]
 		is_union_member (CMember expr member False _)
-			| Z3_Compound sueref CUnionTag <- extractZ3Type expr = return [(sueref,expr,member,cmember)]
+			| Z3_Compound sueref CUnionTag <- extractZ3Type expr =
+				return [(sueref,expr,member,cmember)]
 
 	return trace
 
