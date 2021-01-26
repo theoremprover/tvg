@@ -797,25 +797,25 @@ _fpmul_parts ( fp_number_type *  a,
   fractype low = 0;
   fractype high = 0;
 
-  if (solver_pragma(12) && isnan (a))
+  if (isnan (a))
     {
       a->sign = a->sign != b->sign;
       return a;
     }
 
-  if (solver_pragma(12) && isnan (b))
+  if (isnan (b))
     {
       b->sign = a->sign != b->sign;
       return b;
     }
-  if (solver_pragma(12) && isinf (a))
+  if (isinf (a))
     {
       if (iszero (b))
 	return nan ();
       a->sign = a->sign != b->sign;
       return a;
     }
-  if (solver_pragma(12) && isinf (b))
+  if (isinf (b))
     {
       if (iszero (a))
 	{
@@ -824,12 +824,12 @@ _fpmul_parts ( fp_number_type *  a,
       b->sign = a->sign != b->sign;
       return b;
     }
-  if (solver_pragma(12) && iszero (a))
+  if (iszero (a))
     {
       a->sign = a->sign != b->sign;
       return a;
     }
-  if (solver_pragma(12) && iszero (b))
+  if (iszero (b))
     {
       b->sign = a->sign != b->sign;
       return b;
@@ -851,7 +851,7 @@ _fpmul_parts ( fp_number_type *  a,
 // ..->sign is unsigned int
   tmp->sign = a->sign != b->sign ;
 
-  while (solver_pragma(0,1) && (high >= IMPLICIT_2))
+  while (high >= IMPLICIT_2)
     {
       tmp->normal_exp++;
 
@@ -863,7 +863,7 @@ _fpmul_parts ( fp_number_type *  a,
       high >>= 1;
     }
 
-  while (solver_pragma(0,1) && high < IMPLICIT_1)
+  while (high < IMPLICIT_1)
     {
       tmp->normal_exp--;
       high <<= 1;
@@ -974,9 +974,9 @@ _fpdiv_parts (fp_number_type * a,
     bit = IMPLICIT_1;
     quotient = 0;
     /* ??? Does divide one bit at a time.  Optimize.  */
-    while (bit)
+    while (solver_pragma(31) && bit)
       {
-            if (numerator >= denominator)
+            if (solver_pragma(1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,12,12,12,12,12,1) && (numerator >= denominator))
               {
                 quotient |= bit;
                 numerator -= denominator;
@@ -996,9 +996,6 @@ _fpdiv_parts (fp_number_type * a,
 	  }
 	else if (numerator)
 	  {
-#ifdef CALC
-	    printf("GOTIT!\n");
-#endif
 	    /* We're a further than half way by the small amount
 	       corresponding to the bits set in "numerator".  Knowing
 	       that, we round here and not in pack_d, because there we
@@ -1629,51 +1626,3 @@ tf_to_sf (TFtype arg_a)
 
 #endif /* ! FLOAT */
 #endif /* !EXTENDED_FLOAT_STUBS */
-
-/*
-#ifdef CALC
-int main(int argc, char* argv[])
-{
-    printf("sizeof(UDItype)=%i\n",sizeof(UDItype));
-    printf("sizeof(fractype)=%i\n",sizeof(fractype));
-    printf("sizeof(int)=%i\n",sizeof(int));
-    printf("sizeof(long)=%i\n",sizeof(long));
-    printf("sizeof(long long)=%i\n",sizeof(long long));
-    printf("FRACBITS=%i, NGARDS=%i, FRAC_NBITS=%i\n",FRACBITS,NGARDS,FRAC_NBITS);
-    // FRACBITS=23, NGARDS=7
-    printf("ROUND_TOWARDS_ZERO=%i, GARDMASK=%i, GARDMSB=%i\n",ROUND_TOWARDS_ZERO,GARDMASK,GARDMSB);
-
-    int i = 1 ;
-
-    struct fp_number_type * arga0; sscanf(argv[i++],"%p",&arga0); // a
-    int arga1; sscanf(argv[i++],"%i",&arga1); // fp_class_type class;
-    unsigned int arga2; sscanf(argv[i++],"%u",&arga2); // unsigned int sign;
-    int arga3; sscanf(argv[i++],"%i",&arga3); // int normal_exp;
-    unsigned int arga4; sscanf(argv[i++],"%u",&arga4); // fractype ll; }
-
-    struct fp_number_type * argb0; sscanf(argv[i++],"%p",&argb0); // a
-    int argb1; sscanf(argv[i++],"%i",&argb1); // fp_class_type class;
-    unsigned int argb2; sscanf(argv[i++],"%u",&argb2); // unsigned int sign;
-    int argb3; sscanf(argv[i++],"%i",&argb3); // int normal_exp;
-    unsigned int argb4; sscanf(argv[i++],"%u",&argb4); // fractype ll; }
-
-    struct fp_number_type * argt0; sscanf(argv[i++],"%p",&argt0); // a
-    int argt1; sscanf(argv[i++],"%i",&argt1); // fp_class_type class;
-    unsigned int argt2; sscanf(argv[i++],"%u",&argt2); // unsigned int sign;
-    int argt3; sscanf(argv[i++],"%i",&argt3); // int normal_exp;
-    unsigned int argt4; sscanf(argv[i++],"%u",&argt4); // fractype ll; }
-
-    fp_number_type a = { arga1, arga2, arga3, { arga4 } };
-    fp_number_type b = { argb1, argb2, argb3, { argb4 } };
-    fp_number_type t = { argt1, argt2, argt3, { argt4 } };
-
-    fp_number_type* r = _fpmul_parts(&a,&b,&t);
-    printf("f(a=%p, a={ %i,%u,%i, fraction={%u} },   b=%p, b={ %i,%u,%i, fraction={%u} },  t=%p, t={ %i,%u,%i, fraction={%u} }) =\n%p %i %u %i %u\n",
-        arga0,arga1,arga2,arga3,arga4,
-        argb0,argb1,argb2,argb3,argb4,
-        argt0,argt1,argt2,argt3,argt4,
-        r,r->class,r->sign,r->normal_exp,r->fraction.ll);
-    return 0;
-}
-#endif
-*/

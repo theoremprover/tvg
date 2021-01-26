@@ -32,7 +32,8 @@ import qualified Text.PrettyPrint.Mainland as PPM
 import qualified Text.PrettyPrint.Mainland.Class as PPMC
 import Control.Monad
 import Control.Monad.Trans.Class
-import Control.Monad.Trans.State.Strict
+import Control.Monad.Trans.State
+--import Control.Monad.Trans.State.Strict
 import qualified Data.Set as Set
 import Data.Set.Unicode
 import Prelude.Unicode ((∧),(∨))
@@ -80,16 +81,16 @@ main = do
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
@@ -186,9 +187,9 @@ ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
 outputVerbosity = 1
 showInitialTrace = True
 solveIt = True
-showModels = True
+showModels = False
 showOnlySolutions = True
-showTraces = True
+showTraces = False
 showFinalTrace = False
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
@@ -1230,6 +1231,9 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 		case recognizeAnnotation cond0 of
 			(real_cond,Just (ns,_)) -> return (Just ns,"Recognized LOOP annotation to " ++ (render.pretty) cond0)
 			(real_cond,Nothing) -> do
+				let default_ns = [0,1,2]
+				return (Just default_ns,"No annotation, trying " ++ show default_ns)
+{-
 				translateExprM envs real_cond (Just _BoolTypes) >>= \case
 					[(cond,[])] -> do
 						let
@@ -1304,6 +1308,7 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 								unlines (map (\(ass_var,_) -> (render.pretty) ass_var) other))
 						
 					_ -> return (Nothing,"condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!")
+-}
 
 	-- mb_ty is Nothing if the result type of expr is not known, i.e. no casting necessary.
 	transids :: CExpr -> Maybe Types -> Trace -> ((CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
@@ -1660,6 +1665,8 @@ addUnionConstraintsM trace = do
 		cmember@(CMember cvar@(CVar ident _) member False _)
 			| Z3_Compound sueref UnionTag <- extractZ3Type cvar ->
 				return [(sueref,ident,member,cmember)]
+		cmember -> return []
+
 	let unique_members = nubBy (\ (_,ident1,member1,_) (_,ident2,member2,_) -> ident1==ident2 && member1==member2) union_members
 
 	printLogV 1 $ "unique_members=\n" ++ unlines (map (\(_,ident,member,_)->show (ident,member)) unique_members)
