@@ -76,8 +76,6 @@ main = do
 	-- when there is an error, we'd like to have *all* output till then
 	hSetBuffering stdout NoBuffering
 
-	-- TODO: Automatically find out int/long/longlong sizes of the compiler!
-
 	gcc:filename:funname:opts <- getArgs >>= return . \case
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
