@@ -242,7 +242,7 @@ int main(void)
 -- Z3 does not accept identifiers starting with an underscore, so we prefix these with an "a"
 safeZ3IdentifierPrefix = 'a'
 
-mAX_UNROLLS = 30
+mAX_UNROLLS = 3
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
 
 sizeConditionChunks = 4
@@ -1091,7 +1091,8 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 			-- 12 is a wildcard in the choice list
 			-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
 			(real_cond,Just (ns,num_reached)) | length ns > num_reached && ns!!num_reached /= 12 -> do
-				printLogV 2 $ "Recognized IF annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond
+				printLogV 1 $ "Recognized IF annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
+					" (reached " ++ show num_reached ++ " times)"
 				case ns!!num_reached of
 					1 -> then_trace_m real_cond
 					2 -> else_trace_m real_cond
@@ -1197,10 +1198,11 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 
 	recognizeAnnotation :: CExpr -> (CExpr,Maybe ([Int],Int))
 	recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) =
-		-- set the original cexpr's NodeInfo in the real_cond in order to retain the proper decision point
+		-- set the NodeInfo in real_cond to the original NodeInfo of the *whole* condition that includes the solver_annotation
+		-- otherwise, it will be reported as uncovered (all branching points are determined before the analysis starts)
 		(amap (const ni) real_cond,Just (map arg2int args,num_reached)) where
 			num_reached = length $ filter is_this_cond trace where
-				is_this_cond (Condition _ c) = extractNodeInfo c == nodeInfo real_cond
+				is_this_cond (Condition _ c) = extractNodeInfo c == ni
 				is_this_cond _ = False
 			arg2int (CConst (CIntConst (CInteger i _ _) _)) = fromIntegral i
 	recognizeAnnotation real_cond = (real_cond,Nothing)
@@ -1230,8 +1232,8 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 			(real_cond,Just (ns,_)) -> return (Just ns,"Recognized LOOP annotation to " ++ (render.pretty) cond0)
 			(real_cond,Nothing) -> do
 				let default_ns = [0,1,2]
-				return (Just default_ns,"No annotation, trying " ++ show default_ns)
-{-
+--				return (Just default_ns,"No annotation, trying " ++ show default_ns)
+
 				translateExprM envs real_cond (Just _BoolTypes) >>= \case
 					[(cond,[])] -> do
 						let
@@ -1255,42 +1257,48 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 							intercalate " , " (map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") body_assigns)
 
 						case body_assigns :: [(CExprWithType,CExprWithType)] of
-{-
-							[ (counter_var@(CVar ass_ident _),ass_expr) ] -> do
+							[ (counter_var@(CVar ass_ident (_,(ass_ident_z3ty,_))),ass_expr) ] -> do
 								let
 									is_ass_to_ass_var (Assignment (CVar ident _) _) | ident==ass_ident = True
 									is_ass_to_ass_var _ = False
 								case filter is_ass_to_ass_var trace of
 									[] -> return (Nothing,"infer_loopingsM: There is no assignment to the loop counter " ++ (render.pretty) counter_var ++ " prior to the loop")
 									ass@(Assignment _ i_0) : _ | null (fvar i_0)-> do
+										inttypes <- ty2Z3Type intType
 										printLogV 2 $ "last assignment to loop counter is " ++ show ass
-										let i_n :: CExprWithType -> CExprWithType = case ass_expr of
+										let i_n :: CExprWithType -> CovVecM CExprWithType = case ass_expr of
 											-- for all binops where the following holds (Linearity?):
 											-- i_n = i_(n-1) `binop` c  =>  i_n = i_0 `binop` c
-											CBinary binop (CVar ident _) cconst@(CConst _) _ | ident == ass_ident ∧ binop `elem` [CSubOp,CAddOp,CShrOp,CShlOp] ->
-												\ n_var → CBinary binop i_0 (n_var ∗ cconst) (undefNode,ty2Z3Type intType)
+											CBinary binop (CVar ident _) cconst@(CConst _) _ | ident == ass_ident ∧ binop `elem` [CSubOp,CAddOp,CShrOp,CShlOp] -> \ n_var → do
+												return $ CBinary binop i_0 (n_var ∗ cconst) (undefNode,inttypes)
 											_ -> error $ "infer_loopingsM: assignment " ++ (render.pretty) ass_ident ++ " := " ++ (render.pretty) ass_expr ++ " not implemented!"
 										let
-											n_name = "n_loopings"
+											n_name = "n$loopings"
 											n_ident = internalIdent n_name
-											n_var = CVar n_ident (undefNode,ty2Z3Type intType)
-											modelpath = analyzerPath </> n_name ++ show (lineColNodeInfo cond) ++ ".smtlib2"
-										n_type <- case lookup ass_ident (envs2tyenv envs) of
+											n_var = CVar n_ident (undefNode,inttypes)
+											modelpath = analyzerPath </> n_name ++ show (lineColNodeInfo $ extractNodeInfo cond) ++ ".smtlib2"
+										n_types <- case lookup ass_ident (envs2tyenv envs) of
 											Nothing -> myError $ "infer_loopingsM: Could not find type of " ++ (render.pretty) counter_var
-											Just ty -> return ty
+											Just ty -> ty2Z3Type ty
+										i_n_n_var <- i_n n_var
+										i_0 <- ⅈ 0
+										i_1 <- ⅈ 1
+										i_n_n_var_minus_1 <-  i_n $ n_var − i_1
+										i_n_0 <- i_n i_0
+										tyenv <- tyEnvFromTraceM trace
 										(model_string,mb_sol) <- makeAndSolveZ3ModelM
 											[]
-											((n_ident,n_type) : envs2tyenv envs)
+											((n_ident,ass_ident_z3ty) : tyenv)
 											(let
-												cond_n       = (counter_var `substituteBy` (i_n n_var)) cond
-												cond_nminus1 = (counter_var `substituteBy` (i_n $ n_var − ⅈ 1)) cond
-												cond_0       = (counter_var `substituteBy` (i_n (ⅈ 0))) cond
+												cond_n       = (counter_var `substituteBy` i_n_n_var) cond
+												cond_nminus1 = (counter_var `substituteBy` i_n_n_var_minus_1) cond
+												cond_0       = (counter_var `substituteBy` i_n_0) cond
 												in
-												[
-													n_var ⩾ ⅈ 0,
-													not_c cond_0  ⋏  n_var ⩵ ⅈ 0
+												map (Condition Nothing) [
+													n_var ⩾ i_0,
+													not_c cond_0  ⋏  n_var ⩵ i_0
 														⋎
-														cond_nminus1 ⋏ n_var ⩾ ⅈ 1 ⋏ not_c cond_n
+														cond_nminus1 ⋏ n_var ⩾ i_1 ⋏ not_c cond_n
 												])
 											[ SExpr [SLeaf "minimize",SLeaf n_name] ]
 											[n_ident]
@@ -1300,13 +1308,11 @@ unfoldTraces1M ret_type toplevel envs trace bstss@(((CBlockStmt stmt : rest),bre
 											Just sol@[(_,IntVal n)] -> (Just [n], "Found looping solution n = " ++ show sol)
 											_                       -> (Nothing,"n_looping: Strange mb_sol=" ++ show mb_sol)
 									ass -> return (Nothing,"infer_loopingsM: " ++ show ass ++ " is not assigning a constant.")
--}
 
 							other -> return (Nothing,"body contains not exactly one assignment of a variable from the condition " ++ (render.pretty) cond ++ ":\n" ++
 								unlines (map (\(ass_var,_) -> (render.pretty) ass_var) other))
 						
 					_ -> return (Nothing,"condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!")
--}
 
 	-- mb_ty is Nothing if the result type of expr is not known, i.e. no casting necessary.
 	transids :: CExpr -> Maybe Types -> Trace -> ((CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
@@ -1355,34 +1361,34 @@ unfoldTraces1M _ _ _ _ ((cbi:_,_):_) = myError $ "unfoldTracesM " ++ (render.pre
 -- casting n'stuff...
 
 infix 4 ⩵
-(⩵) :: CExpr -> CExpr -> CExpr
+(⩵) :: CExprWithType -> CExprWithType -> CExprWithType
 a ⩵ b = CBinary CEqOp a b (annotation a)
 
 infix 4 !⩵
-(!⩵) :: CExpr -> CExpr -> CExpr
+(!⩵) :: CExpression a -> CExpression a -> CExpression a
 a !⩵ b = not_c $ CBinary CEqOp a b (annotation a)
 
 infix 4 ⩾
-(⩾) :: CExpr -> CExpr -> CExpr
+(⩾) :: CExprWithType -> CExprWithType -> CExprWithType
 a ⩾ b = CBinary CGeqOp a b (annotation a)
 
 infixr 3 ⋏
-(⋏) :: CExpr -> CExpr -> CExpr
+(⋏) :: CExprWithType -> CExprWithType -> CExprWithType
 a ⋏ b = CBinary CLndOp a b (annotation a)
 
 infixr 2 ⋎
-(⋎) :: CExpr -> CExpr -> CExpr
+(⋎) :: CExprWithType -> CExprWithType -> CExprWithType
 a ⋎ b = CBinary CLorOp a b (annotation a)
 
 infixr 7 ∗
-(∗) :: CExpr -> CExpr -> CExpr
+(∗) :: CExprWithType -> CExprWithType -> CExprWithType
 a ∗ b = CBinary CMulOp a b (annotation a)
 
 infixr 6 −
-(−) :: CExpr -> CExpr -> CExpr
+(−) :: CExprWithType -> CExprWithType -> CExprWithType
 a − b = CBinary CSubOp a b (annotation a)
 
-not_c :: CExpr -> CExpr
+not_c :: CExpression a -> CExpression a
 not_c e = CUnary CNegOp e (annotation e)
 
 class CreateInt a where
@@ -2227,7 +2233,7 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 		"unknown" : _ -> return (model_string_linenumbers,Nothing)
 		"sat" : rest -> do
 			sol_params <- forM (zip a_output_idents rest) $ \ (ident,line) -> do
-				let is = identToString ident
+				let is = escapeDollars $ identToString ident
 				case line =~ ("\\(\\(" ++ is ++ " ([^\\)]+)\\)\\)") :: (String,String,String,[String]) of
 					(_,_,_,[val_string]) -> case lookup ident z3tyenv of
 						Nothing -> myError $ "Parsing z3 output: Could not find type of " ++ is
@@ -2248,6 +2254,11 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 			return (model_string_linenumbers,Just sol_params)
 		_ -> myError $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ output ++ "\n\n" ++
 			"Model is\n" ++ model_string_linenumbers
+
+escapeDollars :: String -> String
+escapeDollars s = concat $ for s $ \case
+	'$' -> "\\$"
+	c -> [c]
 
 {- ((_ to_fp eb sb) RoundingMode (_ FloatingPoint mb nb) (_ FloatingPoint eb sb))
   -  Float32 is a synonym for (_ FloatingPoint  8  24)
@@ -2324,9 +2335,7 @@ solveTraceM mb_ret_type traceid trace = do
 			let name_id = internalIdent (name ++ "_" ++ show i) in
 			(name_id,Condition Nothing $ CBinary CEqOp (CVar name_id (annotation expr)) expr (annotation expr),(name_id,extractZ3Type expr))
 
-	tyenv1 <- forM (createTyEnv trace) $ \ (e,t) -> do
-		z3_t <- ty2Z3TypeOnly t
-		return (e,z3_t)
+	tyenv1 <- tyEnvFromTraceM trace
 
 	(model_string,mb_sol) <- makeAndSolveZ3ModelM
 		traceid
@@ -2346,6 +2355,11 @@ solveTraceM mb_ret_type traceid trace = do
 			Nothing -> Nothing
 			Just sol -> Just (param_env,map fst retval_env,sol))
 
+
+tyEnvFromTraceM :: Trace -> CovVecM [(Ident,Z3_Type)]
+tyEnvFromTraceM trace = forM (createTyEnv trace) $ \ (e,t) -> do
+	z3_t <- ty2Z3TypeOnly t
+	return (e,z3_t)
 
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
 checkSolutionM _ resultdata | not checkSolutions = return resultdata

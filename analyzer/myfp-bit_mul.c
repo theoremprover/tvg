@@ -974,9 +974,9 @@ _fpdiv_parts (fp_number_type * a,
     bit = IMPLICIT_1;
     quotient = 0;
     /* ??? Does divide one bit at a time.  Optimize.  */
-    while (solver_pragma(31) && bit)
+    while (bit)
       {
-            if (solver_pragma(1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,12,12,12,12,12,1) && (numerator >= denominator))
+            if (solver_pragma(1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1) && (numerator >= denominator))
               {
                 quotient |= bit;
                 numerator -= denominator;
@@ -1626,3 +1626,26 @@ tf_to_sf (TFtype arg_a)
 
 #endif /* ! FLOAT */
 #endif /* !EXTENDED_FLOAT_STUBS */
+
+/*
+Test Vector covering [2,2,2,2,2,2,1,1,1,1,1,1,1,2] :
+    _fpdiv_parts ( a = 0 , a_ARROW_class = 3 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_ll = 30758235 , b = 0 , b_ARROW_class = 3 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_ll = 16777219 )
+    = return_val = 0 , return_val_ARROW_class = 3 , return_val_ARROW_sign = 0 , return_val_ARROW_normal_exp = 0 , return_val_ARROW_fraction_DOT_ll = 1968526687
+
+Test Vector covering [2,2,2,2,2,1,1,1,2,2,2,2,2,1,2,2] :
+    _fpdiv_parts ( a = 0 , a_ARROW_class = 3 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_ll = 30758229 , b = 0 , b_ARROW_class = 3 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_ll = 33554432 )
+    = return_val = 0 , return_val_ARROW_class = 3 , return_val_ARROW_sign = 0 , return_val_ARROW_normal_exp = -1 , return_val_ARROW_fraction_DOT_ll = 1968526656
+
+Test Vector covering [2,2,2,2,2,1,1,1,2,2,2,2,2,1,2,1] :
+    _fpdiv_parts ( a = 0 , a_ARROW_class = 3 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_ll = 7689560 , b = 0 , b_ARROW_class = 3 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_ll = 8388611 )
+    = return_val = 0 , return_val_ARROW_class = 3 , return_val_ARROW_sign = 0 , return_val_ARROW_normal_exp = -1 , return_val_ARROW_fraction_DOT_ll = 1968526720
+
+Test Vector covering [2,1] :
+    _fpdiv_parts ( a = 0 , a_ARROW_class = 2 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_ll = 0 , b = 0 , b_ARROW_class = 0 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_ll = 0 )
+    = return_val = 0 , return_val_ARROW_class = 0 , return_val_ARROW_sign = 0 , return_val_ARROW_normal_exp = 0 , return_val_ARROW_fraction_DOT_ll = 0
+
+Test Vector covering [1] :
+    _fpdiv_parts ( a = 0 , a_ARROW_class = 0 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_ll = 0 , b = 0 , b_ARROW_class = 0 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_ll = 0 )
+    = return_val = 0 , return_val_ARROW_class = 0 , return_val_ARROW_sign = 0 , return_val_ARROW_normal_exp = 0 , return_val_ARROW_fraction_DOT_ll = 0
+
+*/
