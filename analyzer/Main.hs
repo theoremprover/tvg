@@ -121,7 +121,7 @@ main = do
 						writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
 
 					(every_branch_covered,s) <- runStateT covVectorsM $
-						CovVecState globdecls 1 translunit filename Nothing funname undefined 0 gcc opts
+						CovVecState globdecls 1 translunit filename Nothing funname undefined gcc opts
 							Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable
 					let
 						(testvectors_rev,covered) = analysisStateCVS s
@@ -303,7 +303,6 @@ data CovVecState = CovVecState {
 	checkExeNameCVS  :: Maybe String,
 	funNameCVS       :: String,
 	funStartEndCVS   :: ((Int,Int),(Int,Int)),
-	numTracesCVS     :: Int,
 	compilerCVS      :: String,
 	optsCVS          :: [String],
 	paramEnvCVS      :: Maybe [(EnvItem,CExprWithType)],
@@ -315,15 +314,17 @@ data CovVecState = CovVecState {
 	defTableCVS      :: DefTable
 	}
 
-data Stats = Stats { cutoffTries :: Int, cutoffsS :: Int }
+data Stats = Stats { cutoffTries :: Int, cutoffsS :: Int, numTracesS :: Int }
 	deriving (Show)
-intialStats = Stats 0 0
+intialStats = Stats 0 0 0
 incCutoffTriesM :: CovVecM ()
 incCutoffTriesM = modify $ \ s -> s { statsCVS = (statsCVS s) { cutoffTries = cutoffTries (statsCVS s) + 1 } }
 incCutoffsM :: CovVecM ()
 incCutoffsM = modify $ \ s -> s { statsCVS = (statsCVS s) { cutoffsS = cutoffsS (statsCVS s) + 1 } }
+incNumTracesM :: CovVecM ()
+incNumTracesM = modify $ \ s -> s { statsCVS = (statsCVS s) { numTracesS = numTracesS (statsCVS s) + 1 } }
 printStatsM :: CovVecM ()
-printStatsM = gets statsCVS >>= (printLogV 1) . show 
+printStatsM = gets statsCVS >>= (printLogV 1) . show
 
 type CovVecM = StateT CovVecState IO
 
@@ -638,6 +639,8 @@ showLocation (l,c) = "line " ++ show l ++ ", col " ++ show c
 -- In case of a cutoff, mb_ret_type is Nothing.
 analyzeTraceM :: Maybe Type -> [TraceElem] -> CovVecM Bool
 analyzeTraceM mb_ret_type res_line = do
+	incNumTracesM
+	printStatsM	
 	printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
 
 	opts <- gets optsCVS
@@ -2229,7 +2232,6 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 		model_string_linenumbers = unlines $ map (\ (i,l) -> show i ++ ": " ++ l) (zip [1..] (lines model_string))
 	when ("-writeModels" `elem` opts) $ liftIO $ writeFile modelpathfile model_string
 	when showModels $ printLog $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
-	printStatsM
 	printLogV 2 $ "Running model " ++ takeFileName modelpathfile ++ "..."
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
 		readProcessWithExitCode z3FilePath ["-smt2","-in","parallel.enable=true"] model_string
@@ -2420,5 +2422,5 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 					let txt = "ERROR in " ++ show traceid ++ " for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result
 					myError txt
 
-	printLog $ "checkSolutionM " ++ show traceid ++ " OK."
+	printLogV 2 $ "checkSolutionM " ++ show traceid ++ " OK."
 	return resultdata
