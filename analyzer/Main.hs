@@ -77,7 +77,7 @@ main = do
 	hSetBuffering stdout NoBuffering
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
---		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
@@ -85,7 +85,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]

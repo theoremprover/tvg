@@ -1,12 +1,11 @@
-union mystruct
+union _DVal
 {
-    int i_s;
-    float f_s;
+    int p_i;
+    float p_d;
 };
 
-typedef union mystruct MyStruct;
-
-float f(int* x)
+float f(double* px)
 {
-    return ( ((MyStruct*)(char*)x) -> f_s );
+    _DVal* ps = (_DVal*)(char*) px;
+    return ( ps->p_i );
 }
