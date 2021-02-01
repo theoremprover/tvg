@@ -1,11 +1,13 @@
-union _DVal
-{
-    int p_i;
-    float p_d;
-};
+typedef union
+ {
+ unsigned short _Sh[8];
+ double _Val;
+ } _Dval;
 
-float f(double* px)
+short _Dtest(double* px)
 {
     _DVal* ps = (_DVal*)(char*) px;
-    return ( ps->p_i );
+ if ((ps->_Sh[3] & ((unsigned short)(0x7fff & ~((unsigned short)((1 << 4) - 1))))) == ((unsigned short)((1 << (15 - 4)) - 1)) << 4)
+  return ((short)((ps->_Sh[3] & ((unsigned short)((1 << 4) - 1))) != 0 || ps->_Sh[2] != 0));
+  return (0);
 }

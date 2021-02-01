@@ -976,7 +976,7 @@ _fpdiv_parts (fp_number_type * a,
     /* ??? Does divide one bit at a time.  Optimize.  */
     while (bit)
       {
-            if (solver_pragma(2,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,12,12,12,12,12,12,12) && (numerator >= denominator))
+            if (solver_pragma(2,2,2,2,2,2,2,2,2,2,1,2,1,2,2,2,2,2,1,2,2,2,2,2,12,12,12,12,12,12,12) && (numerator >= denominator))
               {
                 quotient |= bit;
                 numerator -= denominator;
