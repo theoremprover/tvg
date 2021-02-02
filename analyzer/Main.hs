@@ -77,11 +77,11 @@ main = do
 	hSetBuffering stdout NoBuffering
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
-		[] -> "gcc" : (analyzerPath++"\\test.c") : "_Dtest" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\test.c") : "_Dtest" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -830,6 +830,14 @@ decl2TypeM from decl = do
 			where
 			(storagespec, attrs_decl, typequals, typespecs, funspecs, alignspecs) = partitionDeclSpecs declspecs
 		analyseTyDeclr other = error $ "analyseTyDeclr " ++ show other
+
+type2DeclM :: Type -> CovVecM CDecl
+type2DeclM ty = case ty of
+	DirectType tyname _ _ ->
+	PtrType target_ty _ _ ->
+	ArrayType elem_ty (ArraySize is_static size_expr) _ _ ->
+	FunctionType (FunType ret_ty paramdecls is_variadic) _ ->
+	TypeDefType (TypeDefRef ident refd_type _) _ _ ->
 
 lookupTagM :: SUERef -> CovVecM TagDef
 lookupTagM ident = do
