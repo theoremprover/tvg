@@ -831,13 +831,16 @@ decl2TypeM from decl = do
 			(storagespec, attrs_decl, typequals, typespecs, funspecs, alignspecs) = partitionDeclSpecs declspecs
 		analyseTyDeclr other = error $ "analyseTyDeclr " ++ show other
 
-type2DeclM :: Type -> CovVecM CDecl
-type2DeclM ty = case ty of
-	DirectType tyname _ _ ->
-	PtrType target_ty _ _ ->
-	ArrayType elem_ty (ArraySize is_static size_expr) _ _ ->
-	FunctionType (FunType ret_ty paramdecls is_variadic) _ ->
-	TypeDefType (TypeDefRef ident refd_type _) _ _ ->
+type2DeclM :: Ident -> NodeInfo -> Type -> CovVecM CDecl
+type2DeclM ident ni ty = return $ CDecl (map CTypeSpec declspecs)
+	[(Just $ CDeclr (Just ident) derivdecls Nothing [] ni,Nothing,Nothing)] ni
+	where
+	(typespecs,declspecs) = case ty of
+		DirectType tyname _ _ -> 
+		PtrType target_ty _ _ ->
+		ArrayType elem_ty (ArraySize is_static size_expr) _ _ ->
+		FunctionType (FunType ret_ty paramdecls is_variadic) _ ->
+		TypeDefType (TypeDefRef ident refd_type _) _ _ ->
 
 lookupTagM :: SUERef -> CovVecM TagDef
 lookupTagM ident = do
