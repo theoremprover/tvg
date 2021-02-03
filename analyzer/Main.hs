@@ -81,7 +81,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -184,13 +184,13 @@ intType = integral TyInt :: Type
 charType = integral TyChar :: Type
 ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
 
-outputVerbosity = 1
+outputVerbosity = 20
 showInitialTrace = False
 solveIt = True
 showModels = False
 showOnlySolutions = True
-showTraces = False
-showFinalTrace = False
+showTraces = True
+showFinalTrace = True
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
 floatTolerance = 1e-7 :: Float
@@ -198,7 +198,7 @@ doubleTolerance = 1e-10 :: Double
 showBuiltins = False
 logToFile = True
 mainFileName = "main.c"
-printTypes = False
+printTypes = True
 
 mAX_UNROLLS = 3
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
@@ -375,7 +375,9 @@ instance Pretty CExprWithType where
 			prettyType ((snd.annotation) constant)
 	pretty (CIndex arrexpr indexexpr (_,ty)) = pretty arrexpr <> brackets (pretty indexexpr) <+> prettyType ty
 	pretty (CAssign op lexpr assexpr (_,ty)) = prettyCE (pretty lexpr <+> pretty op) [pretty assexpr] ty
-	pretty (CCond cond (Just true_expr) false_expr (_,ty)) = prettyCE (pretty cond <+> text "?") [pretty true_expr,pretty false_expr] ty
+	pretty (CCall fun args (_,ty)) = prettyCE (text "Call " <+> pretty fun) (map pretty args) ty
+	pretty (CCond cond (Just true_expr) false_expr (_,ty)) = prettyCE (pretty cond <+> text "?")
+		[ pretty true_expr, text ":", pretty false_expr ] ty
 	pretty other = error $ "instance Pretty CExprWithType not implemented for " ++ show other
 
 prettyType ty = case printTypes of
@@ -873,7 +875,7 @@ type2Decl ident ni ty = CDecl (map CTypeSpec typespecs)
 			comptykind2structtag UnionTag = CUnionTag
 			sueref2mbident (NamedRef ident) = Just ident
 			sueref2mbident (AnonymousRef _) = Nothing
-			
+
 		PtrType target_ty _ _ -> let (typespecs,derivdeclrs) = ty2specs target_ty in
 			(typespecs,derivdeclrs++[CPtrDeclr [] ni])
 
@@ -883,7 +885,7 @@ type2Decl ident ni ty = CDecl (map CTypeSpec typespecs)
 			arraysize2carraysize (UnknownArraySize is_starred) = CNoArrSize is_starred
 			arraysize2carraysize (ArraySize is_static sizeexpr) = CArrSize is_static sizeexpr
 
-{-		
+{-
 		FunctionType (FunType ret_ty paramdecls is_variadic) _ ->
 			(,[ CFunDeclr (Right (cparamdecls,is_variadic)) [] ni ])
 			where
@@ -931,13 +933,6 @@ elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionTyp
 		ParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
 	eliminparamdecl (AbstractParamDecl (VarDecl varname declattrs ty) ni) =
 		AbstractParamDecl <$> (VarDecl <$> pure varname <*> pure declattrs <*> elimTypeDefsM ty) <*> pure ni
-
-{-
-elimTypeDefsTypesM :: Types -> CovVecM Types
-elimTypeDefsTypesM (z3_ty,ty) = do
-	ty' <- elimTypeDefsM ty
-	return (z3_ty,ty')
--}
 
 -- Extracts the declared identifer and the type from a Declaration
 
@@ -1079,6 +1074,7 @@ unfoldTracesM ret_type toplevel forks envs trace ((cblockitem : rest,breakable) 
 			return var
 		to_condexpr expr = return expr
 	(cblockitem',add_cbis) <- runStateT (everywhereM (mkM to_condexpr) cblockitem) []
+	printLogV 1 $ "cbis =\n" ++ unlines (map (render.pretty) add_cbis)
 
 	unfoldTraces1M ret_type toplevel forks envs trace ((add_cbis ++ (cblockitem' : rest),breakable) : rest2)
 
@@ -1293,13 +1289,6 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@(((CBlockStmt stmt : res
 				is_this_cond _ = False
 			arg2int (CConst (CIntConst (CInteger i _ _) _)) = fromIntegral i
 	recognizeAnnotation real_cond = (real_cond,Nothing)
-
-{-
-	conditions_reached :: Int
-	conditions_reached = length $ filter is_condition trace where
-		is_condition (Condition _ _) = True
-		is_condition _ = False
--}
 
 	infer_loopingsM :: CExpr -> CStat -> CovVecM (Maybe [Int],String)
  	infer_loopingsM cond0 body = do
@@ -2002,9 +1991,10 @@ expr2SExpr expr = expr2sexpr expr
 
 	where
 
-	make_intconstant :: Types -> Integer -> SExpr
-	make_intconstant (Z3_BitVector size _,_) const | size `mod` 4 == 0 =
+	make_intconstant :: String -> Types -> Integer -> SExpr
+	make_intconstant _ (Z3_BitVector size _,_) const | size `mod` 4 == 0 =
 		SLeaf (printf "#x%*.*x" (size `div` 4) (size `div` 4) const)
+	make_intconstant from types const = error $ "make_intconstant " ++ from ++ " " ++ show types ++ " " ++ show const
 
 	expr2sexpr :: Constraint -> CovVecM SExpr
 	expr2sexpr (Condition _ cexpr) = do
@@ -2057,7 +2047,7 @@ expr2SExpr expr = expr2sexpr expr
 					other  -> error $ "op_sexpr " ++ (render.pretty) binop ++ " not implemented!"
 
 		cconst@(CConst ctconst) -> return $ case ctconst of
-			CIntConst intconst (_,ty)  -> make_intconstant ty (getCInteger intconst)
+			CIntConst intconst (_,ty)  -> make_intconstant ((render.pretty) cconst) ty (getCInteger intconst)
 			CCharConst cchar _         -> SLeaf $ (render.pretty) cconst
 			CFloatConst (CFloat f_s) (_,ty) -> SExpr [ SLeaf "fp", SLeaf ("#b"++s1), SLeaf ("#b"++s2), SLeaf ("#b"++s3) ]
 				where
@@ -2097,11 +2087,12 @@ expr2SExpr expr = expr2sexpr expr
 
 				-- Casting from Bool
 				( Z3_Bool, Z3_BitVector size_from _ ) ->
-					SExpr [ SLeaf "ite", sexpr, make_intconstant to_ty 1, make_intconstant to_ty 0 ]
+					SExpr [ SLeaf "ite", sexpr, make_intconstant ((render.pretty) castexpr) to_ty 1,
+						make_intconstant ((render.pretty) castexpr) to_ty 0 ]
 
 				-- Casting to Bool
 				( Z3_BitVector size_from _ , Z3_Bool ) ->
-					SExpr [ SLeaf "not", SExpr [ SLeaf "=", sexpr, make_intconstant from_ty 0 ]]
+					SExpr [ SLeaf "not", SExpr [ SLeaf "=", sexpr, make_intconstant ((render.pretty) castexpr) from_ty 0 ]]
 
 				-- DOWNCAST: extract bits (modulo)
 				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from > size_to -> 
