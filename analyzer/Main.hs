@@ -420,7 +420,7 @@ covVectorsM = do
 	let
 		def2stmt :: IdentDecl -> CovVecM [CBlockItem]
 		def2stmt (EnumeratorDef (Enumerator ident const_expr _ ni)) = do
-			return [ CBlockStmt $ CExpr (Just $ CVar ident (nodeInfo ident) ≔ const_expr) ni ]
+			return [ CBlockStmt $ CVar ident (nodeInfo ident) ≔ const_expr ]
 		def2stmt (ObjectDef (ObjDef (VarDecl (VarName ident _) _ ty) (Just initializer) ni)) = do
 			ty' <- elimTypeDefsM ty
 			cinitializer2blockitems (CVar ident ni) ty' initializer
@@ -831,16 +831,68 @@ decl2TypeM from decl = do
 			(storagespec, attrs_decl, typequals, typespecs, funspecs, alignspecs) = partitionDeclSpecs declspecs
 		analyseTyDeclr other = error $ "analyseTyDeclr " ++ show other
 
-type2DeclM :: Ident -> NodeInfo -> Type -> CovVecM CDecl
-type2DeclM ident ni ty = return $ CDecl (map CTypeSpec declspecs)
-	[(Just $ CDeclr (Just ident) derivdecls Nothing [] ni,Nothing,Nothing)] ni
+type2Decl :: Ident -> NodeInfo -> Type -> CDecl
+type2Decl ident ni ty = CDecl (map CTypeSpec typespecs)
+	[(Just $ CDeclr (Just ident) derivdeclrs Nothing [] ni,Nothing,Nothing)] ni
 	where
-	(typespecs,declspecs) = case ty of
-		DirectType tyname _ _ -> 
-		PtrType target_ty _ _ ->
-		ArrayType elem_ty (ArraySize is_static size_expr) _ _ ->
+	(typespecs,derivdeclrs) = ty2specs ty
+	ty2specs ty = case ty of
+		DirectType tyname _ _ -> (case tyname of
+			TyVoid -> [CVoidType ni]
+			TyIntegral inttype -> case inttype of
+				TyBool -> [CBoolType ni]
+				TyChar -> [CCharType ni]
+				TySChar -> [CSignedType ni,CCharType ni]
+				TyUChar -> [CUnsigType ni,CCharType ni]
+				TyShort -> [CShortType ni]
+				TyUShort -> [CUnsigType ni,CShortType ni]
+				TyInt -> [CIntType ni]
+				TyUInt -> [CUnsigType ni,CIntType ni]
+				TyInt128 -> [CInt128Type ni]
+				TyUInt128 -> [CUnsigType ni,CInt128Type ni]
+				TyLong -> [CLongType ni]
+				TyULong -> [CUnsigType ni,CLongType ni]
+				TyLLong -> [CLongType ni,CLongType ni]
+				TyULLong -> [CUnsigType ni,CLongType ni,CLongType ni]
+			TyFloating floattype -> case floattype of
+				TyFloat -> [CFloatType ni]
+				TyDouble -> [CDoubleType ni]
+				TyLDouble -> [CLongType ni,CDoubleType ni]
+				TyFloatN i b -> [CFloatNType i b ni]
+			TyComplex floattype -> case floattype of
+				TyFloat -> [CComplexType ni]
+				TyDouble -> [CDoubleType ni,CComplexType ni]
+				TyLDouble -> [CLongType ni,CDoubleType ni,CComplexType ni]
+				TyFloatN i b -> [CFloatNType i b ni,CComplexType ni]
+			TyComp (CompTypeRef sueref comptykind _) ->
+				[CSUType (CStruct (comptykind2structtag comptykind) (sueref2mbident sueref) Nothing [] ni) ni]
+			TyEnum (EnumTypeRef sueref _) -> [CEnumType (CEnum (sueref2mbident sueref) Nothing [] ni) ni]
+			,[])
+			where
+			comptykind2structtag StructTag = CStructTag
+			comptykind2structtag UnionTag = CUnionTag
+			sueref2mbident (NamedRef ident) = Just ident
+			sueref2mbident (AnonymousRef _) = Nothing
+			
+		PtrType target_ty _ _ -> let (typespecs,derivdeclrs) = ty2specs target_ty in
+			(typespecs,derivdeclrs++[CPtrDeclr [] ni])
+
+		ArrayType elem_ty arrsize _ _ -> ( typespecs, derivdeclrs ++ [ CArrDeclr [] (arraysize2carraysize arrsize) ni ] )
+			where
+			(typespecs,derivdeclrs) = ty2specs elem_ty
+			arraysize2carraysize (UnknownArraySize is_starred) = CNoArrSize is_starred
+			arraysize2carraysize (ArraySize is_static sizeexpr) = CArrSize is_static sizeexpr
+
+{-		
 		FunctionType (FunType ret_ty paramdecls is_variadic) _ ->
-		TypeDefType (TypeDefRef ident refd_type _) _ _ ->
+			(,[ CFunDeclr (Right (cparamdecls,is_variadic)) [] ni ])
+			where
+			cparamdecls = map paramdecl2cparamdecl paramdecls
+			paramdecl2cparamdecl (ParamDecl (VarDecl (VarName ident Nothing) _ ty) ni) =
+				type2Decl ident ni ty
+-}
+		TypeDefType (TypeDefRef ident refd_type ni) _ _ -> ([CTypeDef ident ni],[])
+
 
 lookupTagM :: SUERef -> CovVecM TagDef
 lookupTagM ident = do
@@ -1010,14 +1062,17 @@ unfoldTracesM ret_type toplevel forks envs trace ((cblockitem : rest,breakable) 
 	let
 		to_condexpr :: CExpr -> StateT [CBlockItem] CovVecM CExpr
 		to_condexpr ccond@(CCond cond (Just true_expr) false_expr ni) = do
-			let var = CVar (internalIdent $ "condexpr$" ++ (showLocation.lineColNodeInfo) ccond) ni
+			let
+				(line,col) = lineColNodeInfo ccond
+				var_ident = internalIdent $ "condexpr$" ++ show line ++ "_" ++ show col
+				var = CVar var_ident ni
 			ccond' <- lift $ annotateTypesAndCastM envs ccond Nothing
 			let
 				(_,ty) = extractTypes ccond'
 				-- Isn't there a QuasiQuoter for language-c?
 				cbis = [
---					CBlockDecl $ CDecl [CTypeSpec ],
---					CBlockStmt $
+					CBlockDecl $ type2Decl var_ident ni ty,
+					CBlockStmt $ CIf cond (var ≔ true_expr) (Just $ var ≔ false_expr) ni
 					]
 			modify ( cbis ++ )
 			-- Replace the condexpr by the new variable "var"
@@ -1421,8 +1476,8 @@ instance CreateInt CExprWithType where
 		return $ CConst $ CIntConst (cInteger i) (undefNode,inttype)
 
 infix 1 ≔
-(≔) :: CExpression a -> CExpression a -> CExpression a
-ass ≔ expr = CAssign CAssignOp ass expr (annotation ass)
+(≔) :: CExpression a -> CExpression a -> CStatement a
+ass ≔ expr = CExpr (Just $ CAssign CAssignOp ass expr (annotation ass)) (annotation expr)
 
 
 fvar :: CExprWithType -> [Ident]
@@ -1439,7 +1494,7 @@ fvar expr = nub $ everything (++) (mkQ [] searchvar) (everywhere (mkT delete_att
 cinitializer2blockitems :: CExpr -> Type -> CInit -> CovVecM [CBlockItem]
 cinitializer2blockitems lexpr ty initializer =
 	case initializer of
-		CInitExpr expr ni_init -> return [ CBlockStmt $ CExpr (Just $ lexpr ≔ expr ) ni_init ]
+		CInitExpr expr ni_init -> return [ CBlockStmt $ lexpr ≔ expr ]
 		CInitList initlist ni_init -> case ty of
 			DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
 				memberidentstypes <- getMembersM sueref
@@ -1911,6 +1966,12 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 		z3_mem_ty <- ty2Z3Type mem_ty
 		return $ CMember pexpr' member_ident False (ni,z3_mem_ty)
 
+	-- dummy, used when inferring types when constructing CStmt's
+	annotate_types (CCall funexpr args ni) = do
+		funexpr' <- annotate_types funexpr
+		let (_,(Z3_Fun z3_retty _ _,FunctionType (FunType ret_ty _ _) _)) = annotation funexpr'
+		args' <- forM args annotate_types
+		return $ CCall funexpr' args' (ni,(z3_retty,ret_ty))
 
 	annotate_types (CIndex arr_expr ix ni) = do
 		arr_expr' <- annotate_types arr_expr
