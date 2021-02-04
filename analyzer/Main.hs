@@ -209,7 +209,9 @@ sizeConditionChunks = 8
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
 analyzerPath = "analyzer"
-logFile = analyzerPath </> "log.txt"
+logFile = analyzerPath </> "log.html"
+
+data Log = Log String [Log] deriving Data
 
 ------------------------
 
@@ -268,6 +270,14 @@ myError :: (MonadIO m) => forall a . String -> m a
 myError txt = do
 	printLog txt
 	error txt
+
+logFunction :: Int -> String -> CovVecM a -> CovVecM a
+logFunction v _ m | outputVerbosity < v = m
+logFunction v msg m = do
+	printLogV v msg
+	indentLog 1
+	m
+	indentLog (-1)
 
 showLine :: Trace -> String
 showLine trace = unlines $ map show (filter isnotbuiltin trace)
@@ -1075,6 +1085,7 @@ unfoldTracesM ret_type toplevel forks envs trace ((cblockitem : rest,breakable) 
 		to_condexpr expr = return expr
 	(cblockitem',add_cbis) <- runStateT (everywhereM (mkM to_condexpr) cblockitem) []
 	printLogV 1 $ "cbis =\n" ++ unlines (map (render.pretty) add_cbis)
+	printLogV 1 $ "cblockitem' =\n" ++ (render.pretty) cblockitem'
 
 	unfoldTraces1M ret_type toplevel forks envs trace ((add_cbis ++ (cblockitem' : rest),breakable) : rest2)
 
