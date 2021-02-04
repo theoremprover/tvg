@@ -102,10 +102,10 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : ["-writeTraceTree"] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
-	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFile
+	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFileTxt
 
 	parseCFile (newGCC gcc) Nothing [] filename >>= \case
-		Left err -> myError $ show err
+		Left err -> error $ show err
 		Right translunit -> do
 			when ("-writeAST" `elem` opts) $
 				writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
@@ -122,7 +122,7 @@ main = do
 
 					(every_branch_covered,s) <- runStateT covVectorsM $
 						CovVecState globdecls 1 translunit filename Nothing funname undefined gcc opts
-							Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable
+							Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable 0
 					let
 						(testvectors_rev,covered) = analysisStateCVS s
 						testvectors = reverse testvectors_rev
@@ -149,12 +149,12 @@ main = do
 								where
 								mbshowtraces ts = if showTraces then ts else []
 
-					printLogV 1 $ "All decision points : "
+					printLog $ "All decision points : "
 					let decisionpoints = Set.toList alls
 					case null decisionpoints of
-						True  -> printLogV 1 "<none>"
+						True  -> printLog "<none>"
 						False -> forM_ decisionpoints $ \ decisionpoint ->
-							printLogV 1 $ "    " ++ show decisionpoint
+							printLog $ "    " ++ show decisionpoint
 
 					printLog $ "\n===== SUMMARY =====\n"
 
@@ -166,7 +166,7 @@ main = do
 						printLog $ "DEAD " ++ show branch ++ "\n"
 
 					printLog $ "Full path coverage: " ++ show every_branch_covered ++ "\n"
-					when (every_branch_covered && not (null deaths)) $ myError "Every branch covered but deaths!"
+					when (every_branch_covered && not (null deaths)) $ myErrorIO "Every branch covered but deaths!"
 
 					printLog $ case null deaths of
 						False -> "FAIL, there are coverage gaps!"
@@ -197,6 +197,7 @@ floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
 logToFile = True
+logToHtml = True
 mainFileName = "main.c"
 printTypes = True
 
@@ -209,9 +210,8 @@ sizeConditionChunks = 8
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
 analyzerPath = "analyzer"
-logFile = analyzerPath </> "log.html"
-
-data Log = Log String [Log] deriving Data
+logFile = analyzerPath </> "log"
+logFileTxt = logFile <.> "txt"
 
 ------------------------
 
@@ -225,7 +225,7 @@ runHereM :: String -> String -> [String] -> CovVecM (String,String)
 runHereM rundir exefilename args = liftIO $ withCurrentDirectory rundir $ do
 	(retcode,sout,serr) <- readProcessWithExitCode (takeFileName exefilename) args ""
 	case retcode of
-		ExitFailure exitcode -> myError $
+		ExitFailure exitcode -> myErrorIO $
 			"ExitCode " ++ show exitcode ++ " of runHereM " ++ exefilename ++ "\n" ++ sout ++ serr
 		ExitSuccess -> return (sout,serr)
 
@@ -258,26 +258,41 @@ int main(void)
 -- Z3 does not accept identifiers starting with an underscore, so we prefix these with an "a"
 safeZ3IdentifierPrefix = 'a'
 
-printLog :: (MonadIO m) => String -> m ()
-printLog text = liftIO $ do
+printLog :: String -> IO ()
+printLog text = do
 	putStrLn text
-	when logToFile $ appendFile logFile (text++"\n")
+	when logToFile $ appendFile logFileTxt (text++"\n")
 
-printLogV :: (MonadIO m) => Int -> String -> m ()
-printLogV verbosity text = when (verbosity<=outputVerbosity) $ printLog text
+printLogM :: String -> CovVecM ()
+printLogM text = do
+	indent <- gets logIndentCVS
+	let ind_text = concat (replicate indent "|   ") ++ text
+	liftIO $ printLog ind_text
 
-myError :: (MonadIO m) => forall a . String -> m a
-myError txt = do
+printLogV :: Int -> String -> CovVecM ()
+printLogV verbosity text = when (verbosity<=outputVerbosity) $ printLogM text
+
+myErrorIO :: forall a . String -> IO a
+myErrorIO txt = do
 	printLog txt
 	error txt
+	
+myError :: forall a . String -> CovVecM a
+myError txt = do
+	printLogM txt
+	error txt
 
-logFunction :: Int -> String -> CovVecM a -> CovVecM a
-logFunction v _ m | outputVerbosity < v = m
-logFunction v msg m = do
-	printLogV v msg
+indentLog :: Int -> CovVecM ()
+indentLog d = modify $ \ s -> s { logIndentCVS = logIndentCVS s + d }
+
+logWrapper :: Int -> String -> CovVecM a -> CovVecM a
+logWrapper verbosity _ m | outputVerbosity < verbosity = m
+logWrapper verbosity msg m = do
+	printLogV verbosity msg
 	indentLog 1
-	m
+	ret <- m
 	indentLog (-1)
+	return ret
 
 showLine :: Trace -> String
 showLine trace = unlines $ map show (filter isnotbuiltin trace)
@@ -321,7 +336,8 @@ data CovVecState = CovVecState {
 	statsCVS         :: Stats,
 	retEnvCVS        :: Maybe [(EnvItem,CExprWithType)],
 	sizesCVS         :: Maybe IntSizes,
-	defTableCVS      :: DefTable
+	defTableCVS      :: DefTable,
+	logIndentCVS     :: Int
 	}
 
 data Stats = Stats { cutoffTries :: Int, cutoffsS :: Int, numTracesS :: Int }
@@ -422,7 +438,7 @@ showTrace trace = unlines $ concatMap show_te trace where
 	show_te _ = []
 
 covVectorsM :: CovVecM Bool
-covVectorsM = do
+covVectorsM = logWrapper 5 "covVectorsM" $ do
 	sizes <- find_out_sizesM
 	modify $ \ s -> s { sizesCVS = Just sizes }
 
@@ -650,7 +666,7 @@ showLocation (l,c) = "line " ++ show l ++ ", col " ++ show c
 
 -- In case of a cutoff, mb_ret_type is Nothing.
 analyzeTraceM :: Maybe Type -> [TraceElem] -> CovVecM Bool
-analyzeTraceM mb_ret_type res_line = do
+analyzeTraceM mb_ret_type res_line = logWrapper 5 ("analyzeTraceM " ++ show mb_ret_type ++ " " ++ show (take 3 res_line) ++ " : " ++ show traceid) $ do
 	incNumTracesM
 	printStatsM	
 	printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
@@ -721,9 +737,9 @@ analyzeTraceM mb_ret_type res_line = do
 	showtraceM cond stage combinator trace = do
 		trace' <- combinator trace
 		when cond $ do
-			printLog $ "\n--- TRACE after " ++ stage ++ " " ++ show traceid ++ " -----------\n" ++
+			printLogM $ "\n--- TRACE after " ++ stage ++ " " ++ show traceid ++ " -----------\n" ++
 				if showBuiltins then "" else "<leaving out builtins...>\n"
-			printLog $ showLine trace'
+			printLogM $ showLine trace'
 		return trace'
 
 trace2traceid trace = concatMap extract_conds trace where
@@ -997,9 +1013,9 @@ type CIFE = StateT ([EnvItem],[TraceElem]) CovVecM [(EnvItem,CExprWithType)]
 
 createInterfaceFromExpr_WithEnvItemsM :: CExprWithType -> Type -> CIFE
 createInterfaceFromExpr_WithEnvItemsM expr ty = do
-	printLogV 20 $ "### createInterfaceFromExpr_WithEnvItemsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty
+	lift $ printLogV 20 $ "### createInterfaceFromExpr_WithEnvItemsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty
 	z3_ty <- lift $ ty2Z3Type ty
-	printLogV 20 $ "###                                z3type = " ++ show z3_ty
+	lift $ printLogV 20 $ "###                                z3type = " ++ show z3_ty
 	ty' <- lift $ elimTypeDefsM ty
 	case ty' of
 
@@ -1043,7 +1059,7 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 				createInterfaceFromExpr_WithEnvItemsM arrayelemexpr elem_ty'
 			return $ concat ress
 
-		_ -> myError $ "createInterfaceFromExprM " ++ (render.pretty) expr ++ " " ++
+		_ -> lift $ myError $ "createInterfaceFromExprM " ++ (render.pretty) expr ++ " " ++
 			(render.pretty) ty' ++ " not implemented"
 
 		where
@@ -1056,56 +1072,58 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 			return $ (((srcident,(srcident,ty')),expr) : rest1)
 
 unfoldTracesM :: Type -> Bool -> Int -> [Env] -> Trace -> [([CBlockItem],Bool)] -> CovVecM UnfoldTracesRet
-unfoldTracesM ret_type toplevel forks envs trace ((cblockitem : rest,breakable) : rest2) = do
-{-
-	search for all CConds in the cblockitem,
-	replacing ...( a ? b : c )... by
-	<T> condexpr$10_12;
-	if(a) condexpr$10_12 = b; else condexpr$10_12 = c;
-	...condexpr$10_12...
--}
-	let
-		to_condexpr :: CExpr -> StateT [CBlockItem] CovVecM CExpr
-		to_condexpr ccond@(CCond cond (Just true_expr) false_expr ni) = do
+unfoldTracesM ret_type toplevel forks envs trace ((cblockitem : rest,breakable) : rest2) =
+	logWrapper 5 ("unfoldTracesM" ++ show (ret_type,toplevel,forks,"<envs>","<trace>",cblockitem)) $ do
+		{-
+			search for all CConds in the cblockitem,
+			replacing ...( a ? b : c )... by
+			<T> condexpr$10_12;
+			if(a) condexpr$10_12 = b; else condexpr$10_12 = c;
+			...condexpr$10_12...
+		-}
 			let
-				(line,col) = lineColNodeInfo ccond
-				var_ident = internalIdent $ "condexpr$" ++ show line ++ "_" ++ show col
-				var = CVar var_ident ni
-			ccond' <- lift $ annotateTypesAndCastM envs ccond Nothing
-			let
-				(_,ty) = extractTypes ccond'
-				-- Isn't there a QuasiQuoter for language-c?
-				cbis = [
-					CBlockDecl $ type2Decl var_ident ni ty,
-					CBlockStmt $ CIf cond (var ≔ true_expr) (Just $ var ≔ false_expr) ni
-					]
-			modify ( cbis ++ )
-			-- Replace the condexpr by the new variable "var"
-			return var
-		to_condexpr expr = return expr
-	(cblockitem',add_cbis) <- runStateT (everywhereM (mkM to_condexpr) cblockitem) []
-	printLogV 1 $ "cbis =\n" ++ unlines (map (render.pretty) add_cbis)
-	printLogV 1 $ "cblockitem' =\n" ++ (render.pretty) cblockitem'
+				to_condexpr :: CExpr -> StateT [CBlockItem] CovVecM CExpr
+				to_condexpr ccond@(CCond cond (Just true_expr) false_expr ni) = do
+					let
+						(line,col) = lineColNodeInfo ccond
+						var_ident = internalIdent $ "condexpr$" ++ show line ++ "_" ++ show col
+						var = CVar var_ident ni
+					ccond' <- lift $ annotateTypesAndCastM envs ccond Nothing
+					let
+						(_,ty) = extractTypes ccond'
+						-- Isn't there a QuasiQuoter for language-c?
+						cbis = [
+							CBlockDecl $ type2Decl var_ident ni ty,
+							CBlockStmt $ CIf cond (var ≔ true_expr) (Just $ var ≔ false_expr) ni
+							]
+					modify ( cbis ++ )
+					-- Replace the condexpr by the new variable "var"
+					return var
+				to_condexpr expr = return expr
+			(cblockitem',add_cbis) <- runStateT (everywhereM (mkM to_condexpr) cblockitem) []
+			printLogV 1 $ "cbis =\n" ++ unlines (map (render.pretty) add_cbis)
+			printLogV 1 $ "cblockitem' =\n" ++ (render.pretty) cblockitem'
+		
+			unfoldTraces1M ret_type toplevel forks envs trace ((add_cbis ++ (cblockitem' : rest),breakable) : rest2)
 
-	unfoldTraces1M ret_type toplevel forks envs trace ((add_cbis ++ (cblockitem' : rest),breakable) : rest2)
-
-unfoldTracesM ret_type toplevel forks envs trace cbss = do
-	(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $
-		unfoldTraces1M ret_type toplevel forks envs trace cbss
-	where
-	maybe_cutoff :: CovVecM UnfoldTracesRet -> CovVecM UnfoldTracesRet
-	maybe_cutoff cont | cutOffs = do
-		incCutoffTriesM
-		printLogV 1 $ "******* Probing for CutOff in depth " ++ show (length trace) ++ " ..."
-		analyzeTraceM Nothing trace >>= \case
-			False -> do
-				printLogV 1 $ "******** Cutting off !"
-				incCutoffsM
-				return $ Right False
-			True  -> do
-				printLogV 1 $ "******** Continuing..."
-				cont
-	maybe_cutoff cont = cont
+unfoldTracesM ret_type toplevel forks envs trace cbss =
+	logWrapper 5 ("unfoldTracesM" ++ show (ret_type,toplevel,forks,"<envs>","<trace>",(fst $ head cbss, snd $ head cbss))) $ do
+		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $
+			unfoldTraces1M ret_type toplevel forks envs trace cbss
+		where
+		maybe_cutoff :: CovVecM UnfoldTracesRet -> CovVecM UnfoldTracesRet
+		maybe_cutoff cont | cutOffs = do
+			incCutoffTriesM
+			printLogV 1 $ "******* Probing for CutOff in depth " ++ show (length trace) ++ " ..."
+			analyzeTraceM Nothing trace >>= \case
+				False -> do
+					printLogV 1 $ "******** Cutting off !"
+					incCutoffsM
+					return $ Right False
+				True  -> do
+					printLogV 1 $ "******** Continuing..."
+					cont
+		maybe_cutoff cont = cont
 
 unfoldTraces1M :: Type -> Bool -> Int -> [Env] -> Trace -> [([CBlockItem],Bool)] -> CovVecM UnfoldTracesRet
 unfoldTraces1M ret_type toplevel forks envs trace bstss@(((CBlockStmt stmt : rest),breakable) : rest2) = case stmt of
@@ -1555,7 +1573,7 @@ translateExprM envs expr0 mb_target_ty = do
 				modify ( (funident,args,ni) : )
 				-- Replace the call by a placeholder with the same NodeInfo
 				return $ CConst $ CStrConst (CString (show ni) False) ni
-			_  -> myError $ "is_call: found call " ++ (render.pretty) funexpr
+			_  -> lift $ myError $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call expr = return expr
 	(expr,calls) <- runStateT (everywhereM (mkM to_call) expr0) []
 	expr' <- transcribeExprM "expr0" envs mb_target_ty expr
@@ -1704,7 +1722,7 @@ elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
 						NewDeclaration (newident,extractType var) ,
 						Assignment (CIndex newvar index_expr index_ni) ass_expr,
 						Assignment var newvar ]
-				other -> myError $ "elim_arr_assnsM: not a variable in CIndex: " ++ (render.pretty) other
+				other -> lift $ myError $ "elim_arr_assnsM: not a variable in CIndex: " ++ (render.pretty) other
 			other -> return [other]
 		return $ concat ls
 
@@ -2305,7 +2323,7 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 		model_string = unlines $ map (render.pretty) model
 		model_string_linenumbers = unlines $ map (\ (i,l) -> show i ++ ": " ++ l) (zip [1..] (lines model_string))
 	when ("-writeModels" `elem` opts) $ liftIO $ writeFile modelpathfile model_string
-	when showModels $ printLog $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
+	when showModels $ printLogM $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
 	printLogV 2 $ "Running model " ++ takeFileName modelpathfile ++ "..."
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
 		readProcessWithExitCode z3FilePath ["-smt2","-in","parallel.enable=true"] model_string
@@ -2446,10 +2464,10 @@ tyEnvFromTraceM trace = forM (createTyEnv trace) $ \ (e,t) -> do
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
 checkSolutionM _ resultdata | not checkSolutions = return resultdata
 checkSolutionM traceid resultdata@(_,Nothing) = do
-	printLog $ "No solution to check for " ++ show traceid
+	printLogM $ "No solution to check for " ++ show traceid
 	return resultdata
 checkSolutionM traceid resultdata@(_,Just (_,_,[])) = do
-	printLog $ "Empty solution cannot be checked for " ++ show traceid
+	printLogM $ "Empty solution cannot be checked for " ++ show traceid
 	return resultdata
 checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 	let
