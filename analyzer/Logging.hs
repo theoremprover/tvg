@@ -11,7 +11,7 @@ indentPrefix = "|   "
 
 writeHTMLLog :: FilePath -> String -> IO ()
 writeHTMLLog logFileHtml log =
-	writeFile logFileHtml $ renderHtml $ pageframe loghtml
+	writeFile logFileHtml $ renderHtml $ pageframe $ makelist "Log" loghtml
 	where
 	([],loghtml) = log2html noHtml 0 $ lines log
 	chkbox = primHtml "<input type=CHECKBOX id=cbtoggleexpand onclick=toggleexpand()>Expand all</input>"
@@ -38,7 +38,6 @@ makelist headline content = (li ! [identifier "myUL"] $ (thespan ! [theclass "ca
 	(ulist ! [theclass "nested"]) content
 
 makeli s = li $ (thespan ! [theclass "leaf"]) (stringToHtml s)
-
 
 {-
 dataTreeToHtml (Leaf s) = li (stringToHtml s)

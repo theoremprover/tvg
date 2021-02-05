@@ -261,6 +261,26 @@ int main(void)
 -- Z3 does not accept identifiers starting with an underscore, so we prefix these with an "a"
 safeZ3IdentifierPrefix = 'a'
 
+----------------
+
+class (Show a) => LogRender a where
+	ren :: a -> String
+	ren a = show a
+
+instance (LogRender a) => LogRender (Maybe a) where
+	ren (Just a) = "(Just " ++ ren a ++ ")"
+instance (LogRender a) => LogRender [a] where
+	ren as = "[" ++ intercalate "," (map ren as) ++ "]"
+instance (LogRender a,LogRender b) => LogRender (a,b) where
+	ren (a,b) = "(" ++ ren a ++ "," ++ ren b ++ ")"
+instance (LogRender a,LogRender b) => LogRender (Either a b) where
+	ren (Left a)  = "(Left " ++ ren a ++ ")"
+	ren (Right b) = "(Right " ++ ren a ++ ")"
+instance (Pretty a) => LogRender a where
+	ren a = (render.pretty) a
+instance (
+-------------------
+
 printLog :: String -> IO ()
 printLog text = do
 	putStrLn text
