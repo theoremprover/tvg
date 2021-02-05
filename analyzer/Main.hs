@@ -62,7 +62,7 @@ import GHC.ST (runST,ST)
 
 import DataTree
 import GlobDecls
-
+import Logging
 
 type Trace = [TraceElem]
 type ResultData = (String,Maybe (Env,Env,Solution))
@@ -212,7 +212,7 @@ z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log"
 logFileTxt = logFile <.> "txt"
-
+logFileHtml = logFile <.> "html"
 ------------------------
 
 compileHereM :: [String] -> String -> String -> CovVecM (String,String)
@@ -272,14 +272,23 @@ printLogM text = do
 printLogV :: Int -> String -> CovVecM ()
 printLogV verbosity text = when (verbosity<=outputVerbosity) $ printLogM text
 
+createHTMLLog :: IO ()
+createHTMLLog = do
+	log <- readFile logFileTxt
+	writeFile logFileHtml $ log2html (lines log)
+	where
+	log2html (l:ls) = 
+
 myErrorIO :: forall a . String -> IO a
 myErrorIO txt = do
 	printLog txt
+	createHTMLLog
 	error txt
 	
 myError :: forall a . String -> CovVecM a
 myError txt = do
 	printLogM txt
+	liftIO $ createHTMLLog
 	error txt
 
 indentLog :: Int -> CovVecM ()
