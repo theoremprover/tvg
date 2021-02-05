@@ -102,7 +102,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\calltest.c") : "g" : ["-writeTraceTree"] --["-writeAST","-writeGlobalDecls"]
 		args -> args
 
-	getZonedTime >>= return.(++"\n\n").show >>= writeFile logFileTxt
+	getZonedTime >>= return.(++"\n").show >>= writeFile logFileTxt
 
 	parseCFile (newGCC gcc) Nothing [] filename >>= \case
 		Left err -> error $ show err
@@ -122,17 +122,17 @@ main = do
 
 					(every_branch_covered,s) <- runStateT covVectorsM $
 						CovVecState globdecls 1 translunit filename Nothing funname undefined gcc opts
-							Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable 0
+							Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1)
 					let
 						(testvectors_rev,covered) = analysisStateCVS s
 						testvectors = reverse testvectors_rev
 						alls = allCondPointsCVS s
 
-					printLog ""
+					printLog "\n"
 
 					let deaths = Set.toList $ alls ∖ covered
 
-					printLog $ "\n####### FINAL RESULT #######\n"
+					printLog $ "\n####### FINAL RESULT #######\n\n"
 
 					forM_ testvectors $ \ (traceid,trace,branches,(model_string,mb_solution)) -> do
 						case not showOnlySolutions || maybe False (not.null.(\(_,_,b)->b)) mb_solution of
@@ -145,32 +145,33 @@ main = do
 								model_string,
 								"" ]) ++
 								[ "--- SOLUTION " ++ show traceid ++ " ----------------------",
-								show_solution funname mb_solution ]
+								show_solution funname mb_solution,
+								""]
 								where
 								mbshowtraces ts = if showTraces then ts else []
 
-					printLog $ "All decision points : "
+					printLog $ "All decision points : \n"
 					let decisionpoints = Set.toList alls
 					case null decisionpoints of
-						True  -> printLog "<none>"
+						True  -> printLog "<none>\n"
 						False -> forM_ decisionpoints $ \ decisionpoint ->
-							printLog $ "    " ++ show decisionpoint
+							printLog $ "    " ++ show decisionpoint ++ "\n"
 
-					printLog $ "\n===== SUMMARY =====\n"
+					printLog $ "\n===== SUMMARY =====\n\n"
 
 					forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
-						printLog $ "Test Vector " ++ show traceid ++ " covering " ++ ": "
-						forM_ branches $ \ branch -> printLog $ "    " ++ show branch
+						printLog $ "Test Vector " ++ show traceid ++ " covering " ++ ": \n"
+						forM_ branches $ \ branch -> printLog $ "    " ++ show branch ++ "\n"
 						printLog $ "\n    " ++ showTestVector funname v ++ "\n"
 					forM_ deaths $ \ branch -> do
-						printLog $ "DEAD " ++ show branch ++ "\n"
+						printLog $ "DEAD " ++ show branch ++ "\n\n"
 
-					printLog $ "Full path coverage: " ++ show every_branch_covered ++ "\n"
+					printLog $ "Full path coverage: " ++ show every_branch_covered ++ "\n\n"
 					when (every_branch_covered && not (null deaths)) $ myErrorIO "Every branch covered but deaths!"
 
 					printLog $ case null deaths of
-						False -> "FAIL, there are coverage gaps!"
-						True  -> "OK, we have full branch coverage."
+						False -> "FAIL, there are coverage gaps!\n"
+						True  -> "OK, we have full branch coverage.\n"
 
 for :: [a] -> (a -> b) -> [b]
 for = flip map
@@ -179,12 +180,13 @@ concatForM = flip concatMapM
 
 ------------------------
 
+outputVerbosity = 20
+
 roundingMode = "roundNearestTiesToEven"
 intType = integral TyInt :: Type
 charType = integral TyChar :: Type
 ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
 
-outputVerbosity = 20
 showInitialTrace = False
 solveIt = True
 showModels = False
@@ -213,6 +215,7 @@ analyzerPath = "analyzer"
 logFile = analyzerPath </> "log"
 logFileTxt = logFile <.> "txt"
 logFileHtml = logFile <.> "html"
+
 ------------------------
 
 compileHereM :: [String] -> String -> String -> CovVecM (String,String)
@@ -261,12 +264,13 @@ safeZ3IdentifierPrefix = 'a'
 printLog :: String -> IO ()
 printLog text = do
 	putStrLn text
-	when logToFile $ appendFile logFileTxt (text++"\n")
+	when logToFile $ appendFile logFileTxt text
 
 printLogM :: String -> CovVecM ()
 printLogM text = do
 	indent <- gets logIndentCVS
-	let ind_text = concat (replicate indent "|   ") ++ text
+	let ind_prefix = concat (replicate indent indentPrefix)
+	let ind_text = unlines $ map (ind_prefix++) $ lines text
 	liftIO $ printLog ind_text
 
 printLogV :: Int -> String -> CovVecM ()
@@ -275,9 +279,7 @@ printLogV verbosity text = when (verbosity<=outputVerbosity) $ printLogM text
 createHTMLLog :: IO ()
 createHTMLLog = do
 	log <- readFile logFileTxt
-	writeFile logFileHtml $ log2html (lines log)
-	where
-	log2html (l:ls) = 
+	writeHTMLLog logFileHtml log
 
 myErrorIO :: forall a . String -> IO a
 myErrorIO txt = do
@@ -297,8 +299,8 @@ indentLog d = modify $ \ s -> s { logIndentCVS = logIndentCVS s + d }
 logWrapper :: Int -> String -> CovVecM a -> CovVecM a
 logWrapper verbosity _ m | outputVerbosity < verbosity = m
 logWrapper verbosity msg m = do
-	printLogV verbosity msg
 	indentLog 1
+	printLogV verbosity msg
 	ret <- m
 	indentLog (-1)
 	return ret
@@ -2029,10 +2031,10 @@ expr2SExpr expr = expr2sexpr expr
 
 	where
 
-	make_intconstant :: String -> Types -> Integer -> SExpr
+	make_intconstant :: String -> Types -> Integer -> CovVecM SExpr
 	make_intconstant _ (Z3_BitVector size _,_) const | size `mod` 4 == 0 =
-		SLeaf (printf "#x%*.*x" (size `div` 4) (size `div` 4) const)
-	make_intconstant from types const = error $ "make_intconstant " ++ from ++ " " ++ show types ++ " " ++ show const
+		return $ SLeaf (printf "#x%*.*x" (size `div` 4) (size `div` 4) const)
+	make_intconstant from types const = myError $ "make_intconstant " ++ from ++ " " ++ show types ++ " " ++ show const
 
 	expr2sexpr :: Constraint -> CovVecM SExpr
 	expr2sexpr (Condition _ cexpr) = do
@@ -2084,10 +2086,10 @@ expr2SExpr expr = expr2sexpr expr
 					CEqOp  -> bitVectorTy op_ty "=" "fp.eq"
 					other  -> error $ "op_sexpr " ++ (render.pretty) binop ++ " not implemented!"
 
-		cconst@(CConst ctconst) -> return $ case ctconst of
+		cconst@(CConst ctconst) -> case ctconst of
 			CIntConst intconst (_,ty)  -> make_intconstant ((render.pretty) cconst) ty (getCInteger intconst)
-			CCharConst cchar _         -> SLeaf $ (render.pretty) cconst
-			CFloatConst (CFloat f_s) (_,ty) -> SExpr [ SLeaf "fp", SLeaf ("#b"++s1), SLeaf ("#b"++s2), SLeaf ("#b"++s3) ]
+			CCharConst cchar _         -> return $ SLeaf $ (render.pretty) cconst
+			CFloatConst (CFloat f_s) (_,ty) -> return $ SExpr [ SLeaf "fp", SLeaf ("#b"++s1), SLeaf ("#b"++s2), SLeaf ("#b"++s3) ]
 				where
 				show_bin :: (Integral a,PrintfArg a) => Int -> a -> String
 				show_bin l i = printf "%0*.*b" l l i
@@ -2098,7 +2100,7 @@ expr2SExpr expr = expr2sexpr expr
 						val = show_bin 64 (doubleToWord $ read f_s)
 					Z3_LDouble -> error "long double is not supported"
  
-			CStrConst cstr _           -> SLeaf $ (render.pretty) cconst
+			CStrConst cstr _           -> return $ SLeaf $ (render.pretty) cconst
 
 		CVar ident _ -> return $ SLeaf $ (render.pretty) ident
 
@@ -2115,39 +2117,41 @@ expr2SExpr expr = expr2sexpr expr
 		castexpr@(CCast _ subexpr (_,to_ty)) -> do
 			sexpr <- expr2sexpr' subexpr
 			let from_ty = extractTypes subexpr
-			return $ case (fst from_ty,fst to_ty) of
+			case (fst from_ty,fst to_ty) of
 
 				-- SAMECAST: identity
-				( ty1, ty2 ) | ty1==ty2 -> sexpr
+				( ty1, ty2 ) | ty1==ty2 -> return sexpr
 
 				-- Casting signed to unsigned or vice versa with same size: No cast needed (Z3 interprets it)
-				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from==size_to -> sexpr
+				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from==size_to -> return sexpr
 
 				-- Casting from Bool
-				( Z3_Bool, Z3_BitVector size_from _ ) ->
-					SExpr [ SLeaf "ite", sexpr, make_intconstant ((render.pretty) castexpr) to_ty 1,
-						make_intconstant ((render.pretty) castexpr) to_ty 0 ]
+				( Z3_Bool, Z3_BitVector size_from _ ) -> do
+					ic1 <- make_intconstant ((render.pretty) castexpr) to_ty 1
+					ic0 <- make_intconstant ((render.pretty) castexpr) to_ty 0
+					return $ SExpr [ SLeaf "ite", sexpr, ic1, ic0 ]
 
 				-- Casting to Bool
-				( Z3_BitVector size_from _ , Z3_Bool ) ->
-					SExpr [ SLeaf "not", SExpr [ SLeaf "=", sexpr, make_intconstant ((render.pretty) castexpr) from_ty 0 ]]
+				( Z3_BitVector size_from _ , Z3_Bool ) -> do
+					ic <- make_intconstant ((render.pretty) castexpr) from_ty 0
+					return $ SExpr [ SLeaf "not", SExpr [ SLeaf "=", sexpr, ic ]]
 
 				-- DOWNCAST: extract bits (modulo)
 				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from > size_to -> 
-					SExpr [ SExpr [ SLeaf "_", SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0"], sexpr ]
+					return $ SExpr [ SExpr [ SLeaf "_", SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0"], sexpr ]
 		
 				-- UPCAST signed (to signed or unsigned): extend sign bit
 				( Z3_BitVector size_from False, Z3_BitVector size_to _ ) | size_from < size_to ->
-					SExpr [ SExpr [ SLeaf "_", SLeaf "sign_extend", SLeaf $ show (size_to-size_from) ], sexpr ] 
+					return $ SExpr [ SExpr [ SLeaf "_", SLeaf "sign_extend", SLeaf $ show (size_to-size_from) ], sexpr ] 
 		
 				-- UPCAST unsigned (to signed or unsigned): extend with zeros
 				( Z3_BitVector size_from True, Z3_BitVector size_to _ ) | size_from < size_to ->
-					SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
+					return $ SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
 
-				( Z3_Double, Z3_Float ) -> SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "8", SLeaf "24" ],
+				( Z3_Double, Z3_Float ) -> return $ SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "8", SLeaf "24" ],
 					SLeaf roundingMode, sexpr ]
 
-				( Z3_Float, Z3_Double ) -> SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "11", SLeaf "53" ],
+				( Z3_Float, Z3_Double ) -> return $ SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "11", SLeaf "53" ],
 					SLeaf roundingMode, sexpr ]
 
 				(from_ty,to_ty) -> error $ "expr2sexpr cast: " ++ show from_ty ++ " => " ++ show to_ty ++ " in " ++
