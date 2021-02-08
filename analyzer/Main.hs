@@ -263,22 +263,23 @@ safeZ3IdentifierPrefix = 'a'
 
 ----------------
 
-class (Show a) => LogRender a where
+class LogRender a where
 	ren :: a -> String
-	ren a = show a
 
-instance (LogRender a) => LogRender (Maybe a) where
-	ren (Just a) = "(Just " ++ ren a ++ ")"
-instance (LogRender a) => LogRender [a] where
-	ren as = "[" ++ intercalate "," (map ren $ take 3 as) ++ ",...]"
-instance (LogRender a,LogRender b) => LogRender (a,b) where
-	ren (a,b) = "(" ++ ren a ++ "," ++ ren b ++ ")"
-instance (LogRender a,LogRender b) => LogRender (Either a b) where
-	ren (Left a)  = "(Left " ++ ren a ++ ")"
-	ren (Right b) = "(Right " ++ ren a ++ ")"
 instance (Pretty a) => LogRender a where
 	ren a = (render.pretty) a
-instance (Show a) => LogRender a where
+instance {-# OVERLAPS #-} LogRender String where
+	ren s = s
+instance {-# OVERLAPS #-} (LogRender a) => LogRender (Maybe a) where
+	ren (Just a) = "Just " ++ ren a
+instance {-# OVERLAPS #-} (LogRender a) => LogRender [a] where
+	ren as = "[" ++ intercalate "," (map ren $ take 3 as) ++ ",...]"
+instance {-# OVERLAPS #-} (LogRender a,Show b,LogRender b) => LogRender (a,b) where
+	ren (a,b) = "(" ++ ren a ++ "," ++ ren b ++ ")"
+instance {-# OVERLAPS #-} (LogRender a,Show b,LogRender b) => LogRender (Either a b) where
+	ren (Left a)  = "(Left " ++ ren a ++ ")"
+	ren (Right b) = "(Right " ++ ren b ++ ")"
+instance {-# OVERLAPS #-} (Show a) => LogRender a where
 	ren a = show a
 
 -------------------
@@ -318,11 +319,11 @@ myError txt = do
 indentLog :: Int -> CovVecM ()
 indentLog d = modify $ \ s -> s { logIndentCVS = logIndentCVS s + d }
 
-logWrapper :: Int -> String -> CovVecM a -> CovVecM a
+logWrapper :: Int -> [String] -> CovVecM a -> CovVecM a
 logWrapper verbosity _ m | outputVerbosity < verbosity = m
-logWrapper verbosity msg m = do
+logWrapper verbosity args m = do
 	indentLog 1
-	printLogV verbosity msg
+	printLogV verbosity $ intercalate " " args
 	ret <- m
 	indentLog (-1)
 	return ret
@@ -471,7 +472,7 @@ showTrace trace = unlines $ concatMap show_te trace where
 	show_te _ = []
 
 covVectorsM :: CovVecM Bool
-covVectorsM = logWrapper 5 "covVectorsM" $ do
+covVectorsM = logWrapper 5 [ren "covVectorsM"] $ do
 	sizes <- find_out_sizesM
 	modify $ \ s -> s { sizesCVS = Just sizes }
 
@@ -699,7 +700,7 @@ showLocation (l,c) = "line " ++ show l ++ ", col " ++ show c
 
 -- In case of a cutoff, mb_ret_type is Nothing.
 analyzeTraceM :: Maybe Type -> [TraceElem] -> CovVecM Bool
-analyzeTraceM mb_ret_type res_line = logWrapper 5 ("analyzeTraceM " ++ show mb_ret_type ++ " " ++ show (take 3 res_line) ++ " : " ++ show traceid) $ do
+analyzeTraceM mb_ret_type res_line = logWrapper 5 [ren "analyzeTraceM",ren mb_ret_type,ren res_line,ren "traceid=",ren traceid] $ do
 	incNumTracesM
 	printStatsM	
 	printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
@@ -1106,7 +1107,7 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 
 unfoldTracesM :: Type -> Bool -> Int -> [Env] -> Trace -> [([CBlockItem],Bool)] -> CovVecM UnfoldTracesRet
 unfoldTracesM ret_type toplevel forks envs trace ((cblockitem : rest,breakable) : rest2) =
-	logWrapper 5 ("unfoldTracesM" ++ show (ret_type,toplevel,forks,"<envs>","<trace>",cblockitem)) $ do
+	logWrapper 5 [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,ren cblockitem] $ do
 		{-
 			search for all CConds in the cblockitem,
 			replacing ...( a ? b : c )... by
@@ -1140,7 +1141,7 @@ unfoldTracesM ret_type toplevel forks envs trace ((cblockitem : rest,breakable) 
 			unfoldTraces1M ret_type toplevel forks envs trace ((add_cbis ++ (cblockitem' : rest),breakable) : rest2)
 
 unfoldTracesM ret_type toplevel forks envs trace cbss =
-	logWrapper 5 ("unfoldTracesM" ++ show (ret_type,toplevel,forks,"<envs>","<trace>",(fst $ head cbss, snd $ head cbss))) $ do
+	logWrapper 5 [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,ren (fst $ head cbss, snd $ head cbss)] $ do
 		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $
 			unfoldTraces1M ret_type toplevel forks envs trace cbss
 		where
