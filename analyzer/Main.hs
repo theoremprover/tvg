@@ -3,7 +3,7 @@
 	PackageImports,RecordWildCards,FunctionalDependencies,MultiParamTypeClasses,
 	QuasiQuotes,UnicodeSyntax,LambdaCase,ScopedTypeVariables,TupleSections,
 	TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,
-	DeriveDataTypeable,DeriveGeneric,PatternGuards #-}
+	DeriveDataTypeable,DeriveGeneric,PatternGuards,UndecidableInstances #-}
 
 module Main where
 
@@ -270,7 +270,7 @@ class (Show a) => LogRender a where
 instance (LogRender a) => LogRender (Maybe a) where
 	ren (Just a) = "(Just " ++ ren a ++ ")"
 instance (LogRender a) => LogRender [a] where
-	ren as = "[" ++ intercalate "," (map ren as) ++ "]"
+	ren as = "[" ++ intercalate "," (map ren $ take 3 as) ++ ",...]"
 instance (LogRender a,LogRender b) => LogRender (a,b) where
 	ren (a,b) = "(" ++ ren a ++ "," ++ ren b ++ ")"
 instance (LogRender a,LogRender b) => LogRender (Either a b) where
@@ -278,7 +278,9 @@ instance (LogRender a,LogRender b) => LogRender (Either a b) where
 	ren (Right b) = "(Right " ++ ren a ++ ")"
 instance (Pretty a) => LogRender a where
 	ren a = (render.pretty) a
-instance (
+instance (Show a) => LogRender a where
+	ren a = show a
+
 -------------------
 
 printLog :: String -> IO ()
