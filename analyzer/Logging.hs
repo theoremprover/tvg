@@ -14,10 +14,13 @@ writeHTMLLog logFileHtml log =
 	writeFile logFileHtml $ renderHtml $ pageframe $ makelist "Log" loghtml
 	where
 	([],loghtml) = log2html noHtml 0 $ lines log
-	chkbox = primHtml "<input type=CHECKBOX id=cbtoggleexpand onclick=toggleexpand()>Expand all</input>"
+	chkbox = primHtml "<input type=CHECKBOX checked id=cbtoggleexpand onclick=toggleexpand()>Expand/Collapse all</input>"
 	pageframe tree_html =
 		header (style css) +++
-		body ( chkbox +++ tree_html +++ tag "script" toggler +++ tag "script" expandall )
+		(body ! [
+			thestyle "font-family: 'Courier New', monospace",
+			HtmlAttr "onload" "toggleexpand();" ])
+			(chkbox +++ tree_html +++ tag "script" toggler +++ tag "script" expandall)
 
 log2html :: Html -> Int -> [String] -> ([String],Html)
 log2html cur_html _ [] = ([],cur_html)
@@ -34,24 +37,11 @@ log2html cur_html prev_indent (l:ls)
 		Nothing -> (indent,l)
 		Just l' -> parse_indented_line (indent+1) l'
 
-makelist headline content = li ! [identifier "myUL"] $ ((thespan ! [theclass "caret"]) (stringToHtml headline) +++
-	(ulist ! [theclass "nested"]) content)
+makelist headline content = li ! [identifier "myUL"] $
+	(thespan ! [theclass "caret"]) (stringToHtml headline) +++
+		(ulist ! [theclass "nested"]) content
 
 makeli s = li $ (thespan ! [theclass "leaf"]) (stringToHtml s)
-
-{-
-dataTreeToHtml (Leaf s) = li (stringToHtml s)
-dataTreeToHtml (DataTree s subtrees) = (li ! [identifier "myUL"]) ((thespan ! [myclass]) (stringToHtml s) +++
-	(ulist ! [theclass "nested"]) (concatHtml $ map dataTreeToHtml subtrees))
-	where
-	myclass = theclass $ if null subtrees then "leaf" else "caret"
-
-genericToHTMLString :: (Generic a,DataTreeNode (Rep a)) => a -> String
-genericToHTMLString x = dataTreeToHTMLString $ toDataTree x
-
-dataTreeToHTMLString :: [DataTree] -> String
-dataTreeToHTMLString datatrees = renderHtml $ pageframe $ map dataTreeToHtml datatrees
--}
 
 css = primHtml "\
 \ ul, #myUL {\
@@ -106,7 +96,10 @@ css = primHtml "\
 \ \
 \ .active {\
 \  display: block;\
+\  white-space: pre;\
 \  margin: 0;\
+\  border-style: dashed;\
+\  border-width: thin;\
 \ }\
 \ "
 

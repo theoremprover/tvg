@@ -263,6 +263,7 @@ int main(void)
 safeZ3IdentifierPrefix = 'a'
 
 ----------------
+-- This is just for convenience in the logWrapper combinator...
 
 class (Show a) => LogRender a where
 	ren :: a -> String
@@ -330,12 +331,13 @@ myError txt = do
 indentLog :: Int -> CovVecM ()
 indentLog d = modify $ \ s -> s { logIndentCVS = logIndentCVS s + d }
 
-logWrapper :: Int -> [String] -> CovVecM a -> CovVecM a
+logWrapper :: (LogRender a) => Int -> [String] -> CovVecM a -> CovVecM a
 logWrapper verbosity _ m | outputVerbosity < verbosity = m
 logWrapper verbosity args m = do
 	indentLog 1
 	printLogV verbosity $ intercalate " " args
 	ret <- m
+	printLogV verbosity $ "RESULT = " ++ ren ret
 	indentLog (-1)
 	return ret
 
