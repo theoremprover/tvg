@@ -128,16 +128,16 @@ main = do
 						testvectors = reverse testvectors_rev
 						alls = allCondPointsCVS s
 
-					printLog "\n"
+					printLog 0 "\n"
 
 					let deaths = Set.toList $ alls ∖ covered
 
-					printLog $ "\n####### FINAL RESULT #######\n\n"
+					printLog 0 $ "\n####### FINAL RESULT #######\n\n"
 
 					forM_ testvectors $ \ (traceid,trace,branches,(model_string,mb_solution)) -> do
 						case not showOnlySolutions || maybe False (not.null.(\(_,_,b)->b)) mb_solution of
 							False -> return ()
-							True -> printLog $ unlines $ mbshowtraces (
+							True -> printLog 0 $ unlines $ mbshowtraces (
 								[ "","=== TRACE " ++ show traceid ++ " ========================","<leaving out builtins...>" ] ++
 								[ showLine trace ] ++
 								[ "",
@@ -150,26 +150,26 @@ main = do
 								where
 								mbshowtraces ts = if showTraces then ts else []
 
-					printLog $ "All decision points : \n"
+					printLog 0 $ "All decision points : \n"
 					let decisionpoints = Set.toList alls
 					case null decisionpoints of
-						True  -> printLog "<none>\n"
+						True  -> printLog 0 "<none>\n"
 						False -> forM_ decisionpoints $ \ decisionpoint ->
-							printLog $ "    " ++ show decisionpoint ++ "\n"
+							printLog 0 $ "    " ++ show decisionpoint ++ "\n"
 
-					printLog $ "\n===== SUMMARY =====\n\n"
+					printLog 0 $ "\n===== SUMMARY =====\n\n"
 
 					forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
-						printLog $ "Test Vector " ++ show traceid ++ " covering " ++ ": \n"
-						forM_ branches $ \ branch -> printLog $ "    " ++ show branch ++ "\n"
-						printLog $ "\n    " ++ showTestVector funname v ++ "\n"
+						printLog 0 $ "Test Vector " ++ show traceid ++ " covering " ++ ": \n"
+						forM_ branches $ \ branch -> printLog 0 $ "    " ++ show branch ++ "\n"
+						printLog 0 $ "\n    " ++ showTestVector funname v ++ "\n"
 					forM_ deaths $ \ branch -> do
-						printLog $ "DEAD " ++ show branch ++ "\n\n"
+						printLog 0 $ "DEAD " ++ show branch ++ "\n\n"
 
-					printLog $ "Full path coverage: " ++ show every_branch_covered ++ "\n\n"
+					printLog 0 $ "Full path coverage: " ++ show every_branch_covered ++ "\n\n"
 					when (every_branch_covered && not (null deaths)) $ myErrorIO "Every branch covered but deaths!"
 
-					printLog $ case null deaths of
+					printLog 0 $ case null deaths of
 						False -> "FAIL, there are coverage gaps!\n"
 						True  -> "OK, we have full branch coverage.\n"
 
@@ -180,7 +180,8 @@ concatForM = flip concatMapM
 
 ------------------------
 
-outputVerbosity = 20
+outputVerbosity = 2
+logFileVerbosity = 10
 
 roundingMode = "roundNearestTiesToEven"
 intType = integral TyInt :: Type
@@ -263,41 +264,51 @@ safeZ3IdentifierPrefix = 'a'
 
 ----------------
 
-class LogRender a where
+class (Show a) => LogRender a where
 	ren :: a -> String
-
-instance (Pretty a) => LogRender a where
-	ren a = (render.pretty) a
-instance {-# OVERLAPS #-} LogRender String where
-	ren s = s
-instance {-# OVERLAPS #-} (LogRender a) => LogRender (Maybe a) where
-	ren (Just a) = "Just " ++ ren a
-instance {-# OVERLAPS #-} (LogRender a) => LogRender [a] where
-	ren as = "[" ++ intercalate "," (map ren $ take 3 as) ++ ",...]"
-instance {-# OVERLAPS #-} (LogRender a,Show b,LogRender b) => LogRender (a,b) where
-	ren (a,b) = "(" ++ ren a ++ "," ++ ren b ++ ")"
-instance {-# OVERLAPS #-} (LogRender a,Show b,LogRender b) => LogRender (Either a b) where
-	ren (Left a)  = "(Left " ++ ren a ++ ")"
-	ren (Right b) = "(Right " ++ ren b ++ ")"
-instance {-# OVERLAPS #-} (Show a) => LogRender a where
+instance {-# OVERLAPPABLE #-} (Show a) => LogRender a where
 	ren a = show a
+instance LogRender String where
+	ren s = s
+instance (LogRender a) => LogRender (Maybe a) where
+	ren Nothing = "Nothing"
+	ren (Just a) = "Just " ++ ren a
+instance {-# OVERLAPPABLE #-} (LogRender a,LogRender b) => LogRender (a,b) where
+	ren (a,b) = "(" ++ ren a ++ "," ++ ren b ++ ")"
+instance {-# OVERLAPPABLE #-} (LogRender a) => LogRender [a] where
+	ren as = "[" ++ intercalate "," (map ren $ take 3 as) ++ "]"
+instance (LogRender a,LogRender b) => LogRender (Either a b) where
+	ren (Left a) = "Left " ++ ren a
+	ren (Right b) = "Right " ++ ren b
+instance LogRender EnvItem where
+	ren a = (render.pretty) a
+instance LogRender TyEnvItem where
+	ren a = (render.pretty) a
+instance LogRender CExpr where
+	ren a = (render.pretty) a
+instance LogRender CExprWithType where
+	ren a = (render.pretty) a
+instance LogRender Type where
+	ren a = (render.pretty) a
+instance LogRender CBlockItem where
+	ren a = (render.pretty) a
 
 -------------------
 
-printLog :: String -> IO ()
-printLog text = do
-	putStrLn text
-	when logToFile $ appendFile logFileTxt text
+printLog :: Int -> String -> IO ()
+printLog verbosity text = do
+	when (verbosity<=outputVerbosity) $ putStrLn text
+	when (logToFile && verbosity<=logFileVerbosity) $ appendFile logFileTxt text
 
-printLogM :: String -> CovVecM ()
-printLogM text = do
+printLogM :: Int -> String -> CovVecM ()
+printLogM verbosity text = do
 	indent <- gets logIndentCVS
 	let ind_prefix = concat (replicate indent indentPrefix)
 	let ind_text = unlines $ map (ind_prefix++) $ lines text
-	liftIO $ printLog ind_text
+	liftIO $ printLog verbosity ind_text
 
 printLogV :: Int -> String -> CovVecM ()
-printLogV verbosity text = when (verbosity<=outputVerbosity) $ printLogM text
+printLogV verbosity text = printLogM verbosity text
 
 createHTMLLog :: IO ()
 createHTMLLog = do
@@ -306,13 +317,13 @@ createHTMLLog = do
 
 myErrorIO :: forall a . String -> IO a
 myErrorIO txt = do
-	printLog txt
+	printLog 0 txt
 	createHTMLLog
 	error txt
 	
 myError :: forall a . String -> CovVecM a
 myError txt = do
-	printLogM txt
+	printLogM 0 txt
 	liftIO $ createHTMLLog
 	error txt
 
@@ -472,7 +483,7 @@ showTrace trace = unlines $ concatMap show_te trace where
 	show_te _ = []
 
 covVectorsM :: CovVecM Bool
-covVectorsM = logWrapper 5 [ren "covVectorsM"] $ do
+covVectorsM = logWrapper 2 [ren "covVectorsM"] $ do
 	sizes <- find_out_sizesM
 	modify $ \ s -> s { sizesCVS = Just sizes }
 
@@ -536,7 +547,7 @@ covVectorsM = logWrapper 5 [ren "covVectorsM"] $ do
 	(param_env_exprs,(arraydecl_env,arrayitem_conds)) <- createInterfaceM formal_params
 	modify $ \ s -> s { paramEnvCVS = Just param_env_exprs }
 	let param_env = map fst param_env_exprs
-	printLogV 2 $ "param_env = " ++ showEnv param_env
+	printLogV 8 $ "param_env = " ++ showEnv param_env
 
 	let
 		decls = arrayitem_conds ++ map (NewDeclaration . snd) (arraydecl_env ++ reverse param_env ++ glob_env)
@@ -700,7 +711,7 @@ showLocation (l,c) = "line " ++ show l ++ ", col " ++ show c
 
 -- In case of a cutoff, mb_ret_type is Nothing.
 analyzeTraceM :: Maybe Type -> [TraceElem] -> CovVecM Bool
-analyzeTraceM mb_ret_type res_line = logWrapper 5 [ren "analyzeTraceM",ren mb_ret_type,ren res_line,ren "traceid=",ren traceid] $ do
+analyzeTraceM mb_ret_type res_line = logWrapper 2 [ren "analyzeTraceM",ren mb_ret_type,ren res_line,ren "traceid=",ren traceid] $ do
 	incNumTracesM
 	printStatsM	
 	printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
@@ -771,9 +782,9 @@ analyzeTraceM mb_ret_type res_line = logWrapper 5 [ren "analyzeTraceM",ren mb_re
 	showtraceM cond stage combinator trace = do
 		trace' <- combinator trace
 		when cond $ do
-			printLogM $ "\n--- TRACE after " ++ stage ++ " " ++ show traceid ++ " -----------\n" ++
+			printLogV 5 $ "\n--- TRACE after " ++ stage ++ " " ++ show traceid ++ " -----------\n" ++
 				if showBuiltins then "" else "<leaving out builtins...>\n"
-			printLogM $ showLine trace'
+			printLogV 5 $ showLine trace'
 		return trace'
 
 trace2traceid trace = concatMap extract_conds trace where
@@ -1107,7 +1118,7 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 
 unfoldTracesM :: Type -> Bool -> Int -> [Env] -> Trace -> [([CBlockItem],Bool)] -> CovVecM UnfoldTracesRet
 unfoldTracesM ret_type toplevel forks envs trace ((cblockitem : rest,breakable) : rest2) =
-	logWrapper 5 [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,ren cblockitem] $ do
+	logWrapper 2 [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,ren cblockitem] $ do
 		{-
 			search for all CConds in the cblockitem,
 			replacing ...( a ? b : c )... by
@@ -1135,13 +1146,13 @@ unfoldTracesM ret_type toplevel forks envs trace ((cblockitem : rest,breakable) 
 					return var
 				to_condexpr expr = return expr
 			(cblockitem',add_cbis) <- runStateT (everywhereM (mkM to_condexpr) cblockitem) []
-			printLogV 1 $ "cbis =\n" ++ unlines (map (render.pretty) add_cbis)
-			printLogV 1 $ "cblockitem' =\n" ++ (render.pretty) cblockitem'
+			printLogV 20 $ "cbis =\n" ++ unlines (map (render.pretty) add_cbis)
+			printLogV 20 $ "cblockitem' =\n" ++ (render.pretty) cblockitem'
 		
 			unfoldTraces1M ret_type toplevel forks envs trace ((add_cbis ++ (cblockitem' : rest),breakable) : rest2)
 
 unfoldTracesM ret_type toplevel forks envs trace cbss =
-	logWrapper 5 [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,ren (fst $ head cbss, snd $ head cbss)] $ do
+	logWrapper 2 [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,ren cbss] $ do
 		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $
 			unfoldTraces1M ret_type toplevel forks envs trace cbss
 		where
@@ -1218,18 +1229,18 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@(((CBlockStmt stmt : res
 			drop_after_true (_:l1s) ((_,False):l2s) = drop_after_true l1s l2s
 			drop_after_true (_:l1s) ((l2,True):l2s) = (l1s,l2s)
 			(new_envs,new_bstss) = drop_after_true envs bstss
-		printLogV 2 $ "### CBreak at " ++ (showLocation.lineColNodeInfo) ni ++ " dropped " ++ show (length envs - length new_envs) ++ " envs"
-		printLogV 2 $ "### new_envs = \n" ++ dumpEnvs envs
-		printLogV 2 $ "### length new_envs  = " ++ show (length new_envs)
-		printLogV 2 $ "### length new_bstss = " ++ show (length new_bstss)
+		printLogV 20 $ "### CBreak at " ++ (showLocation.lineColNodeInfo) ni ++ " dropped " ++ show (length envs - length new_envs) ++ " envs"
+		printLogV 20 $ "### new_envs = \n" ++ dumpEnvs envs
+		printLogV 20 $ "### length new_envs  = " ++ show (length new_envs)
+		printLogV 20 $ "### length new_bstss = " ++ show (length new_bstss)
 		unfoldTracesM ret_type toplevel forks new_envs trace new_bstss
 
 	CIf cond then_stmt mb_else_stmt ni -> do
 		let then_trace_m forks' real_cond = transids real_cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
 			unfoldTracesM ret_type toplevel forks' envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest,breakable) : rest2 )
 		let else_trace_m forks' real_cond = transids (CUnary CNegOp real_cond (annotation real_cond)) (Just _BoolTypes) trace $ \ (ncond',trace') -> do			
-			printLogV 2 $ "### real_cond = " ++ (render.pretty) real_cond
-			printLogV 2 $ "### ncond'    = " ++ (render.pretty) ncond'
+			printLogV 20 $ "### real_cond = " ++ (render.pretty) real_cond
+			printLogV 20 $ "### ncond'    = " ++ (render.pretty) ncond'
 			let not_cond = Condition (Just False) ncond'
 			case mb_else_stmt of
 				Nothing        -> unfoldTracesM ret_type toplevel forks' envs (not_cond : trace') ( (rest,breakable) : rest2 )
@@ -1444,9 +1455,9 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@(((CBlockStmt stmt : res
 	-- mb_ty is Nothing if the result type of expr is not known, i.e. no casting necessary.
 	transids :: CExpr -> Maybe Types -> Trace -> ((CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
 	transids expr mb_ty trace cont = do
-		printLogV 2 $ "### transids " ++ (render.pretty) expr
+		printLogV 20 $ "### transids " ++ (render.pretty) expr
 		additional_expr_traces :: [(CExprWithType,Trace)] <- translateExprM envs expr mb_ty
-		printLogV 2 $ "### -> additional_expr_traces = " ++ (render.pretty) (map fst additional_expr_traces)
+		printLogV 20 $ "### -> additional_expr_traces = " ++ (render.pretty) (map fst additional_expr_traces)
 		case toplevel of
 			False -> do
 				conts :: [UnfoldTracesRet] <- forM additional_expr_traces $ \ (expr',trace') -> do
@@ -1594,8 +1605,8 @@ transcribeExprM from envs mb_target_ty expr = do
 -- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> Maybe Types -> CovVecM [(CExprWithType,Trace)]
 translateExprM envs expr0 mb_target_ty = do
-	printLogV 2 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ show mb_target_ty
-	printLogV 2 $ "   envs=\n" ++ dumpEnvs envs
+	printLogV 20 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ show mb_target_ty
+	printLogV 20 $ "   envs=\n" ++ dumpEnvs envs
 	-- extract a list of all calls from the input expression expr0
 	-- (including fun-identifier, the arguments, and NodeInfo)
 	let	
@@ -1616,11 +1627,11 @@ translateExprM envs expr0 mb_target_ty = do
 	funcalls_traces :: [(NodeInfo,[(CExprWithType,Trace)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
 		expanded_params_args <- expand_params_argsM paramdecls args
-		printLogV 2 $ "body = " ++ (render.pretty) body
-		printLogV 2 $ "expanded_params_args = " ++ show expanded_params_args
+		printLogV 20 $ "body = " ++ (render.pretty) body
+		printLogV 20 $ "expanded_params_args = " ++ show expanded_params_args
 		-- β-reduction of the arguments:
 		let body' = replace_param_with_arg expanded_params_args body
-		printLogV 2 $ "body'= " ++ (render.pretty) body'
+		printLogV 20 $ "body'= " ++ (render.pretty) body'
 		Left funtraces <- unfoldTracesM ret_ty False 0 envs [] [ ([ CBlockStmt body' ],False) ]
 		forM_ funtraces $ \ tr -> printLogV 2 $ "funtrace = " ++ showTrace tr
 		let funtraces_rets = concat $ for funtraces $ \case
@@ -1628,7 +1639,7 @@ translateExprM envs expr0 mb_target_ty = do
 			tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
 		return (ni,funtraces_rets)
 
-	printLogV 2 $ "creating combinations..."
+	printLogV 20 $ "creating combinations..."
 	create_combinations expr' [] funcalls_traces
 
 	where
@@ -1917,11 +1928,11 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 	let ret = case mb_target_ty of
 		Just target_ty -> mb_cast target_ty cexpr'
 		_ -> cexpr'
-	printLogV 2 $ "\n# cexpr = " ++ (showLocation.lineColNodeInfo) cexpr
-	printLogV 2 $ "# annotateTypesAndCastM [envs] " ++ (render.pretty) cexpr
-	printLogV 2 $ "# target_ty = " ++ show mb_target_ty
-	printLogV 2 $ "#   cexpr' = " ++ (render.pretty) cexpr'
-	printLogV 2 $ "# ==>\n" ++ (render.pretty) ret ++ "\n"
+	printLogV 20 $ "\n# cexpr = " ++ (showLocation.lineColNodeInfo) cexpr
+	printLogV 20 $ "# annotateTypesAndCastM [envs] " ++ (render.pretty) cexpr
+	printLogV 20 $ "# target_ty = " ++ show mb_target_ty
+	printLogV 20 $ "#   cexpr' = " ++ (render.pretty) cexpr'
+	printLogV 20 $ "# ==>\n" ++ (render.pretty) ret ++ "\n"
 
 	return $ ret
 
@@ -1947,29 +1958,29 @@ annotateTypesAndCastM envs cexpr mb_target_ty = do
 
 	annotate_types ccast@(CCast decl expr ni) = do
 		ty1' <- decl2TypeM ("annotate_types " ++ (render.pretty) ccast) decl
-		printLogV 5 $ "XXX  decl2TypeM ( " ++ (render.pretty) decl ++ ") = " ++ show ty1'
+		printLogV 20 $ "XXX  decl2TypeM ( " ++ (render.pretty) decl ++ ") = " ++ show ty1'
 		ty2' <- elimTypeDefsM ty1'
-		printLogV 5 $ "XXX  elimTypeDefsM ( " ++ (render.pretty) ty1' ++ ") = " ++ show ty2'
+		printLogV 20 $ "XXX  elimTypeDefsM ( " ++ (render.pretty) ty1' ++ ") = " ++ show ty2'
 		ty' <- ty2Z3Type ty2'
-		printLogV 5 $ "XXX  ty2Z3Type ( " ++ (render.pretty) ty2' ++ ") = " ++ show ty'
+		printLogV 20 $ "XXX  ty2Z3Type ( " ++ (render.pretty) ty2' ++ ") = " ++ show ty'
 		expr' <- annotate_types expr
-		printLogV 5 $ "XXX  annotate_types " ++ (render.pretty) expr ++ " = " ++ (render.pretty) expr'
-		printLogV 5 $ "XXX  mb_cast " ++ show ty' ++ " " ++ (render.pretty) expr' ++ " = " ++ (render.pretty) (mb_cast ty' expr')
+		printLogV 20 $ "XXX  annotate_types " ++ (render.pretty) expr ++ " = " ++ (render.pretty) expr'
+		printLogV 20 $ "XXX  mb_cast " ++ show ty' ++ " " ++ (render.pretty) expr' ++ " = " ++ (render.pretty) (mb_cast ty' expr')
 		return $ mb_cast ty' expr'
 
 	annotate_types cunary@(CUnary unop expr ni) = do
-		printLogV 10 $ "### annotate_types " ++ (render.pretty) cunary
+		printLogV 20 $ "### annotate_types " ++ (render.pretty) cunary
 		expr' <- annotate_types expr
-		printLogV 10 $ "### expr' = " ++ (render.pretty) expr'
+		printLogV 20 $ "### expr' = " ++ (render.pretty) expr'
 		let (arg_ty,result_ty) = case (unop,extractTypes expr') of
 			(CNegOp, _)                                -> (_BoolTypes,_BoolTypes)
 			(CAdrOp, ty@(z3ty,cty))                    -> (ty,(Z3_Ptr z3ty,ptrType cty))
 			(CIndOp, ty@(Z3_Ptr z3ty,PtrType cty _ _)) -> (ty,(z3ty,cty))
 			(CIndOp, _) -> error $ "annotate_types: argument type of " ++ (render.pretty) cunary ++ " is no Ptr!"
 			(_,      ty)                               -> (ty,ty)
-		printLogV 10 $ "### (arg_ty,result_ty) = " ++ show (arg_ty,result_ty)
+		printLogV 20 $ "### (arg_ty,result_ty) = " ++ show (arg_ty,result_ty)
 		let erg = CUnary unop (mb_cast arg_ty expr') (ni,result_ty)
-		printLogV 10 $ "### erg = " ++ (render.pretty) erg
+		printLogV 20 $ "### erg = " ++ (render.pretty) erg
 		return erg
 
 	annotate_types (CCond cond_expr (Just then_expr) else_expr ni) = do
@@ -2359,7 +2370,7 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 		model_string = unlines $ map (render.pretty) model
 		model_string_linenumbers = unlines $ map (\ (i,l) -> show i ++ ": " ++ l) (zip [1..] (lines model_string))
 	when ("-writeModels" `elem` opts) $ liftIO $ writeFile modelpathfile model_string
-	when showModels $ printLogM $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
+	when showModels $ printLogM 0 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
 	printLogV 2 $ "Running model " ++ takeFileName modelpathfile ++ "..."
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
 		readProcessWithExitCode z3FilePath ["-smt2","-in","parallel.enable=true"] model_string
@@ -2500,17 +2511,17 @@ tyEnvFromTraceM trace = forM (createTyEnv trace) $ \ (e,t) -> do
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
 checkSolutionM _ resultdata | not checkSolutions = return resultdata
 checkSolutionM traceid resultdata@(_,Nothing) = do
-	printLogM $ "No solution to check for " ++ show traceid
+	printLogM 0 $ "No solution to check for " ++ show traceid
 	return resultdata
 checkSolutionM traceid resultdata@(_,Just (_,_,[])) = do
-	printLogM $ "Empty solution cannot be checked for " ++ show traceid
+	printLogM 0 $ "Empty solution cannot be checked for " ++ show traceid
 	return resultdata
 checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 	let
 		param_env = filter envItemNotPtrType param_env0
 		ret_env = filter envItemNotPtrType ret_env0
-	printLogV 2 $ "checkSolution param_env =\n" ++ showEnv param_env
-	printLogV 2 $ "checkSolution ret_env =\n" ++ showEnv ret_env
+	printLogV 8 $ "checkSolution param_env =\n" ++ showEnv param_env
+	printLogV 8 $ "checkSolution ret_env =\n" ++ showEnv ret_env
 	srcfilename <- gets srcFilenameCVS
 	Just filename <- gets checkExeNameCVS
 	absolute_filename <- liftIO $ makeAbsolute srcfilename
