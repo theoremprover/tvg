@@ -1248,7 +1248,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@(((CBlockStmt stmt : res
 				case ns!!num_reached of
 					1 -> then_trace_m forks real_cond
 					2 -> else_trace_m forks real_cond
-			(real_cond,_) -> do				
+			(real_cond,_) -> do		
 				either_then <- then_trace_m (forks+1) real_cond
 				either_else <- else_trace_m (forks+1) real_cond
 				return $ case (either_then,either_else) of
@@ -1448,7 +1448,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@(((CBlockStmt stmt : res
 
 	-- mb_ty is Nothing if the result type of expr is not known, i.e. no casting necessary.
 	transids :: CExpr -> Maybe Types -> Trace -> ((CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
-	transids expr mb_ty trace cont = do
+	transids expr mb_ty trace cont = logWrapper 5 ["transids",ren expr,ren mb_ty,ren trace,"<cont>"] $ do
 		printLogV 20 $ "### transids " ++ (render.pretty) expr
 		additional_expr_traces :: [(CExprWithType,Trace)] <- translateExprM envs expr mb_ty
 		printLogV 20 $ "### -> additional_expr_traces = " ++ (render.pretty) (map fst additional_expr_traces)
@@ -1598,7 +1598,7 @@ transcribeExprM from envs mb_target_ty expr = do
 -- and expands function calls. Translates to CExprWithType's.
 -- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> Maybe Types -> CovVecM [(CExprWithType,Trace)]
-translateExprM envs expr0 mb_target_ty = logWrapper 5 [ren envs,ren expr0,ren mb_target_ty] $ do
+translateExprM envs expr0 mb_target_ty = logWrapper 5 ["translateExprM","<envs>",ren expr0,ren mb_target_ty] $ do
 	printLogV 20 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ show mb_target_ty
 	printLogV 20 $ "   envs=\n" ++ dumpEnvs envs
 	-- extract a list of all calls from the input expression expr0
@@ -1917,7 +1917,7 @@ type CExprWithType = CExpression NodeInfoWithType
 -- also inserts implicit casts
 -- if mb_target_ty is Nothing, the result CExprWithType will not be casted to the mb_target_ty type.
 annotateTypesAndCastM :: [Env] -> CExpr -> Maybe Types -> CovVecM CExprWithType
-annotateTypesAndCastM envs cexpr mb_target_ty = do
+annotateTypesAndCastM envs cexpr mb_target_ty = logWrapper 2 ["annotateTypesAndCastM","<env>",ren cexpr,ren mb_target_ty] $ do
 	cexpr' <- annotate_types cexpr
 	let ret = case mb_target_ty of
 		Just target_ty -> mb_cast target_ty cexpr'
