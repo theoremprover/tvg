@@ -956,14 +956,6 @@ type2Decl ident ni ty = CDecl (map CTypeSpec typespecs)
 			arraysize2carraysize (UnknownArraySize is_starred) = CNoArrSize is_starred
 			arraysize2carraysize (ArraySize is_static sizeexpr) = CArrSize is_static sizeexpr
 
-{-
-		FunctionType (FunType ret_ty paramdecls is_variadic) _ ->
-			(,[ CFunDeclr (Right (cparamdecls,is_variadic)) [] ni ])
-			where
-			cparamdecls = map paramdecl2cparamdecl paramdecls
-			paramdecl2cparamdecl (ParamDecl (VarDecl (VarName ident Nothing) _ ty) ni) =
-				type2Decl ident ni ty
--}
 		TypeDefType (TypeDefRef ident refd_type ni) _ _ -> ([CTypeDef ident ni],[])
 
 
@@ -1126,30 +1118,32 @@ unfoldTracesM ret_type toplevel forks envs trace ((cblockitem : rest,breakable) 
 			if(a) condexpr$10_12 = b; else condexpr$10_12 = c;
 			...condexpr$10_12...
 		-}
-			let
-				to_condexpr :: CExpr -> StateT [CBlockItem] CovVecM CExpr
-				to_condexpr ccond@(CCond cond (Just true_expr) false_expr ni) = do
-					let
-						(line,col) = lineColNodeInfo ccond
-						var_ident = internalIdent $ "condexpr$" ++ show line ++ "_" ++ show col
-						var = CVar var_ident ni
-					ccond' <- lift $ annotateTypesAndCastM envs ccond Nothing
-					let
-						(_,ty) = extractTypes ccond'
-						-- Isn't there a QuasiQuoter for language-c?
-						cbis = [
-							CBlockDecl $ type2Decl var_ident ni ty,
-							CBlockStmt $ CIf cond (var ≔ true_expr) (Just $ var ≔ false_expr) ni
-							]
-					modify ( cbis ++ )
-					-- Replace the condexpr by the new variable "var"
-					return var
-				to_condexpr expr = return expr
-			(cblockitem',add_cbis) <- runStateT (everywhereM (mkM to_condexpr) cblockitem) []
-			printLogV 20 $ "cbis =\n" ++ unlines (map (render.pretty) add_cbis)
-			printLogV 20 $ "cblockitem' =\n" ++ (render.pretty) cblockitem'
-		
-			unfoldTraces1M ret_type toplevel forks envs trace ((add_cbis ++ (cblockitem' : rest),breakable) : rest2)
+		let
+			to_condexpr :: CExpr -> StateT [CBlockItem] CovVecM CExpr
+			to_condexpr ccond@(CCond cond (Just true_expr) false_expr ni) = do
+				let
+					(line,col) = lineColNodeInfo ccond
+					var_ident = internalIdent $ "condexpr$" ++ show line ++ "_" ++ show col
+					var = CVar var_ident ni
+				ccond' <- lift $ annotateTypesAndCastM envs ccond Nothing
+				let
+					(_,ty) = extractTypes ccond'
+					-- Isn't there a QuasiQuoter for language-c?
+					cbis = [
+						CBlockDecl $ type2Decl var_ident ni ty,
+						CBlockStmt $ CIf cond (var ≔ true_expr) (Just $ var ≔ false_expr) ni
+						]
+				modify ( cbis ++ )
+				-- Replace the condexpr by the new variable "var"
+				return var
+			to_condexpr expr = return expr
+		(cblockitem',add_cbis) <- runStateT (everywhereM (mkM to_condexpr) cblockitem) []
+		when (not $ null add_cbis) $ do
+			printLogV 2 $ "###############################"
+			printLogV 2 $ "cbis =\n" ++ unlines (map (render.pretty) add_cbis)
+			printLogV 2 $ "cblockitem' =\n" ++ (render.pretty) cblockitem'
+
+		unfoldTraces1M ret_type toplevel forks envs trace ((add_cbis ++ (cblockitem' : rest),breakable) : rest2)
 
 unfoldTracesM ret_type toplevel forks envs trace cbss =
 	logWrapper 2 [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,ren cbss] $ do
@@ -1604,7 +1598,7 @@ transcribeExprM from envs mb_target_ty expr = do
 -- and expands function calls. Translates to CExprWithType's.
 -- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> Maybe Types -> CovVecM [(CExprWithType,Trace)]
-translateExprM envs expr0 mb_target_ty = do
+translateExprM envs expr0 mb_target_ty = logWrapper 5 [ren envs,ren expr0,ren mb_target_ty] $ do
 	printLogV 20 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ show mb_target_ty
 	printLogV 20 $ "   envs=\n" ++ dumpEnvs envs
 	-- extract a list of all calls from the input expression expr0
@@ -1633,7 +1627,7 @@ translateExprM envs expr0 mb_target_ty = do
 		let body' = replace_param_with_arg expanded_params_args body
 		printLogV 20 $ "body'= " ++ (render.pretty) body'
 		Left funtraces <- unfoldTracesM ret_ty False 0 envs [] [ ([ CBlockStmt body' ],False) ]
-		forM_ funtraces $ \ tr -> printLogV 2 $ "funtrace = " ++ showTrace tr
+		forM_ funtraces $ \ tr -> printLogV 20 $ "funtrace = " ++ showTrace tr
 		let funtraces_rets = concat $ for funtraces $ \case
 			(Return retexpr : tr) -> [(retexpr,tr)]
 			tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr

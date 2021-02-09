@@ -34,8 +34,8 @@ log2html cur_html prev_indent (l:ls)
 		Nothing -> (indent,l)
 		Just l' -> parse_indented_line (indent+1) l'
 
-makelist headline content = (li ! [identifier "myUL"] $ (thespan ! [theclass "caret"]) (stringToHtml headline)) +++
-	(ulist ! [theclass "nested"]) content
+makelist headline content = li ! [identifier "myUL"] $ ((thespan ! [theclass "caret"]) (stringToHtml headline) +++
+	(ulist ! [theclass "nested"]) content)
 
 makeli s = li $ (thespan ! [theclass "leaf"]) (stringToHtml s)
 
