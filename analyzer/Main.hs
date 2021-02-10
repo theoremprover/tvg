@@ -1284,7 +1284,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@(((CBlockStmt stmt : res
 
 	CExpr (Just (CCall (CVar (Ident "solver_debug" _ _) _) args ni)) _ -> do
 		dbgouts <- forM args $ \ arg -> do
-			expr' <- transcribeExprM "CExpr (Just (CCall (CVar (Ident solver_debug _ _) _) args ni))" envs Nothing arg
+			expr' <- transcribeExprM envs Nothing arg
 			return $ DebugOutput ("solver_debug_" ++ lValueToVarName expr') expr'
 		unfoldTracesM ret_type toplevel forks envs (reverse dbgouts ++ trace) ((rest,breakable):rest2)
 
@@ -1574,9 +1574,9 @@ showFullLocation :: (CNode a) => a -> String
 showFullLocation cnode = (posFile $ posOfNode $ nodeInfo cnode) ++ " : " ++ (showLocation.lineColNodeInfo) cnode
 
 -- Creates an CExprWithType from a CExpr
-transcribeExprM :: String -> [Env] -> Maybe Types -> CExpr -> CovVecM CExprWithType
-transcribeExprM from envs mb_target_ty expr = do
-	annotateTypesAndCastM envs (renameVars (from ++ " transcribeExprM " ++ (render.pretty) expr) envs expr) mb_target_ty
+transcribeExprM :: [Env] -> Maybe Types -> CExpr -> CovVecM CExprWithType
+transcribeExprM envs mb_target_ty expr = do
+	annotateTypesAndCastM envs (renameVars envs expr) mb_target_ty
 	where
 	-- Renames Variables to unique names, looking up their unique name (wíth a number suffix)
 	
@@ -1585,44 +1585,47 @@ transcribeExprM from envs mb_target_ty expr = do
 	-- type CExprRenamed = CExpression IsRenamed
 	--
 	-- But the above would be over-engineering, since renameVars is only used here.
-	renameVars :: String -> [Env] -> CExpr -> CExpr
-	renameVars from envs expr = everywhere (mkT subst_var) expr where
+	renameVars :: [Env] -> CExpr -> CExpr
+	renameVars envs expr = everywhere (mkT subst_var) expr where
 		subst_var :: CExpr -> CExpr
 		subst_var (CVar ident ni) = case lookup ident (concat envs) of
 			Just (ident',_) -> CVar ident' ni
-			Nothing -> error $ " in subst_var " ++ from ++ " : Could not find " ++ (render.pretty) ident ++
+			Nothing -> error $ " in subst_var: Could not find " ++ (render.pretty) ident ++
 				" when renaming " ++ (render.pretty) expr ++ " at " ++ showFullLocation expr ++ "\n" ++
 				"env = \n" ++ envToString (concat envs)
 		subst_var expr = expr
 
+
+cExprWithType2CExpr :: CExprWithType -> CExpr
+cExprWithType2CExpr = fmap fst
 
 -- Translates all identifiers in an expression to fresh ones,
 -- and expands function calls. Translates to CExprWithType's.
 -- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> Maybe Types -> CovVecM [(CExprWithType,Trace)]
 translateExprM envs expr0 mb_target_ty = logWrapper 5 ["translateExprM","<envs>",ren expr0,ren mb_target_ty] $ do
-	printLogV 20 $ "translateExprM [envs] " ++ (render.pretty) expr0 ++ " " ++ show mb_target_ty
-	printLogV 20 $ "   envs=\n" ++ dumpEnvs envs
+	expr <- transcribeExprM envs mb_target_ty expr0
+
 	-- extract a list of all calls from the input expression expr0
 	-- (including fun-identifier, the arguments, and NodeInfo)
 	let	
-		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
-		to_call (CCall funexpr args ni) = case funexpr of
+		to_call :: CExprWithType -> StateT [(Ident,[CExprWithType],NodeInfo)] CovVecM CExprWithType
+		to_call (CCall funexpr args nity@(ni,_)) = case funexpr of
 			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
 			CVar (Ident "solver_pragma" _ _) _ -> lift $ ⅈ 1
 			CVar funident _ -> do
 				modify ( (funident,args,ni) : )
 				-- Replace the call by a placeholder with the same NodeInfo
 				lift $ printLogV 0 $ "Found call " ++ ren funident ++ " at " ++ ren ni
-				return $ CConst $ CStrConst (CString (show ni) False) ni
+				return $ CConst $ CStrConst (CString (show ni) False) nity
 			_  -> lift $ myError $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call expr = return expr
-	(expr,calls) <- runStateT (everywhereM (mkM to_call) expr0) []
+	(expr',calls::[(Ident,[CExprWithType],NodeInfo)]) <- runStateT (everywhereM (mkM to_call) expr) []
 
 	-- construct all possible traces in called (sub-)functions and return them together with the returned expression
-	funcalls_traces :: [(NodeInfo,[(CExpr,Trace)])] <- forM calls $ \ (funident,args,ni) -> do
+	funcalls_traces :: [(NodeInfo,[(CExprWithType,Trace)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
-		expanded_params_args <- expand_params_argsM paramdecls args
+		expanded_params_args <- expand_params_argsM paramdecls $ map cExprWithType2CExpr args
 		printLogV 20 $ "body = " ++ (render.pretty) body
 		printLogV 20 $ "expanded_params_args = " ++ show expanded_params_args
 		-- β-reduction of the arguments:
@@ -1636,11 +1639,7 @@ translateExprM envs expr0 mb_target_ty = logWrapper 5 ["translateExprM","<envs>"
 		return (ni,funtraces_rets)
 
 	printLogV 20 $ "creating combinations..."
-	combinations <- create_combinations expr [] funcalls_traces
-
-	forM combinations $ \ (cexpr,this_trace) -> do
-		cexpr' <- transcribeExprM "expr0" envs mb_target_ty cexpr
-		return (cexpr',this_trace)
+	create_combinations expr' [] funcalls_traces
 
 	where
 
@@ -1660,7 +1659,7 @@ translateExprM envs expr0 mb_target_ty = logWrapper 5 ["translateExprM","<envs>"
 		iexprs
 
 	-- iterate over all possible traces in a called (sub-)function and concatenate their traces 
-	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(CExpr,Trace)])] -> CovVecM [(CExpr,Trace)]
+	create_combinations :: CExprWithType -> Trace -> [(NodeInfo,[(CExprWithType,Trace)])] -> CovVecM [(CExprWithType,Trace)]
 	create_combinations expr trace [] = return [(expr,trace)]
 	-- replace the place-holder in the expr with the return expression of each sub-function's trace,
 	-- concatenating all possibilities (but it does not matter which one, since we only fully cover the top level function)
@@ -1668,8 +1667,8 @@ translateExprM envs expr0 mb_target_ty = logWrapper 5 ["translateExprM","<envs>"
 		concatForM tes $ \ (ret_expr,fun_trace) -> do
 			-- substitute the function call by the return expression
 			let
-				subst_ret_expr :: CExpr -> CovVecM CExpr
-				subst_ret_expr (CConst (CStrConst (CString ni_s False) ni)) | tes_ni == ni && show ni == ni_s = do
+				subst_ret_expr :: CExprWithType -> CovVecM CExprWithType
+				subst_ret_expr (CConst (CStrConst (CString ni_s False) (ni,_))) | tes_ni == ni && show ni == ni_s = do
 					printLogV 0 $ "### Substituted " ++ ren ret_expr ++ " at " ++ ren ni
 					return ret_expr
 				subst_ret_expr expr = return expr
