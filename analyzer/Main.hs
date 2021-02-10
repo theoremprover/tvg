@@ -1352,7 +1352,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@(((CBlockStmt stmt : res
 	recognizeAnnotation :: CExpr -> (CExpr,Maybe ([Int],Int))
 	recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) =
 		-- set the NodeInfo in real_cond to the original NodeInfo of the *whole* condition that includes the solver_annotation
-		-- otherwise, it will be reported as uncovered (all branching points are determined before the analysis starts)
+		-- otherwise, it will be reported as uncovered (have in mind: all branching points are determined before the analysis starts!)
 		(amap (const ni) real_cond,Just (map arg2int args,num_reached)) where
 			num_reached = length $ filter is_this_cond trace where
 				is_this_cond (Condition _ c) = extractNodeInfo c == ni
@@ -1618,10 +1618,9 @@ translateExprM envs expr0 mb_target_ty = logWrapper 5 ["translateExprM","<envs>"
 			_  -> lift $ myError $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call expr = return expr
 	(expr,calls) <- runStateT (everywhereM (mkM to_call) expr0) []
-	expr' <- transcribeExprM "expr0" envs mb_target_ty expr
 
 	-- construct all possible traces in called (sub-)functions and return them together with the returned expression
-	funcalls_traces :: [(NodeInfo,[(CExprWithType,Trace)])] <- forM calls $ \ (funident,args,ni) -> do
+	funcalls_traces :: [(NodeInfo,[(CExpr,Trace)])] <- forM calls $ \ (funident,args,ni) -> do
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
 		expanded_params_args <- expand_params_argsM paramdecls args
 		printLogV 20 $ "body = " ++ (render.pretty) body
@@ -1637,7 +1636,11 @@ translateExprM envs expr0 mb_target_ty = logWrapper 5 ["translateExprM","<envs>"
 		return (ni,funtraces_rets)
 
 	printLogV 20 $ "creating combinations..."
-	create_combinations expr' [] funcalls_traces
+	combinations <- create_combinations expr [] funcalls_traces
+
+	forM combinations $ \ (cexpr,this_trace) -> do
+		cexpr' <- transcribeExprM "expr0" envs mb_target_ty cexpr
+		return (cexpr',this_trace)
 
 	where
 
@@ -1657,7 +1660,7 @@ translateExprM envs expr0 mb_target_ty = logWrapper 5 ["translateExprM","<envs>"
 		iexprs
 
 	-- iterate over all possible traces in a called (sub-)function and concatenate their traces 
-	create_combinations :: CExprWithType -> Trace -> [(NodeInfo,[(CExprWithType,Trace)])] -> CovVecM [(CExprWithType,Trace)]
+	create_combinations :: CExpr -> Trace -> [(NodeInfo,[(CExpr,Trace)])] -> CovVecM [(CExpr,Trace)]
 	create_combinations expr trace [] = return [(expr,trace)]
 	-- replace the place-holder in the expr with the return expression of each sub-function's trace,
 	-- concatenating all possibilities (but it does not matter which one, since we only fully cover the top level function)
@@ -1665,8 +1668,8 @@ translateExprM envs expr0 mb_target_ty = logWrapper 5 ["translateExprM","<envs>"
 		concatForM tes $ \ (ret_expr,fun_trace) -> do
 			-- substitute the function call by the return expression
 			let
-				subst_ret_expr :: CExprWithType -> CovVecM CExprWithType
-				subst_ret_expr (CConst (CStrConst (CString ni_s False) (ni,_))) | tes_ni == ni && show ni == ni_s = do
+				subst_ret_expr :: CExpr -> CovVecM CExpr
+				subst_ret_expr (CConst (CStrConst (CString ni_s False) ni)) | tes_ni == ni && show ni == ni_s = do
 					printLogV 0 $ "### Substituted " ++ ren ret_expr ++ " at " ++ ren ni
 					return ret_expr
 				subst_ret_expr expr = return expr
