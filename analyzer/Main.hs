@@ -1613,6 +1613,7 @@ translateExprM envs expr0 mb_target_ty = logWrapper 5 ["translateExprM","<envs>"
 			CVar funident _ -> do
 				modify ( (funident,args,ni) : )
 				-- Replace the call by a placeholder with the same NodeInfo
+				lift $ printLogV 0 $ "Found call " ++ ren funident ++ " at " ++ ren ni
 				return $ CConst $ CStrConst (CString (show ni) False) ni
 			_  -> lift $ myError $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call expr = return expr
@@ -1657,19 +1658,19 @@ translateExprM envs expr0 mb_target_ty = logWrapper 5 ["translateExprM","<envs>"
 
 	-- iterate over all possible traces in a called (sub-)function and concatenate their traces 
 	create_combinations :: CExprWithType -> Trace -> [(NodeInfo,[(CExprWithType,Trace)])] -> CovVecM [(CExprWithType,Trace)]
-	create_combinations expr trace [] = do
-		return [(expr,trace)]
+	create_combinations expr trace [] = return [(expr,trace)]
 	-- replace the place-holder in the expr with the return expression of each sub-function's trace,
 	-- concatenating all possibilities (but it does not matter which one, since we only fully cover the top level function)
 	create_combinations expr trace ((tes_ni,tes):rest) = do
 		concatForM tes $ \ (ret_expr,fun_trace) -> do
+			-- substitute the function call by the return expression
 			let
-				-- substitute the function call by the return expression
-				expr' = everywhere (mkT subst_ret_expr) expr where
-					subst_ret_expr :: CExprWithType -> CExprWithType
-					subst_ret_expr (CConst (CStrConst (CString ni_s False) (ni,_))) | tes_ni == ni && show ni == ni_s =
-						ret_expr
-					subst_ret_expr expr = expr
+				subst_ret_expr :: CExprWithType -> CovVecM CExprWithType
+				subst_ret_expr (CConst (CStrConst (CString ni_s False) (ni,_))) | tes_ni == ni && show ni == ni_s = do
+					printLogV 0 $ "### Substituted " ++ ren ret_expr ++ " at " ++ ren ni
+					return ret_expr
+				subst_ret_expr expr = return expr
+			expr' <- everywhereM (mkM subst_ret_expr) expr
 --			printLog $ "fun_trace=" ++ show fun_trace
 			create_combinations expr' (fun_trace++trace) rest
 
