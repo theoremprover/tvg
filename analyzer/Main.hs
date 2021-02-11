@@ -84,8 +84,8 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -133,6 +133,8 @@ main = do
 					let deaths = Set.toList $ alls ∖ covered
 
 					printLog 0 $ "\n####### FINAL RESULT #######\n\n"
+
+					printLog 0 $ show (statsCVS s) ++ "\n"
 
 					forM_ testvectors $ \ (traceid,trace,branches,(model_string,mb_solution)) -> do
 						case not showOnlySolutions || maybe False (not.null.(\(_,_,b)->b)) mb_solution of
@@ -182,8 +184,8 @@ concatForM = flip concatMapM
 
 fastMode = True
 
-outputVerbosity = if fastMode then 0 else 2
-logFileVerbosity = 10
+outputVerbosity = if fastMode then 1 else 2
+logFileVerbosity = if fastMode then 0 else 10
 
 roundingMode = "roundNearestTiesToEven"
 intType = integral TyInt :: Type
@@ -201,7 +203,7 @@ returnval_var_name = "return_val"
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
-logToFile = True && not fastMode
+logToFile = True
 logToHtml = True && not fastMode
 mainFileName = "main.c"
 printTypes = True
@@ -389,17 +391,21 @@ data CovVecState = CovVecState {
 	logIndentCVS     :: Int
 	}
 
-data Stats = Stats { cutoffTries :: Int, cutoffsS :: Int, numTracesS :: Int }
+data Stats = Stats {
+	cutoffTriesS :: Int, cutoffsS :: Int, numTracesS :: Int,
+	numSolutionS :: Int, numNoSolutionS :: Int }
 	deriving (Show)
-intialStats = Stats 0 0 0
+intialStats = Stats 0 0 0 0 0
 incCutoffTriesM :: CovVecM ()
-incCutoffTriesM = modify $ \ s -> s { statsCVS = (statsCVS s) { cutoffTries = cutoffTries (statsCVS s) + 1 } }
+incCutoffTriesM = modify $ \ s -> s { statsCVS = (statsCVS s) { cutoffTriesS = cutoffTriesS (statsCVS s) + 1 } }
 incCutoffsM :: CovVecM ()
 incCutoffsM = modify $ \ s -> s { statsCVS = (statsCVS s) { cutoffsS = cutoffsS (statsCVS s) + 1 } }
+incNumNoSolutionM = modify $ \ s -> s { statsCVS = (statsCVS s) { numNoSolutionS = numNoSolutionS (statsCVS s) + 1 } }
+incNumSolutionM = modify $ \ s -> s { statsCVS = (statsCVS s) { numSolutionS = numSolutionS (statsCVS s) + 1 } }
 incNumTracesM :: CovVecM ()
 incNumTracesM = modify $ \ s -> s { statsCVS = (statsCVS s) { numTracesS = numTracesS (statsCVS s) + 1 } }
 printStatsM :: CovVecM ()
-printStatsM = gets statsCVS >>= (printLogV 1) . show
+printStatsM = gets statsCVS >>= (printLogV 2) . show
 
 type CovVecM = StateT CovVecState IO
 
@@ -718,7 +724,7 @@ analyzeTraceM :: Maybe Type -> [TraceElem] -> CovVecM Bool
 analyzeTraceM mb_ret_type res_line = logWrapper 2 [ren "analyzeTraceM",ren mb_ret_type,ren res_line,ren "traceid=",ren traceid] $ do
 	incNumTracesM
 	printStatsM	
-	printLogV 0 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
+	printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
 
 	opts <- gets optsCVS
 	when ("-exportPaths" `elem` opts) $ liftIO $ do
@@ -745,7 +751,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper 2 [ren "analyzeTraceM",ren mb_re
 		Right resultdata@(model_string,mb_solution) -> do
 --			when showTraces $ printLog $ "\n--- Result of " ++ show traceid ++ " : \n"
 			funname <- gets funNameCVS
-			printLogV 0 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n" ++
+			printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n" ++
 				show_solution funname mb_solution ++ "\n"
 		
 			startend <- gets funStartEndCVS
@@ -758,16 +764,19 @@ analyzeTraceM mb_ret_type res_line = logWrapper 2 [ren "analyzeTraceM",ren mb_re
 				to_branch (Condition (Just b) cond) | is_visible_traceelem startend cond =
 					[ (if b then Then else Else) (lineColNodeInfo $ extractNodeInfo cond) ]
 				to_branch _ = []
-			printLogV 2 $ "visible_trace =\n" ++ unlines (map show $ Set.toList visible_trace) 
+			printLogV 2 $ "visible_trace =\n" ++ unlines (map show $ Set.toList visible_trace)
 		
 			let
 				traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
 				solved = is_solution traceanalysisresult
 			case solved of
 				False -> do
-					printLogV 0  $ "FALSE : " ++ show traceid ++ " no solution!"
+					incNumNoSolutionM
+--					printLogV 1  $ "FALSE : " ++ show traceid ++ " no solution!"
+					return ()
 				True  -> do
-					printLogV 0  $ "TRUE : " ++ show traceid ++ " is Solution"
+					incNumSolutionM
+--					printLogV 1  $ "TRUE : " ++ show traceid ++ " is Solution"
 					when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
 					modify $ \ s -> s { analysisStateCVS = let (tas,covered) = analysisStateCVS s in
 						-- Are all the decision points are already covered?
@@ -1606,7 +1615,7 @@ translateExprM :: [Env] -> CExpr -> Maybe Types -> CovVecM [(CExprWithType,Trace
 translateExprM envs expr0 mb_target_ty = logWrapper 5 ["translateExprM","<envs>",ren expr0,ren mb_target_ty] $ do
 	-- extract a list of all calls from the input expression expr0
 	-- (including fun-identifier, the arguments, and NodeInfo)
-	let	
+	let
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call ccall@(CCall funexpr args ni) = case funexpr of
 			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
@@ -2510,10 +2519,10 @@ tyEnvFromTraceM trace = forM (createTyEnv trace) $ \ (e,t) -> do
 checkSolutionM :: [Int] -> ResultData -> CovVecM ResultData
 checkSolutionM _ resultdata | not checkSolutions = return resultdata
 checkSolutionM traceid resultdata@(_,Nothing) = do
-	printLogM 0 $ "No solution to check for " ++ show traceid
+	printLogM 2 $ "No solution to check for " ++ show traceid
 	return resultdata
 checkSolutionM traceid resultdata@(_,Just (_,_,[])) = do
-	printLogM 0 $ "Empty solution cannot be checked for " ++ show traceid
+	printLogM 2 $ "Empty solution cannot be checked for " ++ show traceid
 	return resultdata
 checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 	let
