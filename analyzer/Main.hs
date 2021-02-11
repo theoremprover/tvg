@@ -81,10 +81,10 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
@@ -180,7 +180,9 @@ concatForM = flip concatMapM
 
 ------------------------
 
-outputVerbosity = 2
+fastMode = True
+
+outputVerbosity = if fastMode then 0 else 2
 logFileVerbosity = 10
 
 roundingMode = "roundNearestTiesToEven"
@@ -188,19 +190,19 @@ intType = integral TyInt :: Type
 charType = integral TyChar :: Type
 ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
 
-showInitialTrace = False
+showInitialTrace = False && not fastMode
 solveIt = True
-showModels = False
+showModels = False && not fastMode
 showOnlySolutions = True
-showTraces = True
-showFinalTrace = True
+showTraces = True && not fastMode
+showFinalTrace = True && not fastMode
 checkSolutions = solveIt && True
 returnval_var_name = "return_val"
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
-logToFile = True
-logToHtml = True
+logToFile = True && not fastMode
+logToHtml = True && not fastMode
 mainFileName = "main.c"
 printTypes = True
 
@@ -716,7 +718,7 @@ analyzeTraceM :: Maybe Type -> [TraceElem] -> CovVecM Bool
 analyzeTraceM mb_ret_type res_line = logWrapper 2 [ren "analyzeTraceM",ren mb_ret_type,ren res_line,ren "traceid=",ren traceid] $ do
 	incNumTracesM
 	printStatsM	
-	printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
+	printLogV 0 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
 
 	opts <- gets optsCVS
 	when ("-exportPaths" `elem` opts) $ liftIO $ do
@@ -743,7 +745,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper 2 [ren "analyzeTraceM",ren mb_re
 		Right resultdata@(model_string,mb_solution) -> do
 --			when showTraces $ printLog $ "\n--- Result of " ++ show traceid ++ " : \n"
 			funname <- gets funNameCVS
-			printLogV 2 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n" ++
+			printLogV 0 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n" ++
 				show_solution funname mb_solution ++ "\n"
 		
 			startend <- gets funStartEndCVS
@@ -763,9 +765,9 @@ analyzeTraceM mb_ret_type res_line = logWrapper 2 [ren "analyzeTraceM",ren mb_re
 				solved = is_solution traceanalysisresult
 			case solved of
 				False -> do
-					printLogV 2  $ "### FALSE : " ++ show traceid ++ " no solution!"
+					printLogV 0  $ "FALSE : " ++ show traceid ++ " no solution!"
 				True  -> do
-					printLogV 2  $ "### TRUE : " ++ show traceid ++ " is Solution"
+					printLogV 0  $ "TRUE : " ++ show traceid ++ " is Solution"
 					when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
 					modify $ \ s -> s { analysisStateCVS = let (tas,covered) = analysisStateCVS s in
 						-- Are all the decision points are already covered?
@@ -1604,21 +1606,6 @@ translateExprM :: [Env] -> CExpr -> Maybe Types -> CovVecM [(CExprWithType,Trace
 translateExprM envs expr0 mb_target_ty = logWrapper 5 ["translateExprM","<envs>",ren expr0,ren mb_target_ty] $ do
 	-- extract a list of all calls from the input expression expr0
 	-- (including fun-identifier, the arguments, and NodeInfo)
-{-
-	let	
-		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
-		to_call (CCall funexpr args ni) = case funexpr of
-			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
-			CVar (Ident "solver_pragma" _ _) _ -> lift $ ⅈ 1
-			CVar funident _ -> do
-				modify ( (funident,args,ni) : )
-				-- Replace the call by a placeholder with the same NodeInfo
-				lift $ printLogV 0 $ "Found call " ++ ren funident ++ " at " ++ ren ni
-				return $ CConst $ CStrConst (CString (show ni) False) ni
-			_  -> lift $ myError $ "is_call: found call " ++ (render.pretty) funexpr
-		to_call expr = return expr
-	(expr,calls::[(Ident,[CExpr],NodeInfo)]) <- runStateT (everywhereM (mkM to_call) expr0) []
--}
 	let	
 		to_call :: CExpr -> StateT [(Ident,[CExpr],NodeInfo)] CovVecM CExpr
 		to_call ccall@(CCall funexpr args ni) = case funexpr of
@@ -1627,8 +1614,8 @@ translateExprM envs expr0 mb_target_ty = logWrapper 5 ["translateExprM","<envs>"
 			CVar funident _ -> do
 				modify ( (funident,args,ni) : )
 				-- Replace the call by a placeholder with the same NodeInfo
-				lift $ printLogV 0 $ "Found call " ++ ren funident ++ " at " ++ ren ni
-				return ccall -- CConst $ CStrConst (CString (show ni) False) ni
+				lift $ printLogV 20 $ "Found call " ++ ren funident ++ " at " ++ ren ni
+				return ccall
 			_  -> lift $ myError $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call expr = return expr
 	(expr,calls::[(Ident,[CExpr],NodeInfo)]) <- runStateT (everywhereM (mkM to_call) expr0) []
