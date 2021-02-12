@@ -81,11 +81,11 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -182,7 +182,7 @@ concatForM = flip concatMapM
 
 ------------------------
 
-fastMode = True
+fastMode = False
 
 outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
@@ -1123,7 +1123,7 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 
 unfoldTracesM :: Type -> Bool -> Int -> [Env] -> Trace -> [([CBlockItem],Bool)] -> CovVecM UnfoldTracesRet
 unfoldTracesM ret_type toplevel forks envs trace ((cblockitem : rest,breakable) : rest2) =
-	logWrapper 2 [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,ren cblockitem] $ do
+	logWrapper 2 [ren "unfoldTracesM(1)",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cblockitem] $ do
 		{-
 			search for all CConds in the cblockitem,
 			replacing ...( a ? b : c )... by
@@ -1151,15 +1151,16 @@ unfoldTracesM ret_type toplevel forks envs trace ((cblockitem : rest,breakable) 
 				return var
 			to_condexpr expr = return expr
 		(cblockitem',add_cbis) <- runStateT (everywhereM (mkM to_condexpr) cblockitem) []
+{-
 		when (not $ null add_cbis) $ do
 			printLogV 2 $ "###############################"
 			printLogV 2 $ "cbis =\n" ++ unlines (map (render.pretty) add_cbis)
 			printLogV 2 $ "cblockitem' =\n" ++ (render.pretty) cblockitem'
-
+-}
 		unfoldTraces1M ret_type toplevel forks envs trace ((add_cbis ++ (cblockitem' : rest),breakable) : rest2)
 
 unfoldTracesM ret_type toplevel forks envs trace cbss =
-	logWrapper 2 [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,ren cbss] $ do
+	logWrapper 2 [ren "unfoldTracesM(2)",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cbss] $ do
 		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $
 			unfoldTraces1M ret_type toplevel forks envs trace cbss
 		where
