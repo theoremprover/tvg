@@ -3,7 +3,7 @@
 	PackageImports,RecordWildCards,FunctionalDependencies,MultiParamTypeClasses,
 	QuasiQuotes,UnicodeSyntax,LambdaCase,ScopedTypeVariables,TupleSections,
 	TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,
-	DeriveDataTypeable,DeriveGeneric,PatternGuards,UndecidableInstances #-}
+	DeriveDataTypeable,DeriveGeneric,PatternGuards,UndecidableInstances,Rank2Types #-}
 
 module Main where
 
@@ -179,6 +179,9 @@ for :: [a] -> (a -> b) -> [b]
 for = flip map
 
 concatForM = flip concatMapM
+
+once :: MonadPlus m => GenericM m -> GenericM m
+once f x = f x `mplus` gmapMo (once f) x
 
 ------------------------
 
@@ -1169,12 +1172,16 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 							CBlockStmt $ CIf cond (var ≔ true_expr) (Just $ var ≔ false_expr) ni
 							]
 					modify ( cbis ++ )
-					lift $ printLogV 1 $ "### Found CCond: " ++ ren ccond 
+					lift $ printLogV 1 $ "### Found CCond: " ++ ren ccond
+					lift $ printLogV 1 $ "### NodeINfo cond= " ++ show (nodeInfo cond)
 					-- Replace the condexpr by the new variable "var"
 					return var
-				to_condexpr expr = return expr
+				to_condexpr expr = mzero
 			-- Only replace the topmost CCond (in order to handle recursive CConds properly)
-			(stmt,add_cbis) <- runStateT (somewhere (mkM to_condexpr) stmt0) []
+			(stmt,add_cbis) <- runStateT ((once (mkMp to_condexpr) stmt0) `mplus` (return stmt0)) []
+			printLogV 1 $ "#### stmt    = " ++ (render.pretty) stmt
+			printLogV 1 $ "#### add_cbis= " ++ ren add_cbis
+
 			case stmt of
 				_ | not (null add_cbis) -> unfoldTracesM ret_type toplevel forks envs trace (((add_cbis ++ [CBlockStmt stmt] ++ rest),breakable) : rest2)
 
@@ -2197,11 +2204,14 @@ expr2SExpr expr = expr2sexpr expr
 					(render.pretty) castexpr ++ " " ++ " not implemented!"
 
 		ccond@(CCond cond (Just then_expr) else_expr _) -> do
+			myError $ "expr2sexpr CCond should not appear: " ++ (render.pretty) ccond
+{-
 			SExpr <$> sequence [
 				pure $ SLeaf "ite",
 				expr2sexpr' cond,
 				expr2sexpr' then_expr,
 				expr2sexpr' else_expr ]
+-}
 
 		cmember@(CMember _ _ _ _) -> myError $ "expr2sexpr of member " ++ (render.pretty) cmember ++ " should not occur!"
 	
