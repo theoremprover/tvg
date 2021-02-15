@@ -131,7 +131,7 @@ main = do
 
 					let deaths = Set.toList $ alls ∖ covered
 
-					printLog 0 $ "\n####### FINAL RESULT #######\n\n"
+					printLog 0 $ "\n###### FINAL RESULT #######\n\n"
 
 					printLog 0 $ show (statsCVS s) ++ "\n"
 
@@ -173,6 +173,8 @@ main = do
 					printLog 0 $ case null deaths of
 						False -> "FAIL, there are coverage gaps!\n"
 						True  -> "OK, we have full branch coverage.\n"
+					
+					createHTMLLog
 
 for :: [a] -> (a -> b) -> [b]
 for = flip map
@@ -184,13 +186,8 @@ once :: MonadPlus m => GenericM m -> GenericM m
 once f x = f x `mplus` gmapMo (once f) x
 -}
 
-everywhere'M :: forall m. Monad m => GenericM m -> GenericM m
-everywhere'M f = go
-	where
-	go :: GenericM m
-	go x = do
-		x' <- f x
-		`mplus` (gmapM go x')
+once :: MonadPlus m => GenericM m -> GenericM m
+once f x = f x `mplus` gmapMo (once f) x
 
 ------------------------
 
@@ -1181,15 +1178,14 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 							CBlockStmt $ CIf cond (var ≔ true_expr) (Just $ var ≔ false_expr) ni
 							]
 					modify ( cbis ++ )
-					lift $ printLogV 1 $ "### Found CCond: " ++ ren ccond
-					lift $ printLogV 1 $ "### NodeINfo cond= " ++ show (nodeInfo cond)
+					lift $ printLogV 20 $ "### Found CCond: " ++ ren ccond
 					-- Replace the condexpr by the new variable "var"
 					return var
 				to_condexpr expr = mzero
 			-- Only replace the topmost CCond (in order to handle recursive CConds properly)
 			(stmt,add_cbis) <- runStateT ((once (mkMp to_condexpr) stmt0) `mplus` (return stmt0)) []
-			printLogV 1 $ "#### stmt    = " ++ (render.pretty) stmt
-			printLogV 1 $ "#### add_cbis= " ++ ren add_cbis
+			printLogV 20 $ "#### stmt    = " ++ (render.pretty) stmt
+			printLogV 20 $ "#### add_cbis= " ++ ren add_cbis
 
 			case stmt of
 				_ | not (null add_cbis) -> unfoldTracesM ret_type toplevel forks envs trace (((add_cbis ++ [CBlockStmt stmt] ++ rest),breakable) : rest2)
