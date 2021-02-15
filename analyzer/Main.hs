@@ -103,9 +103,9 @@ main = do
 
 	getZonedTime >>= return.(++"\n").show >>= writeFile logFileTxt
 
-	let parseit = case takeExtension filename of
-		".i" -> parseCFilePre filename
-		_    -> parseCFile (newGCC gcc) Nothing [] filename
+	let parseit = case takeExtension filename `elem` [".i"] of
+		True  -> parseCFilePre filename
+		False -> parseCFile (newGCC gcc) Nothing [] filename
 	parseit >>= \case
 		Left err -> error $ show err
 		Right translunit -> do
