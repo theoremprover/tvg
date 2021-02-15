@@ -5,7 +5,6 @@ int g(int y)
 
 int f(int x)
 {
-    return ( (x==0) ? 1 : ((x==1) ? 2 : 3) );
-//    if((g(x)==2) ? 0 : 1 ) return 0;
-//    return 1;
+    if((g(x)==2) ? 0 : 1 ) return 0;
+    return 1;
 }

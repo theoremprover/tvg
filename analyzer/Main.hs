@@ -387,7 +387,7 @@ data CovVecState = CovVecState {
 	srcFilenameCVS   :: String,
 	checkExeNameCVS  :: Maybe String,
 	funNameCVS       :: String,
-	funStartEndCVS   :: ((Int,Int),(Int,Int)),
+	funStartEndCVS   :: (Location,Location),
 	compilerCVS      :: String,
 	optsCVS          :: [String],
 	paramEnvCVS      :: Maybe [(EnvItem,CExprWithType)],
@@ -557,7 +557,7 @@ covVectorsM = logWrapper 2 [ren "covVectorsM"] $ do
 		is_in_src_file identdecl = srcfilename identdecl == srcfilename fundef
 		fun_lc = lineColNodeInfo fundef_ni
 		next_lc = case sort $ filter (> lineColNodeInfo fundef_ni) $ map lineColNodeInfo $ filter is_in_src_file globdecls of
-			[] -> (maxBound,maxBound)
+			[] -> (maxBound,maxBound,-1)
 			next : _ -> next
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
@@ -722,10 +722,12 @@ type_format_string ty = do
 		Z3_Ptr _                                        -> "p"
 		_ -> error $ "type_format_string " ++ (render.pretty) ty ++ " not implemented"
 
-type Location = (Int,Int)
+type Location = (Int,Int,Int)
+locationToName :: Location -> String
+locationToName (l,c,len) = show l ++ "_" ++ show c ++ "_" ++ show len
 
 showLocation :: Location -> String
-showLocation (l,c) = "line " ++ show l ++ ", col " ++ show c
+showLocation (l,c,len) = "line " ++ show l ++ ", col " ++ show c ++ ", len " ++ show len
 
 -- In case of a cutoff, mb_ret_type is Nothing.
 analyzeTraceM :: Maybe Type -> [TraceElem] -> CovVecM Bool
@@ -766,7 +768,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper 2 [ren "analyzeTraceM",ren mb_re
 			printLogV 2 $ "startend =" ++ show startend
 			let visible_trace = Set.fromList $ concatMap to_branch res_line
 				where
-				is_visible_traceelem :: ((Int,Int),(Int,Int)) -> CExprWithType -> Bool
+				is_visible_traceelem :: (Location,Location) -> CExprWithType -> Bool
 				is_visible_traceelem (start,end) expr = start <= lc && lc < end where
 					lc = lineColNodeInfo $ extractNodeInfo expr
 				to_branch (Condition (Just b) cond) | is_visible_traceelem startend cond =
@@ -815,9 +817,10 @@ is_solution (_,_,_,(_,Just (_,_,solution))) = not $ null solution
 is_solution _ = False
 
 lineColNodeInfo :: (CNode a) => a -> Location
-lineColNodeInfo cnode = if isSourcePos pos_te then (posRow pos_te,posColumn pos_te) else (-1,-1)
+lineColNodeInfo cnode = if isSourcePos pos_te then (posRow pos_te,posColumn pos_te,fromJust $ lengthOfNode ni) else (-1,-1,-1)
 	where
-	pos_te = posOfNode $ nodeInfo cnode
+	ni = nodeInfo cnode
+	pos_te = posOfNode ni
 
 lookupFunM :: Ident -> CovVecM FunDef
 lookupFunM ident = do
@@ -1166,8 +1169,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 				to_condexpr :: CExpr -> StateT [CBlockItem] CovVecM CExpr
 				to_condexpr ccond@(CCond cond (Just true_expr) false_expr ni) = do
 					let
-						(line,col) = lineColNodeInfo ccond
-						var_ident = internalIdent $ "condexpr$" ++ show line ++ "_" ++ show col
+						var_ident = internalIdent $ "condexpr$" ++ locationToName (lineColNodeInfo ccond)
 						var = CVar var_ident ni
 					ccond' <- lift $ annotateTypesAndCastM envs ccond Nothing
 					let
@@ -1195,8 +1197,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 				CSwitch condexpr (CCompound [] cbis _) switch_ni -> do
 					let
 						cond_ni = nodeInfo condexpr
-						(l,c) = lineColNodeInfo condexpr
-						cond_var_ident = mkIdentWithCNodePos condexpr $ "cond_" ++ show l ++ "_" ++ show c
+						cond_var_ident = mkIdentWithCNodePos condexpr $ "cond_" ++ (locationToName $ lineColNodeInfo condexpr)
 						-- we have to evaluate the switch'ed expression only once, and in the beginning,
 						-- since there could be side effects in it! (May God damn them...)
 						cond_var = CVar cond_var_ident cond_ni
