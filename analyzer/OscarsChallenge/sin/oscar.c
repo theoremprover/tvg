@@ -11,17 +11,10 @@
 #include "errno.c"
 #include "memcpy.c"
 
-//gcc xsin.c xdtest.c xferaise.c xquad.c xvalues.c xdunscal.c xdscale.c xdint.c xprec.c xdnorm.c errno.c memcpy.c
-
 /*
-static const double c[] = {
- 0.00000000206374484196,
- -0.00000027555365134677,
- 0.00002480157946764225,
- -0.00138888888730525966,
- 0.04166666666651986722,
- -0.49999999999999547304,
- };
+gcc xsin.c xdtest.c xferaise.c xquad.c xvalues.c xdunscal.c xdscale.c xdint.c xprec.c xdnorm.c errno.c memcpy.c oscar.c
+*/
+
 static const double s[] = {
  0.00000000015893606014,
  -0.00000002505069049138,
@@ -30,22 +23,6 @@ static const double s[] = {
  0.00833333333331908278,
  -0.16666666666666612594,
  };
-*/
-static const double
-    c0 = 0.00000000206374484196,
-    c1 = -0.00000027555365134677,
-    c2 = 0.00002480157946764225,
-    c3 = -0.00138888888730525966,
-    c4 = 0.04166666666651986722,
-    c5 = -0.49999999999999547304;
-
-static const double
-    s0 = 0.00000000015893606014,
-    s1 = -0.00000002505069049138,
-    s2 = 0.00000275573131527032,
-    s3 = -0.00019841269827816117,
-    s4 = 0.00833333333331908278,
-    s5 = -0.16666666666666612594;
 
 double _Sinx(double x, unsigned int qoff, int quads)
  {
@@ -71,9 +48,9 @@ double _Sinx(double x, unsigned int qoff, int quads)
    {
    double w = x * x;
    if ((qoff & 0x1) != 0)
-    x = 1.0 + w * (((((c0 * w + c1) * w + c2) * w + c3) * w + c4) * w + c5);
+    x = 1.0 + w * (((((c[0] * w + c[1]) * w + c[2]) * w + c[3]) * w + c[4]) * w + c[5]);
    else
-    x += x * w * (((((s0 * w + s1) * w + s2) * w + s3) * w + s4) * w + s5);
+    x += x * w * (((((s[0] * w + s[1]) * w + s[2]) * w + s[3]) * w + s[4]) * w + s[5]);
    }
   if (qoff & 0x2)
    ((*_Pmsw(&(x))) ^= ((unsigned short)0x8000));

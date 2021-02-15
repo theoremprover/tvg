@@ -79,7 +79,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "_Dtest" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\oscar.i") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -194,7 +194,7 @@ once f x = f x `mplus` gmapMo (once f) x
 
 ------------------------
 
-fastMode = False
+fastMode = True
 
 outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
@@ -210,7 +210,7 @@ showModels = False && not fastMode
 showOnlySolutions = True
 showTraces = True && not fastMode
 showFinalTrace = True && not fastMode
-checkSolutions = solveIt && True
+checkSolutions = solveIt && False
 returnval_var_name = "return_val"
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
@@ -1208,7 +1208,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 						-- Go through all the switch's "case"s and "default"s...
 						collect_stmts :: [CBlockItem] -> [CBlockItem]
 						collect_stmts [] = []
-						collect_stmts (CBlockStmt (CDefault _ _) : _ : _) = error
+						collect_stmts (CBlockStmt (CDefault _ default_ni) : _ : _) = error $ ren default_ni ++ " : " ++
 							"collect_stmts: the case when 'default' is not the last item in the switch is not implemented"
 						-- if we have a "default", insert a "goto 1", which will later be translated into "Condition (Just True) 1"
 						-- and append the default statement
@@ -2280,8 +2280,8 @@ ty2Z3Type ty = do
 		PtrType target_ty _ _ -> Z3_Ptr <$> ty2Z3TypeOnly target_ty
 		ArrayType elem_ty arraysize _ _ ->
 			Z3_Array <$> ty2Z3TypeOnly elem_ty <*> pure ( case arraysize of
-				ArraySize False (CConst (CIntConst cint _)) -> Just $ getCInteger cint
-				UnknownArraySize _                          -> Nothing )
+				ArraySize _ (CConst (CIntConst cint _)) -> Just $ getCInteger cint
+				_                                       -> Nothing )
 		TypeDefType (TypeDefRef _ ty _) _ _ -> ty2Z3TypeOnly ty
 		FunctionType (FunTypeIncomplete ret_type) _ -> Z3_FunIncomplete <$> ty2Z3TypeOnly ret_type
 		FunctionType (FunType ret_type funparamdecls is_variadic) _ -> do
