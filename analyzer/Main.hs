@@ -79,8 +79,8 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "_Dtest" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\oscar.i") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\myfp-bit_mul.c") : "_fpmul_parts" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -103,7 +103,10 @@ main = do
 
 	getZonedTime >>= return.(++"\n").show >>= writeFile logFileTxt
 
-	parseCFile (newGCC gcc) Nothing [] filename >>= \case
+	let parseit = case takeExtension filename of
+		".i" -> parseCFilePre filename
+		_    -> parseCFile (newGCC gcc) Nothing [] filename
+	parseit >>= \case
 		Left err -> error $ show err
 		Right translunit -> do
 			when ("-writeAST" `elem` opts) $
