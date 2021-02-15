@@ -32,8 +32,7 @@ import qualified Text.PrettyPrint.Mainland as PPM
 import qualified Text.PrettyPrint.Mainland.Class as PPMC
 import Control.Monad
 import Control.Monad.Trans.Class
-import Control.Monad.Trans.State
---import Control.Monad.Trans.State.Strict
+import Control.Monad.Trans.State -- .Strict
 import qualified Data.Set as Set
 import Data.Set.Unicode
 import Prelude.Unicode ((∧),(∨))
@@ -44,7 +43,7 @@ import Numeric (readHex,readInt)
 import Data.Either
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
-import qualified GHC.Generics as GHCG
+--import qualified GHC.Generics as GHCG
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
 import Data.Time.LocalTime
@@ -180,8 +179,18 @@ for = flip map
 
 concatForM = flip concatMapM
 
+{-
 once :: MonadPlus m => GenericM m -> GenericM m
 once f x = f x `mplus` gmapMo (once f) x
+-}
+
+everywhere'M :: forall m. Monad m => GenericM m -> GenericM m
+everywhere'M f = go
+	where
+	go :: GenericM m
+	go x = do
+		x' <- f x
+		`mplus` (gmapM go x')
 
 ------------------------
 
