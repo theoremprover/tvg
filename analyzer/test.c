@@ -1,13 +1,31 @@
-typedef union
- {
- unsigned short _Sh[8];
- double _Val;
- } _Dval;
-
-short _Dtest(double* px)
+/*
+int f(int x)
 {
-    _DVal* ps = (_DVal*)(char*) px;
- if ((ps->_Sh[3] & ((unsigned short)(0x7fff & ~((unsigned short)((1 << 4) - 1))))) == ((unsigned short)((1 << (15 - 4)) - 1)) << 4)
-  return ((short)((ps->_Sh[3] & ((unsigned short)((1 << 4) - 1))) != 0 || ps->_Sh[2] != 0));
-  return (0);
+    int a = 0;
+    switch(x)
+    {
+        case 1:
+            for(int i=0;i<4;i++)
+            //          ^^^
+            //          Dead Else because of if(i>=2) break;
+            {
+                if(i>=2) break;
+                a++;
+            }
+            a++;
+            break;
+        default:
+            a = a + 10;
+    }
+    return a;
+}
+*/
+int f(int x)
+{
+    for(int i=0;i<4;i++)
+    {
+        if(i>=2) break;
+        x++;
+    }
+    return x;
 }

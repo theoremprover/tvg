@@ -76,7 +76,7 @@ main = do
 	hSetBuffering stdout NoBuffering
 
 	gcc:filename:funname:opts <- getArgs >>= return . \case
---		[] -> "gcc" : (analyzerPath++"\\test.c") : "_Dtest" : [] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\test.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
@@ -164,11 +164,11 @@ main = do
 					printLog 0 $ "\n===== SUMMARY =====\n\n"
 
 					forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
-						printLog 0 $ "Test Vector " ++ show traceid ++ " covering " ++ ": \n"
-						forM_ branches $ \ branch -> printLog 0 $ "    " ++ show branch ++ "\n"
-						printLog 0 $ "\n    " ++ showTestVector funname v ++ "\n"
+						printLog 0 $ "Test Vector " ++ show traceid ++ " covering "
+						forM_ branches $ \ branch -> printLog 0 $ "    " ++ show branch
+						printLog 0 $ "    " ++ showTestVector funname v ++ "\n"
 					forM_ deaths $ \ branch -> do
-						printLog 0 $ "DEAD " ++ show branch ++ "\n\n"
+						printLog 0 $ "DEAD " ++ show branch
 
 					printLog 0 $ "Full path coverage: " ++ show every_branch_covered ++ "\n\n"
 					when (every_branch_covered && not (null deaths)) $ myErrorIO "Every branch covered but deaths!"
@@ -184,11 +184,6 @@ for = flip map
 
 concatForM = flip concatMapM
 
-{-
-once :: MonadPlus m => GenericM m -> GenericM m
-once f x = f x `mplus` gmapMo (once f) x
--}
-
 once :: MonadPlus m => GenericM m -> GenericM m
 once f x = f x `mplus` gmapMo (once f) x
 
@@ -198,6 +193,8 @@ fastMode = True
 
 outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
+
+mAX_REN_LIST_LENGTH = 10
 
 roundingMode = "roundNearestTiesToEven"
 intType = integral TyInt :: Type
@@ -220,7 +217,7 @@ logToHtml = True && not fastMode
 mainFileName = "main.c"
 printTypes = True
 
-mAX_UNROLLS = 3
+mAX_UNROLLS = 4
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
 
 cutOffs = False
@@ -288,14 +285,15 @@ instance {-# OVERLAPPABLE #-} (Show a) => LogRender a where
 instance LogRender String where
 	ren s = s
 instance (LogRender a) => LogRender (Maybe a) where
-	ren Nothing = "Nothing"
+	ren Nothing  = "Nothing"
 	ren (Just a) = "Just " ++ ren a
 instance {-# OVERLAPPABLE #-} (LogRender a,LogRender b) => LogRender (a,b) where
 	ren (a,b) = "(" ++ ren a ++ "," ++ ren b ++ ")"
 instance {-# OVERLAPPABLE #-} (LogRender a) => LogRender [a] where
-	ren as = "[" ++ intercalate "," (map ren $ take 3 as) ++ "]"
+	ren as | length as > mAX_REN_LIST_LENGTH = "[ " ++ intercalate "," (map ren $ take mAX_REN_LIST_LENGTH as) ++ " ... ]"
+	ren as = "[ " ++ intercalate "," (map ren as) ++ " ]"
 instance (LogRender a,LogRender b) => LogRender (Either a b) where
-	ren (Left a) = "Left " ++ ren a
+	ren (Left a)  = "Left " ++ ren a
 	ren (Right b) = "Right " ++ ren b
 instance LogRender EnvItem where
 	ren a = (render.pretty) a
@@ -762,7 +760,6 @@ analyzeTraceM mb_ret_type res_line = logWrapper 2 [ren "analyzeTraceM",ren mb_re
 	case either_resultdata of
 		Left solvable -> return solvable
 		Right resultdata@(model_string,mb_solution) -> do
---			when showTraces $ printLog $ "\n--- Result of " ++ show traceid ++ " : \n"
 			funname <- gets funNameCVS
 			printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n" ++
 				show_solution funname mb_solution ++ "\n"
@@ -789,7 +786,8 @@ analyzeTraceM mb_ret_type res_line = logWrapper 2 [ren "analyzeTraceM",ren mb_re
 				True  -> do
 					incNumSolutionM
 					when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
-					modify $ \ s -> s { analysisStateCVS = let (tas,covered) = analysisStateCVS s in
+					(tas,covered) <- gets analysisStateCVS
+					modify $ \ s -> s { analysisStateCVS =
 						-- Are all the decision points are already covered?
 						-- If yes, this trace does not contribute to full coverage...
 						case visible_trace ⊆ covered of
@@ -1153,8 +1151,8 @@ unfoldTracesM ret_type toplevel forks envs trace cbss =
 		maybe_cutoff cont = cont
 
 unfoldTraces1M :: Type -> Bool -> Int -> [Env] -> Trace -> [([CBlockItem],Bool)] -> CovVecM UnfoldTracesRet
-unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStmt stmt0 : rest),breakable) : rest2) =
-	logWrapper 2 [ren "unfoldTraces1M",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cblockitems] $
+unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : rest,breakable) : rest2) =
+	logWrapper 2 [ren "unfoldTraces1M",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren bstss] $
 	case stmt0 of
 
 		CCompound _ cbis _ -> unfoldTracesM ret_type toplevel forks ([]:envs) trace ((cbis,False) : (rest,breakable) : rest2)
@@ -1204,28 +1202,31 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 						-- we have to evaluate the switch'ed expression only once, and in the beginning,
 						-- since there could be side effects in it! (May God damn them...)
 						cond_var = CVar cond_var_ident cond_ni
-			
+
 						-- Go through all the switch's "case"s and "default"s...
 						collect_stmts :: [CBlockItem] -> [CBlockItem]
 
 						collect_stmts [] = []
 
-						collect_stmts (CBlockStmt (CDefault def_stmt default_ni) : rest) = CBlockStmt def_stmt :
+						collect_stmts (CBlockStmt (CDefault def_stmt default_ni) : rest) =
 							-- if we have a "default", insert a "goto 1", which will later be translated into "Condition (Just True) 1"
-							-- and append the default statement. This is to cover the "default" branch.
-							CBlockStmt (CGotoPtr (CConst $ CIntConst (cInteger 1) default_ni) undefNode) : ( for rest $ \case
-								CBlockStmt (CCase _ stmt _)  -> default_not_last_err
-								CBlockStmt (CDefault stmt _) -> default_not_last_err
-								cbi -> cbi )
-								where
-								default_not_last_err = error $ ren default_ni ++ " : " ++
-									"collect_stmts: the case when 'default' is not the last item in the switch is not implemented"
+							-- and append the default statement.
+							-- This is to explicitly cover the "default" branch (located at the "default" keyword).
+							CBlockStmt (CGotoPtr (CConst $ CIntConst (cInteger 1) default_ni) undefNode) :
+								CBlockStmt def_stmt :
+								( for rest $ \case
+									CBlockStmt (CCase _ stmt _)  -> default_not_last_err
+									CBlockStmt (CDefault stmt _) -> default_not_last_err
+									cbi -> cbi )
+									where
+									default_not_last_err = error $ ren default_ni ++ " : " ++
+										"collect_stmts: the case when 'default' is not the last item in the switch is not implemented"
 
 						-- if we have a "case <expr>: stmt", insert "if (expr==cond_var) { stmt; rest } else <recurse_collect_stmts>"
 						collect_stmts (CBlockStmt (CCase caseexpr stmt case_ni) : rest) = [
 							CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr case_ni)
-							(CCompound [] (CBlockStmt stmt : filtercases rest) undefNode)
-							(Just $ CCompound [] (collect_stmts rest) undefNode) undefNode ]
+								(CCompound [] (CBlockStmt stmt : filtercases rest) undefNode)
+								(Just $ CCompound [] (collect_stmts rest) undefNode) undefNode ]
 							where
 							-- Eliminate the case/default "wrappers" from a statement list.
 							filtercases :: [CBlockItem] -> [CBlockItem]
@@ -1233,7 +1234,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 								CBlockStmt (CCase _ stmt _)  -> CBlockStmt stmt
 								CBlockStmt (CDefault stmt _) -> CBlockStmt stmt
 								cbi -> cbi
-			
+
 						-- if it was neither a "case" or "default", skip it.
 						collect_stmts (_:rest) = collect_stmts rest
 			
@@ -1249,14 +1250,17 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 			
 				CBreak ni -> do
 					-- The scope that break reaches is the successor of the first "breakable" scope
+					printLogV 1 $ "### envs = \n" ++ dumpEnvs envs
+					printLogV 1 $ "### bstss = " ++ ren bstss
 					let
 						drop_after_true (_:l1s) ((_,False):l2s) = drop_after_true l1s l2s
-						drop_after_true (_:l1s) ((l2,True):l2s) = (l1s,l2s)
-						(new_envs,new_bstss) = drop_after_true envs bstss
-					printLogV 20 $ "### CBreak at " ++ (showLocation.lineColNodeInfo) ni ++ " dropped " ++ show (length envs - length new_envs) ++ " envs"
-					printLogV 20 $ "### new_envs = \n" ++ dumpEnvs envs
-					printLogV 20 $ "### length new_envs  = " ++ show (length new_envs)
-					printLogV 20 $ "### length new_bstss = " ++ show (length new_bstss)
+						drop_after_true (_:l1s) ((_,True):l2s) = return (l1s,l2s)
+						drop_after_true l1s l2s = myError $ "drop_after_true " ++ ren l1s ++ " " ++ ren l2s
+					(new_envs,new_bstss) <- drop_after_true envs bstss
+					printLogV 1 $ "### CBreak at " ++ (showLocation.lineColNodeInfo) ni ++ " dropped " ++ show (length envs - length new_envs) ++ " envs"
+					printLogV 1 $ "### new_envs = \n" ++ dumpEnvs envs
+					printLogV 1 $ "### length new_envs  = " ++ show (length new_envs)
+					printLogV 1 $ "### length new_bstss = " ++ show (length new_bstss)
 					unfoldTracesM ret_type toplevel forks new_envs trace new_bstss
 			
 				CIf cond then_stmt mb_else_stmt ni -> do
@@ -1343,7 +1347,6 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 			
 				CWhile cond body False ni -> do
 					(mb_unrolling_depth,msg) <- infer_loopingsM cond body
-					printLogV 1 msg
 					unroll_loopM $ case mb_unrolling_depth of
 						Nothing -> uNROLLING_STRATEGY
 						Just ns -> ns
@@ -1353,7 +1356,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 					unroll_loopM :: [Int] -> CovVecM UnfoldTracesRet
 					unroll_loopM depths = do
 						ress <- forM depths $ \ depth ->
-							unfoldTracesM ret_type toplevel forks ([]:envs) trace ((unroll cond depth,True) : (rest,breakable) : rest2 )
+							unfoldTracesM ret_type toplevel forks ([]:envs) trace ( (unroll cond depth,True) : (rest,breakable) : rest2 )
 						return $ case toplevel of
 							False -> Left $ concat $ lefts ress
 							True  -> Right $ any id $ rights ress
@@ -1367,11 +1370,10 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 				CFor (Right decl) mb_cond mb_inc_expr stmt ni -> do
 					ii <- ⅈ 1
 					let
-						body_stmt = CWhile (maybe ii id mb_cond) while_body False ni
 						while_body = CCompound [] ( CBlockStmt stmt :
 							maybe [] (\ expr -> [ CBlockStmt $ CExpr (Just expr) (nodeInfo expr) ]) mb_inc_expr) (nodeInfo stmt)
-						stmt' = CCompound [] [ CBlockDecl decl, CBlockStmt body_stmt ] ni
-					unfoldTracesM ret_type toplevel forks envs trace ((CBlockStmt stmt' : rest,breakable) : rest2)
+						body_stmt = CWhile (maybe ii id mb_cond) while_body False ni
+					unfoldTracesM ret_type toplevel forks envs trace ((CBlockDecl decl : CBlockStmt body_stmt : rest,breakable) : rest2)
 			
 				_ -> myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 		
@@ -1389,7 +1391,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 			recognizeAnnotation real_cond = (real_cond,Nothing)
 		
 			infer_loopingsM :: CExpr -> CStat -> CovVecM (Maybe [Int],String)
-			infer_loopingsM cond0 body = do
+			infer_loopingsM cond0 body = logWrapper 2 [ren "infer_loopingsM",ren cond0,'\n':ren body] $ do
 				case recognizeAnnotation cond0 of
 					(real_cond,Just (ns,_)) -> return (Just ns,"Recognized LOOP annotation to " ++ (render.pretty) cond0)
 					(real_cond,Nothing) -> do
@@ -1402,7 +1404,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 									-- get all variables used in the condition
 									cond_idents = fvar cond
 								-- unfold body to all body traces and filter for all Assignments to variables from the condition
-								Left body_traces <- unfoldTracesM ret_type False forks envs [] [([CBlockStmt body],False)]
+								Left body_traces <- unfoldTracesM ret_type False forks ([]:envs) [] [([CBlockStmt body],True)]
 								let
 									body_traces_ass = map (concatMap from_ass) body_traces where
 										from_ass (Assignment a@(CVar i _) b) | i `elem` cond_idents = [(a,b)]

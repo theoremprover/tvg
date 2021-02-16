@@ -27,8 +27,8 @@ int f(int x,int y)
             }
             else
             {
-                for(int i=0;solver_pragma(4) && i<4;i++)
-                //          ^^^^^^^^^^^^^^^^^^^^^^^
+                for(int i=0;i<4;i++)
+                //          ^^^
                 //          Dead Else because of if(i>=2) break;
                 {
                     if(i>=2) break;
@@ -41,9 +41,7 @@ int f(int x,int y)
         case 3:
             a = a + 4;
             break;
-        default:
-            a = a + 10;
-            a = a + 1;
+        // No default here
     }
     a++;
     return a;
