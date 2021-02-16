@@ -1,15 +1,3 @@
-/*
-int f(int x)
-{
-    switch(x)
-    {
-        case 1: return 0;
-        case 2: x++; break;
-        default: x+=
-    }
-}
-*/
-
 int f(int x,int y)
 {
     int a = 0;
@@ -53,6 +41,7 @@ int f(int x,int y)
             break;
         default:
             a = a + 10;
+            a = a + 1;
     }
     a++;
     return a;

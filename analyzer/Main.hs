@@ -79,7 +79,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\test.c") : "_Dtest" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\uniontest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : "_Dtest" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : "_Sinx" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\conditionaltest.c") : "f" : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\floattest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\decltest.c") : "f" : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -88,7 +88,7 @@ main = do
 --		[] -> "gcc" : (analyzerPath++"\\arraytest.c") : "f" : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\fortest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iffuntest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : (analyzerPath++"\\switchtest.c") : "f" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\whiletest2.c") : "_fpdiv_parts" : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\branchtest.c") : "f" : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : (analyzerPath++"\\iftest.c") : "f" : [] --["-writeAST","-writeGlobalDecls"]
@@ -210,7 +210,7 @@ showModels = False && not fastMode
 showOnlySolutions = True
 showTraces = True && not fastMode
 showFinalTrace = True && not fastMode
-checkSolutions = solveIt && False
+checkSolutions = solveIt && True
 returnval_var_name = "return_val"
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
@@ -1207,13 +1207,20 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 			
 						-- Go through all the switch's "case"s and "default"s...
 						collect_stmts :: [CBlockItem] -> [CBlockItem]
+
 						collect_stmts [] = []
-						collect_stmts (CBlockStmt (CDefault _ default_ni) : _ : _) = error $ ren default_ni ++ " : " ++
-							"collect_stmts: the case when 'default' is not the last item in the switch is not implemented"
-						-- if we have a "default", insert a "goto 1", which will later be translated into "Condition (Just True) 1"
-						-- and append the default statement
-						collect_stmts [ CBlockStmt (CDefault stmt default_ni) ] = [
-							CBlockStmt $ CGotoPtr (CConst $ CIntConst (cInteger 1) default_ni) undefNode, CBlockStmt stmt ]
+
+						collect_stmts (CBlockStmt (CDefault _ default_ni) : rest) =
+							-- if we have a "default", insert a "goto 1", which will later be translated into "Condition (Just True) 1"
+							-- and append the default statement. This is to cover the "default" branch.
+							CBlockStmt (CGotoPtr (CConst $ CIntConst (cInteger 1) default_ni) undefNode) : (for rest $ \case
+								CBlockStmt (CCase _ stmt _)  -> not_last_err
+								CBlockStmt (CDefault stmt _) -> not_last_err
+								cbi -> cbi ) ++ [CBlockStmt (CBreak undefNode)]
+								where
+								not_last_err = error $ ren default_ni ++ " : " ++
+									"collect_stmts: the case when 'default' is not the last item in the switch is not implemented"
+
 						-- if we have a "case <expr>: stmt", insert "if (expr==cond_var) { stmt; rest } else <recurse_collect_stmts>"
 						collect_stmts (CBlockStmt (CCase caseexpr stmt case_ni) : rest) = [
 							CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr case_ni)
@@ -1227,7 +1234,6 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 								CBlockStmt (CCase _ stmt _)  -> CBlockStmt stmt
 								CBlockStmt (CDefault stmt _) -> CBlockStmt stmt
 								cbi -> cbi
-			
 			
 						-- if it was neither a "case" or "default", skip it.
 						collect_stmts (_:rest) = collect_stmts rest
