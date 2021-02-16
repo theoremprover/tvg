@@ -1210,15 +1210,15 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 
 						collect_stmts [] = []
 
-						collect_stmts (CBlockStmt (CDefault _ default_ni) : rest) =
+						collect_stmts (CBlockStmt (CDefault def_stmt default_ni) : rest) = CBlockStmt def_stmt :
 							-- if we have a "default", insert a "goto 1", which will later be translated into "Condition (Just True) 1"
 							-- and append the default statement. This is to cover the "default" branch.
-							CBlockStmt (CGotoPtr (CConst $ CIntConst (cInteger 1) default_ni) undefNode) : (for rest $ \case
-								CBlockStmt (CCase _ stmt _)  -> not_last_err
-								CBlockStmt (CDefault stmt _) -> not_last_err
-								cbi -> cbi ) ++ [CBlockStmt (CBreak undefNode)]
+							CBlockStmt (CGotoPtr (CConst $ CIntConst (cInteger 1) default_ni) undefNode) : ( for rest $ \case
+								CBlockStmt (CCase _ stmt _)  -> default_not_last_err
+								CBlockStmt (CDefault stmt _) -> default_not_last_err
+								cbi -> cbi )
 								where
-								not_last_err = error $ ren default_ni ++ " : " ++
+								default_not_last_err = error $ ren default_ni ++ " : " ++
 									"collect_stmts: the case when 'default' is not the last item in the switch is not implemented"
 
 						-- if we have a "case <expr>: stmt", insert "if (expr==cond_var) { stmt; rest } else <recurse_collect_stmts>"
@@ -1227,8 +1227,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((cblockitems@(CBlockStm
 							(CCompound [] (CBlockStmt stmt : filtercases rest) undefNode)
 							(Just $ CCompound [] (collect_stmts rest) undefNode) undefNode ]
 							where
-							-- Eliminate the case/default "prefixes" from a statement list.
-							-- append a "break;" in order to pop from the break stack after the switch
+							-- Eliminate the case/default "wrappers" from a statement list.
 							filtercases :: [CBlockItem] -> [CBlockItem]
 							filtercases cbis = for cbis $ \case
 								CBlockStmt (CCase _ stmt _)  -> CBlockStmt stmt

@@ -28,6 +28,8 @@ int f(int x,int y)
             else
             {
                 for(int i=0;solver_pragma(4) && i<4;i++)
+                //          ^^^^^^^^^^^^^^^^^^^^^^^
+                //          Dead Else because of if(i>=2) break;
                 {
                     if(i>=2) break;
                     a++;
