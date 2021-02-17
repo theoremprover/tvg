@@ -82,7 +82,7 @@ main = do
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : [] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : "f" : (analyzerPath++"\\conditionaltest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\conditionaltest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\floattest.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\decltest.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_fpmul_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -90,7 +90,7 @@ main = do
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\fortest.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\iffuntest.c") : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : "f" : (analyzerPath++"\\switchtest.c") : [] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "f" : (analyzerPath++"\\switchtest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_fpdiv_parts" : (analyzerPath++"\\whiletest2.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\branchtest.c") : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\iftest.c") : [] --["-writeAST","-writeGlobalDecls"]
@@ -124,6 +124,7 @@ main = do
 
 	asts :: [CTranslUnit] <- parse_filearg filenames
 	let translunit = CTranslUnit (concat $ for asts $ \ (CTranslUnit extdecls _) -> extdecls) undefNode
+	when checkSolutions $ writeFile allFileName $ (render.pretty) translunit
 
 	case ( runTrav_ $ do
 		res <- analyseAST translunit
@@ -138,7 +139,7 @@ main = do
 				writeFile "globdecls.html" $ globdeclsToHTMLString globdecls
 
 			(every_branch_covered,s) <- runStateT covVectorsM $
-				CovVecState globdecls 1 translunit "all.c" Nothing funname undefined gcc opts
+				CovVecState globdecls 1 translunit allFileName Nothing funname undefined gcc opts
 					Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1)
 			let
 				(testvectors_rev,covered) = analysisStateCVS s
@@ -169,12 +170,12 @@ main = do
 						where
 						mbshowtraces ts = if showTraces then ts else []
 
-			printLog 0 $ "All decision points : \n"
+			printLog 0 $ "All decision points:"
 			let decisionpoints = Set.toList alls
 			case null decisionpoints of
-				True  -> printLog 0 "<none>\n"
+				True  -> printLog 0 "<none>"
 				False -> forM_ decisionpoints $ \ decisionpoint ->
-					printLog 0 $ "    " ++ show decisionpoint ++ "\n"
+					printLog 0 $ "    " ++ show decisionpoint
 
 			printLog 0 $ "\n===== SUMMARY =====\n\n"
 
@@ -197,6 +198,7 @@ main = do
 for :: [a] -> (a -> b) -> [b]
 for = flip map
 
+concatForM :: (Monad m) => [a] -> (a -> m [b]) -> m [b]
 concatForM = flip concatMapM
 
 once :: MonadPlus m => GenericM m -> GenericM m
@@ -204,12 +206,14 @@ once f x = f x `mplus` gmapMo (once f) x
 
 ------------------------
 
-fastMode = True
+fastMode = False
 
-outputVerbosity = if fastMode then 1 else 2
+outputVerbosity = if fastMode then 1 else 1
 logFileVerbosity = if fastMode then 0 else 10
 
-mAX_REN_LIST_LENGTH = 10
+mAX_REN_LIST_LENGTH = 3
+
+allFileName = "all.c"
 
 roundingMode = "roundNearestTiesToEven"
 intType = integral TyInt :: Type
@@ -221,7 +225,7 @@ showModels = False && not fastMode
 showOnlySolutions = True
 showTraces = True && not fastMode
 showFinalTrace = True && not fastMode
-checkSolutions = False
+checkSolutions = True
 returnval_var_name = "return_val"
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
@@ -1264,17 +1268,17 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 
 				CBreak ni -> do
 					-- The scope that break reaches is the successor of the first "breakable" scope
-					printLogV 1 $ "### envs = \n" ++ dumpEnvs envs
-					printLogV 1 $ "### bstss = " ++ ren bstss
+					printLogV 20 $ "### envs = \n" ++ dumpEnvs envs
+					printLogV 20 $ "### bstss = " ++ ren bstss
 					let
 						drop_after_true (_:l1s) ((_,False):l2s) = drop_after_true l1s l2s
 						drop_after_true (_:l1s) ((_,True):l2s) = return (l1s,l2s)
 						drop_after_true l1s l2s = myError $ "drop_after_true " ++ ren l1s ++ " " ++ ren l2s
 					(new_envs,new_bstss) <- drop_after_true envs bstss
-					printLogV 1 $ "### CBreak at " ++ (showLocation.lineColNodeInfo) ni ++ " dropped " ++ show (length envs - length new_envs) ++ " envs"
-					printLogV 1 $ "### new_envs = \n" ++ dumpEnvs envs
-					printLogV 1 $ "### length new_envs  = " ++ show (length new_envs)
-					printLogV 1 $ "### length new_bstss = " ++ show (length new_bstss)
+					printLogV 20 $ "### CBreak at " ++ (showLocation.lineColNodeInfo) ni ++ " dropped " ++ show (length envs - length new_envs) ++ " envs"
+					printLogV 20 $ "### new_envs = \n" ++ dumpEnvs envs
+					printLogV 20 $ "### length new_envs  = " ++ show (length new_envs)
+					printLogV 20 $ "### length new_bstss = " ++ show (length new_bstss)
 					unfoldTracesM ret_type toplevel forks new_envs trace new_bstss
 
 				CIf cond then_stmt mb_else_stmt ni -> do
