@@ -105,17 +105,6 @@ main = do
 	let
 		opts = filter ("-" `isPrefixOf`) opts_filenames
 		filenames = opts_filenames \\ opts
-		
-		parse_file filename = do
-			ast <- case takeExtension filename `elem` [".i"] of
-				True  -> parseCFilePre filename
-				False -> parseCFile (newGCC gcc) Nothing [] filename
-			case ast of
-				Left err -> errorIO $ show err
-				Right translunit -> return translunit
-
-			when ("-writeAST" `elem` opts) $
-				writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
 
 		parse_filearg = forM filenames $ \ filename -> do
 			isDirectory filename >>= \case
@@ -132,7 +121,7 @@ main = do
 							return translunit
 
 
-	let parseit = 
+	let parseit =
 			case runTrav_ $ do
 					res <- analyseAST translunit
 					deftable <- getDefTable
