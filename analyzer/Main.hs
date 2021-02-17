@@ -77,12 +77,12 @@ main = do
 	getZonedTime >>= return.(++"\n").show >>= writeFile logFileTxt
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
+--		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : [] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : "f" : (analyzerPath++"\\conditionaltest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "f" : (analyzerPath++"\\conditionaltest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\floattest.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\decltest.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_fpmul_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
@@ -106,89 +106,93 @@ main = do
 		opts = filter ("-" `isPrefixOf`) opts_filenames
 		filenames = opts_filenames \\ opts
 
-		parse_filearg = forM filenames $ \ filename -> do
-			isDirectory filename >>= \case
-				True -> listDirectory filename >>= mapM parse_filearg
+--		parse_filearg :: [String] -> IO [CTranslUnit]
+		parse_filearg filenames = concatForM filenames $ \ filename -> do
+			isdir <- doesDirectoryExist filename
+			case isdir of
+				True -> listDirectory filename >>= parse_filearg
 				False -> do
 					ast <- case takeExtension filename `elem` [".i"] of
 						True  -> parseCFilePre filename
 						False -> parseCFile (newGCC gcc) Nothing [] filename
 					case ast of
-						Left err -> errorIO $ show err
+						Left err -> myErrorIO $ show err
 						Right translunit -> do
 							when ("-writeAST" `elem` opts) $
 								writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
-							return translunit
+							return [translunit]
 
+	asts :: [CTranslUnit] <- parse_filearg filenames
+	let translunit = CTranslUnit (concat $ for asts $ \ (CTranslUnit extdecls _) -> extdecls) undefNode
 
-	let parseit =
-			case runTrav_ $ do
-					res <- analyseAST translunit
-					deftable <- getDefTable
-					return (res,deftable)
-				of
-				Left errs -> putStrLn "ERRORS:" >> forM_ errs print
-				Right ((globdecls,deftable),soft_errors) -> do
-					when (not $ null soft_errors) $ putStrLn "Soft errors:" >> forM_ soft_errors print
-					when ("-writeGlobalDecls" `elem` opts) $
-						writeFile (filename <.> "globdecls.html") $ globdeclsToHTMLString globdecls
+	case ( runTrav_ $ do
+		res <- analyseAST translunit
+		deftable <- getDefTable
+		return (res,deftable) ) of
+		Left errs -> do
+			let errs_msg = "ERRORS:\n" ++ unlines (map show errs)
+			myErrorIO $ errs_msg
+		Right ((globdecls,deftable),soft_errors) -> do
+			when (not $ null soft_errors) $ putStrLn "Soft errors:" >> forM_ soft_errors print
+			when ("-writeGlobalDecls" `elem` opts) $
+				writeFile "globdecls.html" $ globdeclsToHTMLString globdecls
 
-					(every_branch_covered,s) <- runStateT covVectorsM $
-						CovVecState globdecls 1 translunit filename Nothing funname undefined gcc opts
-							Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1)
-					let
-						(testvectors_rev,covered) = analysisStateCVS s
-						testvectors = reverse testvectors_rev
-						alls = allCondPointsCVS s
+			(every_branch_covered,s) <- runStateT covVectorsM $
+				CovVecState globdecls 1 translunit "all.c" Nothing funname undefined gcc opts
+					Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1)
+			let
+				(testvectors_rev,covered) = analysisStateCVS s
+				testvectors = reverse testvectors_rev
+				alls = allCondPointsCVS s
 
-					printLog 0 "\n"
+			printLog 0 "\n"
 
-					let deaths = Set.toList $ alls ∖ covered
+			let deaths = Set.toList $ alls ∖ covered
 
-					printLog 0 $ "\n###### FINAL RESULT #######\n\n"
+			printLog 0 $ "\n###### FINAL RESULT #######\n\n"
 
-					printLog 0 $ show (statsCVS s) ++ "\n"
+			printLog 0 $ show (statsCVS s) ++ "\n"
 
-					forM_ testvectors $ \ (traceid,trace,branches,(model_string,mb_solution)) -> do
-						case not showOnlySolutions || maybe False (not.null.(\(_,_,b)->b)) mb_solution of
-							False -> return ()
-							True -> printLog 0 $ unlines $ mbshowtraces (
-								[ "","=== TRACE " ++ show traceid ++ " ========================","<leaving out builtins...>" ] ++
-								[ showLine trace ] ++
-								[ "",
-								"--- MODEL " ++ show traceid ++ " -------------------------",
-								model_string,
-								"" ]) ++
-								[ "--- SOLUTION " ++ show traceid ++ " ----------------------",
-								show_solution funname mb_solution,
-								""]
-								where
-								mbshowtraces ts = if showTraces then ts else []
+			forM_ testvectors $ \ (traceid,trace,branches,(model_string,mb_solution)) -> do
+				case not showOnlySolutions || maybe False (not.null.(\(_,_,b)->b)) mb_solution of
+					False -> return ()
+					True -> printLog 0 $ unlines $ mbshowtraces (
+						[ "","=== TRACE " ++ show traceid ++ " ========================","<leaving out builtins...>" ] ++
+						[ showLine trace ] ++
+						[ "",
+						"--- MODEL " ++ show traceid ++ " -------------------------",
+						model_string,
+						"" ]) ++
+						[ "--- SOLUTION " ++ show traceid ++ " ----------------------",
+						show_solution funname mb_solution,
+						""]
+						where
+						mbshowtraces ts = if showTraces then ts else []
 
-					printLog 0 $ "All decision points : \n"
-					let decisionpoints = Set.toList alls
-					case null decisionpoints of
-						True  -> printLog 0 "<none>\n"
-						False -> forM_ decisionpoints $ \ decisionpoint ->
-							printLog 0 $ "    " ++ show decisionpoint ++ "\n"
+			printLog 0 $ "All decision points : \n"
+			let decisionpoints = Set.toList alls
+			case null decisionpoints of
+				True  -> printLog 0 "<none>\n"
+				False -> forM_ decisionpoints $ \ decisionpoint ->
+					printLog 0 $ "    " ++ show decisionpoint ++ "\n"
 
-					printLog 0 $ "\n===== SUMMARY =====\n\n"
+			printLog 0 $ "\n===== SUMMARY =====\n\n"
 
-					forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
-						printLog 0 $ "Test Vector " ++ show traceid ++ " covering "
-						forM_ branches $ \ branch -> printLog 0 $ "    " ++ show branch
-						printLog 0 $ "    " ++ showTestVector funname v ++ "\n"
-					forM_ deaths $ \ branch -> do
-						printLog 0 $ "DEAD " ++ show branch
+			forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
+				printLog 0 $ "Test Vector " ++ show traceid ++ " covering "
+				forM_ branches $ \ branch -> printLog 0 $ "    " ++ show branch
+				printLog 0 $ "    " ++ showTestVector funname v ++ "\n"
+			forM_ deaths $ \ branch -> do
+				printLog 0 $ "DEAD " ++ show branch
 
-					printLog 0 $ "Full path coverage: " ++ show every_branch_covered ++ "\n\n"
-					when (every_branch_covered && not (null deaths)) $ myErrorIO "Every branch covered but deaths!"
+			printLog 0 $ "Full path coverage: " ++ show every_branch_covered ++ "\n\n"
+			when (every_branch_covered && not (null deaths)) $ myErrorIO "Every branch covered but deaths!"
 
-					printLog 0 $ case null deaths of
-						False -> "FAIL, there are coverage gaps!\n"
-						True  -> "OK, we have full branch coverage.\n"
+			printLog 0 $ case null deaths of
+				False -> "FAIL, there are coverage gaps!\n"
+				True  -> "OK, we have full branch coverage.\n"
 
-					createHTMLLog
+			createHTMLLog
 
 for :: [a] -> (a -> b) -> [b]
 for = flip map
