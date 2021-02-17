@@ -77,7 +77,7 @@ main = do
 	getZonedTime >>= return.(++"\n").show >>= writeFile logFileTxt
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
+		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
@@ -90,7 +90,7 @@ main = do
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\fortest.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\iffuntest.c") : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : "f" : (analyzerPath++"\\switchtest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\switchtest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_fpdiv_parts" : (analyzerPath++"\\whiletest2.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\branchtest.c") : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\iftest.c") : [] --["-writeAST","-writeGlobalDecls"]
@@ -106,30 +106,49 @@ main = do
 		opts = filter ("-" `isPrefixOf`) opts_filenames
 		filenames = opts_filenames \\ opts
 
---		parse_filearg :: [String] -> IO [CTranslUnit]
+		parse_filearg :: [String] -> IO [CExtDecl]
 		parse_filearg filenames = concatForM filenames $ \ filename -> do
 			isdir <- doesDirectoryExist filename
 			case isdir of
-				True -> listDirectory filename >>= parse_filearg
-				False -> do
-					ast <- case takeExtension filename `elem` [".i"] of
-						True  -> parseCFilePre filename
-						False -> parseCFile (newGCC gcc) Nothing [] filename
-					case ast of
-						Left err -> myErrorIO $ show err
-						Right translunit -> do
-							when ("-writeAST" `elem` opts) $
-								writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
-							return [translunit]
+				True -> do
+					files <- listDirectory filename
+					parse_filearg $ map (filename</>) files
+				False -> case takeExtension filename `elem` [".c",".i"] of
+					False -> return []
+					True -> do
+						putStr $ "\rParsing " ++ filename ++ "...                                           "
+						ast <- case takeExtension filename `elem` [".i"] of
+							True  -> parseCFilePre filename
+							False -> parseCFile (newGCC gcc) Nothing [] filename
+						case ast of
+							Left err -> myErrorIO $ show err
+							Right translunit@(CTranslUnit extdecls _) -> do
+								when ("-writeAST" `elem` opts) $
+									writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
+								return extdecls
 
-	asts :: [CTranslUnit] <- parse_filearg filenames
-	let translunit = CTranslUnit (concat $ for asts $ \ (CTranslUnit extdecls _) -> extdecls) undefNode
+
+	extdecls <- parse_filearg filenames
+
+	let
+		dumpdeclr (CDeclr (Just ident) _ _ _ ni) = ((render.pretty) ident,(showLocation.lineColNodeInfo) ni)
+		dump = concat $ for extdecls $ \case
+			CDeclExt (CDecl _ declrs _) -> for declrs $ \ (Just declr,_,_) -> dumpdeclr declr
+			CFDefExt (CFunDef _ declr argdecls _ ni) -> [ dumpdeclr declr ]
+			CAsmExt cstringlit ni -> [ ((render.pretty) cstringlit,(showLocation.lineColNodeInfo) ni) ]
+	printLog 0 $ unlines $ map (\(s,l)->s ++ " at " ++ l) $ sort dump
+
+	let translunit = CTranslUnit (nubBy same_ext_decl extdecls) undefNode
+		where
+		same_ext_decl :: CExtDecl -> CExtDecl -> Bool
+		same_ext_decl extdecl1 extdecl2 = nodeInfo extdecl1 == nodeInfo extdecl2
+
 	when checkSolutions $ writeFile allFileName $ (render.pretty) translunit
 
-	case ( runTrav_ $ do
+	case runTrav_ $ do
 		res <- analyseAST translunit
 		deftable <- getDefTable
-		return (res,deftable) ) of
+		return (res,deftable) of
 		Left errs -> do
 			let errs_msg = "ERRORS:\n" ++ unlines (map show errs)
 			myErrorIO $ errs_msg
@@ -139,7 +158,7 @@ main = do
 				writeFile "globdecls.html" $ globdeclsToHTMLString globdecls
 
 			(every_branch_covered,s) <- runStateT covVectorsM $
-				CovVecState globdecls 1 translunit allFileName Nothing funname undefined gcc opts
+				CovVecState globdecls 1 allFileName Nothing funname undefined gcc opts
 					Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1)
 			let
 				(testvectors_rev,covered) = analysisStateCVS s
@@ -274,7 +293,7 @@ find_out_sizesM = do
 		srcfilename = find_out_sizes_name <.> "c"
 		exefilename = find_out_sizes_name <.> "exe"
 	compileHereM ["-o",exefilename,srcfilename] srcfilename (PPM.prettyCompact $ PPMC.ppr find_out_sizes_src)
-	(sizes_s,"") <- runHereM (takeDirectory srcfilename) exefilename []
+	(sizes_s,"") <- runHereM "." exefilename []
 	let sizes = read sizes_s
 	printLogV 1 $ show sizes
 	return sizes
@@ -402,7 +421,6 @@ showTestVector funname (env,ret_env,solution) = funname ++ " ( " ++ intercalate 
 data CovVecState = CovVecState {
 	globDeclsCVS     :: GlobalDecls,
 	newNameIndexCVS  :: Int,
-	translUnitCVS    :: CTranslUnit,
 	srcFilenameCVS   :: String,
 	checkExeNameCVS  :: Maybe String,
 	funNameCVS       :: String,
