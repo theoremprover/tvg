@@ -43,7 +43,6 @@ import Numeric (readHex,readInt)
 import Data.Either
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
---import qualified GHC.Generics as GHCG
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
 import Data.Time.LocalTime
@@ -77,7 +76,7 @@ main = do
 	getZonedTime >>= return.(++"\n").show >>= writeFile logFileTxt
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
+		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
@@ -90,7 +89,7 @@ main = do
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\fortest.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\iffuntest.c") : [] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : "f" : (analyzerPath++"\\switchtest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\switchtest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_fpdiv_parts" : (analyzerPath++"\\whiletest2.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\branchtest.c") : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\iftest.c") : [] --["-writeAST","-writeGlobalDecls"]
@@ -130,21 +129,23 @@ main = do
 
 	extdecls <- parse_filearg filenames
 
+{-
 	let
-		dumpdeclr (CDeclr (Just ident) _ _ _ ni) = ((render.pretty) ident,(showLocation.lineColNodeInfo) ni)
-		dump = concat $ for extdecls $ \case
-			CDeclExt (CDecl _ declrs _) -> for declrs $ \ (Just declr,_,_) -> dumpdeclr declr
-			CFDefExt (CFunDef _ declr argdecls _ ni) -> [ dumpdeclr declr ]
-			CAsmExt cstringlit ni -> [ ((render.pretty) cstringlit,(showLocation.lineColNodeInfo) ni) ]
+		dumpdeclr (CDeclr (Just ident) _ _ _ _) = (render.pretty) ident
+		dump = for extdecls $ \case
+			CDeclExt (CDecl _ declrs ni) -> ("CDeclExt " ++ intercalate " / " (for declrs $ \ (Just declr,_,_) -> dumpdeclr declr),show ni)
+			CFDefExt (CFunDef _ declr argdecls _ ni) -> ("CFDefExt " ++ dumpdeclr declr,show ni)
+			CAsmExt cstringlit ni -> ("AsmExt " ++ (render.pretty) cstringlit,show ni)
 	printLog 0 $ unlines $ map (\(s,l)->s ++ " at " ++ l) $ sort dump
-
+-}
 	let translunit = CTranslUnit (nubBy same_ext_decl extdecls) undefNode
 		where
 		same_ext_decl :: CExtDecl -> CExtDecl -> Bool
-		same_ext_decl extdecl1 extdecl2 = nodeInfo extdecl1 == nodeInfo extdecl2
-
+		same_ext_decl extdecl1 extdecl2 = (render.pretty) extdecl1 == (render.pretty) extdecl2
+ 
 	when checkSolutions $ writeFile allFileName $ (render.pretty) translunit
 
+	printLog 0 "Analyzing the merged AST..."
 	case runTrav_ $ do
 		res <- analyseAST translunit
 		deftable <- getDefTable
@@ -225,14 +226,12 @@ once f x = f x `mplus` gmapMo (once f) x
 
 ------------------------
 
-fastMode = False
+fastMode = True
 
 outputVerbosity = if fastMode then 1 else 1
 logFileVerbosity = if fastMode then 0 else 10
 
 mAX_REN_LIST_LENGTH = 3
-
-allFileName = "all.c"
 
 roundingMode = "roundNearestTiesToEven"
 intType = integral TyInt :: Type
@@ -266,6 +265,7 @@ analyzerPath = "analyzer"
 logFile = analyzerPath </> "log"
 logFileTxt = logFile <.> "txt"
 logFileHtml = logFile <.> "html"
+allFileName = analyzerPath </> "all" <.> "c"
 
 ------------------------
 
@@ -627,8 +627,8 @@ covVectorsM = logWrapper 5 [ren "covVectorsM"] $ do
 	return every_branch_covered
 
 harnessAST incl argdecls funcall print_retval1 print_retval2 = [cunit|
-$esc:incl_stdio
-$esc:incl_stdlib
+int __attribute__((__cdecl__)) printf(const char *,...);
+int __attribute__((__cdecl__)) sscanf(const char *,const char *,...) ;
 
 int solver_pragma(int x,...) { return 1; }
 void solver_debug(void* x) { }
@@ -649,9 +649,6 @@ int main(int argc, char* argv[])
 	return 0;
 }
 |]
-	where
-	incl_stdio = "#include <stdio.h>"
-	incl_stdlib = "#include <stdlib.h>"
 
 envItemNotPtrType :: EnvItem -> Bool
 envItemNotPtrType (_,(_,PtrType _ _ _)) = False
