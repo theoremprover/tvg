@@ -77,7 +77,7 @@ main = do
 	getZonedTime >>= return.(++"\n").show >>= writeFile logFileTxt
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
+--		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
@@ -90,7 +90,7 @@ main = do
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\fortest.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\iffuntest.c") : [] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : "f" : (analyzerPath++"\\switchtest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "f" : (analyzerPath++"\\switchtest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_fpdiv_parts" : (analyzerPath++"\\whiletest2.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\branchtest.c") : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\iftest.c") : [] --["-writeAST","-writeGlobalDecls"]
@@ -349,15 +349,19 @@ instance LogRender CBlockItem where
 
 printLog :: Int -> String -> IO ()
 printLog verbosity text = do
+	printLogInd verbosity text (text++"\n")
+
+printLogInd :: Int -> String -> String -> IO ()
+printLogInd verbosity text ind_text = do
 	when (verbosity<=outputVerbosity) $ putStrLn text
-	when (logToFile && verbosity<=logFileVerbosity) $ appendFile logFileTxt text
+	when (logToFile && verbosity<=logFileVerbosity) $ appendFile logFileTxt ind_text
 
 printLogM :: Int -> String -> CovVecM ()
 printLogM verbosity text = do
 	indent <- gets logIndentCVS
 	let ind_prefix = concat (replicate indent indentPrefix)
 	let ind_text = unlines $ map (ind_prefix++) $ lines text
-	liftIO $ printLog verbosity ind_text
+	liftIO $ printLogInd verbosity text ind_text
 
 printLogV :: Int -> String -> CovVecM ()
 printLogV verbosity text = printLogM verbosity text
@@ -383,7 +387,6 @@ indentLog :: Int -> CovVecM ()
 indentLog d = modify $ \ s -> s { logIndentCVS = logIndentCVS s + d }
 
 logWrapper :: (LogRender a) => Int -> [String] -> CovVecM a -> CovVecM a
-logWrapper verbosity _ m | outputVerbosity < verbosity = m
 logWrapper verbosity args m = do
 	indentLog 1
 	printLogV verbosity $ intercalate " " args
@@ -539,7 +542,7 @@ showTrace trace = unlines $ concatMap show_te trace where
 	show_te _ = []
 
 covVectorsM :: CovVecM Bool
-covVectorsM = logWrapper 2 [ren "covVectorsM"] $ do
+covVectorsM = logWrapper 5 [ren "covVectorsM"] $ do
 	sizes <- find_out_sizesM
 	modify $ \ s -> s { sizesCVS = Just sizes }
 
@@ -603,7 +606,7 @@ covVectorsM = logWrapper 2 [ren "covVectorsM"] $ do
 	(param_env_exprs,(arraydecl_env,arrayitem_conds)) <- createInterfaceM formal_params
 	modify $ \ s -> s { paramEnvCVS = Just param_env_exprs }
 	let param_env = map fst param_env_exprs
-	printLogV 8 $ "param_env = " ++ showEnv param_env
+	printLogV 20 $ "param_env = " ++ showEnv param_env
 
 	let
 		decls = arrayitem_conds ++ map (NewDeclaration . snd) (arraydecl_env ++ reverse param_env ++ glob_env)
@@ -768,7 +771,7 @@ showLocation (l,c,len) = "line " ++ show l ++ ", col " ++ show c ++ ", len " ++ 
 
 -- In case of a cutoff, mb_ret_type is Nothing.
 analyzeTraceM :: Maybe Type -> [TraceElem] -> CovVecM Bool
-analyzeTraceM mb_ret_type res_line = logWrapper 2 [ren "analyzeTraceM",ren mb_ret_type,ren res_line,ren "traceid=",ren traceid] $ do
+analyzeTraceM mb_ret_type res_line = logWrapper 5 [ren "analyzeTraceM",ren mb_ret_type,ren res_line,ren "traceid=",ren traceid] $ do
 	incNumTracesM
 	printStatsM
 	printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
@@ -810,7 +813,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper 2 [ren "analyzeTraceM",ren mb_re
 				to_branch (Condition (Just b) cond) | is_visible_traceelem startend cond =
 					[ (if b then Then else Else) (lineColNodeInfo $ extractNodeInfo cond) ]
 				to_branch _ = []
-			printLogV 2 $ "visible_trace =\n" ++ unlines (map show $ Set.toList visible_trace)
+			printLogV 20 $ "visible_trace =\n" ++ unlines (map show $ Set.toList visible_trace)
 
 			let
 				traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
@@ -1168,7 +1171,7 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 			return $ (((srcident,(srcident,ty')),expr) : rest1)
 
 unfoldTracesM ret_type toplevel forks envs trace cbss =
-	logWrapper 2 [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cbss] $ do
+	logWrapper 5 [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cbss] $ do
 		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $
 			unfoldTraces1M ret_type toplevel forks envs trace cbss
 		where
@@ -1188,7 +1191,7 @@ unfoldTracesM ret_type toplevel forks envs trace cbss =
 
 unfoldTraces1M :: Type -> Bool -> Int -> [Env] -> Trace -> [([CBlockItem],Bool)] -> CovVecM UnfoldTracesRet
 unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : rest,breakable) : rest2) =
-	logWrapper 2 [ren "unfoldTraces1M",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren bstss] $
+	logWrapper 5 [ren "unfoldTraces1M",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren bstss] $
 	case stmt0 of
 
 		CCompound _ cbis _ -> unfoldTracesM ret_type toplevel forks ([]:envs) trace ((cbis,False) : (rest,breakable) : rest2)
@@ -1427,7 +1430,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 			recognizeAnnotation real_cond = (real_cond,Nothing)
 
 			infer_loopingsM :: CExpr -> CStat -> CovVecM (Maybe [Int],String)
-			infer_loopingsM cond0 body = logWrapper 2 [ren "infer_loopingsM",ren cond0,'\n':ren body] $ do
+			infer_loopingsM cond0 body = logWrapper 5 [ren "infer_loopingsM",ren cond0,'\n':ren body] $ do
 				case recognizeAnnotation cond0 of
 					(real_cond,Just (ns,_)) -> return (Just ns,"Recognized LOOP annotation to " ++ (render.pretty) cond0)
 					(real_cond,Nothing) -> do
@@ -1535,7 +1538,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 									False -> try_next rest
 
 unfoldTraces1M ret_type toplevel forks (env:envs) trace ( (cblockitem@(CBlockDecl decl@(CDecl typespecs triples _)) : rest, breakable) : rest2 ) =
-	logWrapper 2 [ren "unfoldTraces1M",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cblockitem] $ do
+	logWrapper 5 [ren "unfoldTraces1M",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cblockitem] $ do
 		ty <- decl2TypeM decl
 		new_env_items <- forM triples $ \case
 			(Just (CDeclr (Just ident) derivdeclrs _ _ ni),mb_init,Nothing) -> do
@@ -1987,7 +1990,7 @@ type CExprWithType = CExpression NodeInfoWithType
 -- also inserts implicit casts
 -- if mb_target_ty is Nothing, the result CExprWithType will not be casted to the mb_target_ty type.
 annotateTypesAndCastM :: [Env] -> CExpr -> Maybe Types -> CovVecM CExprWithType
-annotateTypesAndCastM envs cexpr mb_target_ty = logWrapper 2 ["annotateTypesAndCastM","<env>",ren cexpr,ren mb_target_ty] $ do
+annotateTypesAndCastM envs cexpr mb_target_ty = logWrapper 5 ["annotateTypesAndCastM","<env>",ren cexpr,ren mb_target_ty] $ do
 	cexpr' <- annotate_types cexpr
 	let ret = case mb_target_ty of
 		Just target_ty -> mb_cast target_ty cexpr'
@@ -2628,5 +2631,5 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 					let txt = "ERROR in " ++ show traceid ++ " for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result
 					myError txt
 
-	printLogV 2 $ "checkSolutionM " ++ show traceid ++ " OK."
+	printLogV 1 $ "checkSolutionM " ++ show traceid ++ " OK."
 	return resultdata
