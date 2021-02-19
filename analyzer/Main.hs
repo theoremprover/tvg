@@ -76,8 +76,10 @@ main = do
 	getZonedTime >>= return.(++"\n").show >>= writeFile logFileTxt
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
---		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : [] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
+--		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
+--		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : [] --"-writeAST","-writeGlobalDecls"]
@@ -126,7 +128,6 @@ main = do
 									writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
 								return extdecls
 
-
 	extdecls <- parse_filearg filenames
 
 {-
@@ -142,7 +143,7 @@ main = do
 		where
 		same_ext_decl :: CExtDecl -> CExtDecl -> Bool
 		same_ext_decl extdecl1 extdecl2 = (render.pretty) extdecl1 == (render.pretty) extdecl2
- 
+
 	when checkSolutions $ writeFile allFileName $ (render.pretty) translunit
 
 	printLog 0 "Analyzing the merged AST..."
@@ -158,9 +159,10 @@ main = do
 			when ("-writeGlobalDecls" `elem` opts) $
 				writeFile "globdecls.html" $ globdeclsToHTMLString globdecls
 
+			let mCDCCOverage = "-MCDC" `elem` opts
 			(every_branch_covered,s) <- runStateT covVectorsM $
 				CovVecState globdecls 1 allFileName Nothing funname undefined gcc opts
-					Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1)
+					Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1) mCDCCOverage
 			let
 				(testvectors_rev,covered) = analysisStateCVS s
 				testvectors = reverse testvectors_rev
@@ -198,6 +200,8 @@ main = do
 					printLog 0 $ "    " ++ show decisionpoint
 
 			printLog 0 $ "\n===== SUMMARY =====\n\n"
+			
+			printLog 0 $ "Coverage to reach: " ++ if mCDCCOverage then "MC/DC" else "Branch"
 
 			forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
 				printLog 0 $ "Test Vector " ++ show traceid ++ " covering "
@@ -437,7 +441,8 @@ data CovVecState = CovVecState {
 	retEnvCVS        :: Maybe [(EnvItem,CExprWithType)],
 	sizesCVS         :: Maybe IntSizes,
 	defTableCVS      :: DefTable,
-	logIndentCVS     :: Int
+	logIndentCVS     :: Int,
+	mCDCcoverageCVS  :: Bool
 	}
 
 data Stats = Stats {
@@ -1303,8 +1308,6 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 					let then_trace_m forks' real_cond = transids real_cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
 						unfoldTracesM ret_type toplevel forks' envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest,breakable) : rest2 )
 					let else_trace_m forks' real_cond = transids (CUnary CNegOp real_cond (annotation real_cond)) (Just _BoolTypes) trace $ \ (ncond',trace') -> do
-						printLogV 20 $ "### real_cond = " ++ (render.pretty) real_cond
-						printLogV 20 $ "### ncond'    = " ++ (render.pretty) ncond'
 						let not_cond = Condition (Just False) ncond'
 						case mb_else_stmt of
 							Nothing        -> unfoldTracesM ret_type toplevel forks' envs (not_cond : trace') ( (rest,breakable) : rest2 )
