@@ -230,7 +230,7 @@ once f x = f x `mplus` gmapMo (once f) x
 
 ------------------------
 
-fastMode = True
+fastMode = False
 
 outputVerbosity = if fastMode then 1 else 1
 logFileVerbosity = if fastMode then 0 else 10
@@ -794,7 +794,6 @@ analyzeTraceM mb_ret_type res_line = logWrapper 5 [ren "analyzeTraceM",ren mb_re
 		showtraceM showTraces "elimArrayAssignsM"    elimArrayAssignsM >>=
 		showtraceM showTraces "2. elimAssignmentsM"  elimAssignmentsM >>=
 		showtraceM showTraces "2. simplifyTraceM"    simplifyTraceM >>=
-		showtraceM showTraces "addUnionConstraintsM" addUnionConstraintsM >>=
 		showtraceM showTraces "createSymbolicVarsM"  createSymbolicVarsM
 
 	either_resultdata <- solveTraceM mb_ret_type traceid trace'
@@ -1848,39 +1847,30 @@ elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
 simplifyTraceM :: Trace -> CovVecM Trace
 simplifyTraceM trace = everywhereM (mkM simplify) trace where
 	simplify :: CExprWithType -> CovVecM CExprWithType
+
 	simplify (CUnary CIndOp (CUnary CAdrOp expr _) _) = return expr
+
 	simplify (CMember (CUnary CAdrOp s _) member True ni) = return $ CMember s member False ni
 	simplify (CMember (CUnary CIndOp p _) member False ni) = return $ CMember p member True ni
+
+	-- Eliminate two consecutive pointer casts:  (A*)(B*)ptr ~> (A*)ptr
+	simplify (CCast t1 (CCast _ expr (_,tys@(Z3_Ptr _,_))) ni@(_,(Z3_Ptr _,_))) = return $ CCast t1 expr ni
+
+	-- Convert cast of ptr to union with member
+	simplify (CMember (CCast dummy px (_,tys@(Z3_Ptr (Z3_Compound sueref UnionTag),_))) member_id True mem_ni) = do
+		let (Z3_Ptr px_target_type,PtrType pxtt _ _) = extractTypes px
+		printLogV 0 $ "#### px = " ++ (render.pretty) px
+		printLogV 0 $ "#### Simplifed cast of ptr to union with member: px_target_type = " ++ show px_target_type
+		return $ CCast dummy (CUnary CIndOp px (undefNode,(px_target_type,pxtt))) mem_ni
+
+	-- Superfluous cast, because (A)b with b::A  can be simplified to b
 	simplify (CCast _ expr (_,(z3ty,_))) | extractZ3Type expr == z3ty = return expr
--- This one:
-	simplify (CCast _ expr (_,tys@(Z3_Ptr _,_))) = return $ amap (\(ni,_)->(ni,tys)) expr
+
+	-- Eliminate pointer casts
+--	simplify (CCast _ expr (_,tys@(Z3_Ptr _,_))) = return $ amap (\(ni,_)->(ni,tys)) expr	
+
 	simplify expr = return expr
 
-
-addUnionConstraintsM :: Trace -> CovVecM Trace
-addUnionConstraintsM trace = do
-	-- collect all CMembers
-	let members = everything (++) (mkQ [] search_members) trace
-		where
-		search_members :: CExprWithType -> [CExprWithType]
-		search_members cmember@(CMember _ _ _ _) = [cmember]
-		search_members _ = []
-
-	-- filter the ones referring to a union and extract exprs and members from the CMember
-	union_members <- concatForM members $ \case
-		cmember@(CMember cvar@(CVar ident _) member True  _)
-			| Z3_Ptr (Z3_Compound sueref UnionTag) <- extractZ3Type cvar ->
-				return [(sueref,ident,member,cmember)]
-		cmember@(CMember cvar@(CVar ident _) member False _)
-			| Z3_Compound sueref UnionTag <- extractZ3Type cvar ->
-				return [(sueref,ident,member,cmember)]
-		cmember -> return []
-
-	let unique_members = nubBy (\ (_,ident1,member1,_) (_,ident2,member2,_) -> ident1==ident2 && member1==member2) union_members
-
-	printLogV 2 $ "unique_members=\n" ++ unlines (map (\(_,ident,member,_)->show (ident,member)) unique_members)
-
-	return trace
 
 -- Create symbolic vars for leftover expressions
 
@@ -2255,18 +2245,14 @@ expr2SExpr expr = expr2sexpr expr
 				( Z3_Float, Z3_Double ) -> return $ SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "11", SLeaf "53" ],
 					SLeaf roundingMode, sexpr ]
 
+				( Z3_Float, Z3_Array (Z3_BitVector 16 True) ) -> do
+					
+
 				(from_ty,to_ty) -> error $ "expr2sexpr cast: " ++ show from_ty ++ " => " ++ show to_ty ++ " in " ++
 					(render.pretty) castexpr ++ " " ++ " not implemented!"
 
 		ccond@(CCond cond (Just then_expr) else_expr _) -> do
 			myError $ "expr2sexpr CCond should not appear: " ++ (render.pretty) ccond
-{-
-			SExpr <$> sequence [
-				pure $ SLeaf "ite",
-				expr2sexpr' cond,
-				expr2sexpr' then_expr,
-				expr2sexpr' else_expr ]
--}
 
 		cmember@(CMember _ _ _ _) -> myError $ "expr2sexpr of member " ++ (render.pretty) cmember ++ " should not occur!"
 
@@ -2333,7 +2319,6 @@ ty2Z3Type ty = do
 		FunctionType (FunType ret_type funparamdecls is_variadic) _ -> do
 			let arg_types = for (map getVarDecl funparamdecls) $ \ (VarDecl _ _ ty) -> ty
 			Z3_Fun <$> ty2Z3TypeOnly ret_type <*> mapM ty2Z3TypeOnly arg_types <*> pure is_variadic
---		_ -> error $ "ty2Z3Type " ++ (render.pretty) ty ++ " should not occur!"
 	return (z3_ty,ty)
 
 ty2Z3TypeOnly :: Type -> CovVecM Z3_Type
