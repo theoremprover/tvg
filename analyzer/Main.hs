@@ -3,7 +3,7 @@
 	PackageImports,RecordWildCards,FunctionalDependencies,MultiParamTypeClasses,
 	QuasiQuotes,UnicodeSyntax,LambdaCase,ScopedTypeVariables,TupleSections,
 	TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,
-	DeriveDataTypeable,DeriveGeneric,PatternGuards,UndecidableInstances,Rank2Types #-}
+	DeriveDataTypeable,DeriveGeneric,PatternGuards,UndecidableInstances,Rank2Types,NamedFieldPuns #-}
 
 module Main where
 
@@ -76,8 +76,8 @@ main = do
 	getZonedTime >>= return.(++"\n").show >>= writeFile logFileTxt
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC"] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
 --		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
@@ -146,7 +146,7 @@ main = do
 
 	when checkSolutions $ writeFile allFileName $ (render.pretty) translunit
 
-	printLog 0 "Analyzing the merged AST..."
+	printLog 0 "\rAnalyzing the merged AST...                                    "
 	case runTrav_ $ do
 		res <- analyseAST translunit
 		deftable <- getDefTable
@@ -287,11 +287,12 @@ runHereM rundir exefilename args = liftIO $ withCurrentDirectory rundir $ do
 			"ExitCode " ++ show exitcode ++ " of runHereM " ++ exefilename ++ "\n" ++ sout ++ serr
 		ExitSuccess -> return (sout,serr)
 
-data IntSizes = IntSizes { intSize::Int, longSize::Int, longLongSize::Int } deriving (Read,Show)
+data Endianness = Little | Big deriving (Read,Show)
+data MachineSpec = MachineSpec { intSize::Int, longSize::Int, longLongSize::Int, endianness::Endianness } deriving (Read,Show)
 
 find_out_sizes_name = "find_out_sizes" :: String
 
-find_out_sizesM :: CovVecM IntSizes
+find_out_sizesM :: CovVecM MachineSpec
 find_out_sizesM = do
 	let
 		srcfilename = find_out_sizes_name <.> "c"
@@ -308,7 +309,14 @@ $esc:incl_stdio
 
 int main(void)
 {
-    printf("IntSizes { intSize=%i, longSize=%i, longLongSize=%i }\n",sizeof(int)*8,sizeof(long int)*8,sizeof(long long)*8);
+    char* little = "Little";
+    char* big = "Big";
+    char* endianness = "STRANGE";
+    unsigned char arr[2];
+    *((unsigned short *)arr) = 255;
+    // big endian means MSB is stored at smalless address.
+    if(arr[0]==255) endianness=little; else if(arr[1]==255) endianness=big;
+    printf("MachineSpec { intSize=%i, longSize=%i, longLongSize=%i, endianness=%s }\n",sizeof(int)*8,sizeof(long int)*8,sizeof(long long)*8,endianness);
     return 0;
 }
 |]
@@ -439,7 +447,7 @@ data CovVecState = CovVecState {
 	allCondPointsCVS :: Set.Set Branch,
 	statsCVS         :: Stats,
 	retEnvCVS        :: Maybe [(EnvItem,CExprWithType)],
-	sizesCVS         :: Maybe IntSizes,
+	machineSpecCVS   :: Maybe MachineSpec,
 	defTableCVS      :: DefTable,
 	logIndentCVS     :: Int,
 	mCDCcoverageCVS  :: Bool
@@ -549,7 +557,7 @@ showTrace trace = unlines $ concatMap show_te trace where
 covVectorsM :: CovVecM Bool
 covVectorsM = logWrapper 5 [ren "covVectorsM"] $ do
 	sizes <- find_out_sizesM
-	modify $ \ s -> s { sizesCVS = Just sizes }
+	modify $ \ s -> s { machineSpecCVS = Just sizes }
 
 	funname <- gets funNameCVS
 	globdecls <- gets ((Map.elems).gObjs.globDeclsCVS)
@@ -751,7 +759,7 @@ createDeclsM formal_params = do
 
 type_format_string :: Type -> CovVecM String
 type_format_string ty = do
-	Just IntSizes{..} <- gets sizesCVS
+	Just MachineSpec{..} <- gets machineSpecCVS
 	(z3ty,_) <- ty2Z3Type ty
 	return $ "%" ++ case z3ty of
 		Z3_Float                                        -> "f"
@@ -1072,14 +1080,19 @@ mkIdentWithCNodePos :: (CNode cnode) => cnode -> String -> Ident
 mkIdentWithCNodePos cnode name = mkIdent (posOfNode $ nodeInfo cnode) name (Name 9999)
 
 
+newNameM :: CovVecM Int
+newNameM = do
+	new_var_num <- gets newNameIndexCVS
+	-- strictly monotone newNameIndexCVS assures uniqueness of new identifiers:
+	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
+	return new_var_num
+
 -- Takes an identifier and a type, and creates env item(s) from that.
 
 identTy2EnvItemM :: Ident -> Type -> CovVecM [EnvItem]
 identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 	ty' <- elimTypeDefsM ty
-	new_var_num <- gets newNameIndexCVS
-	-- strictly monotone newNameIndexCVS assures uniqueness of new identifiers:
-	modify $ \ s -> s { newNameIndexCVS = newNameIndexCVS s + 1 }
+	new_var_num <- newNameM
 	let
 		name_prefix = identToString srcident
 		-- a dollar sign is not allowed in a C identifier, but Z3 allows for it.
@@ -1859,8 +1872,8 @@ simplifyTraceM trace = everywhereM (mkM simplify) trace where
 	-- Convert cast of ptr to union with member
 	simplify (CMember (CCast dummy px (_,tys@(Z3_Ptr (Z3_Compound sueref UnionTag),_))) member_id True mem_ni) = do
 		let (Z3_Ptr px_target_type,PtrType pxtt _ _) = extractTypes px
-		printLogV 0 $ "#### px = " ++ (render.pretty) px
-		printLogV 0 $ "#### Simplifed cast of ptr to union with member: px_target_type = " ++ show px_target_type
+		printLogV 20 $ "#### px = " ++ (render.pretty) px
+		printLogV 20 $ "#### Simplifed cast of ptr to union with member: px_target_type = " ++ show px_target_type
 		return $ CCast dummy (CUnary CIndOp px (undefNode,(px_target_type,pxtt))) mem_ni
 
 	-- Superfluous cast, because (A)b with b::A  can be simplified to b
@@ -1942,6 +1955,26 @@ prettyOneLine (SLeaf s) = text s
 prettyOneLine (SExpr (sexpr:sexprs)) =
 	lparen <> prettyOneLine sexpr <+> hsep (map prettyOneLine sexprs) <> rparen
 prettyOneLine s = error $ "In prettyOneLine: " ++ show s
+
+infix 4 ＝
+(＝) :: SExpr -> SExpr -> SExpr
+sexpr1 ＝ sexpr2 = SExpr [ SLeaf "=", sexpr1, sexpr2 ]
+
+-- 𝒶𝒷𝒸𝒹𝑒𝒻𝑔𝒽𝒾𝒿𝓀𝓁𝓂𝓃𝑜𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏
+
+𝓈𝓉𝑜𝓇𝑒 :: SExpr -> SExpr -> SExpr -> SExpr
+𝓈𝓉𝑜𝓇𝑒 arr ix val = SExpr [ SLeaf "store", arr, ix, val ]
+
+𝓈𝑒𝓁𝑒𝒸𝓉 :: SExpr -> SExpr -> SExpr
+𝓈𝑒𝓁𝑒𝒸𝓉 arr ix = SExpr [ SLeaf "select", arr, ix ]
+
+𝑒𝓍𝓉𝓇𝒶𝒸𝓉 :: Int -> Int -> SExpr -> SExpr
+𝑒𝓍𝓉𝓇𝒶𝒸𝓉 l r sexpr = SExpr [ SExpr [SLeaf "_", SLeaf "extract", SLeaf (show l), SLeaf (show r)], sexpr ]
+
+_𝓉𝑜_𝒻𝓅_𝒻𝓁𝑜𝒶𝓉  = SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "8" , SLeaf "24" ]
+_𝓉𝑜_𝒻𝓅_𝒹𝑜𝓊𝒷𝓁𝑒 = SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "11", SLeaf "53" ]
+
+𝒶𝓈𝓈𝑒𝓇𝓉 sexpr = SExpr [ SLeaf "assert", sexpr ]
 
 type Types = (Z3_Type,Type)
 
@@ -2117,19 +2150,21 @@ annotateTypesAndCastM envs cexpr mb_target_ty = logWrapper 5 ["annotateTypesAndC
 
 type Constraint = TraceElem
 
-expr2SExpr :: Constraint -> CovVecM SExpr
-expr2SExpr expr = expr2sexpr expr
+type SECovVecM = StateT [SExpr] CovVecM
+
+expr2SExpr :: Constraint -> CovVecM (SExpr,[SExpr])
+expr2SExpr expr = runStateT (expr2sexpr expr) []
 
 	where
 
-	make_intconstant :: String -> Types -> Integer -> CovVecM SExpr
-	make_intconstant _ (Z3_BitVector size _,_) const | size `mod` 4 == 0 =
+	make_intconstant :: Z3_Type -> Integer -> SECovVecM SExpr
+	make_intconstant (Z3_BitVector size _) const | size `mod` 4 == 0 =
 		return $ SLeaf (printf "#x%*.*x" (size `div` 4) (size `div` 4) const)
-	make_intconstant from types const = myError $ "make_intconstant " ++ from ++ " " ++ show types ++ " " ++ show const
+	make_intconstant z3type const = lift $ myError $ "make_intconstant " ++ show z3type ++ " " ++ show const
 
-	expr2sexpr :: Constraint -> CovVecM SExpr
+	expr2sexpr :: Constraint -> SECovVecM SExpr
 	expr2sexpr (Condition _ cexpr) = do
-		printLogV 2 $ "expr2sexpr " ++ (render.pretty) cexpr
+		lift $ printLogV 2 $ "expr2sexpr " ++ (render.pretty) cexpr
 		expr2sexpr' cexpr
 
 	-- Assignment to an array member
@@ -2142,15 +2177,14 @@ expr2SExpr expr = expr2sexpr expr
 			search_arrays (CIndex var@(CVar _ _) _ _) = [var]
 			search_arrays _ = []
 		arr_s <- expr2sexpr' array_expr
-		return $ SExpr [ SLeaf "=", var_s, SExpr [ SLeaf "store", arr_s, index_s, ass_s ] ]
+		return $ SExpr [ var_s ＝ 𝓈𝓉𝑜𝓇𝑒 arr_s index_s ass_s ]
 
 	-- Turns a CExprWithType into an SExpr
-	expr2sexpr' :: CExprWithType -> CovVecM SExpr
+	expr2sexpr' :: CExprWithType -> StateT [SExpr] CovVecM SExpr
 
 	expr2sexpr' expr = case expr of
 
-		CIndex arr_expr@(CVar _ _) index_expr _ ->
-			SExpr <$> sequence [ pure $ SLeaf "select", expr2sexpr' arr_expr, expr2sexpr' index_expr ]
+		CIndex arr_expr index_expr _ -> 𝓈𝑒𝓁𝑒𝒸𝓉 <$> expr2sexpr' arr_expr <*> expr2sexpr' index_expr
 
 		-- CNeqOp was resolved while annotateTypes
 		CBinary binop expr1 expr2 _ ->
@@ -2178,7 +2212,7 @@ expr2SExpr expr = expr2sexpr expr
 					other  -> error $ "op_sexpr " ++ (render.pretty) binop ++ " not implemented!"
 
 		cconst@(CConst ctconst) -> case ctconst of
-			CIntConst intconst (_,ty)  -> make_intconstant ((render.pretty) cconst) ty (getCInteger intconst)
+			CIntConst intconst (_,(ty,_))  -> make_intconstant ty (getCInteger intconst)
 			CCharConst cchar _         -> return $ SLeaf $ (render.pretty) cconst
 			CFloatConst (CFloat f_s) (_,ty) -> return $ SExpr [ SLeaf "fp", SLeaf ("#b"++s1), SLeaf ("#b"++s2), SLeaf ("#b"++s3) ]
 				where
@@ -2217,19 +2251,19 @@ expr2SExpr expr = expr2sexpr expr
 				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from==size_to -> return sexpr
 
 				-- Casting from Bool
-				( Z3_Bool, Z3_BitVector size_from _ ) -> do
-					ic1 <- make_intconstant ((render.pretty) castexpr) to_ty 1
-					ic0 <- make_intconstant ((render.pretty) castexpr) to_ty 0
+				( Z3_Bool, toty@(Z3_BitVector size_from _ )) -> do
+					ic1 <- make_intconstant toty 1
+					ic0 <- make_intconstant toty 0
 					return $ SExpr [ SLeaf "ite", sexpr, ic1, ic0 ]
 
 				-- Casting to Bool
-				( Z3_BitVector size_from _ , Z3_Bool ) -> do
-					ic <- make_intconstant ((render.pretty) castexpr) from_ty 0
-					return $ SExpr [ SLeaf "not", SExpr [ SLeaf "=", sexpr, ic ]]
+				( frty@(Z3_BitVector size_from _) , Z3_Bool ) -> do
+					ic <- make_intconstant frty 0
+					return $ SExpr [ SLeaf "not", SExpr [ sexpr ＝ ic ]]
 
 				-- DOWNCAST: extract bits (modulo)
 				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from > size_to ->
-					return $ SExpr [ SExpr [ SLeaf "_", SLeaf "extract", SLeaf (show $ size_to - 1), SLeaf "0"], sexpr ]
+					return $ 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 (size_to - 1) 0 sexpr
 
 				-- UPCAST signed (to signed or unsigned): extend sign bit
 				( Z3_BitVector size_from False, Z3_BitVector size_to _ ) | size_from < size_to ->
@@ -2239,26 +2273,49 @@ expr2SExpr expr = expr2sexpr expr
 				( Z3_BitVector size_from True, Z3_BitVector size_to _ ) | size_from < size_to ->
 					return $ SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
 
-				( Z3_Double, Z3_Float ) -> return $ SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "8", SLeaf "24" ],
-					SLeaf roundingMode, sexpr ]
+				( Z3_Double, Z3_Float ) -> return $ SExpr [ _𝓉𝑜_𝒻𝓅_𝒻𝓁𝑜𝒶𝓉, SLeaf roundingMode, sexpr ]
+				( Z3_Float, Z3_Double ) -> return $ SExpr [ _𝓉𝑜_𝒻𝓅_𝒹𝑜𝓊𝒷𝓁𝑒, SLeaf roundingMode, sexpr ]
 
-				( Z3_Float, Z3_Double ) -> return $ SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "11", SLeaf "53" ],
-					SLeaf roundingMode, sexpr ]
+				( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> do
+					(bv, bv_decl)  <- new_var "bv" (Z3_BitVector 32 True)
+					(arr,arr_decl) <- new_var "arr" arr_ty
+					(z3_inttype,_) <- lift $ _IntTypesM
+					i0 <- make_intconstant z3_inttype 0
+					i1 <- make_intconstant z3_inttype 1
+					Just MachineSpec{endianness} <- lift $ gets machineSpecCVS
+					let (low_address,high_address) = case endianness of
+						Little -> (𝑒𝓍𝓉𝓇𝒶𝒸𝓉 15  0 bv,𝑒𝓍𝓉𝓇𝒶𝒸𝓉 31 16 bv)
+						Big    -> (𝑒𝓍𝓉𝓇𝒶𝒸𝓉 31 16 bv,𝑒𝓍𝓉𝓇𝒶𝒸𝓉 15  0 bv)
+					modify ( [
+						bv_decl ,
+						arr_decl ,
+						𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅_𝒻𝓁𝑜𝒶𝓉, bv ] ＝ sexpr,
+						𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i0 low_address,
+						𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i1 high_address
+						] ++ )
+					return arr
 
-				( Z3_Float, Z3_Array (Z3_BitVector 16 True) ) -> do
-					
-
-				(from_ty,to_ty) -> error $ "expr2sexpr cast: " ++ show from_ty ++ " => " ++ show to_ty ++ " in " ++
+				(from_ty,to_ty) -> lift $ myError $ "expr2sexpr cast: " ++ show from_ty ++ " => " ++ show to_ty ++ " in " ++
 					(render.pretty) castexpr ++ " " ++ " not implemented!"
 
+			where
+
+			new_var :: String -> Z3_Type -> SECovVecM (SExpr,SExpr)
+			new_var name z3ty = do
+				n <- lift $ newNameM
+				-- avoiding name clashes using "$$" for "temporary" variables
+				let new_name = name ++ "$$" ++ show n
+				decl <- lift $ declConst2SExpr new_name z3ty
+				return (SLeaf new_name,decl)
+
 		ccond@(CCond cond (Just then_expr) else_expr _) -> do
-			myError $ "expr2sexpr CCond should not appear: " ++ (render.pretty) ccond
+			lift $ myError $ "expr2sexpr CCond should not appear: " ++ (render.pretty) ccond
 
-		cmember@(CMember _ _ _ _) -> myError $ "expr2sexpr of member " ++ (render.pretty) cmember ++ " should not occur!"
+		cmember@(CMember _ _ _ _) -> lift $ myError $ "expr2sexpr of member " ++ (render.pretty) cmember ++ " should not occur!"
 
-		ccall@(CCall _ _ _) -> myError $ "expr2sexpr of call " ++ (render.pretty) ccall ++ " should not occur!"
+		ccall@(CCall _ _ _) -> lift $ myError $ "expr2sexpr of call " ++ (render.pretty) ccall ++ " should not occur!"
 
-		other -> myError $ "expr2SExpr " ++ (render.pretty) other ++ " not implemented"
+		other -> lift $ myError $ "expr2SExpr " ++ (render.pretty) other ++ " not implemented"
 
 		where
 
@@ -2293,7 +2350,7 @@ data Z3_Type =
 
 ty2Z3Type :: Type -> CovVecM (Z3_Type,Type)
 ty2Z3Type ty = do
-	Just IntSizes{..} <- gets sizesCVS
+	Just MachineSpec{..} <- gets machineSpecCVS
 	z3_ty <- case ty of
 		DirectType tyname _ attrs -> case tyname of
 			TyVoid -> return Z3_Unit
@@ -2326,7 +2383,7 @@ ty2Z3TypeOnly ty = ty2Z3Type ty >>= return.fst
 
 sizeofIntTy :: Type -> CovVecM Int
 sizeofIntTy ty@(DirectType tyname _ attrs) = do
-	Just IntSizes{..} <- gets sizesCVS
+	Just MachineSpec{..} <- gets machineSpecCVS
 	return $ case tyname of
 		TyIntegral intty -> case (intty,map to_mode attrs) of
 			(TyChar,[])     -> 8
@@ -2380,6 +2437,11 @@ instance Show SolutionVal where
 	show (DoubleVal f) = show f
 	show PtrVal        = "<SOME_PTR>"
 
+declConst2SExpr :: String -> Z3_Type -> CovVecM SExpr
+declConst2SExpr id_name ty = do
+	ty_sexpr <- z3Ty2SExpr ty
+	return $ SExpr [ SLeaf "declare-const", SLeaf id_name, ty_sexpr ]
+
 makeAndSolveZ3ModelM :: [Int] -> [(Ident,Z3_Type)] -> [Constraint] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents modelpathfile = do
 	opts <- gets optsCVS
@@ -2388,22 +2450,24 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 			prefix_a :: Ident -> Ident
 			prefix_a (Ident s@('_':_) i ni) = Ident (safeZ3IdentifierPrefix:s) i ni
 			prefix_a ident = ident
-	printLogV 2 $ "output_idents = " ++ showIdents output_idents
+	printLogV 20 $ "output_idents = " ++ showIdents output_idents
 	let
 		constraints_vars = nub $ concat $ for a_constraints $ \case
 			Condition _ expr -> fvar expr
 			Assignment lexpr@(CIndex _ _ _) ass_expr -> fvar lexpr ++ fvar ass_expr
-	printLogV 2 $ "constraints_vars = " ++ showIdents constraints_vars
+	printLogV 20 $ "constraints_vars = " ++ showIdents constraints_vars
 
-	varsZ3 :: [SCompound] <- forM (filter ((`elem` (constraints_vars ++ a_output_idents)).fst) z3tyenv) $ \ (ident,ty) ->
-		SExprLine <$> (SOnOneLine <$> (SExpr <$> sequence [ pure (SLeaf "declare-const"), pure (SLeaf (identToString ident)), z3Ty2SExpr ty ]))
+	varsZ3 :: [SCompound] <- forM (filter ((`elem` (constraints_vars ++ a_output_idents)).fst) z3tyenv) $ \ (ident,ty) -> do
+		decl <- declConst2SExpr (identToString ident) ty
+		return $ SExprLine (SOnOneLine decl)
 	constraintsZ3 :: [SCompound] <- concatForM a_constraints $ \ constraint -> do
-		assert_sexpr <- expr2SExpr constraint
+		(assert_sexpr,add_sexprs) <- expr2SExpr constraint
 		return $ [ SEmptyLine,
 			SComment "----------------------------------------------" ] ++
 			(map SComment $ lines $ show constraint) ++
-			[ SComment "----------------------------------------------",
-			SExprLine $ SExpr [SLeaf "assert", assert_sexpr] ]
+			[ SComment "----------------------------------------------" ] ++
+			map SExprLine add_sexprs ++
+			[ SExprLine $ 𝒶𝓈𝓈𝑒𝓇𝓉 assert_sexpr]
 	let
 		outputvarsZ3 = for a_output_idents $ \ ident -> SExprLine $ SOnOneLine $
 			SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
@@ -2494,8 +2558,8 @@ parseFloating_fb s = case s of
 	_ | "(_ NaN "  `isPrefixOf` s ->  0.0 / 0.0
 	_ | "(_ +oo "  `isPrefixOf` s ->  1.0 / 0.0
 	_ | "(_ -oo "  `isPrefixOf` s -> -1.0 / 0.0
-	_ | "(+ zero " `isPrefixOf` s ->  0.0
-	_ | "(- zero " `isPrefixOf` s -> -0.0
+	_ | "(_ +zero " `isPrefixOf` s ->  0.0
+	_ | "(_ -zero " `isPrefixOf` s -> -0.0
 	_ -> f
 	where
 	-- Thats a funny idea: Forwarding the return type to fb_lengths' argument, so Haskell can infer the type a in order
@@ -2511,6 +2575,9 @@ parseFloating_fb s = case s of
 			'b' -> readInt 2 (`elem` "01") (\ c -> ord c - ord '0') s
 			'x' -> readHex s
 
+-- Find solutions for floating point constants close to 1.0 (in order to no produce mismatches due to rounding stuff)
+fPMinimizer name = [ SExpr [SLeaf "minimize",SExpr [SLeaf "bvsub", SLeaf "#x00000001",
+	SExpr [ SExpr [SLeaf "_",SLeaf "fp.to_sbv", SLeaf "32"], SLeaf "RNE", SLeaf (identToString name) ] ]] ]
 
 -- In case of a cutoff, mb_ret_type is Nothing.
 solveTraceM :: Maybe Type -> [Int] -> Trace -> CovVecM (Either Bool ResultData)
@@ -2544,9 +2611,9 @@ solveTraceM mb_ret_type traceid trace = do
 		(tyenv1 ++ debug_tyenv)
 		(constraints ++ debug_constraints)
 		(concat $ for param_env_exprs $ \ ((_,(name,_)),expr) -> case extractZ3Type expr of
-			Z3_Float -> []
-			Z3_Double -> []
-			Z3_LDouble -> []
+			Z3_Float -> fPMinimizer name
+			Z3_Double -> fPMinimizer name
+			Z3_LDouble -> fPMinimizer name
 			_ -> [ SExpr [SLeaf "minimize",SLeaf (identToString name)] ])
 		(param_names ++ ret_names ++ debug_idents)
 		(analyzerPath </> "models" </> "model_" ++ tracename ++ ".smtlib2")
@@ -2585,9 +2652,9 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 			DirectType _ _ _ -> case lookup (identToString newident) solution of
 				Just v -> [show v]
 			ty -> error $ "checkSolutionM args: type " ++ (render.pretty) ty ++ " not implemented!"
-	printLogV 2 $ "checkSolution args = " ++ show args
+	printLogV 1 $ "checkSolution args = " ++ show args
 	(stdout,stderr) <- runHereM (takeDirectory absolute_filename) (takeFileName filename) args
-	printLogV 2 $ "stdout=\n" ++ stdout ++ "\n------------"
+	printLogV 20 $ "stdout=\n" ++ stdout ++ "\n------------"
 
 	let
 		outputs = words $ last $ lines stdout

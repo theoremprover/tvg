@@ -1,18 +1,16 @@
 (set-option :smt.relevancy 0)
 (set-option :produce-models true)
 
-(declare-const answer (_ BitVec 64))
-(declare-const high (_ BitVec 32))
+(declare-const f Float32)
+(declare-const bv (_ BitVec 32))
+(declare-const arr (Array (_ BitVec 32) (_ BitVec 16)))
 
-(assert (= answer 0x0000007e7fffc0c0))
-(assert (= high ((_ extract 31 0) (bvlshr () ())) )
+(assert (= f ((_ to_fp 8 24) RNE 3.14 0)))
+(assert (= arr (store arr #x00000000 ((_ extract 15 0) bv)) ))
+(assert (= arr (store arr #x00000001 ((_ extract 31 16) bv)) ))
+(assert (= f ((_ to_fp 8 24) bv)))
 
-
-
-(assert (= a #x0002))
-
-(minimize a)
 (check-sat)
-(get-value (a))
-(get-value (a2))
-(get-value (a3))
+(get-value ((select arr #x00000000)))
+(get-value ((select arr #x00000001)))
+(get-value (f))
