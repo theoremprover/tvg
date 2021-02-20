@@ -8,5 +8,6 @@ short f(float *px)
  {
  _Fval *ps = (_Fval *)(char *)px;
  if(ps->_Sh[1] == 1) return 0;
- else return 1;
+ ps->_Sh[0] = 1;
+  return 1;
 }
