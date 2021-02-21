@@ -76,8 +76,9 @@ main = do
 	getZonedTime >>= return.(++"\n").show >>= writeFile logFileTxt
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
 --		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
@@ -243,7 +244,7 @@ charType = integral TyChar :: Type
 ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
 
 showInitialTrace = False && not fastMode
-showModels = False && not fastMode
+showModels = True && not fastMode
 showOnlySolutions = True
 showTraces = True && not fastMode
 showFinalTrace = True && not fastMode
@@ -255,7 +256,8 @@ showBuiltins = False
 logToFile = True
 logToHtml = True && not fastMode
 mainFileName = "main.c"
-printTypes = True
+printTypes = False
+printLocations = False
 
 mAX_UNROLLS = 4
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
@@ -547,7 +549,7 @@ instance Show TraceElem where
 		NewDeclaration (lval,ty) -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
 		Return exprs             -> "RET  " ++ (render.pretty) exprs
 		DebugOutput varname expr -> "DBGOUT " ++ varname ++ " " ++ (render.pretty) expr
-		) ++ "  (" ++ (showLocation.lineColNodeInfo) te ++ ")"
+		) ++ if printLocations then "  (" ++ (showLocation.lineColNodeInfo) te ++ ")" else ""
 
 showTrace :: Trace -> String
 showTrace trace = unlines $ concatMap show_te trace where
@@ -919,6 +921,8 @@ lValueToVarName (CBinary binop expr1 expr2 _) =
 lValueToVarName (CConst (CIntConst cint _)) = (if i<0 then "m" else "") ++ show (abs i) where
 	i = getCInteger cint
 lValueToVarName (CIndex arr index _) = lValueToVarName arr ++ "_INDEX_" ++ lValueToVarName index
+-- HACK: Abusing lValueToVarName for turning an expression into a String represenation (used with new array names)
+lValueToVarName (CCast _ expr _) = lValueToVarName expr
 lValueToVarName lval = error $ "lValueToVarName " ++ show lval ++ " not implemented!"
 
 type TyEnvItem = (Ident,Type)
@@ -1826,27 +1830,32 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 elimArrayAssignsM :: Trace -> CovVecM Trace
 elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
 	where
-	elim_arr_assnsM :: StateT (Map.Map Ident Int) CovVecM Trace
+	elim_arr_assnsM :: StateT (Map.Map String Int) CovVecM Trace
 	elim_arr_assnsM = do
 		ls <- forM trace $ \case
-			Assignment (CIndex var index_expr index_ni) ass_expr -> case var of
-				CVar ident var_ni -> do
-					counters <- get
-					i <- case Map.lookup ident counters of
-						Nothing -> do
-							modify $ Map.insert ident 2
-							return 1
-						Just i -> do
-							modify $ Map.adjust (+1) ident
-							return i
-					let
-						newident = internalIdent $ identToString ident ++ "$" ++ show i
-						newvar   = CVar newident var_ni
-					return $ [
-						NewDeclaration (newident,extractType var) ,
-						Assignment (CIndex newvar index_expr index_ni) ass_expr,
-						Assignment var newvar ]
-				other -> lift $ myError $ "elim_arr_assnsM: not a variable in CIndex: " ++ (render.pretty) other
+			Assignment (CIndex arr_expr index_expr index_ni) ass_expr -> do
+				counters <- get
+				let arr_name = lValueToVarName arr_expr
+				i <- case Map.lookup arr_name counters of
+					Nothing -> do
+						modify $ Map.insert arr_name 2
+						return 1
+					Just i -> do
+						modify $ Map.adjust (+1) arr_name
+						return i
+				let
+					-- Three '$' denote the class of array names (to avoid name clashes)
+					arr_types = extractTypes arr_expr
+					new_arr_name =  arr_name ++ "$$$" ++ show i
+					new_arr_ident = internalIdent new_arr_name
+					new_arr = CVar new_arr_ident (undefNode,arr_types)
+					store_arr = case i of
+						1 -> new_arr
+						i -> CVar (internalIdent $ arr_name ++ "$$$" ++ show (i-1)) (undefNode,arr_types)
+				return [
+					NewDeclaration (new_arr_ident,extractType arr_expr) ,
+					Assignment (CIndex (CBinary CAddOp store_arr new_arr (undefNode,arr_types)) index_expr index_ni) ass_expr,
+					Assignment arr_expr new_arr ]
 			other -> return [other]
 		return $ concat ls
 
@@ -1872,8 +1881,6 @@ simplifyTraceM trace = everywhereM (mkM simplify) trace where
 	-- Convert cast of ptr to union with member
 	simplify (CMember (CCast dummy px (_,tys@(Z3_Ptr (Z3_Compound sueref UnionTag),_))) member_id True mem_ni) = do
 		let (Z3_Ptr px_target_type,PtrType pxtt _ _) = extractTypes px
-		printLogV 20 $ "#### px = " ++ (render.pretty) px
-		printLogV 20 $ "#### Simplifed cast of ptr to union with member: px_target_type = " ++ show px_target_type
 		return $ CCast dummy (CUnary CIndOp px (undefNode,(px_target_type,pxtt))) mem_ni
 
 	-- Superfluous cast, because (A)b with b::A  can be simplified to b
@@ -2168,16 +2175,13 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 		expr2sexpr' cexpr
 
 	-- Assignment to an array member
-	expr2sexpr (Assignment (CIndex var@(CVar ident _) indexexpr _) ass_expr) = do
-		var_s <- expr2sexpr' var
-		index_s <- expr2sexpr' indexexpr
+	-- HACK: CAddOp stores the previous array name and the new one
+	expr2sexpr (Assignment (CIndex (CBinary CAddOp store_arr var_arr _) index_expr _) ass_expr) = do
+		var_arr_s <- expr2sexpr' var_arr
+		index_s <- expr2sexpr' index_expr
 		ass_s <- expr2sexpr' ass_expr
-		let [array_expr] = everything (++) (mkQ [] search_arrays) ass_expr where
-			search_arrays :: CExprWithType -> [CExprWithType]
-			search_arrays (CIndex var@(CVar _ _) _ _) = [var]
-			search_arrays _ = []
-		arr_s <- expr2sexpr' array_expr
-		return $ SExpr [ var_s ＝ 𝓈𝓉𝑜𝓇𝑒 arr_s index_s ass_s ]
+		store_arr_s <- expr2sexpr' store_arr 
+		return $ var_arr_s ＝ 𝓈𝓉𝑜𝓇𝑒 store_arr_s index_s ass_s
 
 	-- Turns a CExprWithType into an SExpr
 	expr2sexpr' :: CExprWithType -> StateT [SExpr] CovVecM SExpr

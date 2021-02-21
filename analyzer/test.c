@@ -4,10 +4,9 @@ typedef union
  float _Val;
  } __attribute__ ((__may_alias__)) _Fval;
 
-short f(float *px)
+unsigned short f(float *px)
  {
  _Fval *ps = (_Fval *)(char *)px;
- if(ps->_Sh[1] == 1) return 0;
- ps->_Sh[0] = 1;
-  return 1;
+ if(ps->_Sh[1] == 1) return ps->_Sh[0];
+  return ps->_Sh[0];
 }
