@@ -1257,6 +1257,8 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 			printLogV 20 $ "#### stmt    = " ++ (render.pretty) stmt
 			printLogV 20 $ "#### add_cbis= " ++ ren add_cbis
 
+			printLogV 1 $ "################### " ++ (render.pretty) stmt
+
 			case stmt of
 				_ | not (null add_cbis) -> unfoldTracesM ret_type toplevel forks envs trace (((add_cbis ++ [CBlockStmt stmt] ++ rest),breakable) : rest2)
 
@@ -1333,6 +1335,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 						printLogV 1 "99999999999999999999999999999"
 						return r
 					let else_trace_m forks' real_cond = transids (CUnary CNegOp real_cond (annotation real_cond)) (Just _BoolTypes) trace $ \ (ncond',trace') -> do
+						printLogV 1 "888888888888888AAAAAAAAAAAAAAAAAAAAA"
 						let not_cond = Condition (Just False) ncond'
 						case mb_else_stmt of
 							Nothing        -> unfoldTracesM ret_type toplevel forks' envs (not_cond : trace') ( (rest,breakable) : rest2 )
@@ -1587,9 +1590,6 @@ unfoldTraces1M ret_type True  _ _    trace [] = analyzeTraceM (Just ret_type) tr
 
 unfoldTraces1M _ _ _ _ _ ((cbi:_,_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
-
--- The following  definitions are only for CExpr's, since CExprWithType's also need correct type information, i.e.
--- casting n'stuff...
 
 infix 4 ⩵
 (⩵) :: CExprWithType -> CExprWithType -> CExprWithType
