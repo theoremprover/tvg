@@ -87,7 +87,7 @@ main = do
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
 --		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC"] --["-writeAST","-writeGlobalDecls"]
@@ -212,7 +212,7 @@ main = do
 
 			printLog 0 $ "\n===== SUMMARY =====\n\n"
 			
-			printLog 0 $ "Coverage to reach: " ++ if mCDCCOverage then "MC/DC" else "Branch"
+			printLog 0 $ "Coverage to reach: " ++ (if mCDCCOverage then "MC/DC" else "Branch") ++ "\n"
 
 			forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
 				printLog 0 $ "Test Vector " ++ show traceid ++ " covering "
@@ -226,7 +226,7 @@ main = do
 
 			printLog 0 $ case null deaths of
 				False -> "FAIL, there are coverage gaps!\n"
-				True  -> "OK, we have full branch coverage.\n"
+				True  -> "OK, we have full coverage.\n"
 
 			createHTMLLog
 
@@ -300,7 +300,10 @@ runHereM rundir exefilename args = liftIO $ withCurrentDirectory rundir $ do
 		ExitSuccess -> return (sout,serr)
 
 data Endianness = Little | Big deriving (Read,Show)
-data MachineSpec = MachineSpec { intSize::Int, longSize::Int, longLongSize::Int, endianness::Endianness } deriving (Read,Show)
+data MachineSpec = MachineSpec {
+	intSize::Int, longSize::Int, longLongSize::Int,
+	endianness::Endianness
+	} deriving (Read,Show)
 
 find_out_sizes_name = "find_out_sizes" :: String
 
@@ -328,7 +331,8 @@ int main(void)
     *((unsigned short *)arr) = 255;
     // big endian means MSB is stored at smalless address.
     if(arr[0]==255) endianness=little; else if(arr[1]==255) endianness=big;
-    printf("MachineSpec { intSize=%i, longSize=%i, longLongSize=%i, endianness=%s }\n",sizeof(int)*8,sizeof(long int)*8,sizeof(long long)*8,endianness);
+    printf("MachineSpec { intSize=%i, longSize=%i, longLongSize=%i, endianness=%s }\n",
+        sizeof(int)*8,sizeof(long int)*8,sizeof(long long)*8,endianness);
     return 0;
 }
 |]
@@ -410,8 +414,9 @@ myError txt = do
 indentLog :: Int -> CovVecM ()
 indentLog d = modify $ \ s -> s { logIndentCVS = logIndentCVS s + d }
 
-logWrapper :: (LogRender a) => Int -> [String] -> CovVecM a -> CovVecM a
-logWrapper verbosity args m = do
+logWrapper :: (LogRender a) => [String] -> CovVecM a -> CovVecM a
+logWrapper args m = do
+	let verbosity = 10
 	indentLog 1
 	printLogV verbosity $ intercalate " " args
 	ret <- m
@@ -567,7 +572,7 @@ showTrace trace = unlines $ concatMap show_te trace where
 	show_te _ = []
 
 covVectorsM :: CovVecM Bool
-covVectorsM = logWrapper 1 [ren "covVectorsM"] $ do
+covVectorsM = logWrapper [ren "covVectorsM"] $ do
 	sizes <- find_out_sizesM
 	modify $ \ s -> s { machineSpecCVS = Just sizes }
 
@@ -660,6 +665,8 @@ void solver_debug(void* x) { }
 
 $esc:incl
 
+$esc:uns_float
+$esc:uns_double
 
 int main(int argc, char* argv[])
 {
@@ -674,6 +681,9 @@ int main(int argc, char* argv[])
 	return 0;
 }
 |]
+	where
+	uns_float = "union { float floa; uint32 uin32; } f2u;"
+	uns_double = "union { double doubl; uint64 uin64; } d2u;"
 
 envItemNotPtrType :: EnvItem -> Bool
 envItemNotPtrType (_,(_,PtrType _ _ _)) = False
@@ -716,7 +726,7 @@ createDeclsM formal_params = do
 
 	-- ty is the non-dereferenced type used for pretty printing,
 	-- deref_ty is the dereferenced type that is to be analyzed further
-	create_decls expr ty deref_ty all_declared decls = logWrapper 1 ["create_decls",ren expr,ren deref_ty,ren all_declared,ren decls] $ case deref_ty of
+	create_decls expr ty deref_ty all_declared decls = logWrapper ["create_decls",ren expr,ren deref_ty,ren all_declared,ren decls] $ case deref_ty of
 
 		TypeDefType (TypeDefRef ident _ _) _ _ -> do
 			ty' <- lookupTypeDefM ident
@@ -751,7 +761,7 @@ createDeclsM formal_params = do
 				True -> []
 			tyfs <- type_format_string ty
 			return $ decls ++ decl ++
-				[ "sscanf(argv[i++],\"" ++ tyfs ++ "\",&(" ++ (render.pretty) expr ++ "));" ]
+				[ "if(sscanf(argv[i++],\"" ++ tyfs ++ "\",&(" ++ (render.pretty) expr ++ "))!=1) return 1;" ]
 
 		ArrayType elem_ty (ArraySize False (CConst (CIntConst cint _))) _ _ -> do
 			let
@@ -774,9 +784,8 @@ type_format_string ty = do
 	Just MachineSpec{..} <- gets machineSpecCVS
 	(z3ty,_) <- ty2Z3Type ty
 	return $ "%" ++ case z3ty of
-		Z3_Float                                        -> "f"
-		Z3_Double                                       -> "lf"
-		Z3_LDouble                                      -> "Lf"
+		Z3_Float                                        -> "08.8x"
+		Z3_Double                                       -> "016.16x"
 		Z3_BitVector size unsigned | size==intSize      -> if unsigned then "u" else "i"
 		Z3_BitVector size unsigned | size==longSize     -> "l" ++ if unsigned then "u" else "i"
 		Z3_BitVector size unsigned | size==longLongSize -> "ll" ++ if unsigned then "u" else "i"
@@ -793,7 +802,7 @@ showLocation (l,c,len) = "line " ++ show l ++ ", col " ++ show c ++ ", len " ++ 
 
 -- In case of a cutoff, mb_ret_type is Nothing.
 analyzeTraceM :: Maybe Type -> [TraceElem] -> CovVecM Bool
-analyzeTraceM mb_ret_type res_line = logWrapper 1 [ren "analyzeTraceM",ren mb_ret_type,ren res_line,ren "traceid=",ren traceid] $ do
+analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_type,ren res_line,ren "traceid=",ren traceid] $ do
 	incNumTracesM
 	printStatsM
 	printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
@@ -825,7 +834,6 @@ analyzeTraceM mb_ret_type res_line = logWrapper 1 [ren "analyzeTraceM",ren mb_re
 				show_solution funname mb_solution ++ "\n"
 
 			startend <- gets funStartEndCVS
-			printLogV 2 $ "startend =" ++ show startend
 			let visible_trace = Set.fromList $ concatMap to_branch res_line
 				where
 				is_visible_traceelem :: (Location,Location) -> CExprWithType -> Bool
@@ -834,7 +842,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper 1 [ren "analyzeTraceM",ren mb_re
 				to_branch (Condition (Just b) cond) | is_visible_traceelem startend cond =
 					[ (if b then Then else Else) (lineColNodeInfo $ extractNodeInfo cond) ]
 				to_branch _ = []
-			printLogV 20 $ "visible_trace =\n" ++ unlines (map show $ Set.toList visible_trace)
+			printLogV 1 $ "Covered branches:\n" ++ unlines (map (("\t"++).show) $ Set.toList visible_trace)
 
 			let
 				traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
@@ -1199,7 +1207,7 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 			return $ (((srcident,(srcident,ty')),expr) : rest1)
 
 unfoldTracesM ret_type toplevel forks envs trace cbss =
-	logWrapper 1 [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cbss] $ do
+	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cbss] $ do
 		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $
 			unfoldTraces1M ret_type toplevel forks envs trace cbss
 		where
@@ -1219,7 +1227,7 @@ unfoldTracesM ret_type toplevel forks envs trace cbss =
 
 unfoldTraces1M :: Type -> Bool -> Int -> [Env] -> Trace -> [([CBlockItem],Bool)] -> CovVecM UnfoldTracesRet
 unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : rest,breakable) : rest2) =
-	logWrapper 1 [ren "unfoldTraces1M",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren bstss] $ do
+	logWrapper [ren "unfoldTraces1M",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren bstss] $ do
 		case stmt0 of
 	
 			CCompound _ cbis _ -> unfoldTracesM ret_type toplevel forks ([]:envs) trace ((cbis,False) : (rest,breakable) : rest2)
@@ -1450,7 +1458,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 				recognizeAnnotation real_cond = (real_cond,Nothing)
 	
 				infer_loopingsM :: CExpr -> CStat -> CovVecM (Maybe [Int],String)
-				infer_loopingsM cond0 body = logWrapper 1 [ren "infer_loopingsM",ren cond0,'\n':ren body] $ do
+				infer_loopingsM cond0 body = logWrapper [ren "infer_loopingsM",ren cond0,'\n':ren body] $ do
 					case recognizeAnnotation cond0 of
 						(real_cond,Just (ns,_)) -> return (Just ns,"Recognized LOOP annotation to " ++ (render.pretty) cond0)
 						(real_cond,Nothing) -> do
@@ -1539,7 +1547,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 	
 				-- mb_ty is Nothing if the result type of expr is not known, i.e. no casting necessary.
 				transids :: CExpr -> Maybe Types -> Trace -> ((CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
-				transids expr mb_ty trace cont = logWrapper 1 ["transids",ren expr,ren mb_ty,ren trace,"<cont>"] $ do
+				transids expr mb_ty trace cont = logWrapper ["transids",ren expr,ren mb_ty,ren trace,"<cont>"] $ do
 					printLogV 20 $ "### transids " ++ (render.pretty) expr
 					additional_expr_traces :: [(CExprWithType,Trace)] <- translateExprM envs expr mb_ty
 					printLogV 20 $ "### -> additional_expr_traces = " ++ (render.pretty) (map fst additional_expr_traces)
@@ -1559,7 +1567,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 										False -> try_next rest
 
 unfoldTraces1M ret_type toplevel forks (env:envs) trace ( (cblockitem@(CBlockDecl decl@(CDecl typespecs triples _)) : rest, breakable) : rest2 ) =
-	logWrapper 1 [ren "unfoldTraces1M",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cblockitem] $ do
+	logWrapper [ren "unfoldTraces1M",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cblockitem] $ do
 		ty <- decl2TypeM decl
 		new_env_items <- forM triples $ \case
 			(Just (CDeclr (Just ident) derivdeclrs _ _ ni),mb_init,Nothing) -> do
@@ -1574,7 +1582,7 @@ unfoldTraces1M ret_type toplevel forks (env:envs) trace ( (cblockitem@(CBlockDec
 		unfoldTracesM ret_type toplevel forks ((concat newenvs ++ env) : envs) (concat newitems ++ trace) ((concat initializerss ++ rest,breakable):rest2)
 
 unfoldTraces1M ret_type toplevel forks envs@(_:restenvs) trace cbss@(([],_):rest2) =
-	logWrapper 1 [ren "unfoldTraces1M",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cbss] $ do
+	logWrapper [ren "unfoldTraces1M",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cbss] $ do
 		unfoldTracesM ret_type toplevel forks restenvs trace rest2
 
 unfoldTraces1M ret_type False _ envs trace [] = return $ Left [trace]
@@ -1689,19 +1697,12 @@ transcribeExprM envs mb_target_ty expr = do
 	-- also inserts implicit casts
 	-- if mb_target_ty is Nothing, the result CExprWithType will not be casted to the mb_target_ty type.
 	annotateTypesAndCastM :: [Env] -> CExpr -> Maybe Types -> CovVecM CExprWithType
-	annotateTypesAndCastM envs cexpr mb_target_ty = logWrapper 1 ["annotateTypesAndCastM","<env>",ren cexpr,ren mb_target_ty] $ do
+	annotateTypesAndCastM envs cexpr mb_target_ty = logWrapper ["annotateTypesAndCastM","<env>",ren cexpr,ren mb_target_ty] $ do
 		cexpr' <- annotate_types cexpr
-		let ret = case mb_target_ty of
+		return $ case mb_target_ty of
 			Just target_ty -> mb_cast target_ty cexpr'
 			_ -> cexpr'
-		printLogV 20 $ "\n# cexpr = " ++ (showLocation.lineColNodeInfo) cexpr
-		printLogV 20 $ "# annotateTypesAndCastM [envs] " ++ (render.pretty) cexpr
-		printLogV 20 $ "# target_ty = " ++ show mb_target_ty
-		printLogV 20 $ "#   cexpr' = " ++ (render.pretty) cexpr'
-		printLogV 20 $ "# ==>\n" ++ (render.pretty) ret ++ "\n"
-	
-		return $ ret
-	
+
 		where
 	
 		tyenv = envs2tyenv envs
@@ -1709,7 +1710,7 @@ transcribeExprM envs mb_target_ty expr = do
 		annotate_types :: CExpr -> CovVecM CExprWithType
 	
 		-- Get rid of CNeqOp now, later in expr2sexpr it will be more difficult...
-		annotate_types (CBinary CNeqOp expr1 expr2 ni) = annotate_types $ expr1 !⩵ expr2
+		annotate_types (CBinary CNeqOp expr1 expr2 ni) = annotate_types $ amap (const ni) (expr1 !⩵ expr2)
 		annotate_types (CBinary binop expr1 expr2 ni) = do
 			expr1' <- annotate_types expr1
 			expr2' <- annotate_types expr2
@@ -1723,30 +1724,17 @@ transcribeExprM envs mb_target_ty expr = do
 			return $ CBinary binop (mb_cast common_ty expr1') (mb_cast common_ty expr2') (ni,result_ty)
 	
 		annotate_types ccast@(CCast decl expr ni) = do
-			ty1' <- decl2TypeM decl
-			printLogV 20 $ "XXX  decl2TypeM ( " ++ (render.pretty) decl ++ ") = " ++ show ty1'
-			ty2' <- elimTypeDefsM ty1'
-			printLogV 20 $ "XXX  elimTypeDefsM ( " ++ (render.pretty) ty1' ++ ") = " ++ show ty2'
-			ty' <- ty2Z3Type ty2'
-			printLogV 20 $ "XXX  ty2Z3Type ( " ++ (render.pretty) ty2' ++ ") = " ++ show ty'
-			expr' <- annotate_types expr
-			printLogV 20 $ "XXX  annotate_types " ++ (render.pretty) expr ++ " = " ++ (render.pretty) expr'
-			printLogV 20 $ "XXX  mb_cast " ++ show ty' ++ " " ++ (render.pretty) expr' ++ " = " ++ (render.pretty) (mb_cast ty' expr')
-			return $ mb_cast ty' expr'
+			mb_cast <$> (decl2TypeM decl >>= elimTypeDefsM >>= ty2Z3Type) <*> annotate_types expr
 	
 		annotate_types cunary@(CUnary unop expr ni) = do
-			printLogV 20 $ "### annotate_types " ++ (render.pretty) cunary
 			expr' <- annotate_types expr
-			printLogV 20 $ "### expr' = " ++ (render.pretty) expr'
 			let (arg_ty,result_ty) = case (unop,extractTypes expr') of
 				(CNegOp, _)                                -> (_BoolTypes,_BoolTypes)
 				(CAdrOp, ty@(z3ty,cty))                    -> (ty,(Z3_Ptr z3ty,ptrType cty))
 				(CIndOp, ty@(Z3_Ptr z3ty,PtrType cty _ _)) -> (ty,(z3ty,cty))
 				(CIndOp, _) -> error $ "annotate_types: argument type of " ++ (render.pretty) cunary ++ " is no Ptr!"
 				(_,      ty)                               -> (ty,ty)
-			printLogV 20 $ "### (arg_ty,result_ty) = " ++ show (arg_ty,result_ty)
 			let erg = CUnary unop (mb_cast arg_ty expr') (ni,result_ty)
-			printLogV 20 $ "### erg = " ++ (render.pretty) erg
 			return erg
 	
 		annotate_types (CCond cond_expr (Just then_expr) else_expr ni) = do
@@ -1827,7 +1815,7 @@ transcribeExprM envs mb_target_ty expr = do
 -- and expands function calls. Translates to CExprWithType's.
 -- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
 translateExprM :: [Env] -> CExpr -> Maybe Types -> CovVecM [(CExprWithType,Trace)]
-translateExprM envs expr0 mb_target_ty = logWrapper 1 ["translateExprM","<envs>",ren expr0,ren mb_target_ty] $ do
+translateExprM envs expr0 mb_target_ty = logWrapper ["translateExprM","<envs>",ren expr0,ren mb_target_ty] $ do
 	-- extract a list of all calls from the input expression expr0
 	-- (including fun-identifier, the arguments, and NodeInfo)
 	let
@@ -2451,17 +2439,18 @@ z3Ty2SExpr ty = case ty of
 type Solution = [(String,SolutionVal)]
 
 data SolutionVal = IntVal Int | FloatVal Float | DoubleVal Double | PtrVal
+	deriving (Show)
 instance Eq SolutionVal where
 	IntVal i1    == IntVal i2    = i1==i2
 	PtrVal       == PtrVal       = True
 	FloatVal f1  == FloatVal f2  = abs (f2-f1) <= floatTolerance
 	DoubleVal f1 == DoubleVal f2 = abs (f2-f1) <= doubleTolerance
 
-instance Show SolutionVal where
-	show (IntVal i)    = show i
-	show (FloatVal f)  = show f
-	show (DoubleVal f) = show f
-	show PtrVal        = "<SOME_PTR>"
+showVal :: SolutionVal -> String
+showVal (IntVal i)    = show i
+showVal (FloatVal f)  = show f
+showVal (DoubleVal f) = show f
+showVal PtrVal        = "<SOME_PTR>"
 
 declConst2SExpr :: String -> Z3_Type -> CovVecM SExpr
 declConst2SExpr id_name ty = do
@@ -2673,14 +2662,13 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 	srcfilename <- gets srcFilenameCVS
 	Just filename <- gets checkExeNameCVS
 	absolute_filename <- liftIO $ makeAbsolute srcfilename
-	let
-		args = concat $ for param_env $ \ (_,(newident,ty)) -> case ty of
-			DirectType _ _ _ -> case lookup (identToString newident) solution of
-				Just v -> [show v]
-			ty -> error $ "checkSolutionM args: type " ++ (render.pretty) ty ++ " not implemented!"
+	let args = for param_env $ \ (_,(newident,ty)) -> case ty of
+		DirectType _ _ _ -> case lookup (identToString newident) solution of
+			Just v -> showVal v
+		ty -> error $ "checkSolutionM args: type " ++ (render.pretty) ty ++ " not implemented!"
 	printLogV 1 $ "checkSolution args = " ++ show args
 	(stdout,stderr) <- runHereM (takeDirectory absolute_filename) (takeFileName filename) args
-	printLogV 20 $ "stdout=\n" ++ stdout ++ "\n------------"
+	printLogV 1 $ "stdout=\n" ++ stdout ++ "\n------------"
 
 	let
 		outputs = words $ last $ lines stdout
