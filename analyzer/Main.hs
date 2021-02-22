@@ -68,6 +68,15 @@ type TraceAnalysisResult = ([Int],Trace,Set.Set Branch,ResultData)
 type UnfoldTracesRet = Either [Trace] Bool
 type SolveFunRet = (Bool,([TraceAnalysisResult],Set.Set Branch))
 
+{-
+_Dtest
+_FDtest
+_FDint
+_FDeraise
+_FDscale
+_FDunscale
+_FDnorm
+-}
 
 main :: IO ()
 main = do
@@ -76,9 +85,10 @@ main = do
 	getZonedTime >>= return.(++"\n").show >>= writeFile logFileTxt
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
+		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
 --		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
@@ -706,7 +716,7 @@ createDeclsM formal_params = do
 
 	-- ty is the non-dereferenced type used for pretty printing,
 	-- deref_ty is the dereferenced type that is to be analyzed further
-	create_decls expr ty deref_ty all_declared decls = case deref_ty of
+	create_decls expr ty deref_ty all_declared decls = logWrapper 1 ["create_decls",ren expr,ren deref_ty,ren all_declared,ren decls] $ case deref_ty of
 
 		TypeDefType (TypeDefRef ident _ _) _ _ -> do
 			ty' <- lookupTypeDefM ident
@@ -1978,8 +1988,8 @@ sexpr1 ＝ sexpr2 = SExpr [ SLeaf "=", sexpr1, sexpr2 ]
 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 :: Int -> Int -> SExpr -> SExpr
 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 l r sexpr = SExpr [ SExpr [SLeaf "_", SLeaf "extract", SLeaf (show l), SLeaf (show r)], sexpr ]
 
-_𝓉𝑜_𝒻𝓅_𝒻𝓁𝑜𝒶𝓉  = SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "8" , SLeaf "24" ]
-_𝓉𝑜_𝒻𝓅_𝒹𝑜𝓊𝒷𝓁𝑒 = SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "11", SLeaf "53" ]
+_𝓉𝑜_𝒻𝓅 32 = SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "8" , SLeaf "24" ]
+_𝓉𝑜_𝒻𝓅 64 = SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "11", SLeaf "53" ]
 
 𝒶𝓈𝓈𝑒𝓇𝓉 sexpr = SExpr [ SLeaf "assert", sexpr ]
 
@@ -2164,7 +2174,7 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 
 	where
 
-	make_intconstant :: Z3_Type -> Integer -> SECovVecM SExpr
+	make_intconstant :: Z3_Type -> Int -> SECovVecM SExpr
 	make_intconstant (Z3_BitVector size _) const | size `mod` 4 == 0 =
 		return $ SLeaf (printf "#x%*.*x" (size `div` 4) (size `div` 4) const)
 	make_intconstant z3type const = lift $ myError $ "make_intconstant " ++ show z3type ++ " " ++ show const
@@ -2216,7 +2226,7 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 					other  -> error $ "op_sexpr " ++ (render.pretty) binop ++ " not implemented!"
 
 		cconst@(CConst ctconst) -> case ctconst of
-			CIntConst intconst (_,(ty,_))  -> make_intconstant ty (getCInteger intconst)
+			CIntConst intconst (_,(ty,_))  -> make_intconstant ty (fromIntegral $ getCInteger intconst)
 			CCharConst cchar _         -> return $ SLeaf $ (render.pretty) cconst
 			CFloatConst (CFloat f_s) (_,ty) -> return $ SExpr [ SLeaf "fp", SLeaf ("#b"++s1), SLeaf ("#b"++s2), SLeaf ("#b"++s3) ]
 				where
@@ -2277,32 +2287,42 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 				( Z3_BitVector size_from True, Z3_BitVector size_to _ ) | size_from < size_to ->
 					return $ SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
 
-				( Z3_Double, Z3_Float ) -> return $ SExpr [ _𝓉𝑜_𝒻𝓅_𝒻𝓁𝑜𝒶𝓉, SLeaf roundingMode, sexpr ]
-				( Z3_Float, Z3_Double ) -> return $ SExpr [ _𝓉𝑜_𝒻𝓅_𝒹𝑜𝓊𝒷𝓁𝑒, SLeaf roundingMode, sexpr ]
+				( Z3_Double, Z3_Float ) -> do
+					targetsize <- lift $ sizeofZ3Ty Z3_Float
+					return $ SExpr [ _𝓉𝑜_𝒻𝓅 targetsize, SLeaf roundingMode, sexpr ]
+				( Z3_Float, Z3_Double ) -> do
+					targetsize <- lift $ sizeofZ3Ty Z3_Double
+				 	return $ SExpr [ _𝓉𝑜_𝒻𝓅 targetsize, SLeaf roundingMode, sexpr ]
 
-				( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> do
-					(bv, bv_decl)  <- new_var "bv" (Z3_BitVector 32 True)
-					(arr,arr_decl) <- new_var "arr" arr_ty
-					(z3_inttype,_) <- lift $ _IntTypesM
-					i0 <- make_intconstant z3_inttype 0
-					i1 <- make_intconstant z3_inttype 1
-					Just MachineSpec{endianness} <- lift $ gets machineSpecCVS
-					let (low_address,high_address) = case endianness of
-						Little -> (𝑒𝓍𝓉𝓇𝒶𝒸𝓉 15  0 bv,𝑒𝓍𝓉𝓇𝒶𝒸𝓉 31 16 bv)
-						Big    -> (𝑒𝓍𝓉𝓇𝒶𝒸𝓉 31 16 bv,𝑒𝓍𝓉𝓇𝒶𝒸𝓉 15  0 bv)
-					modify ( [
-						bv_decl ,
-						arr_decl ,
-						𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅_𝒻𝓁𝑜𝒶𝓉, bv ] ＝ sexpr,
-						𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i0 low_address,
-						𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i1 high_address
-						] ++ )
-					return arr
+				( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> cast_fp2arr sexpr Z3_Float arr_ty
+
+				( Z3_Double, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> cast_fp2arr sexpr Z3_Double arr_ty
 
 				(from_ty,to_ty) -> lift $ myError $ "expr2sexpr cast: " ++ show from_ty ++ " => " ++ show to_ty ++ " in " ++
 					(render.pretty) castexpr ++ " " ++ " not implemented!"
 
 			where
+
+			cast_fp2arr :: SExpr -> Z3_Type -> Z3_Type -> StateT [SExpr] CovVecM SExpr
+			cast_fp2arr sexpr fp_ty arr_ty@(Z3_Array elem_ty _) = do
+				bv_size <- lift $ sizeofZ3Ty fp_ty
+				elem_size <- lift $ sizeofZ3Ty elem_ty
+				let num_elems = div bv_size elem_size
+				(bv, bv_decl)  <- new_var "bv" (Z3_BitVector bv_size True)
+				(arr,arr_decl) <- new_var "arr" arr_ty
+				(z3_inttype,_) <- lift $ _IntTypesM
+				is <- forM [0..(num_elems-1)] $ make_intconstant z3_inttype
+				Just MachineSpec{endianness} <- lift $ gets machineSpecCVS
+				let addresses = for (
+					(case endianness of Little -> id; Big -> reverse)
+						[ ( (i+1)*elem_size-1 , i*elem_size ) | i <- [0..(num_elems-1)] ] ) $
+							\ (h,l) -> 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 h l bv
+				modify ( ([
+					bv_decl ,
+					arr_decl ,
+					𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, bv ] ＝ sexpr ] ++
+					map (\(i,address) -> 𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i address) (zip is addresses)) ++ )
+				return arr
 
 			new_var :: String -> Z3_Type -> SECovVecM (SExpr,SExpr)
 			new_var name z3ty = do
@@ -2359,7 +2379,7 @@ ty2Z3Type ty = do
 		DirectType tyname _ attrs -> case tyname of
 			TyVoid -> return Z3_Unit
 			TyIntegral intty    -> do
-				sizeofintty <- sizeofIntTy ty
+				sizeofintty <- sizeofTy ty
 				return $ Z3_BitVector sizeofintty $ intty `elem` [TyChar,TyUChar,TyUShort,TyUInt,TyULong,TyULLong]
 			TyFloating floatingty -> return $ case floatingty of
 				TyFloat   -> Z3_Float
@@ -2385,8 +2405,8 @@ ty2Z3Type ty = do
 ty2Z3TypeOnly :: Type -> CovVecM Z3_Type
 ty2Z3TypeOnly ty = ty2Z3Type ty >>= return.fst
 
-sizeofIntTy :: Type -> CovVecM Int
-sizeofIntTy ty@(DirectType tyname _ attrs) = do
+sizeofTy :: Type -> CovVecM Int
+sizeofTy ty@(DirectType tyname _ attrs) = do
 	Just MachineSpec{..} <- gets machineSpecCVS
 	return $ case tyname of
 		TyIntegral intty -> case (intty,map to_mode attrs) of
@@ -2405,11 +2425,21 @@ sizeofIntTy ty@(DirectType tyname _ attrs) = do
 			(TyULong,[])    -> longSize
 			(TyLLong,[])    -> longLongSize
 			(TyULLong,[])   -> longLongSize
-			other           -> error $ "sizeofIntTy " ++ show other ++ " not implemented!"
-		other -> error $ "sizeofIntTy: " ++ (render.pretty) ty ++ " is not an Integral type"
+			other           -> error $ "sizeofZ3Ty " ++ show other ++ " not implemented!"
+		TyFloating floatty -> case floatty of
+			TyFloat  -> 32
+			TyDouble -> 64
+			other           -> error $ "sizeofTy " ++ show other ++ " not implemented!"
+		other -> error $ "sizeofTy: " ++ (render.pretty) ty ++ " is not implemented!"
 	where
 	to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
 	to_mode attr = error $ "attrs2modes: unknown attr " ++ (render.pretty) attr
+
+sizeofZ3Ty :: Z3_Type -> CovVecM Int
+sizeofZ3Ty z3ty = case z3ty of
+	Z3_BitVector size _ -> return size
+	Z3_Float  -> sizeofTy $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
+	Z3_Double -> sizeofTy $ DirectType (TyFloating TyDouble) noTypeQuals noAttributes
 
 z3Ty2SExpr :: Z3_Type -> CovVecM SExpr
 z3Ty2SExpr ty = case ty of
