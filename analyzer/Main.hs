@@ -54,6 +54,7 @@ import Data.Char
 
 -- This is for conversion of Z3 floats to Haskell Floating Point
 import Data.Word (Word32,Word64)
+import Data.Bits
 import Data.Array.ST (newArray,readArray,MArray,STUArray)
 import Data.Array.Unsafe (castSTUArray)
 import GHC.ST (runST,ST)
@@ -250,11 +251,15 @@ mAX_REN_LIST_LENGTH = 3
 
 roundingMode = "roundNearestTiesToEven"
 intType = integral TyInt :: Type
+uLongType = integral TyULong :: Type
+uLongLongType = integral TyULLong :: Type
 charType = integral TyChar :: Type
 ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
+floatType = DirectType (TyFloating TyFloat) noTypeQuals noAttributes
+doubleType = DirectType (TyFloating TyDouble) noTypeQuals noAttributes
 
 showInitialTrace = False && not fastMode
-showModels = True && not fastMode
+showModels = False && not fastMode
 showOnlySolutions = True
 showTraces = True && not fastMode
 showFinalTrace = True && not fastMode
@@ -319,6 +324,7 @@ find_out_sizesM = do
 	return sizes
 	where
 	incl_stdio = "#include <stdio.h>"
+
 	find_out_sizes_src = [cunit|
 $esc:incl_stdio
 
@@ -329,8 +335,8 @@ int main(void)
     char* endianness = "STRANGE";
     unsigned char arr[2];
     *((unsigned short *)arr) = 255;
-    // big endian means MSB is stored at smalless address.
-    if(arr[0]==255) endianness=little; else if(arr[1]==255) endianness=big;
+    // big endian means MSB is stored at smallest address.
+    if(arr[0]==255) endianness=little; else { if(arr[1]==255) endianness=big; else return(1); }
     printf("MachineSpec { intSize=%i, longSize=%i, longLongSize=%i, endianness=%s }\n",
         sizeof(int)*8,sizeof(long int)*8,sizeof(long long)*8,endianness);
     return 0;
@@ -667,6 +673,10 @@ $esc:incl
 
 $esc:uns_float
 $esc:uns_double
+float u2f(unsigned long int u) { float_conv.uint_val = u; return (float_conv.float_val); }
+double u2d(unsigned long long int u) { double_conv.ulong_val = u; return (double_conv.double_val); }
+unsigned long f2u(float f) { float_conv.float_val = f; return (float_conv.uint_val); }
+unsigned long long int d2u(double f) { double_conv.double_val = f; return (double_conv.ulong_val); }
 
 int main(int argc, char* argv[])
 {
@@ -682,8 +692,8 @@ int main(int argc, char* argv[])
 }
 |]
 	where
-	uns_float = "union { float floa; uint32 uin32; } f2u;"
-	uns_double = "union { double doubl; uint64 uin64; } d2u;"
+	uns_float = "union { float float_val; unsigned long int uint_val; } float_conv;"
+	uns_double = "union { double double_val; unsigned long long int ulong_val; } double_conv;"
 
 envItemNotPtrType :: EnvItem -> Bool
 envItemNotPtrType (_,(_,PtrType _ _ _)) = False
@@ -694,9 +704,12 @@ createCHarness orig_rettype formal_params filename funname extdecls = do
 	Just retenvexprs0 <- gets retEnvCVS
 	Just param_env_exprs0 <- gets paramEnvCVS
 	let
-		retenvexprs = filter (envItemNotPtrType.fst) retenvexprs0
 		param_env_exprs = filter (envItemNotPtrType.fst) param_env_exprs0
-		argexprs = map (\ (_,cexpr) -> (render.pretty) (fmap fst cexpr)) param_env_exprs
+		retenvexprs = filter (envItemNotPtrType.fst) retenvexprs0
+		argexprs = for param_env_exprs $ \ (_,cexprwithty) -> case extractType cexprwithty of
+			DirectType (TyFloating TyFloat)  _ _ -> printf "u2f(%s)" ((render.pretty) (fmap fst cexprwithty))
+			DirectType (TyFloating TyDouble) _ _ -> printf "u2d(%s)" ((render.pretty) (fmap fst cexprwithty))
+--		argexprs = map (\ (_,cexpr) -> (render.pretty) (fmap fst cexpr)) param_env_exprs
 		incl_srcfilename = "#include \"" ++ filename ++ "\""
 
 		funcall = (render.pretty) orig_rettype ++ " " ++ returnval_var_name ++ " = " ++
@@ -708,8 +721,9 @@ createCHarness orig_rettype formal_params filename funname extdecls = do
 
 	ret_formatss <- mapM type_format_string $ map (snd.snd.fst) retenvexprs
 	let
-		ret_vals = for retenvexprs $ \ (_,cexpr) -> (render.pretty) (fmap fst cexpr)
-
+		ret_vals = for retenvexprs $ \ (_,cexprwithty) -> case extractType cexprwithty of
+			DirectType (TyFloating TyFloat)  _ _ -> printf "f2u(%s)" ((render.pretty) (fmap fst cexprwithty))
+			DirectType (TyFloating TyDouble) _ _ -> printf "d2u(%s)" ((render.pretty) (fmap fst cexprwithty))
 		print_retval1 = "printf(\"" ++ funname ++ "(" ++ argvals ++ ") = \\n\"," ++
 			(if null argexprs then "" else (intercalate ", " argexprs)) ++ ");"
 		print_retval2 = "printf(\"" ++
@@ -755,10 +769,15 @@ createDeclsM formal_params = do
 			return $ decls ++ decl ++ res_decls
 
 		-- case: deref_ty = <direct-type> where <direct-type> is no struct/union.
-		DirectType _ _ _ -> do
-			let decl = case all_declared of
-				False -> [ (render.pretty) ty ++ " " ++ (render.pretty) expr ++ ";" ]
-				True -> []
+		DirectType tyname _ _ -> do
+			let
+				mb_fixed_floating_ty = case ty of
+					DirectType (TyFloating TyFloat) _ _ -> uLongType
+					DirectType (TyFloating TyDouble) _ _ -> uLongLongType
+					_ -> ty
+				decl = case all_declared of
+					False -> [ (render.pretty) mb_fixed_floating_ty ++ " " ++ (render.pretty) expr ++ ";" ]
+					True -> []
 			tyfs <- type_format_string ty
 			return $ decls ++ decl ++
 				[ "if(sscanf(argv[i++],\"" ++ tyfs ++ "\",&(" ++ (render.pretty) expr ++ "))!=1) return 1;" ]
@@ -784,8 +803,8 @@ type_format_string ty = do
 	Just MachineSpec{..} <- gets machineSpecCVS
 	(z3ty,_) <- ty2Z3Type ty
 	return $ "%" ++ case z3ty of
-		Z3_Float                                        -> "08.8x"
-		Z3_Double                                       -> "016.16x"
+		Z3_Float                                        -> "lx"
+		Z3_Double                                       -> "llx"
 		Z3_BitVector size unsigned | size==intSize      -> if unsigned then "u" else "i"
 		Z3_BitVector size unsigned | size==longSize     -> "l" ++ if unsigned then "u" else "i"
 		Z3_BitVector size unsigned | size==longLongSize -> "ll" ++ if unsigned then "u" else "i"
@@ -1322,8 +1341,6 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 	
 					CBreak ni -> do
 						-- The scope that break reaches is the successor of the first "breakable" scope
-						printLogV 20 $ "### envs = \n" ++ dumpEnvs envs
-						printLogV 20 $ "### bstss = " ++ ren bstss
 						let
 							drop_after_true (_:l1s) ((_,False):l2s) = drop_after_true l1s l2s
 							drop_after_true (_:l1s) ((_,True):l2s) = return (l1s,l2s)
@@ -2438,19 +2455,17 @@ z3Ty2SExpr ty = case ty of
 
 type Solution = [(String,SolutionVal)]
 
-data SolutionVal = IntVal Int | FloatVal Float | DoubleVal Double | PtrVal
-	deriving (Show)
+data SolutionVal = IntVal Int | FloatVal (Word32,Float) | DoubleVal (Word64,Double) | PtrVal
+instance Show SolutionVal where
+	show (IntVal i) = show i
+	show (FloatVal (w,f)) = printf "0x%08.8x=%g" w f
+	show (DoubleVal (w,d)) = printf "0x%016.16x=%g" w d
+	show PtrVal = "<SOME_PTR>"
 instance Eq SolutionVal where
 	IntVal i1    == IntVal i2    = i1==i2
 	PtrVal       == PtrVal       = True
-	FloatVal f1  == FloatVal f2  = abs (f2-f1) <= floatTolerance
-	DoubleVal f1 == DoubleVal f2 = abs (f2-f1) <= doubleTolerance
-
-showVal :: SolutionVal -> String
-showVal (IntVal i)    = show i
-showVal (FloatVal f)  = show f
-showVal (DoubleVal f) = show f
-showVal PtrVal        = "<SOME_PTR>"
+	FloatVal (_,f1)  == FloatVal (_,f2)  = abs (f2-f1) <= floatTolerance
+	DoubleVal (_,f1) == DoubleVal (_,f2) = abs (f2-f1) <= doubleTolerance
 
 declConst2SExpr :: String -> Z3_Type -> CovVecM SExpr
 declConst2SExpr id_name ty = do
@@ -2526,8 +2541,8 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 								IntVal $ case unsigned of
 									True -> fromIntegral i
 									False  -> fromIntegral $ if i < 2^(size-1) then i else i - 2^size
-							Z3_Float -> FloatVal $ parseFloating_fb val_string
-							Z3_Double -> DoubleVal $ parseFloating_fb val_string
+							Z3_Float -> parseFloat val_string
+							Z3_Double -> parseDouble val_string
 							Z3_LDouble -> error $ "long double is not supported"
 							Z3_Ptr _ -> PtrVal
 							other -> error $ "case ty2Z3Type " ++ show other ++ " not implemented" )
@@ -2545,16 +2560,6 @@ escapeDollars s = concat $ for s $ \case
   -  Float32 is a synonym for (_ FloatingPoint  8  24)
   -  Float64 is a synonym for (_ FloatingPoint 11  53)
 -}
-class FB_Lengths a b | a -> b where
-	fb_lengths :: a -> (a,(Int,Int),(b->a),(a->b))
-
--- floatToWord/doubleToWord currently unused in the class
-instance FB_Lengths Float Word32 where
-	fb_lengths a = (a,(8,24),wordToFloat,floatToWord)
-
-instance FB_Lengths Double Word64 where
-	fb_lengths a = (a,(11,53),wordToDouble,doubleToWord)
-
 wordToFloat :: Word32 -> Float
 wordToFloat x = runST (fb_cast x)
 floatToWord :: Float -> Word32
@@ -2568,27 +2573,41 @@ doubleToWord x = runST (fb_cast x)
 fb_cast :: (MArray (STUArray s) a (ST s), MArray (STUArray s) b (ST s)) => a -> ST s b
 fb_cast x = newArray (0::Int,0) x >>= castSTUArray >>= flip readArray 0
 
-parseFloating_fb :: (Eq b,RealFloat a,FB_Lengths a b,Num b) => String -> a
-parseFloating_fb s = case s of
-	_ | "(_ NaN "  `isPrefixOf` s ->  0.0 / 0.0
-	_ | "(_ +oo "  `isPrefixOf` s ->  1.0 / 0.0
-	_ | "(_ -oo "  `isPrefixOf` s -> -1.0 / 0.0
-	_ | "(_ +zero " `isPrefixOf` s ->  0.0
-	_ | "(_ -zero " `isPrefixOf` s -> -0.0
-	_ -> f
+parseFloat :: String -> SolutionVal
+parseFloat s =
+	let [(w,"")] = case s of
+		_ | "(_ NaN "   `isPrefixOf` s -> readxb "b01111111100000000000000000000001"
+		_ | "(_ +oo "   `isPrefixOf` s -> readxb "b01111111100000000000000000000000"
+		_ | "(_ -oo "   `isPrefixOf` s -> readxb "b11111111100000000000000000000000"
+		_ | "(_ +zero " `isPrefixOf` s -> readxb "b00000000000000000000000000000000"
+		_ | "(_ -zero " `isPrefixOf` s -> readxb "b10000000000000000000000000000000"
+		_ -> [(word32,"")]
+	in FloatVal (w,wordToFloat w) 
 	where
-	-- Thats a funny idea: Forwarding the return type to fb_lengths' argument, so Haskell can infer the type a in order
-	-- to determine which instance of FB_Lengths we have.
-	-- Has someone done something like that already?
-	(f,(l2,l3),from_word,_) = fb_lengths $ from_word $ sign * (2^(l2+l3-1)) + expo * (2^(l3-1)) + mantissa
-	(sign,expo,mantissa) = case s =~ ("fp #([b|x][0-9a-f]+) #([b|x][0-9a-f]+) #([b|x][0-9a-f]+)") :: (String,String,String,[String]) of
-		(_,_,_,[s1,s2,s3]) -> (parse_lit s1, parse_lit s2, parse_lit s3)
-	parse_lit :: (Num a,Eq a) => String -> a
-	parse_lit (c:s) = i
-		where
-		[(i,"")] = case c of
-			'b' -> readInt 2 (`elem` "01") (\ c -> ord c - ord '0') s
-			'x' -> readHex s
+	word32 = shift b1 31 .|. shift b2 23 .|. b3
+	(_,_,_,[s1,s2,s3]) = s =~ ("fp #([x|b][0|1]) #([x|b][0-9a-f]+) #([x|b][0-9a-f]+)") :: (String,String,String,[String])	
+	([(b1,"")],[(b2,"")],[(b3,"")]) = (readxb s1,readxb s2,readxb s3)
+	readxb :: ReadS Word32
+	readxb ('b':bs) = readInt 2 (`elem` "01") digitToInt bs
+	readxb ('x':bs) = readHex bs
+
+parseDouble :: String -> SolutionVal
+parseDouble s =
+	let [(w,"")] = case s of
+		_ | "(_ NaN "   `isPrefixOf` s -> readxb "b0111111111110000000000000000000000000000000000000000000000000001"
+		_ | "(_ +oo "   `isPrefixOf` s -> readxb "b0111111111110000000000000000000000000000000000000000000000000000"
+		_ | "(_ -oo "   `isPrefixOf` s -> readxb "b1111111111110000000000000000000000000000000000000000000000000000"
+		_ | "(_ +zero " `isPrefixOf` s -> readxb "b0000000000000000000000000000000000000000000000000000000000000000"
+		_ | "(_ -zero " `isPrefixOf` s -> readxb "b1000000000000000000000000000000000000000000000000000000000000000"
+		_ -> [(word64,"")]
+	in DoubleVal (w,wordToDouble w) 
+	where
+	word64 = shift b1 63 .|. shift b2 52 .|. b3
+	(_,_,_,[s1,s2,s3]) = s =~ ("fp #([x|b][0|1]) #([x|b][0-9a-f]+) #([x|b][0-9a-f]+)") :: (String,String,String,[String])	
+	([(b1,"")],[(b2,"")],[(b3,"")]) = (readxb s1,readxb s2,readxb s3)
+	readxb :: ReadS Word64
+	readxb ('b':bs) = readInt 2 (`elem` "01") digitToInt bs
+	readxb ('x':bs) = readHex bs
 
 -- Find solutions for floating point constants close to 1.0 (in order to no produce mismatches due to rounding stuff)
 fPMinimizer name = [ SExpr [SLeaf "minimize",SExpr [SLeaf "bvsub", SLeaf "#x00000001",
@@ -2662,9 +2681,15 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 	srcfilename <- gets srcFilenameCVS
 	Just filename <- gets checkExeNameCVS
 	absolute_filename <- liftIO $ makeAbsolute srcfilename
-	let args = for param_env $ \ (_,(newident,ty)) -> case ty of
+	args <- forM param_env $ \ (_,(newident,ty)) -> case ty of
 		DirectType _ _ _ -> case lookup (identToString newident) solution of
-			Just v -> showVal v
+			Just (FloatVal (w,_)) -> do
+				formats <- type_format_string floatType
+				return $ printf formats w
+			Just (DoubleVal (w,_)) -> do
+				formats <- type_format_string doubleType
+				return $ printf formats w
+			Just v -> return $ show v
 		ty -> error $ "checkSolutionM args: type " ++ (render.pretty) ty ++ " not implemented!"
 	printLogV 1 $ "checkSolution args = " ++ show args
 	(stdout,stderr) <- runHereM (takeDirectory absolute_filename) (takeFileName filename) args
@@ -2689,8 +2714,8 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 				let exec_result = case ty of
 					DirectType (TyIntegral _) _ _       -> IntVal $ read s
 					DirectType (TyFloating floatty) _ _ -> case floatty of
-						TyFloat  -> FloatVal  $ read s
-						TyDouble -> DoubleVal $ read s
+						TyFloat  -> let [(w,"")] = readHex s in FloatVal (w,wordToFloat w)
+						TyDouble -> let [(w,"")] = readHex s in DoubleVal (w,wordToDouble w)
 					DirectType (TyEnum _) _ _           -> IntVal $ read s
 					_ -> error $ "checkSolutionM: parsing type " ++ (render.pretty) ty ++ " of " ++ ident_s ++ " not implemented!"
 				when (exec_result /= predicted_result) $ do

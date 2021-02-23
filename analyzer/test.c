@@ -1,3 +1,4 @@
+/*
 typedef union
  {
  unsigned short _Sh[sizeof(double)/sizeof(short)];
@@ -14,3 +15,9 @@ short f(double *px)
            ps->_Sh[1] != 0 ||
            ps->_Sh[0] != 0 ? 2 : 1));
  }
+*/
+float f(float x)
+{
+    if(x==3.14) return (x*x+1.0);
+    return(0.0);
+}
