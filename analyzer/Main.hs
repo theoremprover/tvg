@@ -86,9 +86,9 @@ main = do
 	getZonedTime >>= return.(++"\n").show >>= writeFile logFileTxt
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
+		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
 --		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC"] --["-writeAST","-writeGlobalDecls"]
@@ -261,8 +261,8 @@ doubleType = DirectType (TyFloating TyDouble) noTypeQuals noAttributes
 showInitialTrace = False && not fastMode
 showModels = False && not fastMode
 showOnlySolutions = True
-showTraces = True && not fastMode
-showFinalTrace = True && not fastMode
+showTraces = False && not fastMode
+showFinalTrace = False && not fastMode
 checkSolutions = True
 returnval_var_name = "return_val"
 floatTolerance = 1e-7 :: Float
@@ -709,7 +709,7 @@ createCHarness orig_rettype formal_params filename funname extdecls = do
 		argexprs = for param_env_exprs $ \ (_,cexprwithty) -> case extractType cexprwithty of
 			DirectType (TyFloating TyFloat)  _ _ -> printf "u2f(%s)" ((render.pretty) (fmap fst cexprwithty))
 			DirectType (TyFloating TyDouble) _ _ -> printf "u2d(%s)" ((render.pretty) (fmap fst cexprwithty))
---		argexprs = map (\ (_,cexpr) -> (render.pretty) (fmap fst cexpr)) param_env_exprs
+			_ -> (render.pretty) (fmap fst cexprwithty)
 		incl_srcfilename = "#include \"" ++ filename ++ "\""
 
 		funcall = (render.pretty) orig_rettype ++ " " ++ returnval_var_name ++ " = " ++
@@ -724,6 +724,7 @@ createCHarness orig_rettype formal_params filename funname extdecls = do
 		ret_vals = for retenvexprs $ \ (_,cexprwithty) -> case extractType cexprwithty of
 			DirectType (TyFloating TyFloat)  _ _ -> printf "f2u(%s)" ((render.pretty) (fmap fst cexprwithty))
 			DirectType (TyFloating TyDouble) _ _ -> printf "d2u(%s)" ((render.pretty) (fmap fst cexprwithty))
+			_ -> (render.pretty) (fmap fst cexprwithty)
 		print_retval1 = "printf(\"" ++ funname ++ "(" ++ argvals ++ ") = \\n\"," ++
 			(if null argexprs then "" else (intercalate ", " argexprs)) ++ ");"
 		print_retval2 = "printf(\"" ++
