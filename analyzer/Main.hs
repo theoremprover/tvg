@@ -475,6 +475,9 @@ showTestVector funname (env,ret_env,solution) = funname ++ " ( " ++ intercalate 
 data CoverageKind = Branch_Cov | MCDC_Cov
 	deriving (Show,Eq)
 
+createBranches :: CExpr -> CovVecM [Branch]
+createBranches ()
+
 data CovVecState = CovVecState {
 	globDeclsCVS     :: GlobalDecls,
 	newNameIndexCVS  :: Int,
@@ -627,21 +630,21 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 	modify $ \ s -> s { retEnvCVS = Just ret_env_exprs }
 
 	-- Go through the body of the function and determine all decision points
-	let condition_points = Set.fromList (
-		everything (++) (mkQ [] searchcondpoint) body ++
-		everything (++) (mkQ [] searchexprcondpoint) body )
-		where
-		searchcondpoint :: CStat -> [Branch]
-		searchcondpoint (CWhile cond _ _ _)        = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
+	
+	let condition_points = Set.fromList $ condpoints ++ exprcondpoints
+	condpoints <- execStateT (everywhereM (mkM searchcondpoint) body) [] where
+	condexprpoints <- execStateT (everywhereM (mkM searchexprcondpoint) body) [] where
+		searchcondpoint :: CStat -> StateT [Branch] CovVecM CStat
+		searchcondpoint (CWhile cond _ _ _)        = createBranches covkind cond
 		searchcondpoint ccase@(CCase _ _ _)        = [ Then (lineColNodeInfo ccase) ]
 		searchcondpoint cdefault@(CDefault stmt _) = [ Then (lineColNodeInfo cdefault) ]
 		searchcondpoint (CFor _ (Just cond) _ _ _) = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
 		searchcondpoint (CFor _ Nothing _ _ _)     = error $ "searchcondpoint: for(_,,_) not implemented!"
 		searchcondpoint (CIf cond _ _ _)           = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
-		searchcondpoint _                          = []
+		searchcondpoint stmt                       = return stmt
 
 		searchexprcondpoint :: CExpr -> [Branch]
-		searchexprcondpoint (CCond cond _ _ _)     = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
+		searchexprcondpoint (CCond cond _ _ _)     = createBranches cond
 		searchexprcondpoint _                      = []
 
 	modify $ \ s -> s { allCondPointsCVS = condition_points }
