@@ -90,7 +90,8 @@ main = do
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] -> "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["ceilf.i","xfdint.i"]) ++ ["-MCDC"]
-		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
+--		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ ["-MCDC","-writeModels"]
+		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
@@ -182,10 +183,12 @@ main = do
 			when ("-writeGlobalDecls" `elem` opts) $
 				writeFile "globdecls.html" $ globdeclsToHTMLString globdecls
 
-			let mCDCCOverage = "-MCDC" `elem` opts
+			let coveragekind = case opts of
+			 	opts | "-MCDC" `elem` opts -> MCDC_Cov
+			 	_ -> Branch_Cov
 			(every_branch_covered,s) <- runStateT covVectorsM $
 				CovVecState globdecls 1 allFileName Nothing funname undefined gcc opts
-					Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1) mCDCCOverage
+					Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1) coveragekind
 			let
 				(testvectors_rev,covered) = analysisStateCVS s
 				testvectors = reverse testvectors_rev
@@ -224,7 +227,7 @@ main = do
 
 			printLog 0 $ "\n===== SUMMARY =====\n\n"
 			
-			printLog 0 $ "Coverage to reach: " ++ (if mCDCCOverage then "MC/DC" else "Branch") ++ "\n"
+			printLog 0 $ "Coverage to reach: " ++ show coveragekind ++ "\n"
 
 			forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
 				printLog 0 $ "Test Vector " ++ show traceid ++ " covering "
@@ -469,6 +472,9 @@ showTestVector funname (env,ret_env,solution) = funname ++ " ( " ++ intercalate 
 			Nothing  -> "DONT_CARE"
 			Just val -> show val
 
+data CoverageKind = Branch_Cov | MCDC_Cov
+	deriving (Show,Eq)
+
 data CovVecState = CovVecState {
 	globDeclsCVS     :: GlobalDecls,
 	newNameIndexCVS  :: Int,
@@ -486,7 +492,7 @@ data CovVecState = CovVecState {
 	machineSpecCVS   :: Maybe MachineSpec,
 	defTableCVS      :: DefTable,
 	logIndentCVS     :: Int,
-	mCDCcoverageCVS  :: Bool
+	coverageKindCVS  :: CoverageKind
 	}
 
 data Stats = Stats {
@@ -515,7 +521,7 @@ data TraceElem =
 	DebugOutput String CExprWithType
 	deriving Data
 
-data Branch = Then Location | Else Location
+data Branch = Then Location | Else Location | Branch String Location
 	deriving Eq
 -- Order decision points first by location, and second by the constructor (Then/Else)
 instance Ord Branch where
@@ -526,10 +532,12 @@ instance Ord Branch where
 instance Show Branch where
 	show (Then loc) = "Then branch at " ++ showLocation loc
 	show (Else loc) = "Else branch at " ++ showLocation loc
+	show (Branch s loc) = "Branch " ++ s ++ " " ++ showLocation loc
 
 branchLocation :: Branch -> Location
 branchLocation (Then loc) = loc
 branchLocation (Else loc) = loc
+branchLocation (Branch _ loc) = loc
 
 instance CNode TraceElem where
 	nodeInfo (Assignment lexpr _)       = extractNodeInfo lexpr
@@ -1365,24 +1373,32 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 						unfoldTracesM ret_type toplevel forks new_envs trace new_bstss
 	
 					CIf cond then_stmt mb_else_stmt ni -> do
-						let then_trace_m forks' real_cond = transids real_cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
-							r <- unfoldTracesM ret_type toplevel forks' envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest,breakable) : rest2 )
-							return r
-						let else_trace_m forks' real_cond = transids (CUnary CNegOp real_cond (annotation real_cond)) (Just _BoolTypes) trace $ \ (ncond',trace') -> do
-							let not_cond = Condition (Just False) ncond'
-							case mb_else_stmt of
-								Nothing        -> unfoldTracesM ret_type toplevel forks' envs (not_cond : trace') ( (rest,breakable) : rest2 )
-								Just else_stmt -> unfoldTracesM ret_type toplevel forks' envs (not_cond : trace') ( (CBlockStmt else_stmt : rest,breakable) : rest2 )
+						traces_m :: [Int -> CExpr -> CovVecM UnfoldTracesRet] <- gets coverageKindCVS >>= \case
+							Branch_Cov -> return $ [
+								\ forks' real_cond -> transids real_cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
+									unfoldTracesM ret_type toplevel forks' envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest,breakable) : rest2 ),
+								\ forks' real_cond -> transids (CUnary CNegOp real_cond (annotation real_cond)) (Just _BoolTypes) trace $ \ (ncond',trace') -> do
+									let not_cond = Condition (Just False) ncond'
+									case mb_else_stmt of
+										Nothing        -> unfoldTracesM ret_type toplevel forks' envs (not_cond : trace') ( (rest,breakable) : rest2 )
+										Just else_stmt -> unfoldTracesM ret_type toplevel forks' envs (not_cond : trace') ( (CBlockStmt else_stmt : rest,breakable) : rest2 )
+								]
+							MCDC_Cov -> error "No MCDC yet"
 						case recognizeAnnotation cond of
 							-- 12 is a wildcard in the choice list
 							-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
 							(real_cond,Just (ns,num_reached)) | length ns > num_reached && ns!!num_reached /= 12 -> do
 								printLogV 2 $ "Recognized IF annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
 									" (reached " ++ show num_reached ++ " times)"
-								case ns!!num_reached of
-									1 -> then_trace_m forks real_cond
-									2 -> else_trace_m forks real_cond
+								(traces_m !! (ns!!num_reached - 1)) forks real_cond
 							(real_cond,_) -> do
+								results <- sequence $ map (\ m -> m (forks+1) real_cond) traces_m
+								return $ case partitionEithers results of
+									(left_results,[]) -> Left $ concat left_results
+									([],successes) -> Right $ case toplevel of
+										False -> or successes
+										True  -> and successes
+{-
 								either_then <- then_trace_m (forks+1) real_cond
 								either_else <- else_trace_m (forks+1) real_cond
 								return $ case (either_then,either_else) of
@@ -1390,6 +1406,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 									(Right then_success,Right else_success) -> case toplevel of
 										False -> Right $ then_success || else_success
 										True  -> Right $ then_success && else_success
+-}
 	
 					CReturn Nothing _ | toplevel -> analyzeTraceM (Just ret_type) trace >>= return.Right
 					CReturn Nothing _            -> return $ Left [trace]

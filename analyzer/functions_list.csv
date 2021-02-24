@@ -1,0 +1,38 @@
+Library,Function
+Dinkumware,memcpy
+Dinkumware, memset
+Dinkumware, memcmp
+Libgcc, fixsfdi
+Dinkumware, ceilf
+Dinkumware, roundf
+Dinkumware, sqrtf
+Libgcc, make_dp
+Libgcc, thenan_df
+Libgcc, moddi3
+Libgcc, udivdi3
+Libgcc, ashldi3
+Libgcc, lshrdi3
+Libgcc, pack_f
+Libgcc, unpack_f
+Libgcc, make_fp
+Libgcc, pack_d
+Libgcc, unpack_d
+Libgcc, fpcmp_parts_d
+Libgcc, udiv6432
+Dinkumware, fabs
+Dinkumware, fabsf
+Dinkumware, fmax
+Dinkumware, fmaxf
+Dinkumware, fmin
+Dinkumware, fminf
+Dinkumware, Dtest
+Dinkumware, FDint
+Dinkumware, FDscale
+Dinkumware, FDtest
+Dinkumware, FDunscale
+Dinkumware, Feraise
+Dinkumware, FNan
+Dinkumware, Inf
+Dinkumware, feraiseexcept
+Dinkumware, Fdnorm
+, 
