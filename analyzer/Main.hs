@@ -472,11 +472,6 @@ showTestVector funname (env,ret_env,solution) = funname ++ " ( " ++ intercalate 
 			Nothing  -> "DONT_CARE"
 			Just val -> show val
 
-data CoverageKind = Branch_Cov | MCDC_Cov
-	deriving (Show,Eq)
-
-createBranches :: CExpr -> CovVecM [Branch]
-createBranches ()
 
 data CovVecState = CovVecState {
 	globDeclsCVS     :: GlobalDecls,
@@ -541,6 +536,20 @@ branchLocation :: Branch -> Location
 branchLocation (Then loc) = loc
 branchLocation (Else loc) = loc
 branchLocation (Branch _ loc) = loc
+
+data CoverageKind = Branch_Cov | MCDC_Cov
+	deriving (Show,Eq)
+
+createBranches :: CExpr -> CovVecM [(CExpr,Branch)]
+createBranches expr = do
+ 	gets coverageKindCVS >>= \case
+ 		Branch_Cov -> return [ (Then (lineColNodeInfo expr),expr), (Else (lineColNodeInfo expr),not_c expr) ]
+ 		MCDC_Cov   -> return $ mcdc_cov expr
+ 	where
+	mcdc_cov (CBinOp CLndOp expr1 expr2 _) = 
+	mcdc_cov (CBinOp CLorOp expr1 expr2 _)
+	mcdc_cov other_expr = 
+
 
 instance CNode TraceElem where
 	nodeInfo (Assignment lexpr _)       = extractNodeInfo lexpr
@@ -630,24 +639,30 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 	modify $ \ s -> s { retEnvCVS = Just ret_env_exprs }
 
 	-- Go through the body of the function and determine all decision points
-	
-	let condition_points = Set.fromList $ condpoints ++ exprcondpoints
-	condpoints <- execStateT (everywhereM (mkM searchcondpoint) body) [] where
-	condexprpoints <- execStateT (everywhereM (mkM searchexprcondpoint) body) [] where
-		searchcondpoint :: CStat -> StateT [Branch] CovVecM CStat
-		searchcondpoint (CWhile cond _ _ _)        = createBranches covkind cond
-		searchcondpoint ccase@(CCase _ _ _)        = [ Then (lineColNodeInfo ccase) ]
-		searchcondpoint cdefault@(CDefault stmt _) = [ Then (lineColNodeInfo cdefault) ]
-		searchcondpoint (CFor _ (Just cond) _ _ _) = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
-		searchcondpoint (CFor _ Nothing _ _ _)     = error $ "searchcondpoint: for(_,,_) not implemented!"
-		searchcondpoint (CIf cond _ _ _)           = [ Then (lineColNodeInfo cond), Else (lineColNodeInfo cond) ]
-		searchcondpoint stmt                       = return stmt
+	let
+		searchcondpoint :: CStat -> StateT [(Branch,CExpr)] CovVecM CStat
+		searchcondpoint stmt = do
+			add_branches <- case stmt of
+				CWhile cond _ _ _        -> createBranches cond
+				CCase _ _ _              -> return [ Then (lineColNodeInfo ccase) ]
+				CDefault _ _             -> return [ Then (lineColNodeInfo cdefault) ]
+				CFor _ (Just cond) _ _ _ -> createBranches cond
+				CFor _ Nothing _ _ _     -> error $ "searchcondpoint: for(_,,_) not implemented!"
+				CIf cond _ _ _           -> createBranches cond
+				_                        -> return []
+			modify (add_branches++)
+			return stmt
 
-		searchexprcondpoint :: CExpr -> [Branch]
-		searchexprcondpoint (CCond cond _ _ _)     = createBranches cond
-		searchexprcondpoint _                      = []
-
-	modify $ \ s -> s { allCondPointsCVS = condition_points }
+		searchexprcondpoint :: CExpr -> StateT [(Branch,CExpr)] CovVecM CExpr
+		searchexprcondpoint expr = do
+			add_branches <- case expr of
+				CCond cond _ _ _ -> createBranches cond
+				_                -> return []
+			modify (add_branches++)
+			return expr
+	condpoints <- execStateT (everywhereM (mkM searchcondpoint) body) []
+	condexprpoints <- execStateT (everywhereM (mkM searchexprcondpoint) body) []
+	modify $ \ s -> s { allCondPointsCVS = Set.fromList $ map fst $ condpoints ++ exprcondpoints }
 
 	let
 		srcfilename cnode | isNoPos (posOf cnode) = Nothing
