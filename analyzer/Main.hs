@@ -83,11 +83,13 @@ main :: IO ()
 main = do
 	-- when there is an error, we'd like to have *all* output till then
 	hSetBuffering stdout NoBuffering
-	time_line <- getZonedTime >>= return.(++"\n").show
+
+	time_line <- getZonedTime >>= return.(++"\n\n").show
 	writeFile logFileTxt time_line
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
+--		[] -> "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["ceilf.i","xfdint.i"]) ++ ["-MCDC"]
 		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
@@ -141,6 +143,13 @@ main = do
 								when ("-writeAST" `elem` opts) $
 									writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
 								return extdecls
+
+	let init_msg =
+		"Compiler: " ++ gcc ++ "\n" ++
+		"Function: " ++ funname ++ "\n" ++
+		"Source files: " ++ show filenames ++ "\n"
+	printToSolutions init_msg
+	printLog 0 $ init_msg
 
 	extdecls <- parse_filearg filenames
 
@@ -824,7 +833,7 @@ locationToName (l,c,len) = show l ++ "_" ++ show c ++ "_" ++ show len
 showLocation :: Location -> String
 showLocation (l,c,len) = "line " ++ show l ++ ", col " ++ show c ++ ", len " ++ show len
 
-printToSolutions :: String -> CovVecM ()
+printToSolutions :: (MonadIO m) => String -> m ()
 printToSolutions msg = liftIO $ appendFile solutionsFile msg
 
 -- In case of a cutoff, mb_ret_type is Nothing.
@@ -867,7 +876,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 				Just (_,_,[]) -> myError $ "Empty solution: \n" ++ show_solution_msg
 				Just solution -> do
 					incNumSolutionM
-					printToSolutions $ "\n---- Trace " ++ show traceid ++ " -----------------------------------\n"
+					printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
 					printToSolutions show_solution_msg
 					
 					startend <- gets funStartEndCVS
@@ -2583,7 +2592,7 @@ fb_cast x = newArray (0::Int,0) x >>= castSTUArray >>= flip readArray 0
 parseFloat :: String -> SolutionVal
 parseFloat s =
 	let [(w,"")] = case s of
-		_ | "(_ NaN "   `isPrefixOf` s -> readxb "b01111111100000000000000000000001"
+		_ | "(_ NaN "   `isPrefixOf` s -> readxb "b01111111110000000000000000000001"   -- this is a quiet NaN!
 		_ | "(_ +oo "   `isPrefixOf` s -> readxb "b01111111100000000000000000000000"
 		_ | "(_ -oo "   `isPrefixOf` s -> readxb "b11111111100000000000000000000000"
 		_ | "(_ +zero " `isPrefixOf` s -> readxb "b00000000000000000000000000000000"
@@ -2601,7 +2610,7 @@ parseFloat s =
 parseDouble :: String -> SolutionVal
 parseDouble s =
 	let [(w,"")] = case s of
-		_ | "(_ NaN "   `isPrefixOf` s -> readxb "b0111111111110000000000000000000000000000000000000000000000000001"
+		_ | "(_ NaN "   `isPrefixOf` s -> readxb "b0111111111111000000000000000000000000000000000000000000000000001"  -- this is a quiet NaN!
 		_ | "(_ +oo "   `isPrefixOf` s -> readxb "b0111111111110000000000000000000000000000000000000000000000000000"
 		_ | "(_ -oo "   `isPrefixOf` s -> readxb "b1111111111110000000000000000000000000000000000000000000000000000"
 		_ | "(_ +zero " `isPrefixOf` s -> readxb "b0000000000000000000000000000000000000000000000000000000000000000"
@@ -2727,13 +2736,13 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 					_ -> error $ "checkSolutionM: parsing type " ++ (render.pretty) ty ++ " of " ++ ident_s ++ " not implemented!"
 				let check_OK = exec_result == predicted_result
 				when (not check_OK) $ do
-					let txt = "ERROR in " ++ show traceid ++ " for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result ++ "\n"
+					let txt = "\ncheckSolutionM ERROR for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result ++ "\n"
 					printToSolutions txt
 -- 					myError txt
 				return check_OK
 	let all_ok = all (==True) oks
 	when all_ok $ do
-		let all_ok_msg = "checkSolutionM " ++ show traceid ++ " OK.\n"
+		let all_ok_msg = "\ncheckSolutionM " ++ show traceid ++ " ok.\n"
 		printLogV 1 all_ok_msg
 		printToSolutions all_ok_msg
 
