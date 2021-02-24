@@ -83,7 +83,9 @@ main :: IO ()
 main = do
 	-- when there is an error, we'd like to have *all* output till then
 	hSetBuffering stdout NoBuffering
-	getZonedTime >>= return.(++"\n").show >>= writeFile logFileTxt
+	time_line <- getZonedTime >>= return.(++"\n").show
+	writeFile logFileTxt time_line
+	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
@@ -287,6 +289,7 @@ logFile = analyzerPath </> "log"
 logFileTxt = logFile <.> "txt"
 logFileHtml = logFile <.> "html"
 allFileName = analyzerPath </> "all" <.> "c"
+solutionsFile = analyzerPath </> "solutions.txt"
 
 ------------------------
 
@@ -332,11 +335,12 @@ int main(void)
 {
     char* little = "Little";
     char* big = "Big";
-    char* endianness = "STRANGE";
+    char* endianness;
     unsigned char arr[2];
     *((unsigned short *)arr) = 255;
     // big endian means MSB is stored at smallest address.
-    if(arr[0]==255) endianness=little; else { if(arr[1]==255) endianness=big; else return(1); }
+    if(arr[0]==255 && arr[1]==0) endianness=little; else { if(arr[0]==0 && arr[1]==255) endianness=big; else
+    	{ printf ("ERROR: Could not determine Endianness!\n"); return(1); } }
     printf("MachineSpec { intSize=%i, longSize=%i, longLongSize=%i, endianness=%s }\n",
         sizeof(int)*8,sizeof(long int)*8,sizeof(long long)*8,endianness);
     return 0;
@@ -435,7 +439,7 @@ showLine trace = unlines $ map show (filter isnotbuiltin trace)
 
 show_solution _ Nothing = "No solution"
 show_solution _ (Just (_,_,[])) = "Empty solution"
-show_solution funname (Just v@(_,_,solution)) = unlines $ map show solution ++ [ showTestVector funname v ]
+show_solution funname (Just v) = unlines [ showTestVector funname v ]
 
 showEnv :: Env -> String
 showEnv env = "{\n    " ++ intercalate " ,\n    " (map (render.pretty) env) ++ "\n    }"
@@ -820,6 +824,9 @@ locationToName (l,c,len) = show l ++ "_" ++ show c ++ "_" ++ show len
 showLocation :: Location -> String
 showLocation (l,c,len) = "line " ++ show l ++ ", col " ++ show c ++ ", len " ++ show len
 
+printToSolutions :: String -> CovVecM ()
+printToSolutions msg = liftIO $ appendFile solutionsFile msg
+
 -- In case of a cutoff, mb_ret_type is Nothing.
 analyzeTraceM :: Maybe Type -> [TraceElem] -> CovVecM Bool
 analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_type,ren res_line,ren "traceid=",ren traceid] $ do
@@ -850,39 +857,42 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 		Left solvable -> return solvable
 		Right resultdata@(model_string,mb_solution) -> do
 			funname <- gets funNameCVS
-			printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n" ++
-				show_solution funname mb_solution ++ "\n"
-
-			startend <- gets funStartEndCVS
-			let visible_trace = Set.fromList $ concatMap to_branch res_line
-				where
-				is_visible_traceelem :: (Location,Location) -> CExprWithType -> Bool
-				is_visible_traceelem (start,end) expr = start <= lc && lc < end where
-					lc = lineColNodeInfo $ extractNodeInfo expr
-				to_branch (Condition (Just b) cond) | is_visible_traceelem startend cond =
-					[ (if b then Then else Else) (lineColNodeInfo $ extractNodeInfo cond) ]
-				to_branch _ = []
-			printLogV 1 $ "Covered branches:\n" ++ unlines (map (("\t"++).show) $ Set.toList visible_trace)
-
-			let
-				traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
-				solved = is_solution traceanalysisresult
-			case solved of
-				False -> do
+			let show_solution_msg = show_solution funname mb_solution ++ "\n"
+			printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n" ++ show_solution_msg
+			case mb_solution of
+				Nothing -> do
 					incNumNoSolutionM
-					return ()
-				True  -> do
+					printLogV 1 "No solution."
+					return False
+				Just (_,_,[]) -> myError $ "Empty solution: \n" ++ show_solution_msg
+				Just solution -> do
 					incNumSolutionM
+					printToSolutions $ "\n---- Trace " ++ show traceid ++ " -----------------------------------\n"
+					printToSolutions show_solution_msg
+					
+					startend <- gets funStartEndCVS
+					let visible_trace = Set.fromList $ concatMap to_branch res_line
+						where
+						is_visible_traceelem :: (Location,Location) -> CExprWithType -> Bool
+						is_visible_traceelem (start,end) expr = start <= lc && lc < end where
+							lc = lineColNodeInfo $ extractNodeInfo expr
+						to_branch (Condition (Just b) cond) | is_visible_traceelem startend cond =
+							[ (if b then Then else Else) (lineColNodeInfo $ extractNodeInfo cond) ]
+						to_branch _ = []
+		
+					let cov_branches = "\tCovered branches:\n" ++ unlines (map (("\t"++).show) $ Set.toList visible_trace)
+					printLogV 1 cov_branches
+					printToSolutions cov_branches
 					when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
 					(tas,covered) <- gets analysisStateCVS
+					let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
 					modify $ \ s -> s { analysisStateCVS =
-						-- Are all the decision points are already covered?
+						-- Are all the decision points are already covered? They can't, probably...?
 						-- If yes, this trace does not contribute to full coverage...
 						case visible_trace ⊆ covered of
 							False -> (traceanalysisresult:tas,visible_trace ∪ covered)
 							True  -> (tas,covered) }
-			printLogV 10 $ "*** " ++ show traceid ++ " is " ++ show solved
-			return solved
+					return True
 
 	where
 
@@ -900,10 +910,6 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 trace2traceid trace = concatMap extract_conds trace where
 	extract_conds (Condition (Just b) _) = [ if b then 1 else 2 ]
 	extract_conds _ = []
-
-is_solution :: TraceAnalysisResult -> Bool
-is_solution (_,_,_,(_,Just (_,_,solution))) = not $ null solution
-is_solution _ = False
 
 lineColNodeInfo :: (CNode a) => a -> Location
 lineColNodeInfo cnode = if isSourcePos pos_te then (posRow pos_te,posColumn pos_te,fromJust $ lengthOfNode ni) else (-1,-1,-1)
@@ -2705,12 +2711,12 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 			"ret_env = " ++ showEnv ret_env ++ "\n" ++
 			"ret_solution = " ++ show ret_solution ++ "\n" ++
 			"outputs = " ++ show outputs ++ "\n"
-	forM_ (zip3 ret_env outputs ret_solution) $ \ ((sourceident,(ident,ty)),s,(ident_s,predicted_result)) -> do
+	oks <- forM (zip3 ret_env outputs ret_solution) $ \ ((sourceident,(ident,ty)),s,(ident_s,predicted_result)) -> do
 		when (identToString ident /= ident_s) $
 			myError $ "checkSolutionM: ident=" ++ identToString ident ++ " and ident_s=" ++ ident_s ++ " mismatch"
 		case ty of
-			PtrType _ _ _ -> return ()
-			DirectType (TyComp _) _ _ -> return ()
+			PtrType _ _ _ -> return True
+			DirectType (TyComp _) _ _ -> return True
 			_ -> do
 				let exec_result = case ty of
 					DirectType (TyIntegral _) _ _       -> IntVal $ read s
@@ -2719,9 +2725,16 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 						TyDouble -> let [(w,"")] = readHex s in DoubleVal (w,wordToDouble w)
 					DirectType (TyEnum _) _ _           -> IntVal $ read s
 					_ -> error $ "checkSolutionM: parsing type " ++ (render.pretty) ty ++ " of " ++ ident_s ++ " not implemented!"
-				when (exec_result /= predicted_result) $ do
-					let txt = "ERROR in " ++ show traceid ++ " for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result
-					myError txt
+				let check_OK = exec_result == predicted_result
+				when (not check_OK) $ do
+					let txt = "ERROR in " ++ show traceid ++ " for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result ++ "\n"
+					printToSolutions txt
+-- 					myError txt
+				return check_OK
+	let all_ok = all (==True) oks
+	when all_ok $ do
+		let all_ok_msg = "checkSolutionM " ++ show traceid ++ " OK.\n"
+		printLogV 1 all_ok_msg
+		printToSolutions all_ok_msg
 
-	printLogV 1 $ "checkSolutionM " ++ show traceid ++ " OK."
 	return resultdata
