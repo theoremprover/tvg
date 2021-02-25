@@ -395,6 +395,8 @@ instance LogRender Type where
 	ren a = (render.pretty) a
 instance LogRender CBlockItem where
 	ren a = (render.pretty) a
+instance LogRender Branch where
+	ren branch = show branch
 
 -------------------
 
@@ -940,7 +942,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 	where
 
 	trace = reverse res_line
-	traceid = trace2traceid trace
+	traceid :: [Int] = trace2traceid trace
 
 	showtraceM cond stage combinator trace = do
 		trace' <- combinator trace
@@ -951,7 +953,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 		return trace'
 
 trace2traceid trace = concatMap extract_conds trace where
-	extract_conds (Condition (Just b) _) = [ if b then 1 else 2 ]
+	extract_conds (Condition (Just branch) _) = [ if isElseBranch branch then 2 else 1 ]
 	extract_conds _ = []
 
 lineColNodeInfo :: (CNode a) => a -> Location
@@ -1407,8 +1409,9 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 							Just (ns,num_reached) | length ns > num_reached && ns!!num_reached /= 12 -> do
 								printLogV 2 $ "Recognized \"if\" annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
 									" (reached " ++ show num_reached ++ " times)"
-								return (all_branches !! (ns!!num_reached - 1),forks)
-							Nothing -> return (all_branches,forks+1)					
+								return ([all_branches !! (ns!!num_reached - 1)],forks)
+							Nothing -> return (all_branches,forks+1)			
+
 						results <- forM branches_to_follow $ \ (branch,branch_cond) -> do
 							let cbstmts = case isElseBranch branch of
 								False -> [CBlockStmt then_stmt]
@@ -1424,7 +1427,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 							([],successes) -> Right $ case toplevel of
 								False -> or successes
 								True  -> and successes
-	
+
 						
 {-
 data Branch = Branch { branchLocation::Location, isElseBranch::Bool, nameBranch::String } 
