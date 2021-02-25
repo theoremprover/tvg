@@ -39,6 +39,7 @@ dependencies:
 - containers-unicode-symbols
 - mainland-pretty
 - array
+- FloatingHex
 
 executables:
 #  tvg-exe:

@@ -51,6 +51,7 @@ import Data.List
 import Data.Maybe
 import System.IO
 import Data.Char
+import Data.Numbers.FloatingHex (showHFloat)
 
 -- This is for conversion of Z3 floats to Haskell Floating Point
 import Data.Word (Word32,Word64)
@@ -91,12 +92,12 @@ main = do
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] -> "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["ceilf.i","xfdint.i"]) ++ ["-MCDC"]
 --		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ ["-MCDC","-writeModels"]
-		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : []
+--		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
 --		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
---		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : [] --"-writeAST","-writeGlobalDecls"]
@@ -513,43 +514,50 @@ type CovVecM = StateT CovVecState IO
 
 data TraceElem =
 	Assignment CExprWithType CExprWithType |
-	Condition (Maybe Bool) CExprWithType |
+	Condition (Maybe Branch) CExprWithType |
 	NewDeclaration (Ident,Type) |
 	Return CExprWithType |
 	DebugOutput String CExprWithType
 	deriving Data
 
-data Branch = Then Location | Else Location | Branch String Location
-	deriving Eq
--- Order decision points first by location, and second by the constructor (Then/Else)
-instance Ord Branch where
-	Then b1 <= Then b2 = b1 <= b2
-	Then b1 <= Else b2 = if b1==b2 then True else b1 < b2
-	Else b1 <= Then b2 = if b1==b2 then False else b1 < b2
-	Else b1 <= Else b2 = b1 <= b2
+data Branch = Branch { branchLocation::Location, isElseBranch::Bool, nameBranch::String } 
+	deriving (Eq,Ord,Data)
+-- Order decision points first by location, and second by the direction (Then/Else)
 instance Show Branch where
-	show (Then loc) = "Then branch at " ++ showLocation loc
-	show (Else loc) = "Else branch at " ++ showLocation loc
-	show (Branch s loc) = "Branch " ++ s ++ " " ++ showLocation loc
-
-branchLocation :: Branch -> Location
-branchLocation (Then loc) = loc
-branchLocation (Else loc) = loc
-branchLocation (Branch _ loc) = loc
+	show (Branch loc is_else name) = (if is_else then "Else" else "Then") ++ " branch " ++ name ++ " at " ++ showLocation loc
 
 data CoverageKind = Branch_Cov | MCDC_Cov
 	deriving (Show,Eq)
 
-createBranches :: CExpr -> CovVecM [(CExpr,Branch)]
-createBranches expr = do
+type MCDC_Matrix = [MCDC_Line]
+type MCDC_Line = ([Bool],Bool,CExpr)
+createBranches :: CExpr -> CovVecM [(Branch,CExpr)]
+createBranches cond = do
  	gets coverageKindCVS >>= \case
- 		Branch_Cov -> return [ (Then (lineColNodeInfo expr),expr), (Else (lineColNodeInfo expr),not_c expr) ]
- 		MCDC_Cov   -> return $ mcdc_cov expr
+ 		Branch_Cov -> return [ (Branch (lineColNodeInfo cond) False "",cond), (Branch (lineColNodeInfo cond) True "",not_c cond) ]
+ 		MCDC_Cov   -> return $ case cond of
+ 			CBinary CLorOp expr1 expr2 _ -> [
+ 				(Branch (lineColNodeInfo cond) False "T || F", expr1 ⋏ (not_c expr2)),
+ 				(Branch (lineColNodeInfo cond) True  "F || F", (not_c expr1) ⋏ (not_c expr2)),
+ 				(Branch (lineColNodeInfo cond) False "F || T", (not_c expr1) ⋏ expr2) ]
+{-
+--return $ case expr of map line2branch $ mcdc_cov expr
  	where
-	mcdc_cov (CBinOp CLndOp expr1 expr2 _) = 
-	mcdc_cov (CBinOp CLorOp expr1 expr2 _)
-	mcdc_cov other_expr = 
-
+ 	prepend_bool :: Bool -> MCDC_Line -> MCDC_Line
+ 	prepend_bool b (bools,eval_result,expr) = (b:bools,eval_result,expr)
+ 	flip_eval_result :: MCDC_Line -> MCDC_Line
+ 	flip_eval_result (bools,b,expr) = (bools,not b,expr)
+ 	search_eval_result_line :: Bool -> MCDC_Matrix -> MCDC_Line
+ 	search_eval_result_line b matrix = head $ filter (\(_,bx,_)->bx==b) matrix
+	expand_matrix is_and matrix = new_line : map (prepend_bool is_and) matrix where
+		new_line = flip_eval_result $ prepend_bool (is_and) (search_eval_result_line (not is_and) matrix)
+ 	mcdc_cov :: CExpr -> MCDC_Matrix
+ 	-- find rightmost MC/DC literal, the we are appending to the left side
+	mcdc_cov (CBinary CLndOp expr1 expr2 _) = expand_matrix True (mcdc_cov expr2)
+	mcdc_cov (CBinary CLorOp expr1 expr2 _) = expand_matrix False (mcdc_cov expr2)
+	mcdc_cov other_expr = [([True],True,other_expr),([False],False,not_c other_expr)]
+	line2branch (bools,b,cond) = (Branch (map (\ b -> if b then 'T' else 'F') bools) (lineColNodeInfo expr),cond)
+-}
 
 instance CNode TraceElem where
 	nodeInfo (Assignment lexpr _)       = extractNodeInfo lexpr
@@ -599,7 +607,7 @@ instance (Pretty a) => Pretty [a] where
 instance Show TraceElem where
 	show te = ( case te of
 		Assignment lvalue expr   -> "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
-		Condition mb_b expr      -> "COND " ++ maybe "" (\b->if b then "(THEN) " else "(ELSE) ") mb_b ++ (render.pretty) expr
+		Condition mb_b expr      -> "COND " ++ show mb_b ++ " " ++ (render.pretty) expr
 		NewDeclaration (lval,ty) -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
 		Return exprs             -> "RET  " ++ (render.pretty) exprs
 		DebugOutput varname expr -> "DBGOUT " ++ varname ++ " " ++ (render.pretty) expr
@@ -639,16 +647,17 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 	modify $ \ s -> s { retEnvCVS = Just ret_env_exprs }
 
 	-- Go through the body of the function and determine all decision points
+	true_cexpr <- ⅈ 1  -- True :: CExpr
 	let
 		searchcondpoint :: CStat -> StateT [(Branch,CExpr)] CovVecM CStat
 		searchcondpoint stmt = do
 			add_branches <- case stmt of
-				CWhile cond _ _ _        -> createBranches cond
-				CCase _ _ _              -> return [ Then (lineColNodeInfo ccase) ]
-				CDefault _ _             -> return [ Then (lineColNodeInfo cdefault) ]
-				CFor _ (Just cond) _ _ _ -> createBranches cond
+				CWhile cond _ _ _        -> lift $ createBranches cond
+				CCase _ _ _              -> return [ (Branch (lineColNodeInfo stmt) False "",true_cexpr) ]
+				CDefault _ _             -> return [ (Branch (lineColNodeInfo stmt) False "",true_cexpr) ]
+				CFor _ (Just cond) _ _ _ -> lift $ createBranches cond
 				CFor _ Nothing _ _ _     -> error $ "searchcondpoint: for(_,,_) not implemented!"
-				CIf cond _ _ _           -> createBranches cond
+				CIf cond _ _ _           -> lift $ createBranches cond
 				_                        -> return []
 			modify (add_branches++)
 			return stmt
@@ -656,12 +665,12 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 		searchexprcondpoint :: CExpr -> StateT [(Branch,CExpr)] CovVecM CExpr
 		searchexprcondpoint expr = do
 			add_branches <- case expr of
-				CCond cond _ _ _ -> createBranches cond
+				CCond cond _ _ _ -> lift $ createBranches cond
 				_                -> return []
 			modify (add_branches++)
 			return expr
 	condpoints <- execStateT (everywhereM (mkM searchcondpoint) body) []
-	condexprpoints <- execStateT (everywhereM (mkM searchexprcondpoint) body) []
+	exprcondpoints <- execStateT (everywhereM (mkM searchexprcondpoint) body) []
 	modify $ \ s -> s { allCondPointsCVS = Set.fromList $ map fst $ condpoints ++ exprcondpoints }
 
 	let
@@ -911,8 +920,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 						is_visible_traceelem :: (Location,Location) -> CExprWithType -> Bool
 						is_visible_traceelem (start,end) expr = start <= lc && lc < end where
 							lc = lineColNodeInfo $ extractNodeInfo expr
-						to_branch (Condition (Just b) cond) | is_visible_traceelem startend cond =
-							[ (if b then Then else Else) (lineColNodeInfo $ extractNodeInfo cond) ]
+						to_branch (Condition (Just branch) cond) | is_visible_traceelem startend cond = [ branch ]
 						to_branch _ = []
 		
 					let cov_branches = "\tCovered branches:\n" ++ unlines (map (("\t"++).show) $ Set.toList visible_trace)
@@ -1391,6 +1399,40 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 						unfoldTracesM ret_type toplevel forks new_envs trace new_bstss
 	
 					CIf cond then_stmt mb_else_stmt ni -> do
+						let (real_cond,mb_annotation) = recognizeAnnotation cond
+						all_branches <- createBranches real_cond
+						(branches_to_follow,forks') <- case mb_annotation of
+							-- 12 is a wildcard in the choice list
+							-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
+							Just (ns,num_reached) | length ns > num_reached && ns!!num_reached /= 12 -> do
+								printLogV 2 $ "Recognized \"if\" annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
+									" (reached " ++ show num_reached ++ " times)"
+								return (all_branches !! (ns!!num_reached - 1),forks)
+							Nothing -> return (all_branches,forks+1)					
+						results <- forM branches_to_follow $ \ (branch,branch_cond) -> do
+							let cbstmts = case isElseBranch branch of
+								False -> [CBlockStmt then_stmt]
+								True  -> case mb_else_stmt of
+									Nothing -> []
+									Just else_stmt -> [CBlockStmt else_stmt]
+							transids real_cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
+								unfoldTracesM ret_type toplevel forks' envs (Condition (Just branch) cond' : trace')
+									( (cbstmts ++ rest,breakable) : rest2 )
+
+						return $ case partitionEithers results of
+							(left_results,[]) -> Left $ concat left_results
+							([],successes) -> Right $ case toplevel of
+								False -> or successes
+								True  -> and successes
+	
+						
+{-
+data Branch = Branch { branchLocation::Location, isElseBranch::Bool, nameBranch::String } 
+
+						let traces_m :: [Int -> CExpr -> CovVecM UnfoldTracesRet] =
+							for branches $ \ (branch,branch_cond) ->
+								\ forks' real_cond -> transids real_cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
+									unfoldTracesM ret_type toplevel forks' envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest,breakable) : rest2 )
 						traces_m :: [Int -> CExpr -> CovVecM UnfoldTracesRet] <- gets coverageKindCVS >>= \case
 							Branch_Cov -> return $ [
 								\ forks' real_cond -> transids real_cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
@@ -1401,7 +1443,12 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 										Nothing        -> unfoldTracesM ret_type toplevel forks' envs (not_cond : trace') ( (rest,breakable) : rest2 )
 										Just else_stmt -> unfoldTracesM ret_type toplevel forks' envs (not_cond : trace') ( (CBlockStmt else_stmt : rest,breakable) : rest2 )
 								]
-							MCDC_Cov -> error "No MCDC yet"
+							MCDC_Cov -> do
+								branches <- createBranches cond
+								return $ for branches $ \ (branch,branch_cond) ->
+									\ forks' real_cond -> transids real_cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
+										unfoldTracesM ret_type toplevel forks' envs (Condition (Just branch_cond) cond' : trace') ( (CBlockStmt then_stmt : rest,breakable) : rest2 )
+
 						case recognizeAnnotation cond of
 							-- 12 is a wildcard in the choice list
 							-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
@@ -1416,7 +1463,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 									([],successes) -> Right $ case toplevel of
 										False -> or successes
 										True  -> and successes
-{-
+
 								either_then <- then_trace_m (forks+1) real_cond
 								either_else <- else_trace_m (forks+1) real_cond
 								return $ case (either_then,either_else) of
@@ -1478,7 +1525,8 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 					-- That's cheating: Insert condition into trace (for loop unrolling and switch) via GOTO
 					CGotoPtr cond ni -> do
 						transids cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
-							unfoldTracesM ret_type toplevel forks envs (Condition (Just $ isUndefNode ni) cond' : trace') ( (rest,breakable) : rest2 )
+							unfoldTracesM ret_type toplevel forks envs (Condition (Just $ isUndefNode ni) cond' : trace')
+								( (rest,breakable) : rest2 )
 	
 					CWhile cond body False ni -> do
 						(mb_unrolling_depth,msg) <- infer_loopingsM cond body
@@ -1672,11 +1720,11 @@ infix 4 ⩾
 a ⩾ b = CBinary CGeqOp a b (annotation a)
 
 infixr 3 ⋏
-(⋏) :: CExprWithType -> CExprWithType -> CExprWithType
+(⋏) :: CExpression a -> CExpression a -> CExpression a
 a ⋏ b = CBinary CLndOp a b (annotation a)
 
 infixr 2 ⋎
-(⋎) :: CExprWithType -> CExprWithType -> CExprWithType
+(⋎) :: CExpression a -> CExpression a -> CExpression a
 a ⋎ b = CBinary CLorOp a b (annotation a)
 
 infixr 7 ∗
@@ -2509,8 +2557,8 @@ type Solution = [(String,SolutionVal)]
 data SolutionVal = IntVal Int | FloatVal (Word32,Float) | DoubleVal (Word64,Double) | PtrVal
 instance Show SolutionVal where
 	show (IntVal i) = show i
-	show (FloatVal (w,f)) = printf "0x%08.8x=%g" w f
-	show (DoubleVal (w,d)) = printf "0x%016.16x=%g" w d
+	show (FloatVal (w,f)) = printf "%s = 0x%08.8x = %g" (showHFloat f "") w f
+	show (DoubleVal (w,d)) = printf "%s = 0x%016.16x = %g" (showHFloat d "") w d
 	show PtrVal = "<SOME_PTR>"
 instance Eq SolutionVal where
 	IntVal i1    == IntVal i2    = i1==i2
