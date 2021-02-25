@@ -5,11 +5,14 @@ int f(double x,double y,int z)
         return (z==1 ? 1 : -1);
     }
 
+    //for(int i=0;i<3;i++) z++;
+
     switch(z)
     {
         case 1: return 2;
         case 2: return 3;
         default: return 4;
     }
+
     return -10;
 }

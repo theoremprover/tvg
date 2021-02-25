@@ -97,7 +97,7 @@ main = do
 --		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
 --		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
-		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : [] --"-writeAST","-writeGlobalDecls"]
@@ -224,7 +224,7 @@ main = do
 			case null decisionpoints of
 				True  -> printLog 0 "<none>"
 				False -> forM_ decisionpoints $ \ decisionpoint ->
-					printLog 0 $ "    " ++ show decisionpoint
+					printLog 0 $ "    " ++ showBranch decisionpoint
 
 			printLog 0 $ "\n===== SUMMARY =====\n\n"
 			
@@ -232,10 +232,10 @@ main = do
 
 			forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
 				printLog 0 $ "Test Vector " ++ show traceid ++ " covering "
-				forM_ branches $ \ branch -> printLog 0 $ "    " ++ show branch
+				forM_ branches $ \ branch -> printLog 0 $ "    " ++ showBranch branch
 				printLog 0 $ "    " ++ showTestVector funname v ++ "\n"
 			forM_ deaths $ \ branch -> do
-				printLog 0 $ "DEAD " ++ show branch
+				printLog 0 $ "DEAD " ++ showBranch branch
 
 			printLog 0 $ "Full path coverage: " ++ show every_branch_covered ++ "\n\n"
 			when (every_branch_covered && not (null deaths)) $ myErrorIO "Every branch covered but deaths!"
@@ -522,11 +522,11 @@ data TraceElem =
 	DebugOutput String CExprWithType
 	deriving Data
 
-data Branch = Branch { branchLocation::Location, isElseBranch::Bool, nameBranch::String } 
-	deriving (Eq,Ord,Data)
+data Branch = Branch { branchLocation::Location, numBranch::Int, isElseBranch::Bool, nameBranch::String } 
+	deriving (Eq,Ord,Data,Show,Read)
 -- Order decision points first by location, and second by the direction (Then/Else)
-instance Show Branch where
-	show (Branch loc is_else name) = (if is_else then "Else" else "Then") ++ " branch " ++ name ++ " at " ++ showLocation loc
+
+showBranch (Branch loc num is_else name) = (if is_else then "Else" else "Then") ++ " branch " ++ show num ++ " " ++ name ++ " at " ++ showLocation loc
 
 data CoverageKind = Branch_Cov | MCDC_Cov
 	deriving (Show,Eq)
@@ -536,12 +536,16 @@ type MCDC_Line = ([Bool],Bool,CExpr)
 createBranches :: CExpr -> CovVecM [(Branch,CExpr)]
 createBranches cond = do
  	gets coverageKindCVS >>= \case
- 		Branch_Cov -> return [ (Branch (lineColNodeInfo cond) False "",cond), (Branch (lineColNodeInfo cond) True "",not_c cond) ]
+ 		Branch_Cov -> return [ (Branch (lineColNodeInfo cond) 1 False "",cond), (Branch (lineColNodeInfo cond) 2 True "",not_c cond) ]
  		MCDC_Cov   -> return $ case cond of
  			CBinary CLorOp expr1 expr2 _ -> [
- 				(Branch (lineColNodeInfo cond) False "T || F", expr1 ⋏ (not_c expr2)),
- 				(Branch (lineColNodeInfo cond) True  "F || F", (not_c expr1) ⋏ (not_c expr2)),
- 				(Branch (lineColNodeInfo cond) False "F || T", (not_c expr1) ⋏ expr2) ]
+ 				(Branch (lineColNodeInfo cond) 1 False "T||F", expr1 ⋏ (not_c expr2)),
+ 				(Branch (lineColNodeInfo cond) 2 True  "F||F", (not_c expr1) ⋏ (not_c expr2)),
+ 				(Branch (lineColNodeInfo cond) 3 False "F||T", (not_c expr1) ⋏ expr2) ]
+ 			_ -> [
+  				(Branch (lineColNodeInfo cond) 1 False "", cond),
+  				(Branch (lineColNodeInfo cond) 2 True  "", not_c cond) ]
+
 {-
 --return $ case expr of map line2branch $ mcdc_cov expr
  	where
@@ -655,8 +659,8 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 		searchcondpoint stmt = do
 			add_branches <- case stmt of
 				CWhile cond _ _ _        -> lift $ createBranches cond
-				CCase _ _ _              -> return [ (Branch (lineColNodeInfo stmt) False "",true_cexpr) ]
-				CDefault _ _             -> return [ (Branch (lineColNodeInfo stmt) False "",true_cexpr) ]
+				CCase _ _ _              -> return [ (Branch (lineColNodeInfo stmt) 1 False "",true_cexpr) ]
+				CDefault _ _             -> return [ (Branch (lineColNodeInfo stmt) 1 False "",true_cexpr) ]
 				CFor _ (Just cond) _ _ _ -> lift $ createBranches cond
 				CFor _ Nothing _ _ _     -> error $ "searchcondpoint: for(_,,_) not implemented!"
 				CIf cond _ _ _           -> lift $ createBranches cond
@@ -925,7 +929,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 						to_branch (Condition (Just branch) cond) | is_visible_traceelem startend cond = [ branch ]
 						to_branch _ = []
 		
-					let cov_branches = "\tCovered branches:\n" ++ unlines (map (("\t"++).show) $ Set.toList visible_trace)
+					let cov_branches = "\tCovered branches:\n" ++ unlines (map (("\t"++).showBranch) $ Set.toList visible_trace)
 					printLogV 1 cov_branches
 					printToSolutions cov_branches
 					when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
@@ -953,7 +957,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 		return trace'
 
 trace2traceid trace = concatMap extract_conds trace where
-	extract_conds (Condition (Just branch) _) = [ if isElseBranch branch then 2 else 1 ]
+	extract_conds (Condition (Just branch) _) = [ numBranch branch ]
 	extract_conds _ = []
 
 lineColNodeInfo :: (CNode a) => a -> Location
@@ -1339,6 +1343,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 					CLabel _ cstat _ _ -> unfoldTracesM ret_type toplevel forks envs trace (((CBlockStmt cstat : rest, breakable)) : rest2)
 	
 					CSwitch condexpr (CCompound [] cbis _) switch_ni -> do
+						--ctrue <- ⅈ 1
 						let
 							cond_ni = nodeInfo condexpr
 							cond_var_ident = mkIdentWithCNodePos condexpr $ "cond_" ++ (locationToName $ lineColNodeInfo condexpr)
@@ -1351,11 +1356,11 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 	
 							collect_stmts [] = []
 	
-							collect_stmts (CBlockStmt (CDefault def_stmt default_ni) : rest) =
+							collect_stmts (CBlockStmt cdefault@(CDefault def_stmt default_ni) : rest) =
 								-- if we have a "default", insert a "goto 1", which will later be translated into "Condition (Just True) 1"
 								-- and append the default statement.
 								-- This is to explicitly cover the "default" branch (located at the "default" keyword).
-								CBlockStmt (CGotoPtr (CConst $ CIntConst (cInteger 1) default_ni) undefNode) :
+								{- wrapGoto (Just $ Branch (lineColNodeInfo cdefault) False branch_num "",ctrue) : -}
 									CBlockStmt def_stmt :
 									( for rest $ \case
 										CBlockStmt (CCase _ stmt _)  -> default_not_last_err
@@ -1430,7 +1435,6 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 
 						
 {-
-data Branch = Branch { branchLocation::Location, isElseBranch::Bool, nameBranch::String } 
 
 						let traces_m :: [Int -> CExpr -> CovVecM UnfoldTracesRet] =
 							for branches $ \ (branch,branch_cond) ->
@@ -1524,12 +1528,13 @@ data Branch = Branch { branchLocation::Location, isElseBranch::Bool, nameBranch:
 	
 					CExpr (Just expr) _ -> do
 						myError $ "unfoldTraces: " ++ (render.pretty) stmt ++ " not implemented yet."
-	
+
+--data Branch = Branch { branchLocation::Location, isElseBranch::Bool, nameBranch::String } 	
 					-- That's cheating: Insert condition into trace (for loop unrolling and switch) via GOTO
 					CGotoPtr wrapped ni -> do
-						let traceelem :: TraceElem = unwrapGoto wrapped
+						let (mb_branch,cond) :: (Maybe Branch,CExpr) = unwrapGoto wrapped
 						transids cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
-							unfoldTracesM ret_type toplevel forks envs (traceelem : trace') ( (rest,breakable) : rest2 )
+							unfoldTracesM ret_type toplevel forks envs (Condition mb_branch cond' : trace') ( (rest,breakable) : rest2 )
 	
 					CWhile cond body False ni -> do
 						(mb_unrolling_depth,msg) <- infer_loopingsM cond body
@@ -1542,15 +1547,16 @@ data Branch = Branch { branchLocation::Location, isElseBranch::Bool, nameBranch:
 						unroll_loopM :: [Int] -> CovVecM UnfoldTracesRet
 						unroll_loopM depths = do
 							ress <- forM depths $ \ depth ->
-								unfoldTracesM ret_type toplevel forks ([]:envs) trace ( (unroll cond depth,True) : (rest,breakable) : rest2 )
+								unfoldTracesM ret_type toplevel forks ([]:envs) trace ( (unroll depth,True) : (rest,breakable) : rest2 )
 							return $ case toplevel of
 								False -> Left $ concat $ lefts ress
 								True  -> Right $ any id $ rights ress
-	
-						unroll :: CExpr -> Int -> [CBlockItem]
-						unroll while_cond n =
-							concat ( replicate n [ CBlockStmt (CGotoPtr while_cond undefNode), CBlockStmt body ] ) ++
-							[ wrapGoto $ Condition (Branch True () "") ]
+
+						-- TODO: use createBranches for loop conditions!
+						unroll :: Int -> [CBlockItem]
+						unroll n =
+							concat ( replicate n [ wrapGoto (Just $ Branch (lineColNodeInfo cond) 1 False "",cond), CBlockStmt body ] ) ++
+							[ wrapGoto (Just $ Branch (lineColNodeInfo cond) 2 True "",not_c cond) ]
 
 					-- Express the for loop as a bisimular while loop
 					CFor (Right decl) mb_cond mb_inc_expr stmt ni -> do
@@ -1565,11 +1571,12 @@ data Branch = Branch { branchLocation::Location, isElseBranch::Bool, nameBranch:
 	
 				where
 	
-				wrapGoto :: (Show a) => a -> CBlockItem
-				wrapGoto a = CBlockStmt $ CGotoPtr (CConst $ CStrConst $ (CString (show a) True) undefNode) undefNode
-				unwrapGoto :: (Read a) => a -> TraceElem
-				unwrapGoto (CBlockStmt (CGotoPtr (CConst (CStrConst (CString s _) _)) _)) = read s
-				
+				wrapGoto :: (Maybe Branch,CExpr) -> CBlockItem
+				wrapGoto (a,cond) = CBlockStmt $ CGotoPtr (CBinary CEqOp cond (CConst $ CStrConst (CString (show a) True) undefNode) undefNode) undefNode
+				unwrapGoto :: CExpr -> (Maybe Branch,CExpr)
+				unwrapGoto (CBinary CEqOp cond (CConst (CStrConst (CString s _) _)) _) = (read s :: Maybe Branch,cond)
+				unwrapGoto x = error $ "unwrapGoto " ++ show x
+
 				recognizeAnnotation :: CExpr -> (CExpr,Maybe ([Int],Int))
 				recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) =
 					-- set the NodeInfo in real_cond to the original NodeInfo of the *whole* condition that includes the solver_annotation
@@ -2377,7 +2384,7 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 				-- Casting to Bool
 				( frty@(Z3_BitVector size_from _) , Z3_Bool ) -> do
 					ic <- make_intconstant frty 0
-					return $ SExpr [ SLeaf "not", SExpr [ sexpr ＝ ic ]]
+					return $ SExpr [ SLeaf "not", sexpr ＝ ic ]
 
 				-- DOWNCAST: extract bits (modulo)
 				( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from > size_to ->
