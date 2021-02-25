@@ -1526,10 +1526,10 @@ data Branch = Branch { branchLocation::Location, isElseBranch::Bool, nameBranch:
 						myError $ "unfoldTraces: " ++ (render.pretty) stmt ++ " not implemented yet."
 	
 					-- That's cheating: Insert condition into trace (for loop unrolling and switch) via GOTO
-					CGotoPtr cond ni -> do
+					CGotoPtr wrapped ni -> do
+						let traceelem :: TraceElem = unwrapGoto wrapped
 						transids cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
-							unfoldTracesM ret_type toplevel forks envs (Condition (Just $ isUndefNode ni) cond' : trace')
-								( (rest,breakable) : rest2 )
+							unfoldTracesM ret_type toplevel forks envs (traceelem : trace') ( (rest,breakable) : rest2 )
 	
 					CWhile cond body False ni -> do
 						(mb_unrolling_depth,msg) <- infer_loopingsM cond body
@@ -1550,8 +1550,8 @@ data Branch = Branch { branchLocation::Location, isElseBranch::Bool, nameBranch:
 						unroll :: CExpr -> Int -> [CBlockItem]
 						unroll while_cond n =
 							concat ( replicate n [ CBlockStmt (CGotoPtr while_cond undefNode), CBlockStmt body ] ) ++
-							[ CBlockStmt $ CGotoPtr (not_c while_cond) ni ]
-	
+							[ wrapGoto $ Condition (Branch True () "") ]
+
 					-- Express the for loop as a bisimular while loop
 					CFor (Right decl) mb_cond mb_inc_expr stmt ni -> do
 						ii <- ⅈ 1
@@ -1565,6 +1565,11 @@ data Branch = Branch { branchLocation::Location, isElseBranch::Bool, nameBranch:
 	
 				where
 	
+				wrapGoto :: (Show a) => a -> CBlockItem
+				wrapGoto a = CBlockStmt $ CGotoPtr (CConst $ CStrConst $ (CString (show a) True) undefNode) undefNode
+				unwrapGoto :: (Read a) => a -> TraceElem
+				unwrapGoto (CBlockStmt (CGotoPtr (CConst (CStrConst (CString s _) _)) _)) = read s
+				
 				recognizeAnnotation :: CExpr -> (CExpr,Maybe ([Int],Int))
 				recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) =
 					-- set the NodeInfo in real_cond to the original NodeInfo of the *whole* condition that includes the solver_annotation
