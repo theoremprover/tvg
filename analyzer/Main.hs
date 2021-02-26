@@ -67,7 +67,7 @@ import Logging
 type Trace = [TraceElem]
 type ResultData = (String,Maybe (Env,Env,Solution))
 type TraceAnalysisResult = ([Int],Trace,Set.Set Branch,ResultData)
-type UnfoldTracesRet = Either [Trace] Bool
+type UnfoldTracesRet = Either [([Env],Trace)] Bool
 type SolveFunRet = (Bool,([TraceAnalysisResult],Set.Set Branch))
 
 {-
@@ -1418,13 +1418,13 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 						True  -> and successes
 
 			CReturn Nothing _ | toplevel -> analyzeTraceM mb_ret_type trace >>= return.Right
-			CReturn Nothing _            -> return $ Left [trace]
+			CReturn Nothing _            -> return $ Left [(envs,trace)]
 
 			CReturn (Just ret_expr) _ | Just ret_type <- mb_ret_type-> do
 				z3_ret_type <- ty2Z3Type ret_type
 				transids ret_expr (Just z3_ret_type) trace $ \ (ret_expr',trace') -> do
 					case toplevel of
-						False -> return $ Left [ Return ret_expr' : trace' ]
+						False -> return $ Left [ (envs,Return ret_expr' : trace') ]
 						True  -> do
 							Just ret_var_expr <- gets retEnvCVS
 							ret_env_expr <- createInterfaceFromExprM ret_expr' ret_type
@@ -1540,7 +1540,7 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 							-- unfold body to all body traces and filter for all Assignments to variables from the condition
 							Left body_traces <- unfoldTracesM mb_ret_type False forks ([]:envs) [] [([CBlockStmt body],True)]
 							let
-								body_traces_ass = map (concatMap from_ass) body_traces where
+								body_traces_ass = map (concatMap from_ass) $ map snd body_traces where
 									from_ass (Assignment a@(CVar i _) b) | i `elem` cond_idents = [(a,b)]
 									from_ass _ = []
 							printLogV 2 $ "body_traces_ass =\n" ++
@@ -1652,8 +1652,8 @@ unfoldTraces1M mb_ret_type toplevel forks envs@(_:restenvs) trace cbss@(([],_):r
 	logWrapper [ren "unfoldTraces1M",ren mb_ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cbss] $ do
 		unfoldTracesM mb_ret_type toplevel forks restenvs trace rest2
 
-unfoldTraces1M _ False _ envs trace [] = return $ Left [trace]
-unfoldTraces1M mb_ret_type True  _ _    trace [] = analyzeTraceM mb_ret_type trace >>= return.Right
+unfoldTraces1M _ False _ envs trace [] = return $ Left [(envs,trace)]
+unfoldTraces1M mb_ret_type True  _ _ trace [] = analyzeTraceM mb_ret_type trace >>= return.Right
 
 unfoldTraces1M _ _ _ _ _ ((cbi:_,_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
@@ -1935,32 +1935,17 @@ translateExprM envs expr0 mb_target_ty = logWrapper ["translateExprM","<envs>",r
 
 	(expr,call_or_ternaryifs::CallOrTernaryIfs) <- runStateT (everywhereM (mkM to_call) expr0) []
 
+{-
 	-- construct all possible traces in called (sub-)functions and return them together with the returned expression.
 	-- NodeInfo is the position of the call, [(CExprWithType,Trace)] is the list of possible
 	-- return expressions together with their trace
-	funcalls_traces :: [Either (NodeInfo,[(CExprWithType,Trace)]) [Trace]] <- forM call_or_ternaryifs $ \case
-		Left (funident,args,ni) -> do
-			FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
-			expanded_params_args <- expand_params_argsM paramdecls args
-			printLogV 20 $ "body = " ++ (render.pretty) body
-			printLogV 20 $ "expanded_params_args = " ++ show expanded_params_args
-			-- β-reduction of the arguments:
-			let body' = replace_param_with_arg expanded_params_args body
-			printLogV 20 $ "body'= " ++ (render.pretty) body'
-			Left funtraces <- unfoldTracesM (Just ret_ty) False 0 envs [] [ ([ CBlockStmt body' ],False) ]
-			forM_ funtraces $ \ tr -> printLogV 20 $ "funtrace = " ++ showTrace tr
-			let funtraces_rets = concat $ for funtraces $ \case
-				(Return retexpr : tr) -> [(retexpr,tr)]
-				tr -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
-			return $ Left (ni,funtraces_rets)
+	funcalls_traces :: [Either (NodeInfo,[(CExprWithType,Trace)]) [([Env],Trace)]] <- forM call_or_ternaryifs $ \case
 		Right cbis -> do
-			Left ternaryif_traces <- unfoldTracesM Nothing False 0 envs [] [ (cbis,False) ]
-			return $ Right ternaryif_traces
+			Left envs_ternaryif_traces <- unfoldTracesM Nothing False 0 envs [] [ (cbis,False) ]
+			return $ Right envs_ternaryif_traces
+-}
 
-	expr' <- transcribeExprM envs mb_target_ty expr
-
-	printLogV 20 $ "creating combinations..."
-	create_combinations expr' [] funcalls_traces
+	create_combinations envs expr [] [] call_or_ternaryifs
 
 	where
 
@@ -1974,29 +1959,40 @@ translateExprM envs expr0 mb_target_ty = logWrapper ["translateExprM","<envs>",r
 
 	-- β-reduction
 	replace_param_with_arg :: [(Ident,CExpr)] -> CStat -> CStat
-	replace_param_with_arg iexprs stmt = foldl
-		(\ stmt' (ident,cexpr) -> substituteBy (CVar ident undefNode) cexpr stmt')
-		stmt
-		iexprs
+	replace_param_with_arg iexprs stmt = foldl (\ stmt' (ident,cexpr) -> substituteBy (CVar ident undefNode) cexpr stmt') stmt iexprs
 
 	-- iterate over all possible traces in a called (sub-)function and concatenate their traces
-	create_combinations :: CExprWithType -> Trace -> [Either (NodeInfo,[(CExprWithType,Trace)]) [Trace]] -> CovVecM [(CExprWithType,Trace)]
-	create_combinations expr trace [] = do
-		return [(expr,trace)]
+	create_combinations :: [Env] -> CExpr -> Trace -> [(NodeInfo,CExprWithType)] -> CallOrTernaryIfs -> CovVecM [(CExprWithType,Trace)]
+
+	create_combinations envs expr trace subs [] = do
+		expr' <- transcribeExprM envs mb_target_ty expr
+		let
+			-- substitute all function calls by the respective return expressions
+			expr_substituted = foldr substitute expr' subs
+	
+			substitute (call_ni,retexpr) expr = everywhere (mkT subst_ret_expr) expr where
+				subst_ret_expr :: CExprWithType -> CExprWithType
+				subst_ret_expr (CCall _ _ (ni,_)) | call_ni == ni = retexpr
+				subst_ret_expr expr = expr
+		return [(expr_substituted,trace)]
 	-- replace the place-holder in the expr with the return expression of each sub-function's trace,
 	-- concatenating all possibilities (but it does not matter which one, since we only fully cover the top level function)
-	create_combinations expr trace (Left (tes_ni,tes) : rest) = do
-		concatForM tes $ \ (ret_expr,fun_trace) -> do
-			let
-				-- substitute the function call by the return expression
-				expr' = everywhere (mkT subst_ret_expr) expr where
-					subst_ret_expr :: CExprWithType -> CExprWithType
-					subst_ret_expr (CCall _ _ (ni,_)) | tes_ni == ni = ret_expr
-					subst_ret_expr expr = expr
---			printLog $ "fun_trace=" ++ show fun_trace
-			create_combinations expr' (fun_trace++trace) rest
-	create_combinations expr trace (Right traces : rest) = do
-		concatForM traces $ \ ternaryif_trace -> create_combinations expr (ternaryif_trace++trace) rest
+
+	create_combinations envs expr trace subs (Left (funident,args,call_ni) : rest) = do
+		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
+		expanded_params_args <- expand_params_argsM paramdecls args
+		-- β-reduction of the arguments:
+		let body' = replace_param_with_arg expanded_params_args body
+		Left envs_funtraces <- unfoldTracesM (Just ret_ty) False 0 envs [] [ ([ CBlockStmt body' ],False) ]
+		let funtraces_rets :: [([Env],CExprWithType,Trace)] = for envs_funtraces $ \case
+			(envs',(Return retexpr : tr)) -> (envs',retexpr,tr)
+			(_,tr) -> error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
+		concatForM funtraces_rets $ \ (envs',retexpr,fun_trace) -> do
+			create_combinations envs' expr (fun_trace++trace) ((call_ni,retexpr):subs) rest
+
+	create_combinations envs expr trace subs (Right cbis : rest) = do
+		Left envs_ternaryiftraces <- unfoldTracesM Nothing False 0 envs [] [ (cbis,False) ]
+		concatForM envs_ternaryiftraces $ \ (envs',ternaryif_trace) -> create_combinations envs' expr (ternaryif_trace++trace) subs rest
 
 -- Substitutes an expression x by y everywhere in d
 substituteBy :: (Eq a,Data a,Data d) => a -> a -> d -> d
