@@ -219,15 +219,10 @@ main = do
 						where
 						mbshowtraces ts = if showTraces then ts else []
 
-			printLog 0 $ "All decision points:"
-			let decisionpoints = Set.toList alls
-			case null decisionpoints of
-				True  -> printLog 0 "<none>"
-				False -> forM_ decisionpoints $ \ decisionpoint ->
-					printLog 0 $ "    " ++ showBranch decisionpoint
-
 			printLog 0 $ "\n===== SUMMARY =====\n\n"
 			
+			printCondPoints alls
+
 			printLog 0 $ "Coverage to reach: " ++ show coveragekind ++ "\n"
 
 			forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
@@ -277,7 +272,7 @@ showInitialTrace = False && not fastMode
 showModels = False && not fastMode
 showOnlySolutions = True
 showTraces = False && not fastMode
-showFinalTrace = False && not fastMode
+showFinalTrace = True && not fastMode
 checkSolutions = True
 returnval_var_name = "return_val"
 floatTolerance = 1e-7 :: Float
@@ -523,18 +518,36 @@ data TraceElem =
 	deriving Data
 
 data Branch = Branch { branchLocation::Location, numBranch::Int, isElseBranch::Bool, nameBranch::String } 
-	deriving (Eq,Ord,Data,Show,Read)
+	deriving (Data,Show,Read)
 -- Order decision points first by location, and second by the direction (Then/Else)
 
-showBranch (Branch loc num is_else name) = (if is_else then "Else" else "Then") ++ " branch " ++ show num ++ " " ++ name ++ " at " ++ showLocation loc
+-- For equality for Branches, the branch's name should be irrelevant (it is only given for documentation purposes)
+instance Eq Branch where
+	(Branch loc1 num1 iselse1 _) == (Branch loc2 num2 iselse2 _) = loc1==loc2 && num1==num2 && iselse1==iselse2
+-- Ord instance is needed for Set.Set difference
+instance Ord Branch where
+	(Branch loc1 num1 iselse1 _) <= (Branch loc2 num2 iselse2 _) =
+		loc1<loc2 || ((loc1==loc2) && (num1<num2 || ((num1==num2) && (iselse1<=iselse2))))
+
+showBranch (Branch loc num is_else name) = (if is_else then "Else" else "Then") ++ " branch " ++ show num ++ " " ++ show name ++ " at " ++ showLocation loc
+
+printCondPoints :: (MonadIO m) => Set.Set Branch -> m ()
+printCondPoints alls = liftIO $ do
+	printLog 0 $ "All decision points:"
+	let decisionpoints = Set.toList alls
+	case null decisionpoints of
+		True  -> printLog 0 "<none>"
+		False -> forM_ decisionpoints $ \ decisionpoint ->
+			printLog 0 $ "    " ++ showBranch decisionpoint
+
 
 data CoverageKind = Branch_Cov | MCDC_Cov
 	deriving (Show,Eq)
 
 type MCDC_Matrix = [MCDC_Line]
 type MCDC_Line = ([Bool],Bool,CExpr)
-createBranches :: CExpr -> CovVecM [(Branch,CExpr)]
-createBranches cond = do
+createBranches :: String -> CExpr -> CovVecM [(Branch,CExpr)]
+createBranches default_name cond = do
  	gets coverageKindCVS >>= \case
  		Branch_Cov -> return [ (Branch (lineColNodeInfo cond) 1 False "",cond), (Branch (lineColNodeInfo cond) 2 True "",not_c cond) ]
  		MCDC_Cov   -> return $ case cond of
@@ -543,8 +556,8 @@ createBranches cond = do
  				(Branch (lineColNodeInfo cond) 2 True  "F||F", (not_c expr1) ⋏ (not_c expr2)),
  				(Branch (lineColNodeInfo cond) 3 False "F||T", (not_c expr1) ⋏ expr2) ]
  			_ -> [
-  				(Branch (lineColNodeInfo cond) 1 False "", cond),
-  				(Branch (lineColNodeInfo cond) 2 True  "", not_c cond) ]
+  				(Branch (lineColNodeInfo cond) 1 False default_name, cond),
+  				(Branch (lineColNodeInfo cond) 2 True  default_name, not_c cond) ]
 
 {-
 --return $ case expr of map line2branch $ mcdc_cov expr
@@ -613,7 +626,7 @@ instance (Pretty a) => Pretty [a] where
 instance Show TraceElem where
 	show te = ( case te of
 		Assignment lvalue expr   -> "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
-		Condition mb_b expr      -> "COND " ++ show mb_b ++ " " ++ (render.pretty) expr
+		Condition mb_b expr      -> "COND " ++ (case mb_b of Nothing -> "Nothing"; Just b -> showBranch b) ++ " " ++ (render.pretty) expr
 		NewDeclaration (lval,ty) -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
 		Return exprs             -> "RET  " ++ (render.pretty) exprs
 		DebugOutput varname expr -> "DBGOUT " ++ varname ++ " " ++ (render.pretty) expr
@@ -658,12 +671,12 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 		searchcondpoint :: CStat -> StateT [(Branch,CExpr)] CovVecM CStat
 		searchcondpoint stmt = do
 			add_branches <- case stmt of
-				CWhile cond _ _ _        -> lift $ createBranches cond
-				CCase _ _ _              -> return [ (Branch (lineColNodeInfo stmt) 1 False "",true_cexpr) ]
-				CDefault _ _             -> return [ (Branch (lineColNodeInfo stmt) 1 False "",true_cexpr) ]
-				CFor _ (Just cond) _ _ _ -> lift $ createBranches cond
-				CFor _ Nothing _ _ _     -> error $ "searchcondpoint: for(_,,_) not implemented!"
-				CIf cond _ _ _           -> lift $ createBranches cond
+				CWhile cond _ _ _        -> lift $ createBranches ("while(" ++ (render.pretty) cond ++ ")") cond
+				CCase cond _ _           -> return [ (Branch (lineColNodeInfo stmt) 1 False ("case " ++ (render.pretty) cond),true_cexpr) ]
+				CDefault _ _             -> return [ (Branch (lineColNodeInfo stmt) 1 False "default",true_cexpr) ]
+				CFor _ (Just cond) _ _ _ -> lift $ createBranches ("for(_," ++ (render.pretty) cond ++ ",_)") cond
+				CFor _ Nothing _ _ _     -> error $ "searchcondpoint: for(_,Nothing,_) not implemented!"
+				CIf cond _ _ _           -> lift $ createBranches ("if(" ++ (render.pretty) cond ++ ")") cond
 				_                        -> return []
 			modify (add_branches++)
 			return stmt
@@ -671,7 +684,7 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 		searchexprcondpoint :: CExpr -> StateT [(Branch,CExpr)] CovVecM CExpr
 		searchexprcondpoint expr = do
 			add_branches <- case expr of
-				CCond cond _ _ _ -> lift $ createBranches cond
+				CCond cond _ _ _ -> lift $ createBranches ((render.pretty) cond ++ " ? ..") cond
 				_                -> return []
 			modify (add_branches++)
 			return expr
@@ -900,7 +913,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 		showtraceM showTraces "elimArrayAssignsM"    elimArrayAssignsM >>=
 		showtraceM showTraces "2. elimAssignmentsM"  elimAssignmentsM >>=
 		showtraceM showTraces "2. simplifyTraceM"    simplifyTraceM >>=
-		showtraceM showTraces "createSymbolicVarsM"  createSymbolicVarsM
+		showtraceM showFinalTrace "createSymbolicVarsM"  createSymbolicVarsM
 
 	either_resultdata <- solveTraceM mb_ret_type traceid trace'
 	case either_resultdata of
@@ -928,19 +941,22 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 							lc = lineColNodeInfo $ extractNodeInfo expr
 						to_branch (Condition (Just branch) cond) | is_visible_traceelem startend cond = [ branch ]
 						to_branch _ = []
-		
+
 					let cov_branches = "\tCovered branches:\n" ++ unlines (map (("\t"++).showBranch) $ Set.toList visible_trace)
 					printLogV 1 cov_branches
 					printToSolutions cov_branches
 					when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
 					(tas,covered) <- gets analysisStateCVS
+					all_branches <- gets allCondPointsCVS
 					let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
-					modify $ \ s -> s { analysisStateCVS =
-						-- Are all the decision points are already covered? They can't, probably...?
-						-- If yes, this trace does not contribute to full coverage...
-						case visible_trace ⊆ covered of
-							False -> (traceanalysisresult:tas,visible_trace ∪ covered)
-							True  -> (tas,covered) }
+					let excess_branches = visible_trace `Set.difference` all_branches
+					when (not $ null excess_branches) $ do
+						printCondPoints all_branches
+						myError $ "Branches " ++ show excess_branches ++ " are covered but not in all_branches!"
+					-- Are all the decision points are already covered? They can't, probably...?
+					-- If yes, this trace does not contribute to full coverage...
+					when (not $ visible_trace ⊆ covered) $
+						modify $ \ s -> s { analysisStateCVS = (traceanalysisresult:tas,visible_trace ∪ covered) }				
 					return True
 
 	where
@@ -1281,8 +1297,8 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 			rest1 <- rest_m
 			return $ (((srcident,(srcident,ty')),expr) : rest1)
 
-unfoldTracesM ret_type toplevel forks envs trace cbss =
-	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cbss] $ do
+unfoldTracesM ret_type toplevel forks envs trace cbss = do
+--	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cbss] $ do
 		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $
 			unfoldTraces1M ret_type toplevel forks envs trace cbss
 		where
@@ -1336,14 +1352,14 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 					to_condexpr expr = mzero
 				-- Only replace the topmost CCond (in order to handle recursive CConds properly)
 				(stmt,add_cbis) <- runStateT ((once (mkMp to_condexpr) stmt0) `mplus` (return stmt0)) []
-	
+
 				case stmt of
 					_ | not (null add_cbis) -> unfoldTracesM ret_type toplevel forks envs trace (((add_cbis ++ [CBlockStmt stmt] ++ rest),breakable) : rest2)
 	
 					CLabel _ cstat _ _ -> unfoldTracesM ret_type toplevel forks envs trace (((CBlockStmt cstat : rest, breakable)) : rest2)
 	
 					CSwitch condexpr (CCompound [] cbis _) switch_ni -> do
-						--ctrue <- ⅈ 1
+						ctrue <- ⅈ 1
 						let
 							cond_ni = nodeInfo condexpr
 							cond_var_ident = mkIdentWithCNodePos condexpr $ "cond_" ++ (locationToName $ lineColNodeInfo condexpr)
@@ -1357,10 +1373,8 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 							collect_stmts [] = []
 	
 							collect_stmts (CBlockStmt cdefault@(CDefault def_stmt default_ni) : rest) =
-								-- if we have a "default", insert a "goto 1", which will later be translated into "Condition (Just True) 1"
-								-- and append the default statement.
 								-- This is to explicitly cover the "default" branch (located at the "default" keyword).
-								{- wrapGoto (Just $ Branch (lineColNodeInfo cdefault) False branch_num "",ctrue) : -}
+								wrapGoto (Just $ Branch (lineColNodeInfo cdefault) 1 False "default",ctrue) :
 									CBlockStmt def_stmt :
 									( for rest $ \case
 										CBlockStmt (CCase _ stmt _)  -> default_not_last_err
@@ -1371,10 +1385,11 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 											"collect_stmts: the case when 'default' is not the last item in the switch is not implemented"
 	
 							-- if we have a "case <expr>: stmt", insert "if (expr==cond_var) { stmt; rest } else <recurse_collect_stmts>"
-							collect_stmts (CBlockStmt (CCase caseexpr stmt case_ni) : rest) = [
+							collect_stmts (CBlockStmt ccase@(CCase caseexpr stmt case_ni) : rest) = [
 								CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr case_ni)
-									(CCompound [] (CBlockStmt stmt : filtercases rest) undefNode)
-									(Just $ CCompound [] (collect_stmts rest) undefNode) undefNode ]
+									(CCompound [] (wrapGoto (Just $ Branch (lineColNodeInfo ccase) 1 False ("case " ++ (render.pretty) caseexpr),ctrue) :
+										CBlockStmt stmt : filtercases rest) undefNode)
+										(Just $ CCompound [] (collect_stmts rest) undefNode) undefNode ]
 								where
 								-- Eliminate the case/default "wrappers" from a statement list.
 								filtercases :: [CBlockItem] -> [CBlockItem]
@@ -1407,7 +1422,7 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 	
 					CIf cond then_stmt mb_else_stmt ni -> do
 						let (real_cond,mb_annotation) = recognizeAnnotation cond
-						all_branches <- createBranches real_cond
+						all_branches <- createBranches ("if(" ++ (render.pretty) real_cond ++ ")") real_cond
 						(branches_to_follow,forks') <- case mb_annotation of
 							-- 12 is a wildcard in the choice list
 							-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
@@ -1423,8 +1438,10 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 								True  -> case mb_else_stmt of
 									Nothing -> []
 									Just else_stmt -> [CBlockStmt else_stmt]
-							transids real_cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
-								unfoldTracesM ret_type toplevel forks' envs (Condition (Just branch) cond' : trace')
+							transids branch_cond (Just _BoolTypes) trace $ \ (branch_cond',trace') -> do
+								-- Only insert a condition if the CIf was not generated by TVG (for bisimular expression of for(..), e.g.)
+								let insert_condition = if ni==undefNode then [] else [Condition (Just branch) branch_cond']
+								unfoldTracesM ret_type toplevel forks' envs (insert_condition ++ trace')
 									( (cbstmts ++ rest,breakable) : rest2 )
 
 						return $ case partitionEithers results of
@@ -1432,53 +1449,6 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 							([],successes) -> Right $ case toplevel of
 								False -> or successes
 								True  -> and successes
-
-						
-{-
-
-						let traces_m :: [Int -> CExpr -> CovVecM UnfoldTracesRet] =
-							for branches $ \ (branch,branch_cond) ->
-								\ forks' real_cond -> transids real_cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
-									unfoldTracesM ret_type toplevel forks' envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest,breakable) : rest2 )
-						traces_m :: [Int -> CExpr -> CovVecM UnfoldTracesRet] <- gets coverageKindCVS >>= \case
-							Branch_Cov -> return $ [
-								\ forks' real_cond -> transids real_cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
-									unfoldTracesM ret_type toplevel forks' envs (Condition (Just True) cond' : trace') ( (CBlockStmt then_stmt : rest,breakable) : rest2 ),
-								\ forks' real_cond -> transids (CUnary CNegOp real_cond (annotation real_cond)) (Just _BoolTypes) trace $ \ (ncond',trace') -> do
-									let not_cond = Condition (Just False) ncond'
-									case mb_else_stmt of
-										Nothing        -> unfoldTracesM ret_type toplevel forks' envs (not_cond : trace') ( (rest,breakable) : rest2 )
-										Just else_stmt -> unfoldTracesM ret_type toplevel forks' envs (not_cond : trace') ( (CBlockStmt else_stmt : rest,breakable) : rest2 )
-								]
-							MCDC_Cov -> do
-								branches <- createBranches cond
-								return $ for branches $ \ (branch,branch_cond) ->
-									\ forks' real_cond -> transids real_cond (Just _BoolTypes) trace $ \ (cond',trace') -> do
-										unfoldTracesM ret_type toplevel forks' envs (Condition (Just branch_cond) cond' : trace') ( (CBlockStmt then_stmt : rest,breakable) : rest2 )
-
-						case recognizeAnnotation cond of
-							-- 12 is a wildcard in the choice list
-							-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
-							(real_cond,Just (ns,num_reached)) | length ns > num_reached && ns!!num_reached /= 12 -> do
-								printLogV 2 $ "Recognized IF annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
-									" (reached " ++ show num_reached ++ " times)"
-								(traces_m !! (ns!!num_reached - 1)) forks real_cond
-							(real_cond,_) -> do
-								results <- sequence $ map (\ m -> m (forks+1) real_cond) traces_m
-								return $ case partitionEithers results of
-									(left_results,[]) -> Left $ concat left_results
-									([],successes) -> Right $ case toplevel of
-										False -> or successes
-										True  -> and successes
-
-								either_then <- then_trace_m (forks+1) real_cond
-								either_else <- else_trace_m (forks+1) real_cond
-								return $ case (either_then,either_else) of
-									(Left then_traces,Left else_traces) -> Left $ then_traces ++ else_traces
-									(Right then_success,Right else_success) -> case toplevel of
-										False -> Right $ then_success || else_success
-										True  -> Right $ then_success && else_success
--}
 	
 					CReturn Nothing _ | toplevel -> analyzeTraceM (Just ret_type) trace >>= return.Right
 					CReturn Nothing _            -> return $ Left [trace]
@@ -1529,7 +1499,6 @@ unfoldTraces1M ret_type toplevel forks envs trace bstss@((CBlockStmt stmt0 : res
 					CExpr (Just expr) _ -> do
 						myError $ "unfoldTraces: " ++ (render.pretty) stmt ++ " not implemented yet."
 
---data Branch = Branch { branchLocation::Location, isElseBranch::Bool, nameBranch::String } 	
 					-- That's cheating: Insert condition into trace (for loop unrolling and switch) via GOTO
 					CGotoPtr wrapped ni -> do
 						let (mb_branch,cond) :: (Maybe Branch,CExpr) = unwrapGoto wrapped
@@ -1956,8 +1925,6 @@ translateExprM envs expr0 mb_target_ty = logWrapper ["translateExprM","<envs>",r
 			CVar (Ident "solver_pragma" _ _) _ -> lift $ ⅈ 1
 			CVar funident _ -> do
 				modify ( (funident,args,ni) : )
-				-- Replace the call by a placeholder with the same NodeInfo
-				lift $ printLogV 20 $ "Found call " ++ ren funident ++ " at " ++ ren ni
 				return ccall
 			_  -> lift $ myError $ "is_call: found call " ++ (render.pretty) funexpr
 		to_call expr = return expr

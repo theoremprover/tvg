@@ -9,7 +9,7 @@ int f(double x,double y,int z)
 
     switch(z)
     {
-        case 1: return 2;
+        case 1: z++;
         case 2: return 3;
         default: return 4;
     }
