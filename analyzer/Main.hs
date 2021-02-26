@@ -247,8 +247,10 @@ for = flip map
 concatForM :: (Monad m) => [a] -> (a -> m [b]) -> m [b]
 concatForM = flip concatMapM
 
+{-
 once :: MonadPlus m => GenericM m -> GenericM m
 once f x = f x `mplus` gmapMo (once f) x
+-}
 
 ------------------------
 
@@ -1421,6 +1423,7 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 			CReturn Nothing _            -> return $ Left [(envs,trace)]
 
 			CReturn (Just ret_expr) _ | Just ret_type <- mb_ret_type-> do
+				printLogV 1 $ "############### CRETUNR"
 				z3_ret_type <- ty2Z3Type ret_type
 				transids ret_expr (Just z3_ret_type) trace $ \ (ret_expr',trace') -> do
 					case toplevel of
@@ -1992,7 +1995,8 @@ translateExprM envs expr0 mb_target_ty = logWrapper ["translateExprM","<envs>",r
 
 	create_combinations envs expr trace subs (Right cbis : rest) = do
 		Left envs_ternaryiftraces <- unfoldTracesM Nothing False 0 envs [] [ (cbis,False) ]
-		concatForM envs_ternaryiftraces $ \ (envs',ternaryif_trace) -> create_combinations envs' expr (ternaryif_trace++trace) subs rest
+		concatForM envs_ternaryiftraces $ \ (envs',ternaryif_trace) -> do
+			create_combinations envs' expr (ternaryif_trace++trace) subs rest
 
 -- Substitutes an expression x by y everywhere in d
 substituteBy :: (Eq a,Data a,Data d) => a -> a -> d -> d
