@@ -52,6 +52,7 @@ import Data.Maybe
 import System.IO
 import Data.Char
 import Data.Numbers.FloatingHex (showHFloat)
+import Data.Tuple (swap)
 
 -- This is for conversion of Z3 floats to Haskell Floating Point
 import Data.Word (Word32,Word64)
@@ -92,12 +93,12 @@ main = do
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] -> "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["ceilf.i","xfdint.i"]) ++ ["-MCDC"]
 --		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ ["-MCDC","-writeModels"]
---		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : []
+		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
 --		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
-		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : [] --"-writeAST","-writeGlobalDecls"]
@@ -223,7 +224,7 @@ main = do
 			
 			printCondPoints alls
 
-			printLog 0 $ "Coverage to reach: " ++ show coveragekind ++ "\n"
+			printLog 0 $ "\nCoverage to reach: " ++ show coveragekind ++ "\n"
 
 			forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) -> do
 				printLog 0 $ "Test Vector " ++ show traceid ++ " covering "
@@ -261,6 +262,7 @@ logFileVerbosity = if fastMode then 0 else 10
 
 mAX_REN_LIST_LENGTH = 3
 
+haltOnVerificationError = False
 roundingMode = "roundNearestTiesToEven"
 intType = integral TyInt :: Type
 uLongType = integral TyULong :: Type
@@ -713,7 +715,12 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 			next : _ -> next
 	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
 
-	let formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
+	let
+		formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
+		actual_args = for formal_params $ \ (srcident,ty) -> case ty of
+			DirectType (TyFloating TyFloat)  _ _ -> printf "u2f(%s)" ((render.pretty) srcident)
+			DirectType (TyFloating TyDouble) _ _ -> printf "u2d(%s)" ((render.pretty) srcident)
+			_ -> (render.pretty) srcident
 	ext_decls <- createDeclsM formal_params
 	(param_env_exprs,(arraydecl_env,arrayitem_conds)) <- createInterfaceM formal_params
 	modify $ \ s -> s { paramEnvCVS = Just param_env_exprs }
@@ -730,7 +737,7 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 			mainfilename = replaceFileName filename mainFileName
 		srcabsfilename <- liftIO $ makeAbsolute $ mainfilename
 
-		charness <- createCHarness ret_type formal_params (takeFileName filename) funname ext_decls
+		charness <- createCHarness ret_type actual_args (takeFileName filename) funname ext_decls
 		compileHereM ["-Wno-builtin-declaration-mismatch","-Wno-int-conversion","-Wno-incompatible-pointer-types",
 			"-o",chkexefilename,mainFileName] srcabsfilename charness
 		modify $ \ s -> s { checkExeNameCVS = Just chkexefilename }
@@ -775,8 +782,8 @@ envItemNotPtrType :: EnvItem -> Bool
 envItemNotPtrType (_,(_,PtrType _ _ _)) = False
 envItemNotPtrType _ = True
 
-createCHarness :: Type -> [(Ident,Type)] -> String -> String -> [String] -> CovVecM String
-createCHarness orig_rettype formal_params filename funname extdecls = do
+createCHarness :: Type -> [String] -> String -> String -> [String] -> CovVecM String
+createCHarness orig_rettype fun_args filename funname extdecls = do
 	Just retenvexprs0 <- gets retEnvCVS
 	Just param_env_exprs0 <- gets paramEnvCVS
 	let
@@ -789,7 +796,7 @@ createCHarness orig_rettype formal_params filename funname extdecls = do
 		incl_srcfilename = "#include \"" ++ filename ++ "\""
 
 		funcall = (render.pretty) orig_rettype ++ " " ++ returnval_var_name ++ " = " ++
-			funname ++ "(" ++ intercalate "," (map ((render.pretty).fst) formal_params) ++ ");"
+			funname ++ "(" ++ intercalate "," fun_args ++ ");"
 
 	argformats <- mapM type_format_string $ map (snd.snd.fst) param_env_exprs
 	let
@@ -1315,6 +1322,15 @@ unwrapGoto :: CExpr -> (Maybe Branch,CExpr)
 unwrapGoto (CBinary CEqOp cond (CConst (CStrConst (CString s _) _)) _) = (read s :: Maybe Branch,cond)
 unwrapGoto x = error $ "unwrapGoto " ++ show x
 
+forkUnfoldTraces :: Bool -> [a] -> (a -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
+forkUnfoldTraces toplevel l m = do
+	forM l m >>= \ results -> return $ case partitionEithers results of
+		(left_results,[]) -> Left $ concat left_results
+		([],successes) -> Right $ case toplevel of
+			False -> or successes
+			True  -> and successes
+
+
 unfoldTracesM ret_type toplevel forks envs trace cbss = do
 --	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cbss] $ do
 		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $
@@ -1353,13 +1369,13 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 					cond_var = CVar cond_var_ident cond_ni
 
 					-- Go through all the switch's "case"s and "default"s...
-					collect_stmts :: [CBlockItem] -> [CBlockItem]
+					collect_stmts :: CExpr -> [CBlockItem] -> [CBlockItem]
 
-					collect_stmts [] = []
+					collect_stmts _ [] = []
 
-					collect_stmts (CBlockStmt cdefault@(CDefault def_stmt default_ni) : rest) =
+					collect_stmts notconds (CBlockStmt cdefault@(CDefault def_stmt default_ni) : rest) =
 						-- This is to explicitly cover the "default" branch (located at the "default" keyword).
-						wrapGoto (Just $ Branch (lineColNodeInfo cdefault) 1 False "default",ctrue) :
+						wrapGoto (Just $ Branch (lineColNodeInfo cdefault) 1 False "default",notconds) :
 							CBlockStmt def_stmt :
 							( for rest $ \case
 								CBlockStmt (CCase _ stmt _)  -> default_not_last_err
@@ -1370,15 +1386,17 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 									"collect_stmts: the case when 'default' is not the last item in the switch is not implemented"
 
 					-- if we have a "case <expr>: stmt", insert "if (expr==cond_var) { stmt; rest } else <recurse_collect_stmts>"
-					collect_stmts (CBlockStmt ccase@(CCase caseexpr stmt case_ni) : rest) = [
+					collect_stmts notconds (CBlockStmt ccase@(CCase caseexpr stmt case_ni) : rest) = [
 						CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr case_ni)
 							(makeCompound $
-								wrapGoto (Just $ Branch (lineColNodeInfo ccase) 1 False ("case " ++ (render.pretty) caseexpr),ctrue) :
+								wrapGoto (Just $ Branch (lineColNodeInfo ccase) 1 False ("case " ++ (render.pretty) caseexpr),cond) :
 								CBlockStmt stmt :
 								filtercases rest)
-							(Just $ makeCompound $collect_stmts rest)
+							(Just $ makeCompound $ collect_stmts notconds' rest)
 							undefNode ]
 						where
+						cond = condexpr ⩵ caseexpr
+						notconds' = notconds ⋏ not_c cond
 						-- Eliminate the case/default "wrappers" from a statement list.
 						filtercases :: [CBlockItem] -> [CBlockItem]
 						filtercases cbis = for cbis $ \case
@@ -1387,10 +1405,10 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 							cbi -> cbi
 
 					-- if it was neither a "case" or "default", skip it.
-					collect_stmts (_:rest) = collect_stmts rest
+					collect_stmts notconds (_:rest) = collect_stmts notconds rest
 
 					-- This is the whole switch, rewritten as nested if-then-elses.
-					case_replacement = collect_stmts cbis
+					case_replacement = collect_stmts ctrue cbis
 
 				unfoldTracesM mb_ret_type toplevel (forks+1) envs{-([]:envs)-} trace (
 					(CBlockDecl (CDecl [CTypeSpec $ CLongType cond_ni]
@@ -1420,23 +1438,16 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 						return ([all_branches !! (ns!!num_reached - 1)],forks)
 					Nothing -> return (all_branches,forks+1)			
 
-				results <- forM branches_to_follow $ \ (branch,branch_cond) -> do
-					let cbstmts = case isElseBranch branch of
-						False -> [CBlockStmt then_stmt]
-						True  -> case mb_else_stmt of
-							Nothing -> []
-							Just else_stmt -> [CBlockStmt else_stmt]
-					transids branch_cond (Just _BoolTypes) trace $ \ (envs',branch_cond',trace') -> do
+				forkUnfoldTraces toplevel branches_to_follow $ \ (branch,branch_cond) -> do
+					let
 						-- Only insert a condition if the CIf was not generated by TVG (for translation of while, e.g.)
-						let insert_condition = if ni==undefNode then [] else [Condition (Just branch) branch_cond']
-						unfoldTracesM mb_ret_type toplevel forks' envs' (insert_condition ++ trace')
-							( (cbstmts ++ rest,breakable) : rest2 )
-
-				return $ case partitionEithers results of
-					(left_results,[]) -> Left $ concat left_results
-					([],successes) -> Right $ case toplevel of
-						False -> or successes
-						True  -> and successes
+						branchcbi = if ni==undefNode then [] else [wrapGoto (Just branch,branch_cond)]
+						cbstmts = branchcbi ++ case isElseBranch branch of
+							False -> [CBlockStmt then_stmt]
+							True  -> case mb_else_stmt of
+								Nothing -> []
+								Just else_stmt -> [CBlockStmt else_stmt]
+					unfoldTracesM mb_ret_type toplevel (forks+1) envs trace ( (cbstmts ++ rest,breakable) : rest2 )
 
 			CReturn Nothing _ | toplevel -> analyzeTraceM mb_ret_type trace >>= return.Right
 			CReturn Nothing _            -> return $ Left [(envs,trace)]
@@ -1469,14 +1480,10 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 
 			CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 				-- translate the whole assignment expression, so we also get the translated lexpr
-				r <- transids (CAssign CAssignOp lexpr assigned_expr' ni) Nothing trace $
+				transids (CAssign CAssignOp lexpr assigned_expr' ni) Nothing trace $
 					\ (envs',CAssign CAssignOp lexpr' assigned_expr'' _,trace') -> do
-						printLogV 0 $ "####################### transids: called cont for " ++ (render.pretty) cass
 						r2 <- unfoldTracesM mb_ret_type toplevel forks envs' (Assignment lexpr' assigned_expr'' : trace') ((rest,breakable):rest2)
-						printLogV 0 $ "####################### transids: unfoldTracesM returned " ++ ren r2
 						return r2
-				printLogV 0 $ "############ transids return length = " ++ show (length r)
-				return r
 				where
 				assigned_expr' = case assignop of
 					CAssignOp -> assigned_expr
@@ -1637,26 +1644,8 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 		transids :: CExpr -> Maybe Types -> Trace -> (([Env],CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
 		transids expr mb_ty trace cont = logWrapper ["transids",ren expr,ren mb_ty,ren trace,"<cont>"] $ do
 			additional_envs_expr_traces :: [([Env],CExprWithType,Trace)] <- translateExprM envs toplevel expr mb_ty
-			printLogV 0 $ "AAAAAAAAAAAAAAAAAAAAA in transids: translateExprM returned length " ++ ren (length additional_envs_expr_traces)
-
-					conts :: [UnfoldTracesRet] <- forM additional_envs_expr_traces $ \ (envs',expr',trace') -> do
-						cont (envs',expr',trace'++trace)
-{-
-			case toplevel of
-				False -> do
-					conts :: [UnfoldTracesRet] <- forM additional_envs_expr_traces $ \ (envs',expr',trace') -> do
-						cont (envs',expr',trace'++trace)
-					let (conttracess,[]) = partitionEithers conts
-					return $ Left $ concat conttracess
-				True -> try_next additional_envs_expr_traces where
-					try_next [] = return $ Right False
-					try_next ((envs',expr',trace'):rest) = do
-						res_cont <- cont (envs',expr',trace'++trace)
-						case res_cont of
-							Right success -> case success of
-								True -> return $ Right True
-								False -> try_next rest
--}
+			forkUnfoldTraces toplevel additional_envs_expr_traces $ \ (envs',expr',trace') -> do
+				cont (envs',expr',trace'++trace)
 
 unfoldTraces1M mb_ret_type toplevel forks envs@(env:restenvs) trace ( (cblockitem@(CBlockDecl decl@(CDecl typespecs triples _)) : rest, breakable) : rest2 ) =
 	logWrapper [ren "unfoldTraces1M CBlockDecl",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 envs,ren trace,'\n':ren cblockitem] $ do
@@ -1687,7 +1676,7 @@ unfoldTraces1M _ _ _ _ _ ((cbi:_,_):_) = myError $ "unfoldTracesM " ++ (render.p
 
 
 infix 4 ⩵
-(⩵) :: CExprWithType -> CExprWithType -> CExprWithType
+(⩵) :: CExpression a -> CExpression a -> CExpression a
 a ⩵ b = CBinary CEqOp a b (annotation a)
 
 infix 4 !⩵
@@ -1716,6 +1705,19 @@ a − b = CBinary CSubOp a b (annotation a)
 
 not_c :: CExpression a -> CExpression a
 not_c e = CUnary CNegOp e (annotation e)
+{-
+not_c e = elim_neg e
+	where
+	rev_binop = let table = [(CLeOp,CGeqOp),(CEqOp,CNeqOp),(CGrOp,CLeqOp)] in table ++ map swap table
+	elim_neg e = case e of
+		CUnary CNegOp expr _ -> expr
+		CBinary binop expr1 expr2 ni -> case lookup binop rev_binop of
+			Just neg_binop -> CBinary neg_binop expr1 expr2 ni
+			Nothing -> case binop of
+				CLndOp -> CBinary CLorOp (elim_neg expr1) (elim_neg expr2) ni
+				CLorOp -> CBinary CLndOp (elim_neg expr1) (elim_neg expr2) ni
+				other -> error $ "not_c: elim_neg of " ++ show other ++ " not implemented"
+-}
 
 class CreateInt a where
 	ⅈ :: Integer -> CovVecM a
@@ -1913,7 +1915,6 @@ type CallOrTernaryIfs = [Either (Ident,[CExpr],NodeInfo) [CBlockItem]]
 -- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
 translateExprM :: [Env] -> Bool -> CExpr -> Maybe Types -> CovVecM [([Env],CExprWithType,Trace)]
 translateExprM envs toplevel expr0 mb_target_ty = logWrapper ["translateExprM",ren $ take 2 envs,ren toplevel,ren expr0,ren mb_target_ty] $ do
---	ctrue <- ⅈ 1
 	let
 		to_call_or_ternaryifs :: CExpr -> StateT CallOrTernaryIfs CovVecM CExpr
 		-- extract a list of all calls from the input expression expr0
@@ -1949,7 +1950,7 @@ translateExprM envs toplevel expr0 mb_target_ty = logWrapper ["translateExprM",r
 							wrapGoto (Just $ Branch (lineColNodeInfo cond) 1 False (makeCondBranchName cond),cond),
 							CBlockStmt $ var ≔ true_expr])
 						(Just $ makeCompound [
-							wrapGoto (Just $ Branch (lineColNodeInfo cond) 1 True (makeCondBranchName cond),not_c cond),
+							wrapGoto (Just $ Branch (lineColNodeInfo cond) 2 True (makeCondBranchName cond),not_c cond),
 							CBlockStmt $ var ≔ false_expr])
 						undefNode
 					]
@@ -1992,7 +1993,6 @@ translateExprM envs toplevel expr0 mb_target_ty = logWrapper ["translateExprM",r
 				subst_ret_expr :: CExprWithType -> CExprWithType
 				subst_ret_expr (CCall _ _ (ni,_)) | call_ni == ni = retexpr
 				subst_ret_expr expr = expr
---		printLogV 0 $ "################ create_combinations END, trace=" ++ showTrace trace ++ "\nENDTRACE"
 		return [(envs,expr_substituted,trace)]
 
 	create_combinations envs expr trace subs (Left (funident,args,call_ni) : rest) = do
@@ -2823,8 +2823,8 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 				when (not check_OK) $ do
 					let txt = "\ncheckSolutionM ERROR for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result ++ "\n"
 					printToSolutions txt
---					printLogV 0 txt
- 					myError txt
+					printLogV 0 txt
+ 					when haltOnVerificationError $ myError txt
 				return check_OK
 	let all_ok = all (==True) oks
 	when all_ok $ do
