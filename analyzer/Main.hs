@@ -93,10 +93,10 @@ main = do
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] -> "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["ceilf.i","xfdint.i"]) ++ ["-MCDC"]
 --		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ ["-MCDC","-writeModels"]
-		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
+--		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
+		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
 --		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
@@ -262,7 +262,7 @@ logFileVerbosity = if fastMode then 0 else 10
 
 mAX_REN_LIST_LENGTH = 3
 
-haltOnVerificationError = False
+haltOnVerificationError = True
 roundingMode = "roundNearestTiesToEven"
 intType = integral TyInt :: Type
 uLongType = integral TyULong :: Type
@@ -2824,7 +2824,7 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 					let txt = "\ncheckSolutionM ERROR for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result ++ "\n"
 					printToSolutions txt
 					printLogV 0 txt
- 					when haltOnVerificationError $ myError txt
+ 					when haltOnVerificationError $ myError "Halting on verification errors."
 				return check_OK
 	let all_ok = all (==True) oks
 	when all_ok $ do
