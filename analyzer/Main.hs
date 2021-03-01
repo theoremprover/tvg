@@ -95,10 +95,10 @@ main = do
 --		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ ["-MCDC","-writeModels"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
 --		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
-		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : [] --"-writeAST","-writeGlobalDecls"]
@@ -262,7 +262,7 @@ logFileVerbosity = if fastMode then 0 else 10
 
 mAX_REN_LIST_LENGTH = 3
 
-haltOnVerificationError = False
+haltOnVerificationError = True
 roundingMode = "roundNearestTiesToEven"
 intType = integral TyInt :: Type
 uLongType = integral TyULong :: Type
@@ -1448,7 +1448,7 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 					-- This is the whole switch, rewritten as nested if-then-elses.
 					case_replacement = collect_stmts 1 ctrue cbis
 
-				unfoldTracesM mb_ret_type toplevel (forks+1) envs{-([]:envs)-} trace (
+				unfoldTracesM mb_ret_type toplevel (forks+1) ([]:envs) trace (
 					(CBlockDecl (CDecl [CTypeSpec $ CLongType cond_ni]
 						[(Just $ CDeclr (Just cond_var_ident) [] Nothing [] cond_ni,
 						Just $ CInitExpr condexpr cond_ni, Nothing)] cond_ni) :
@@ -1545,7 +1545,7 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 				unroll_loopM :: [Int] -> CovVecM UnfoldTracesRet
 				unroll_loopM depths = do
 					ress <- forM depths $ \ depth ->
-						unfoldTracesM mb_ret_type toplevel forks envs{-([]:envs)-} trace ( (unroll depth,True) : (rest,breakable) : rest2 )
+						unfoldTracesM mb_ret_type toplevel forks ([]:envs) trace ( (unroll depth,True) : (rest,breakable) : rest2 )
 					return $ case toplevel of
 						False -> Left $ concat $ lefts ress
 						True  -> Right $ any id $ rights ress
@@ -1583,7 +1583,7 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 								-- get all variables used in the condition
 								cond_idents = fvar cond
 							-- unfold body to all body traces and filter for all Assignments to variables from the condition
-							Left body_traces <- unfoldTracesM mb_ret_type False forks envs{-([]:envs)-} [] [([CBlockStmt body],True)]
+							Left body_traces <- unfoldTracesM mb_ret_type False forks envs [] [([CBlockStmt body],True)]
 							let
 								body_traces_ass = map (concatMap from_ass) $ map snd body_traces where
 									from_ass (Assignment a@(CVar i _) b) | i `elem` cond_idents = [(a,b)]
