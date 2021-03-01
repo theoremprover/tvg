@@ -964,7 +964,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 					incNumSolutionM
 					printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
 					printToSolutions show_solution_msg
-					
+
 					startend <- gets funStartEndCVS
 					let visible_trace = Set.fromList $ concatMap to_branch res_line
 						where
@@ -1368,7 +1368,7 @@ createBranchesWithAnno cond makebranchname trace forks = do
 			printLogV 2 $ "Recognized \"if\" annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
 				" (reached " ++ show num_reached ++ " times)"
 			return ([all_branches !! (ns!!num_reached - 1)],forks)
-		Nothing -> return (all_branches,forks+1)			
+		Nothing -> return (all_branches,forks+1)
 
 unfoldTracesM ret_type toplevel forks envs trace cbss = do
 --	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cbss] $ do
@@ -1952,7 +1952,7 @@ translateExprM envs toplevel expr0 mb_target_ty trace forks = logWrapper ["trans
 			<T> condexpr$10_12;
 			if(a) condexpr$10_12 = b; else condexpr$10_12 = c;
 			...condexpr$10_12...
-		-}			
+		-}
 		to_call_or_ternaryifs ccond@(CCond cond (Just true_expr) false_expr ni) = do
 			let
 				var_ident = internalIdent $ "condexpr$" ++ locationToName (lineColNodeInfo ccond)
