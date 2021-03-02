@@ -93,12 +93,17 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] -> "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["ceilf.i","xfdint.i"]) ++ ["-MCDC"]
---		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ ["-MCDC","-writeModels"]
+--		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\commatest.c") : []
+
+		-- loops:
+		[] -> "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ []
+
+--		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ []
+
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : "f" : (analyzerPath++"\\mcdcsubfunctiontest.c") : [subfuncovOpt] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\mcdcsubfunctiontest.c") : [subfuncovOpt] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
 --		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
@@ -1510,8 +1515,7 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 				-- translate the whole assignment expression, so we also get the translated lexpr
 				transids (CAssign CAssignOp lexpr assigned_expr' ni) Nothing trace $
 					\ (envs',CAssign CAssignOp lexpr' assigned_expr'' _,trace') -> do
-						r2 <- unfoldTracesM mb_ret_type toplevel forks envs' (Assignment lexpr' assigned_expr'' : trace') ((rest,breakable):rest2)
-						return r2
+						unfoldTracesM mb_ret_type toplevel forks envs' (Assignment lexpr' assigned_expr'' : trace') ((rest,breakable):rest2)
 				where
 				assigned_expr' = case assignop of
 					CAssignOp -> assigned_expr
@@ -1526,8 +1530,44 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 				unaryops = [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
 
 			CExpr (Just expr) _ -> do
-				myError $ "unfoldTraces: " ++ (render.pretty) stmt ++ " not implemented yet."
+				transids expr Nothing trace $ \ (envs',_,trace') -> do
+					printLogV 1 $ "1 ############## " ++ ren expr
+					r <- unfoldTracesM mb_ret_type toplevel forks envs' trace' ( (rest,breakable) : rest2 )
+					printLogV 1 $ "2 ############## " ++ ren r
+					return r
 
+--					myError $ "###########  " ++ ren expr' ++ "\n" ++ showTrace trace'
+{-
+				case null call_or_ternaryifs of
+					-- expr contains no calls, no commas, ternary ifs => skip this CExpr 
+					True -> unfoldTracesM mb_ret_type toplevel forks envs trace ((rest,breakable):rest2)
+					False -> do
+						transids expr Nothing trace $ \ (envs',_,trace') -> do
+							unfoldTracesM mb_ret_type toplevel forks envs' trace' ((rest,breakable):rest2)
+-}
+{-
+		transids :: CExpr -> Maybe Types -> Trace -> (([Env],CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
+		transids expr mb_ty trace cont = logWrapper ["transids",ren expr,ren mb_ty,ren trace,"<cont>"] $ do
+			additional_envs_expr_traces :: [([Env],CExprWithType,Trace)] <- translateExprM envs toplevel expr mb_ty trace forks
+			forkUnfoldTraces toplevel additional_envs_expr_traces $ \ (envs',expr',trace') -> do
+				cont (envs',expr',trace'++trace)
+
+[([Env],CExprWithType,Trace)]
+	
+	scan_res <- scanExprM envs toplevel expr0 mb_target_ty trace forks
+	createCombinationsM envs toplevel scan_res mb_target_ty trace forks
+
+				envexprtrace_s <- translateExprM envs toplevel expr Nothing trace forks
+				forkUnfoldTraces toplevel envexprtrace_s $ \ (envs',expr',trace') -> do
+					case length envs' > length envs of
+						False -> 
+					unfoldTracesM mb_ret_type toplevel forks envs' trace' ((rest,breakable):rest2)
+-}
+{- [([Env],CExprWithType,Trace)]
+				transids expr Nothing trace $ \ (envs',expr',trace') -> do
+					printLogV 1 $ "#### " ++ (render.pretty) stmt ++ "     " ++ (render.pretty) expr'
+					unfoldTracesM mb_ret_type toplevel forks envs' trace' ((rest,breakable):rest2)
+-}
 			-- That's cheating: Insert condition into trace (for loop unrolling and switch) via GOTO
 			CGotoPtr wrapped ni -> do
 				let (mb_branch,cond) :: (Maybe Branch,CExpr) = unwrapGoto wrapped
@@ -1927,11 +1967,8 @@ transcribeExprM envs mb_target_ty expr = do
 
 type CallOrTernaryIfs = [Either (Ident,[CExpr],NodeInfo) [[CBlockItem]]]
 
--- Translates all identifiers in an expression to fresh ones,
--- and expands function calls. Translates to CExprWithType's.
--- It needs to keep the original NodeInfos, because of the coverage information which is derived from the original source tree.
-translateExprM :: [Env] -> Bool -> CExpr -> Maybe Types -> Trace -> Int -> CovVecM [([Env],CExprWithType,Trace)]
-translateExprM envs toplevel expr0 mb_target_ty trace forks = logWrapper ["translateExprM",ren $ take 2 envs,ren toplevel,ren expr0,ren mb_target_ty] $ do
+scanExprM :: [Env] -> Bool -> CExpr -> Maybe Types -> Trace -> Int -> CovVecM (CExpr,CallOrTernaryIfs)
+scanExprM envs toplevel expr0 mb_target_ty trace forks = logWrapper ["scanExprM",ren $ take 2 envs,ren toplevel,ren expr0,ren mb_target_ty,ren trace,ren forks] $ do
 	let
 		to_call_or_ternaryifs :: CExpr -> StateT CallOrTernaryIfs CovVecM CExpr
 		-- extract a list of all calls from the input expression expr0
@@ -1970,9 +2007,20 @@ translateExprM envs toplevel expr0 mb_target_ty trace forks = logWrapper ["trans
 			-- Replace the ccond by the new variable "var"
 			return var
 
+		to_call_or_ternaryifs (CComma exprs _) = do
+			let
+				all_but_last_exprs = reverse $ tail $ reverse exprs
+				last_expr = last exprs
+			modify ( (Right [
+				map CBlockStmt $ map (\ e -> CExpr (Just e) undefNode) all_but_last_exprs ]) :)
+			return $ last exprs
+
 		to_call_or_ternaryifs expr = return expr
 
-	(expr,call_or_ternaryifs::CallOrTernaryIfs) <- runStateT (everywhereM (mkM to_call_or_ternaryifs) expr0) []
+	runStateT (everywhereM (mkM to_call_or_ternaryifs) expr0) []
+
+createCombinationsM :: [Env] -> Bool -> (CExpr,CallOrTernaryIfs) -> Maybe Types -> Trace -> Int -> CovVecM [([Env],CExprWithType,Trace)]
+createCombinationsM envs toplevel (expr,call_or_ternaryifs) mb_target_ty trace forks = do
 	create_combinations envs expr [] [] call_or_ternaryifs
 
 	where
@@ -2024,6 +2072,12 @@ translateExprM envs toplevel expr0 mb_target_ty trace forks = logWrapper ["trans
 			Left envs_ternaryiftraces <- unfoldTracesM Nothing False 0 envs [] [ (cbis,False) ]
 			concatForM envs_ternaryiftraces $ \ (envs',ternaryif_trace) -> do
 				create_combinations envs' expr (ternaryif_trace++trace) subs rest
+
+translateExprM :: [Env] -> Bool -> CExpr -> Maybe Types -> Trace -> Int -> CovVecM [([Env],CExprWithType,Trace)]
+translateExprM envs toplevel expr0 mb_target_ty trace forks = logWrapper ["translateExprM",ren $ take 2 envs,ren toplevel,ren expr0,ren mb_target_ty] $ do
+	scan_res <- scanExprM envs toplevel expr0 mb_target_ty trace forks
+	createCombinationsM envs toplevel scan_res mb_target_ty trace forks
+
 
 -- Substitutes an expression x by y everywhere in d
 substituteBy :: (Eq a,Data a,Data d) => a -> a -> d -> d
