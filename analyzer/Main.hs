@@ -93,6 +93,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
+--		[] -> "gcc" : "f" : (analyzerPath++"\\checkvarsdefinedtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\commatest.c") : []
 
@@ -770,7 +771,7 @@ int __attribute__((__cdecl__)) printf(const char *,...);
 int __attribute__((__cdecl__)) sscanf(const char *,const char *,...) ;
 
 int solver_pragma(int x,...) { return 1; }
-void solver_debug(void* x) { }
+void solver_debug(unsigned short x) { printf("DEBUG_VAL=%x\n",x); }
 
 $esc:incl
 
@@ -941,74 +942,66 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 			Return expr -> [ "return " ++ (render.pretty) expr ++ " ;" ]
 			_ -> []
 
-	trace' <-
+	trace_for_def_analysis <-
 		showtraceM showInitialTrace "Initial" return trace >>=
-		showtraceM showTraces "elimInds"             elimInds >>=
-		showtraceM showTraces "1. simplifyTraceM"    simplifyTraceM >>=
+		showtraceM showTraces "elimInds"             elimInds
+	trace' <-
+		showtraceM showTraces "1. simplifyTraceM"    simplifyTraceM trace_for_def_analysis >>=
 		showtraceM showTraces "1. elimAssignmentsM"  elimAssignmentsM >>=
 		showtraceM showTraces "elimArrayAssignsM"    elimArrayAssignsM >>=
 		showtraceM showTraces "2. elimAssignmentsM"  elimAssignmentsM >>=
 		showtraceM showTraces "2. simplifyTraceM"    simplifyTraceM >>=
 		showtraceM showFinalTrace "createSymbolicVarsM"  createSymbolicVarsM
 
-	Just retval_env  <- case mb_ret_type of
-		Nothing  -> return $ Just []
-		Just ret_type -> gets retEnvCVS
-	Just param_env_exprs <- gets paramEnvCVS
-	let
-		param_env = map fst param_env_exprs
-		param_names = map (fst.snd) param_env
-		ret_names   = map (fst.snd.fst) retval_env
-	argvars = 
-	case checkVarDefs trace' of
-		Just msg -> do
-			printLogV 0 msg
-			return True
-		Nothing -> do
+	solveTraceM mb_ret_type traceid trace' >>= \case
+		Left solvable -> return solvable
+		Right resultdata@(model_string,mb_solution) -> do
+			funname <- gets funNameCVS
+			let show_solution_msg = show_solution funname mb_solution ++ "\n"
+			printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n" ++ show_solution_msg
+			case mb_solution of
+				Nothing -> do
+					incNumNoSolutionM
+					printLogV 1 "No solution."
+					return False
+				Just (_,_,[]) -> myError $ "Empty solution: \n" ++ show_solution_msg
+				Just solution -> do
+					incNumSolutionM
+					printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
+					printToSolutions show_solution_msg
 
-			either_resultdata <- solveTraceM mb_ret_type traceid trace'
-			case either_resultdata of
-				Left solvable -> return solvable
-				Right resultdata@(model_string,mb_solution) -> do
-					funname <- gets funNameCVS
-					let show_solution_msg = show_solution funname mb_solution ++ "\n"
-					printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n" ++ show_solution_msg
-					case mb_solution of
+					startends <- gets funStartEndCVS
+					printLogV 1 $ "startends = " ++ show startends
+					let visible_trace = Set.fromList $ concatMap to_branch res_line
+						where
+						is_visible_branch :: [(Location,Location)] -> Location -> Bool
+						is_visible_branch locs lc = any (\(start,end) -> start <= lc && lc < end) locs
+						to_branch (Condition (Just branch) _) | is_visible_branch startends (branchLocation branch) = [ branch ]
+						to_branch _ = []
+
+					let cov_branches = "\tCovered branches:\n" ++ unlines (map (("\t"++).showBranch) $ Set.toList visible_trace)
+					printLogV 1 cov_branches
+					printToSolutions cov_branches
+
+					checkVarsDefined mb_ret_type trace_for_def_analysis >>= \case
+						Just msg -> do
+							printLogV 0 msg
+							printLogV 0 $ "Will not checkSolutions for " ++ show traceid
 						Nothing -> do
-							incNumNoSolutionM
-							printLogV 1 "No solution."
-							return False
-						Just (_,_,[]) -> myError $ "Empty solution: \n" ++ show_solution_msg
-						Just solution -> do
-							incNumSolutionM
-							printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
-							printToSolutions show_solution_msg
-		
-							startends <- gets funStartEndCVS
-							printLogV 1 $ "startends = " ++ show startends
-							let visible_trace = Set.fromList $ concatMap to_branch res_line
-								where
-								is_visible_branch :: [(Location,Location)] -> Location -> Bool
-								is_visible_branch locs lc = any (\(start,end) -> start <= lc && lc < end) locs
-								to_branch (Condition (Just branch) _) | is_visible_branch startends (branchLocation branch) = [ branch ]
-								to_branch _ = []
-		
-							let cov_branches = "\tCovered branches:\n" ++ unlines (map (("\t"++).showBranch) $ Set.toList visible_trace)
-							printLogV 1 cov_branches
-							printToSolutions cov_branches
 							when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
-							(tas,covered) <- gets analysisStateCVS
-							all_branches <- gets allCondPointsCVS
-							let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
-							let excess_branches = visible_trace `Set.difference` all_branches
-							when (not $ null excess_branches) $ do
-								printCondPoints all_branches
-								myError $ "Branches " ++ show excess_branches ++ " are covered but not in all_branches!"
-							-- Are all the decision points are already covered? They can't, probably...?
-							-- If yes, this trace does not contribute to full coverage...
-							when (not $ visible_trace ⊆ covered) $
-								modify $ \ s -> s { analysisStateCVS = (traceanalysisresult:tas,visible_trace ∪ covered) }				
-							return True
+
+					(tas,covered) <- gets analysisStateCVS
+					all_branches <- gets allCondPointsCVS
+					let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
+					let excess_branches = visible_trace `Set.difference` all_branches
+					when (not $ null excess_branches) $ do
+						printCondPoints all_branches
+						myError $ "Branches " ++ show excess_branches ++ " are covered but not in all_branches!"
+					-- Are all the decision points are already covered? They can't, probably...?
+					-- If yes, this trace does not contribute to full coverage...
+					when (not $ visible_trace ⊆ covered) $
+						modify $ \ s -> s { analysisStateCVS = (traceanalysisresult:tas,visible_trace ∪ covered) }
+					return True
 
 	where
 
@@ -1023,31 +1016,45 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 			printLogV 5 $ showLine trace'
 		return trace'
 
-getArgRetNames :: CovVecM ()
-getArgRetNames = do
-	Just retval_env  <- case mb_ret_type of
-		Nothing  -> return $ Just []
-		Just ret_type -> gets retEnvCVS
-	Just param_env_exprs <- gets paramEnvCVS
+-- move backwards on the trace, till a assignment to a to_be_defined variable is reached.
+-- then, remove the to_be_defined variable from the to_be_defined variable set, and add all variables
+-- that are in the assigned expr.
+checkVarsDefined :: Maybe Type -> Trace -> CovVecM (Maybe String)
+checkVarsDefined mb_ret_type trace = do
+--	printLogV 0 $ "Trace for checkVarsDefined:\n" ++ showTrace trace
+	(param_env_exprs,param_env,param_names,ret_names) <- getArgRetNames mb_ret_type
 	let
-		param_env = map fst param_env_exprs
-		param_names = map (fst.snd) param_env
-		ret_names   = map (fst.snd.fst) retval_env
+		Return ret_expr : resttrace = reverse trace
+		ret_vars = fvar ret_expr
+	printLogV 1 $ "################ ret_vars =" ++ show (map (render.pretty) ret_vars)
+	-- find out all variables that are undefined in the trace, and also not parameters
+	return Nothing {- TODO
+	return $ case collect_undef_vars (fvar ret_expr) resttrace \\ param_names of
+		[] -> Nothing
+		undef_vars -> Just $ unlines $ "Undefined Variables:" :
+			(for undef_vars $ \ var -> printf "\tVariable %s is undefined" ((render.pretty) var))
+-}
 
-
-checkVarDefs :: [Ident] -> Trace -> Maybe String
-checkVarDefs argvars trace = 
 	where
 
-	searchvar :: CExprWithType -> [CExprWithType]
-	searchvar (CVar ident _) = [ident]
-	searchvar _ = []
-	collect_vars expr = nub $ everything (++) (mkQ [] searchvar) expr
+	collect_undef_vars :: [Ident] -> Trace -> [Ident]
 
-	relevant_vars vars = 
-	
-	toassvar (Assignment 
-	assigned_vars = concatMap toassvar trace
+	collect_undef_vars should_be_defined_vars [] = should_be_defined_vars
+
+	collect_undef_vars should_be_defined_vars (Assignment (CVar defd_ident _) assd_expr : resttrace) |
+		defd_ident `elem` should_be_defined_vars =
+			collect_undef_vars (nub $ (should_be_defined_vars \\ [defd_ident]) ++ assd_expr_vars) resttrace
+			where
+			assd_expr_vars = fvar assd_expr
+
+{-
+	-- assume assignments to arrays are defining all elements...
+	collect_undef_vars should_be_defined_vars (Assignment lexpr assd_expr : resttrace) =
+		collect_undef_vars should_be_defined_vars resttrace
+-}
+
+	collect_undef_vars should_be_defined_vars (_ : resttrace) =
+		collect_undef_vars should_be_defined_vars resttrace
 
 trace2traceid trace = concatMap extract_conds trace where
 	extract_conds (Condition (Just branch) _) = [ numBranch branch ]
@@ -1577,38 +1584,6 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 					printLogV 1 $ "2 ############## " ++ ren r
 					return r
 
---					myError $ "###########  " ++ ren expr' ++ "\n" ++ showTrace trace'
-{-
-				case null call_or_ternaryifs of
-					-- expr contains no calls, no commas, ternary ifs => skip this CExpr 
-					True -> unfoldTracesM mb_ret_type toplevel forks envs trace ((rest,breakable):rest2)
-					False -> do
-						transids expr Nothing trace $ \ (envs',_,trace') -> do
-							unfoldTracesM mb_ret_type toplevel forks envs' trace' ((rest,breakable):rest2)
--}
-{-
-		transids :: CExpr -> Maybe Types -> Trace -> (([Env],CExprWithType,Trace) -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
-		transids expr mb_ty trace cont = logWrapper ["transids",ren expr,ren mb_ty,ren trace,"<cont>"] $ do
-			additional_envs_expr_traces :: [([Env],CExprWithType,Trace)] <- translateExprM envs toplevel expr mb_ty trace forks
-			forkUnfoldTraces toplevel additional_envs_expr_traces $ \ (envs',expr',trace') -> do
-				cont (envs',expr',trace'++trace)
-
-[([Env],CExprWithType,Trace)]
-	
-	scan_res <- scanExprM envs toplevel expr0 mb_target_ty trace forks
-	createCombinationsM envs toplevel scan_res mb_target_ty trace forks
-
-				envexprtrace_s <- translateExprM envs toplevel expr Nothing trace forks
-				forkUnfoldTraces toplevel envexprtrace_s $ \ (envs',expr',trace') -> do
-					case length envs' > length envs of
-						False -> 
-					unfoldTracesM mb_ret_type toplevel forks envs' trace' ((rest,breakable):rest2)
--}
-{- [([Env],CExprWithType,Trace)]
-				transids expr Nothing trace $ \ (envs',expr',trace') -> do
-					printLogV 1 $ "#### " ++ (render.pretty) stmt ++ "     " ++ (render.pretty) expr'
-					unfoldTracesM mb_ret_type toplevel forks envs' trace' ((rest,breakable):rest2)
--}
 			-- That's cheating: Insert condition into trace (for loop unrolling and switch) via GOTO
 			CGotoPtr wrapped ni -> do
 				let (mb_branch,cond) :: (Maybe Branch,CExpr) = unwrapGoto wrapped
@@ -2825,12 +2800,8 @@ parseDouble s =
 fPMinimizer name = [ SExpr [SLeaf "minimize",SExpr [SLeaf "bvsub", SLeaf "#x00000001",
 	SExpr [ SExpr [SLeaf "_",SLeaf "fp.to_sbv", SLeaf "32"], SLeaf "RNE", SLeaf (identToString name) ] ]] ]
 
--- In case of a cutoff, mb_ret_type is Nothing.
-solveTraceM :: Maybe Type -> [Int] -> Trace -> CovVecM (Either Bool ResultData)
-solveTraceM mb_ret_type traceid trace = do
-	(param_env_expr,param_env,param_name,ret_names) <- 
-	let
-		tracename = show traceid
+--getArgRetNames :: Maybe Type -> CovVecM ()
+getArgRetNames mb_ret_type = do
 	Just retval_env  <- case mb_ret_type of
 		Nothing  -> return $ Just []
 		Just ret_type -> gets retEnvCVS
@@ -2838,7 +2809,21 @@ solveTraceM mb_ret_type traceid trace = do
 	let
 		param_env = map fst param_env_exprs
 		param_names = map (fst.snd) param_env
-		ret_names   = map (fst.snd.fst) retval_env
+		ret_names = map (fst.snd.fst) retval_env
+	return (param_env_exprs,param_env,param_names,ret_names)
+
+-- In case of a cutoff, mb_ret_type is Nothing.
+solveTraceM :: Maybe Type -> [Int] -> Trace -> CovVecM (Either Bool ResultData)
+solveTraceM mb_ret_type traceid trace = do
+	(param_env_exprs,param_env,param_names,ret_names) <- getArgRetNames mb_ret_type
+	Just retval_env  <- case mb_ret_type of
+		Nothing  -> return $ Just []
+		Just ret_type -> gets retEnvCVS
+	let
+--		param_env = map fst param_env_exprs
+--		param_names = map (fst.snd) param_env
+--		ret_names   = map (fst.snd.fst) retval_env
+		tracename = show traceid
 		constraints = concatMap traceitem2constr trace where
 		traceitem2constr constraint@(Condition _ _) = [constraint]
 		traceitem2constr constraint@(Assignment (CIndex _ _ _) _) = [constraint]
