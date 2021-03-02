@@ -81,6 +81,8 @@ _FDunscale
 _FDnorm
 -}
 
+subfuncovOpt = "-subfuncov"
+
 main :: IO ()
 main = do
 	-- when there is an error, we'd like to have *all* output till then
@@ -95,7 +97,8 @@ main = do
 --		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ ["-MCDC","-writeModels"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "f" : (analyzerPath++"\\mcdcsubfunctiontest.c") : [subfuncovOpt] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
 --		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
@@ -252,6 +255,11 @@ concatForM = flip concatMapM
 once :: MonadPlus m => GenericM m -> GenericM m
 once f x = f x `mplus` gmapMo (once f) x
 -}
+
+isOptionSet :: String -> CovVecM Bool
+isOptionSet optname = do
+	opts <- gets optsCVS
+	return $ optname `elem` opts
 
 ------------------------
 
@@ -578,24 +586,6 @@ createBranches default_name cond = do
 			(Branch (lineColNodeInfo cond) 3 False "F||F||T||F", (not_c expr1) ⋏ (not_c expr2) ⋏        expr3  ⋏ (not_c expr4)),
 			(Branch (lineColNodeInfo cond) 4 False "F||F||F||T", (not_c expr1) ⋏ (not_c expr2) ⋏ (not_c expr3) ⋏        expr4 ),
 			(Branch (lineColNodeInfo cond) 5 True  "F||F||F||F", (not_c expr1) ⋏ (not_c expr2) ⋏ (not_c expr3) ⋏ (not_c expr4)) ]
-{-
---return $ case expr of map line2branch $ mcdc_cov expr
- 	where
- 	prepend_bool :: Bool -> MCDC_Line -> MCDC_Line
- 	prepend_bool b (bools,eval_result,expr) = (b:bools,eval_result,expr)
- 	flip_eval_result :: MCDC_Line -> MCDC_Line
- 	flip_eval_result (bools,b,expr) = (bools,not b,expr)
- 	search_eval_result_line :: Bool -> MCDC_Matrix -> MCDC_Line
- 	search_eval_result_line b matrix = head $ filter (\(_,bx,_)->bx==b) matrix
-	expand_matrix is_and matrix = new_line : map (prepend_bool is_and) matrix where
-		new_line = flip_eval_result $ prepend_bool (is_and) (search_eval_result_line (not is_and) matrix)
- 	mcdc_cov :: CExpr -> MCDC_Matrix
- 	-- find rightmost MC/DC literal, the we are appending to the left side
-	mcdc_cov (CBinary CLndOp expr1 expr2 _) = expand_matrix True (mcdc_cov expr2)
-	mcdc_cov (CBinary CLorOp expr1 expr2 _) = expand_matrix False (mcdc_cov expr2)
-	mcdc_cov other_expr = [([True],True,other_expr),([False],False,not_c other_expr)]
-	line2branch (bools,b,cond) = (Branch (map (\ b -> if b then 'T' else 'F') bools) (lineColNodeInfo expr),cond)
--}
 
 instance CNode TraceElem where
 	nodeInfo (Assignment lexpr _)       = extractNodeInfo lexpr
@@ -712,12 +702,20 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 		searchexprcondpoint expr = do
 			add_branches <- case expr of
 				CCond cond _ _ _ -> liftandfst $ createBranches (makeCondBranchName cond) cond
+--				CCall (CVar funident _) -> do
+					
 				_                -> return []
 			modify (add_branches++)
 			return expr
-	condpoints <- execStateT (everywhereM (mkM searchcondpoint) body) []
-	exprcondpoints <- execStateT (everywhereM (mkM searchexprcondpoint) body) []
-	modify $ \ s -> s { allCondPointsCVS = Set.fromList $ condpoints ++ exprcondpoints }
+		
+		allpoints_in_body :: Ident -> CovVecM (Set.Set Branch)
+		allpoints_in_body funident = do
+			FunDef (VarDecl _ _ (FunctionType (FunType _ _ _) _)) body _ <- lookupFunM funident
+			condpoints <- execStateT (everywhereM (mkM searchcondpoint) body) []
+			exprcondpoints <- execStateT (everywhereM (mkM searchexprcondpoint) body) []
+			return $ Set.fromList $ condpoints ++ exprcondpoints
+	allpoints <- allpoints_in_body (builtinIdent funname)
+	modify $ \ s -> s { allCondPointsCVS = allpoints }
 
 	let
 		srcfilename cnode | isNoPos (posOf cnode) = Nothing

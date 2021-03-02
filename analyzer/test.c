@@ -1,19 +1,9 @@
 
-
-
-
-
-
-
-
-
 typedef union
  {
  unsigned short _Sh[sizeof(double)/sizeof(short)];
  double _Val;
  } __attribute__ ((__may_alias__)) _Dval;
-
-
 
 
 short _Dtest(double *px)
