@@ -9,8 +9,8 @@ int f(int x,int y)
     if(g(x,y)>0) return (y>0 ? 1 :2);
     switch(y)
     {
-        case 1: y++;
-        case 2: return y;
+        case -1: y++;
+        case -2: return y;
         default: y+=2;
     }
     return y;

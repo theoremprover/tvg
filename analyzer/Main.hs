@@ -188,12 +188,11 @@ main = do
 			when ("-writeGlobalDecls" `elem` opts) $
 				writeFile "globdecls.html" $ globdeclsToHTMLString globdecls
 
-			let coveragekind = case opts of
-			 	opts | "-Branch" `elem` opts -> Branch_Cov
-			 	_ -> MCDC_Cov
+			let coveragekind = if "-Branch" `elem` opts then Branch_Cov else MCDC_Cov
 			(every_branch_covered,s) <- runStateT covVectorsM $
-				CovVecState globdecls 1 allFileName Nothing funname undefined gcc opts
+				CovVecState globdecls 1 allFileName Nothing funname [] gcc opts
 					Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1) coveragekind
+
 			let
 				(testvectors_rev,covered) = analysisStateCVS s
 				testvectors = reverse testvectors_rev
@@ -489,7 +488,7 @@ data CovVecState = CovVecState {
 	srcFilenameCVS   :: String,
 	checkExeNameCVS  :: Maybe String,
 	funNameCVS       :: String,
-	funStartEndCVS   :: (Location,Location),
+	funStartEndCVS   :: [(Location,Location)],
 	compilerCVS      :: String,
 	optsCVS          :: [String],
 	paramEnvCVS      :: Maybe [(EnvItem,CExprWithType)],
@@ -674,8 +673,21 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 	ret_env_exprs <- createInterfaceFromExprM (CVar srcident (nodeInfo srcident,z3_ret_type')) ret_type'
 	modify $ \ s -> s { retEnvCVS = Just ret_env_exprs }
 
+	subfuncov <- isOptionSet subfuncovOpt
 	-- Go through the body of the function and determine all decision points
 	let
+		{-
+		srcfilename cnode | isNoPos (posOf cnode) = Nothing
+		srcfilename cnode | isBuiltinPos (posOf cnode) = Nothing
+		srcfilename cnode | isInternalPos (posOf cnode) = Nothing
+		srcfilename cnode = Just $ posFile $ posOf cnode
+		is_in_src_file fundef identdecl = srcfilename identdecl == srcfilename fundef
+		-}
+		fun_lc fundef = lineColNodeInfo (nodeInfo fundef)
+		next_lc fundef = case sort $ filter (> lineColNodeInfo (nodeInfo fundef)) $ map lineColNodeInfo $ {-filter (is_in_src_file fundef)-} globdecls of
+			[] -> (maxBound,maxBound,-1)
+			next : _ -> next
+
 		liftandfst :: CovVecM [(Branch,CExpr)] -> StateT [Branch] CovVecM [Branch]
 		liftandfst createbranches = do
 			branchesexprs <- lift createbranches
@@ -702,32 +714,21 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 		searchexprcondpoint expr = do
 			add_branches <- case expr of
 				CCond cond _ _ _ -> liftandfst $ createBranches (makeCondBranchName cond) cond
---				CCall (CVar funident _) -> do
-					
-				_                -> return []
+				-- Recurse on allpoints_in_body if called functions should be covered as well
+				CCall (CVar funident _) _ _ | subfuncov -> lift $ allpoints_in_body funident
+				_ -> return []
 			modify (add_branches++)
 			return expr
-		
-		allpoints_in_body :: Ident -> CovVecM (Set.Set Branch)
+
+		allpoints_in_body :: Ident -> CovVecM [Branch]
 		allpoints_in_body funident = do
-			FunDef (VarDecl _ _ (FunctionType (FunType _ _ _) _)) body _ <- lookupFunM funident
+			fundef@(FunDef (VarDecl _ _ (FunctionType (FunType _ _ _) _)) body fundef_ni) <- lookupFunM funident
+			modify $ \ s -> s { funStartEndCVS = (fun_lc fundef,next_lc fundef) : funStartEndCVS s }
 			condpoints <- execStateT (everywhereM (mkM searchcondpoint) body) []
 			exprcondpoints <- execStateT (everywhereM (mkM searchexprcondpoint) body) []
-			return $ Set.fromList $ condpoints ++ exprcondpoints
+			return $ condpoints ++ exprcondpoints
 	allpoints <- allpoints_in_body (builtinIdent funname)
-	modify $ \ s -> s { allCondPointsCVS = allpoints }
-
-	let
-		srcfilename cnode | isNoPos (posOf cnode) = Nothing
-		srcfilename cnode | isBuiltinPos (posOf cnode) = Nothing
-		srcfilename cnode | isInternalPos (posOf cnode) = Nothing
-		srcfilename cnode = Just $ posFile $ posOf cnode
-		is_in_src_file identdecl = srcfilename identdecl == srcfilename fundef
-		fun_lc = lineColNodeInfo fundef_ni
-		next_lc = case sort $ filter (> lineColNodeInfo fundef_ni) $ map lineColNodeInfo $ filter is_in_src_file globdecls of
-			[] -> (maxBound,maxBound,-1)
-			next : _ -> next
-	modify $ \ s -> s { funStartEndCVS = (fun_lc,next_lc) }
+	modify $ \ s -> s { allCondPointsCVS = Set.fromList allpoints }
 
 	let
 		formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) -> (srcident,ty)
@@ -963,12 +964,13 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 					printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
 					printToSolutions show_solution_msg
 
-					startend <- gets funStartEndCVS
+					startends <- gets funStartEndCVS
+					printLogV 1 $ "startends = " ++ show startends
 					let visible_trace = Set.fromList $ concatMap to_branch res_line
 						where
-						is_visible_branch :: (Location,Location) -> Location -> Bool
-						is_visible_branch (start,end) lc = start <= lc && lc < end
-						to_branch (Condition (Just branch) _) | is_visible_branch startend (branchLocation branch) = [ branch ]
+						is_visible_branch :: [(Location,Location)] -> Location -> Bool
+						is_visible_branch locs lc = any (\(start,end) -> start <= lc && lc < end) locs
+						to_branch (Condition (Just branch) _) | is_visible_branch startends (branchLocation branch) = [ branch ]
 						to_branch _ = []
 
 					let cov_branches = "\tCovered branches:\n" ++ unlines (map (("\t"++).showBranch) $ Set.toList visible_trace)
