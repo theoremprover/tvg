@@ -93,11 +93,11 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\commatest.c") : []
 
 		-- loops:
-		[] -> "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ []
+--		[] -> "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ []
 
 --		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ []
 
@@ -951,49 +951,64 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 		showtraceM showTraces "2. simplifyTraceM"    simplifyTraceM >>=
 		showtraceM showFinalTrace "createSymbolicVarsM"  createSymbolicVarsM
 
-	either_resultdata <- solveTraceM mb_ret_type traceid trace'
-	case either_resultdata of
-		Left solvable -> return solvable
-		Right resultdata@(model_string,mb_solution) -> do
-			funname <- gets funNameCVS
-			let show_solution_msg = show_solution funname mb_solution ++ "\n"
-			printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n" ++ show_solution_msg
-			case mb_solution of
-				Nothing -> do
-					incNumNoSolutionM
-					printLogV 1 "No solution."
-					return False
-				Just (_,_,[]) -> myError $ "Empty solution: \n" ++ show_solution_msg
-				Just solution -> do
-					incNumSolutionM
-					printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
-					printToSolutions show_solution_msg
+	Just retval_env  <- case mb_ret_type of
+		Nothing  -> return $ Just []
+		Just ret_type -> gets retEnvCVS
+	Just param_env_exprs <- gets paramEnvCVS
+	let
+		param_env = map fst param_env_exprs
+		param_names = map (fst.snd) param_env
+		ret_names   = map (fst.snd.fst) retval_env
+	argvars = 
+	case checkVarDefs trace' of
+		Just msg -> do
+			printLogV 0 msg
+			return True
+		Nothing -> do
 
-					startends <- gets funStartEndCVS
-					printLogV 1 $ "startends = " ++ show startends
-					let visible_trace = Set.fromList $ concatMap to_branch res_line
-						where
-						is_visible_branch :: [(Location,Location)] -> Location -> Bool
-						is_visible_branch locs lc = any (\(start,end) -> start <= lc && lc < end) locs
-						to_branch (Condition (Just branch) _) | is_visible_branch startends (branchLocation branch) = [ branch ]
-						to_branch _ = []
-
-					let cov_branches = "\tCovered branches:\n" ++ unlines (map (("\t"++).showBranch) $ Set.toList visible_trace)
-					printLogV 1 cov_branches
-					printToSolutions cov_branches
-					when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
-					(tas,covered) <- gets analysisStateCVS
-					all_branches <- gets allCondPointsCVS
-					let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
-					let excess_branches = visible_trace `Set.difference` all_branches
-					when (not $ null excess_branches) $ do
-						printCondPoints all_branches
-						myError $ "Branches " ++ show excess_branches ++ " are covered but not in all_branches!"
-					-- Are all the decision points are already covered? They can't, probably...?
-					-- If yes, this trace does not contribute to full coverage...
-					when (not $ visible_trace ⊆ covered) $
-						modify $ \ s -> s { analysisStateCVS = (traceanalysisresult:tas,visible_trace ∪ covered) }				
-					return True
+			either_resultdata <- solveTraceM mb_ret_type traceid trace'
+			case either_resultdata of
+				Left solvable -> return solvable
+				Right resultdata@(model_string,mb_solution) -> do
+					funname <- gets funNameCVS
+					let show_solution_msg = show_solution funname mb_solution ++ "\n"
+					printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n" ++ show_solution_msg
+					case mb_solution of
+						Nothing -> do
+							incNumNoSolutionM
+							printLogV 1 "No solution."
+							return False
+						Just (_,_,[]) -> myError $ "Empty solution: \n" ++ show_solution_msg
+						Just solution -> do
+							incNumSolutionM
+							printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
+							printToSolutions show_solution_msg
+		
+							startends <- gets funStartEndCVS
+							printLogV 1 $ "startends = " ++ show startends
+							let visible_trace = Set.fromList $ concatMap to_branch res_line
+								where
+								is_visible_branch :: [(Location,Location)] -> Location -> Bool
+								is_visible_branch locs lc = any (\(start,end) -> start <= lc && lc < end) locs
+								to_branch (Condition (Just branch) _) | is_visible_branch startends (branchLocation branch) = [ branch ]
+								to_branch _ = []
+		
+							let cov_branches = "\tCovered branches:\n" ++ unlines (map (("\t"++).showBranch) $ Set.toList visible_trace)
+							printLogV 1 cov_branches
+							printToSolutions cov_branches
+							when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
+							(tas,covered) <- gets analysisStateCVS
+							all_branches <- gets allCondPointsCVS
+							let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
+							let excess_branches = visible_trace `Set.difference` all_branches
+							when (not $ null excess_branches) $ do
+								printCondPoints all_branches
+								myError $ "Branches " ++ show excess_branches ++ " are covered but not in all_branches!"
+							-- Are all the decision points are already covered? They can't, probably...?
+							-- If yes, this trace does not contribute to full coverage...
+							when (not $ visible_trace ⊆ covered) $
+								modify $ \ s -> s { analysisStateCVS = (traceanalysisresult:tas,visible_trace ∪ covered) }				
+							return True
 
 	where
 
@@ -1007,6 +1022,32 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 				if showBuiltins then "" else "<leaving out builtins...>\n"
 			printLogV 5 $ showLine trace'
 		return trace'
+
+getArgRetNames :: CovVecM ()
+getArgRetNames = do
+	Just retval_env  <- case mb_ret_type of
+		Nothing  -> return $ Just []
+		Just ret_type -> gets retEnvCVS
+	Just param_env_exprs <- gets paramEnvCVS
+	let
+		param_env = map fst param_env_exprs
+		param_names = map (fst.snd) param_env
+		ret_names   = map (fst.snd.fst) retval_env
+
+
+checkVarDefs :: [Ident] -> Trace -> Maybe String
+checkVarDefs argvars trace = 
+	where
+
+	searchvar :: CExprWithType -> [CExprWithType]
+	searchvar (CVar ident _) = [ident]
+	searchvar _ = []
+	collect_vars expr = nub $ everything (++) (mkQ [] searchvar) expr
+
+	relevant_vars vars = 
+	
+	toassvar (Assignment 
+	assigned_vars = concatMap toassvar trace
 
 trace2traceid trace = concatMap extract_conds trace where
 	extract_conds (Condition (Just branch) _) = [ numBranch branch ]
@@ -2787,6 +2828,7 @@ fPMinimizer name = [ SExpr [SLeaf "minimize",SExpr [SLeaf "bvsub", SLeaf "#x0000
 -- In case of a cutoff, mb_ret_type is Nothing.
 solveTraceM :: Maybe Type -> [Int] -> Trace -> CovVecM (Either Bool ResultData)
 solveTraceM mb_ret_type traceid trace = do
+	(param_env_expr,param_env,param_name,ret_names) <- 
 	let
 		tracename = show traceid
 	Just retval_env  <- case mb_ret_type of
