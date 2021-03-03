@@ -94,9 +94,9 @@ main = do
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 
-		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest3.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest3.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\checkvarsdefinedtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\commatest.c") : []
 
 		-- loops:
@@ -612,7 +612,7 @@ instance CNode TraceElem where
 
 instance Pretty CExprWithType where
 	pretty (CBinary op expr1 expr2 (_,ty)) = prettyCE (pretty op) [pretty expr1,pretty expr2] ty
-	pretty (CCast decl expr (_,ty)) = prettyCE (lparen <> (text $ show ty) <> rparen) [pretty expr] ty
+	pretty (CCast decl expr (_,ty)) = prettyCE (lparen <> (text $ show (fst ty)) <> rparen) [pretty expr] ty
 	pretty (CUnary op expr (_,ty)) = prettyCE (pretty op) [pretty expr] ty
 	pretty (CMember expr ident deref (_,ty)) = prettyCE (text "")
 		[pretty expr,text (if deref then "->" else ".") <+> pretty ident] ty
@@ -631,7 +631,7 @@ instance Pretty CExprWithType where
 	pretty other = error $ "instance Pretty CExprWithType not implemented for " ++ show other
 
 prettyType ty = case printTypes of
-	True -> text "::" <+> text (show ty)
+	True -> text "::" <+> text (show $ fst ty)
 	False -> Text.PrettyPrint.empty
 
 prettyCE head subs _ | not printTypes = parens $ case subs of

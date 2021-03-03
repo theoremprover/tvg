@@ -1,8 +1,8 @@
 int f(int x)
 {
-    int arr[3] = { 1,2,3 };
-    arr[0] = 10;
-    return(arr[0]+arr[1]);
+    int arr[2] = { 1,2 };
+    arr[1] = 10;
+    return(arr[0]);
 }
 
 /*
