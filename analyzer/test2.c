@@ -1,7 +1,14 @@
 #include <stdio.h>
 
+short f()
+{
+    unsigned short x = 0xc010;
+    return x;
+}
+
 int main(int argc,char *argv[])
 {
-    double d = 0.0/0.0;
-    if(d>0.0) printf("TRUE\n"); else printf("FALSE\n");
-}
+   unsigned short x = f();
+ printf("%hi\n",x);
+
+ }

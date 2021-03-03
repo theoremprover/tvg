@@ -93,13 +93,16 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
+
+		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest3.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\checkvarsdefinedtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\commatest.c") : []
 
 		-- loops:
 --		[] -> "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ []
 
+--		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ []
 
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
@@ -116,7 +119,6 @@ main = do
 --		[] -> "gcc" : "f" : (analyzerPath++"\\decltest.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_fpmul_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [] --"-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\fortest.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\iffuntest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\switchtest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
@@ -285,10 +287,10 @@ ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
 floatType = DirectType (TyFloating TyFloat) noTypeQuals noAttributes
 doubleType = DirectType (TyFloating TyDouble) noTypeQuals noAttributes
 
-showInitialTrace = False && not fastMode
-showModels = False && not fastMode
+showInitialTrace = True && not fastMode
+showModels = True && not fastMode
 showOnlySolutions = True
-showTraces = False && not fastMode
+showTraces = True && not fastMode
 showFinalTrace = True && not fastMode
 checkSolutions = True
 returnval_var_name = "return_val"
@@ -526,8 +528,14 @@ printStatsM = gets statsCVS >>= (printLogV 2) . show
 
 type CovVecM = StateT CovVecState IO
 
+data AssignmentKind = Normal CExprWithType | ArrayUpdate Ident Ident Types CExprWithType
+	deriving Data
+instance Pretty AssignmentKind where
+	pretty (Normal expr) = pretty expr
+	pretty (ArrayUpdate ident1 ident2 _ index) = pretty ident1 <> text "->" <> pretty ident2 <> brackets (pretty index)
+
 data TraceElem =
-	Assignment CExprWithType CExprWithType |
+	Assignment AssignmentKind CExprWithType |
 	Condition (Maybe Branch) CExprWithType |
 	NewDeclaration (Ident,Type) |
 	Return CExprWithType |
@@ -593,7 +601,9 @@ createBranches default_name cond = do
 			(Branch (lineColNodeInfo cond) 5 True  "F||F||F||F", (not_c expr1) ⋏ (not_c expr2) ⋏ (not_c expr3) ⋏ (not_c expr4)) ]
 
 instance CNode TraceElem where
-	nodeInfo (Assignment lexpr _)       = extractNodeInfo lexpr
+	nodeInfo (Assignment kind _)        = case kind of
+		Normal lexpr                     -> extractNodeInfo lexpr
+		ArrayUpdate (Ident _ _ ni) _ _ _ -> ni
 	nodeInfo (Condition _ expr)         = extractNodeInfo expr
 	nodeInfo (NewDeclaration (ident,_)) = nodeInfo ident
 	nodeInfo (Return expr)              = extractNodeInfo expr
@@ -639,7 +649,7 @@ instance (Pretty a) => Pretty [a] where
 
 instance Show TraceElem where
 	show te = ( case te of
-		Assignment lvalue expr   -> "ASSN " ++ (render.pretty) lvalue ++ " = " ++ (render.pretty) expr
+		Assignment kind expr     -> "ASSN " ++ (render.pretty) kind ++ " = " ++ (render.pretty) expr
 		Condition mb_b expr      -> "COND " ++ (case mb_b of Nothing -> "Nothing"; Just b -> showBranch b) ++ " " ++ (render.pretty) expr
 		NewDeclaration (lval,ty) -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
 		Return exprs             -> "RET  " ++ (render.pretty) exprs
@@ -910,10 +920,10 @@ type_format_string ty = do
 	return $ "%" ++ case z3ty of
 		Z3_Float                                        -> "lx"
 		Z3_Double                                       -> "llx"
+		Z3_BitVector   16 unsigned                      -> "h" ++ if unsigned then "u" else "i"
 		Z3_BitVector size unsigned | size==intSize      -> if unsigned then "u" else "i"
 		Z3_BitVector size unsigned | size==longSize     -> "l" ++ if unsigned then "u" else "i"
 		Z3_BitVector size unsigned | size==longLongSize -> "ll" ++ if unsigned then "u" else "i"
-		Z3_BitVector size unsigned                      -> if unsigned then "u" else "i"
 		Z3_Ptr _                                        -> "p"
 		_ -> error $ "type_format_string " ++ (render.pretty) ty ++ " not implemented"
 
@@ -1041,7 +1051,7 @@ checkVarsDefined mb_ret_type trace = do
 
 	collect_undef_vars should_be_defined_vars [] = should_be_defined_vars
 
-	collect_undef_vars should_be_defined_vars (Assignment (CVar defd_ident _) assd_expr : resttrace) |
+	collect_undef_vars should_be_defined_vars (Assignment (Normal (CVar defd_ident _)) assd_expr : resttrace) |
 		defd_ident `elem` should_be_defined_vars =
 			collect_undef_vars (nub $ (should_be_defined_vars \\ [defd_ident]) ++ assd_expr_vars) resttrace
 			where
@@ -1563,7 +1573,7 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 				-- translate the whole assignment expression, so we also get the translated lexpr
 				transids (CAssign CAssignOp lexpr assigned_expr' ni) Nothing trace $
 					\ (envs',CAssign CAssignOp lexpr' assigned_expr'' _,trace') -> do
-						unfoldTracesM mb_ret_type toplevel forks envs' (Assignment lexpr' assigned_expr'' : trace') ((rest,breakable):rest2)
+						unfoldTracesM mb_ret_type toplevel forks envs' (Assignment (Normal lexpr') assigned_expr'' : trace') ((rest,breakable):rest2)
 				where
 				assigned_expr' = case assignop of
 					CAssignOp -> assigned_expr
@@ -1642,7 +1652,7 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 							Left body_traces <- unfoldTracesM mb_ret_type False forks envs [] [([CBlockStmt body],True)]
 							let
 								body_traces_ass = map (concatMap from_ass) $ map snd body_traces where
-									from_ass (Assignment a@(CVar i _) b) | i `elem` cond_idents = [(a,b)]
+									from_ass (Assignment (Normal a@(CVar i _)) b) | i `elem` cond_idents = [(a,b)]
 									from_ass _ = []
 							printLogV 2 $ "body_traces_ass =\n" ++
 								(unlines $ for body_traces_ass $ \ bta ->
@@ -1658,7 +1668,7 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 							case body_assigns :: [(CExprWithType,CExprWithType)] of
 								[ (counter_var@(CVar ass_ident (_,(ass_ident_z3ty,_))),ass_expr) ] -> do
 									let
-										is_ass_to_ass_var (Assignment (CVar ident _) _) | ident==ass_ident = True
+										is_ass_to_ass_var (Assignment (Normal (CVar ident _)) _) | ident==ass_ident = True
 										is_ass_to_ass_var _ = False
 									case filter is_ass_to_ass_var trace of
 										[] -> return (Nothing,"infer_loopingsM: There is no assignment to the loop counter " ++ (render.pretty) counter_var ++ " prior to the loop")
@@ -2127,7 +2137,7 @@ elimInds trace = elim_indsM [] $ reverse trace
 	where
 	elim_indsM :: Trace -> Trace -> CovVecM Trace
 	elim_indsM res_trace [] = return res_trace
-	elim_indsM res_trace (ti@(Assignment ptr@(CVar ptr_ident _) expr) : rest) = do
+	elim_indsM res_trace (ti@(Assignment (Normal ptr@(CVar ptr_ident _)) expr) : rest) = do
 		case extractType ptr of
 			PtrType _ _ _ -> elim_indsM (cancel_ind_adrs $ substituteBy ptr expr res_trace) rest
 			_ -> elim_indsM (ti : res_trace) rest
@@ -2151,8 +2161,10 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 	foldtraceM :: Trace -> Trace -> CovVecM Trace
 	foldtraceM result [] = return result
 	-- Skip assignments to array elements
-	foldtraceM result (ass@(Assignment (CIndex _ _ _) _) : rest) = foldtraceM (ass : result) rest
-	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (substituteBy lvalue expr result) rest
+	foldtraceM result (ass@(Assignment (Normal (CIndex _ _ _)) _) : rest) = foldtraceM (ass : result) rest
+	foldtraceM result (Assignment (Normal lvalue) expr : rest) = foldtraceM (substituteBy lvalue expr result) rest
+--	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (substituteBy lvalue expr result) rest
+--	foldtraceM result (ass@(Assignment (ArrayUpdate _ _ _ _) _) : rest) = foldtraceM (ass : result) rest
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
 
 -- eliminate assignments to arrays, replacing them by a new array declaration
@@ -2167,7 +2179,7 @@ elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
 	elim_arr_assnsM :: StateT (Map.Map String Int) CovVecM Trace
 	elim_arr_assnsM = do
 		ls <- forM trace $ \case
-			Assignment (CIndex arr_expr index_expr index_ni) ass_expr -> do
+			Assignment (Normal (CIndex arr_expr index_expr _)) ass_expr -> do
 				counters <- get
 				let arr_name = lValueToVarName arr_expr
 				i <- case Map.lookup arr_name counters of
@@ -2183,13 +2195,14 @@ elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
 					new_arr_name =  arr_name ++ "$$$" ++ show i
 					new_arr_ident = internalIdent new_arr_name
 					new_arr = CVar new_arr_ident (undefNode,arr_types)
-					store_arr = case i of
-						1 -> new_arr
-						i -> CVar (internalIdent $ arr_name ++ "$$$" ++ show (i-1)) (undefNode,arr_types)
+					(store_arr,store_arr_ident) = case i of
+						1 -> (new_arr,new_arr_ident)
+						i -> (CVar prev_ident (undefNode,arr_types),prev_ident) where
+							prev_ident = internalIdent $ arr_name ++ "$$$" ++ show (i-1)
 				return [
 					NewDeclaration (new_arr_ident,extractType arr_expr) ,
-					Assignment (CIndex (CBinary CAddOp store_arr new_arr (undefNode,arr_types)) index_expr index_ni) ass_expr,
-					Assignment arr_expr new_arr ]
+					Assignment (ArrayUpdate store_arr_ident new_arr_ident arr_types index_expr) ass_expr,
+					Assignment (Normal arr_expr) new_arr ]
 			other -> return [other]
 		return $ concat ls
 
@@ -2365,16 +2378,17 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 		return $ SLeaf (printf "#x%*.*x" (size `div` 4) (size `div` 4) const)
 	make_intconstant z3type const = lift $ myError $ "make_intconstant " ++ show z3type ++ " " ++ show const
 
+	ident2sexpr ident = SLeaf $ (render.pretty) ident
+
 	expr2sexpr :: Constraint -> SECovVecM SExpr
 	expr2sexpr (Condition _ cexpr) = expr2sexpr' cexpr
 
 	-- Assignment to an array member
-	-- HACK: CAddOp stores the previous array name and the new one
-	expr2sexpr (Assignment (CIndex (CBinary CAddOp store_arr var_arr _) index_expr _) ass_expr) = do
-		var_arr_s <- expr2sexpr' var_arr
+	expr2sexpr (Assignment (ArrayUpdate store_arr_ident var_arr_ident _ index_expr) ass_expr) = do
+		let var_arr_s = ident2sexpr var_arr_ident
 		index_s <- expr2sexpr' index_expr
 		ass_s <- expr2sexpr' ass_expr
-		store_arr_s <- expr2sexpr' store_arr 
+		let store_arr_s = ident2sexpr store_arr_ident
 		return $ var_arr_s ＝ 𝓈𝓉𝑜𝓇𝑒 store_arr_s index_s ass_s
 
 	-- Turns a CExprWithType into an SExpr
@@ -2425,7 +2439,7 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 
 			CStrConst cstr _           -> return $ SLeaf $ (render.pretty) cconst
 
-		CVar ident _ -> return $ SLeaf $ (render.pretty) ident
+		CVar ident _ -> return $ ident2sexpr ident
 
 		CUnary CPlusOp subexpr _ -> expr2sexpr' subexpr
 		CUnary op subexpr _ -> SExpr <$> sequence
@@ -2671,7 +2685,8 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 	let
 		constraints_vars = nub $ concat $ for a_constraints $ \case
 			Condition _ expr -> fvar expr
-			Assignment lexpr@(CIndex _ _ _) ass_expr -> fvar lexpr ++ fvar ass_expr
+			Assignment (Normal lexpr@(CIndex _ _ _)) ass_expr -> fvar lexpr ++ fvar ass_expr
+			Assignment (ArrayUpdate ident1 ident2 _ index) ass_expr -> [ident1,ident2] ++ fvar index ++ fvar ass_expr
 	printLogV 20 $ "constraints_vars = " ++ showIdents constraints_vars
 
 	varsZ3 :: [SCompound] <- forM (filter ((`elem` (constraints_vars ++ a_output_idents)).fst) z3tyenv) $ \ (ident,ty) -> do
@@ -2820,13 +2835,10 @@ solveTraceM mb_ret_type traceid trace = do
 		Nothing  -> return $ Just []
 		Just ret_type -> gets retEnvCVS
 	let
---		param_env = map fst param_env_exprs
---		param_names = map (fst.snd) param_env
---		ret_names   = map (fst.snd.fst) retval_env
 		tracename = show traceid
 		constraints = concatMap traceitem2constr trace where
 		traceitem2constr constraint@(Condition _ _) = [constraint]
-		traceitem2constr constraint@(Assignment (CIndex _ _ _) _) = [constraint]
+		traceitem2constr constraint@(Assignment (ArrayUpdate _ _ _ _) _) = [constraint]
 		traceitem2constr _ = []
 		debug_outputs = concatMap is_debug_output trace where
 			is_debug_output (DebugOutput name expr) = [(name,expr)]
