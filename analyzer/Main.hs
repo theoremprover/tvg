@@ -81,8 +81,6 @@ _FDunscale
 _FDnorm
 -}
 
-subfuncovOpt = "-subfuncov"
-
 main :: IO ()
 main = do
 	-- when there is an error, we'd like to have *all* output till then
@@ -105,7 +103,7 @@ main = do
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ []
 
---		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-MCDC"]
+--		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : [noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdcsubfunctiontest.c") : [subfuncovOpt] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
@@ -263,10 +261,20 @@ once :: MonadPlus m => GenericM m -> GenericM m
 once f x = f x `mplus` gmapMo (once f) x
 -}
 
+subfuncovOpt = "-subfuncov"
+noHaltOnVerificationErrorOpt = "-nohalt"
+
 isOptionSet :: String -> CovVecM Bool
 isOptionSet optname = do
 	opts <- gets optsCVS
 	return $ optname `elem` opts
+
+whenOptionSet :: String -> Bool -> CovVecM () -> CovVecM ()
+whenOptionSet opt_s target action = do
+	opt_set <- isOptionSet opt_s
+	case (opt_set && target) || (not opt_set && not target) of
+		True  -> action
+		False -> return ()
 
 ------------------------
 
@@ -2139,6 +2147,8 @@ elimInds trace = elim_indsM [] $ reverse trace
 	elim_indsM res_trace [] = return res_trace
 	elim_indsM res_trace (ti@(Assignment (Normal ptr@(CVar ptr_ident _)) expr) : rest) = do
 		case extractType ptr of
+			-- For assignments to a pointer ptr = expr, substitute ptr for expr  downwards in the trace,
+			-- and cancel out */& operators in the resulting expressions
 			PtrType _ _ _ -> elim_indsM (cancel_ind_adrs $ substituteBy ptr expr res_trace) rest
 			_ -> elim_indsM (ti : res_trace) rest
 	elim_indsM res_trace (ti : rest) = elim_indsM (ti : res_trace) rest
@@ -2520,6 +2530,7 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 					arr_decl ,
 					𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, bv ] ＝ sexpr ] ++
 					map (\(i,address) -> 𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i address) (zip is addresses)) ++ )
+					
 				return arr
 
 			new_var :: String -> Z3_Type -> SECovVecM (SExpr,SExpr)
@@ -2930,7 +2941,7 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 					let txt = "\ncheckSolutionM ERROR for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result ++ "\n"
 					printToSolutions txt
 					printLogV 0 txt
- 					when haltOnVerificationError $ myError "Halting on verification errors."
+					whenOptionSet noHaltOnVerificationErrorOpt False $ myError "Halting on verification errors."
 				return check_OK
 	let all_ok = all (==True) oks
 	when all_ok $ do

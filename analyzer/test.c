@@ -15,3 +15,22 @@ short _FDint(float *px, short xexp)
          return (ps->_Sh[0]);
  }
 
+/*
+ASSN ( (ushort []) (*px) ) [0] = 49168
+COND return_val == ( (ushort []) (*px) ) [0]
+
+  |
+  v
+
+-- new temp array PTR_px$$$1 for *px:
+ASSN PTR_px$$$1 -> PTR_px$$$1 [0] = (ushort) 49168
+ASSN ( (ushort []) (*px) ) = PTR_px$$$1
+
+COND return_val == ( (ushort []) (*px) ) [0]
+
+  |
+  v
+
+
+
+*/
