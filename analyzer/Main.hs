@@ -2468,29 +2468,29 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 
 		(CCast _ subexpr@(CVar arr_ident (_,(from_ty,_))) (_,(to_ty@(Z3_Array (Z3_BitVector 16 True) _ ),_))) | from_ty `elem` [Z3_Float,Z3_Double] -> do
 			sexpr <- expr2sexpr' subexpr
-			counters <- lift $ gets countersCVS
-			let
-				arr_s = lValueToVarName subexpr
-				j = case Map.lookup arr_s counters of
-					Just i -> i-1
-					Nothing -> 1
-				arr_name = makeArrName arr_s j
-				
 			case (from_ty,to_ty) of
-				( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> cast_fp2arr arr_name sexpr Z3_Float arr_ty
+				( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> cast_fp2arr sexpr Z3_Float arr_ty
 
-				( Z3_Double, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> cast_fp2arr arr_name sexpr Z3_Double arr_ty
+				( Z3_Double, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> cast_fp2arr sexpr Z3_Double arr_ty
 
 			where
 
-			cast_fp2arr :: String -> SExpr -> Z3_Type -> Z3_Type -> StateT [SExpr] CovVecM SExpr
-			cast_fp2arr arrname sexpr fp_ty arr_ty@(Z3_Array elem_ty _) = do
+			cast_fp2arr :: SExpr -> Z3_Type -> Z3_Type -> StateT [SExpr] CovVecM SExpr
+			cast_fp2arr sexpr fp_ty arr_ty@(Z3_Array elem_ty _) = do
 				bv_size <- lift $ sizeofZ3Ty fp_ty
 				elem_size <- lift $ sizeofZ3Ty elem_ty
 				let num_elems = div bv_size elem_size
-				(bv, bv_decl)  <- new_var "bv" (Z3_BitVector bv_size True)
---				(arr,arr_decl) <- new_var "arr" arr_ty
-				let arr = SLeaf arrname
+				(bv, bv_decl) <- new_var "bv" (Z3_BitVector bv_size True)
+				(arr,arr_decl) <- new_var "arr" arr_ty
+
+				counters <- lift $ gets countersCVS
+				let arr_s = lValueToVarName subexpr
+				arr_eqs <- case Map.lookup arr_s counters of
+					Just i -> do
+						let arr_name = makeArrName arr_s (i-1)
+						return [ 𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ SLeaf arr_name ]
+					Nothing -> return []
+
 				(z3_inttype,_) <- lift $ _IntTypesM
 				is <- forM [0..(num_elems-1)] $ make_intconstant z3_inttype
 				Just MachineSpec{endianness} <- lift $ gets machineSpecCVS
@@ -2498,9 +2498,8 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 					(case endianness of Little -> id; Big -> reverse)
 						[ ( (i+1)*elem_size-1 , i*elem_size ) | i <- [0..(num_elems-1)] ] ) $
 							\ (h,l) -> 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 h l bv
-				modify ( ([
+				modify ( (arr_decl : arr_eqs ++ [
 					bv_decl ,
---					arr_decl ,
 					𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, bv ] ＝ sexpr ] ++
 					map (\(i,address) -> 𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i address) (zip is addresses)) ++ )
 
