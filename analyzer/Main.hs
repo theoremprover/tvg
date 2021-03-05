@@ -94,7 +94,7 @@ main = do
 
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest3.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\checkvarsdefinedtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\commatest.c") : []
 
 		-- loops:
@@ -103,7 +103,7 @@ main = do
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ []
 
---		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : [noHaltOnVerificationErrorOpt]
+		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-writeModels",noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdcsubfunctiontest.c") : [subfuncovOpt] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
@@ -198,6 +198,7 @@ main = do
 			(every_branch_covered,s) <- runStateT covVectorsM $
 				CovVecState globdecls 1 allFileName Nothing funname [] gcc opts
 					Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1) coveragekind
+					Map.empty
 
 			let
 				(testvectors_rev,covered) = analysisStateCVS s
@@ -515,7 +516,8 @@ data CovVecState = CovVecState {
 	machineSpecCVS   :: Maybe MachineSpec,
 	defTableCVS      :: DefTable,
 	logIndentCVS     :: Int,
-	coverageKindCVS  :: CoverageKind
+	coverageKindCVS  :: CoverageKind,
+	countersCVS      :: Map.Map String Int
 	}
 
 data Stats = Stats {
@@ -2184,25 +2186,25 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 -}
 -- trace is in the right order.
 elimArrayAssignsM :: Trace -> CovVecM Trace
-elimArrayAssignsM trace = evalStateT elim_arr_assnsM Map.empty
+elimArrayAssignsM trace = elim_arr_assnsM
 	where
-	elim_arr_assnsM :: StateT (Map.Map String Int) CovVecM Trace
+	elim_arr_assnsM :: CovVecM Trace
 	elim_arr_assnsM = do
 		ls <- forM trace $ \case
 			Assignment (Normal (CIndex arr_expr index_expr _)) ass_expr -> do
-				counters <- get
+				counters <- gets countersCVS
 				let arr_name = lValueToVarName arr_expr
 				i <- case Map.lookup arr_name counters of
 					Nothing -> do
-						modify $ Map.insert arr_name 2
+						modify $ \ s -> s { countersCVS = Map.insert arr_name 2 (countersCVS s) }
 						return 1
 					Just i -> do
-						modify $ Map.adjust (+1) arr_name
+						modify $ \ s -> s { countersCVS = Map.adjust (+1) arr_name (countersCVS s) }
 						return i
 				let
 					-- Three '$' denote the class of array names (to avoid name clashes)
 					arr_types = extractTypes arr_expr
-					new_arr_name =  arr_name ++ "$$$" ++ show i
+					new_arr_name = makeArrName arr_name i
 					new_arr_ident = internalIdent new_arr_name
 					new_arr = CVar new_arr_ident (undefNode,arr_types)
 					(store_arr,store_arr_ident) = case i of
@@ -2378,6 +2380,9 @@ type Constraint = TraceElem
 
 type SECovVecM = StateT [SExpr] CovVecM
 
+makeArrName :: String -> Int -> String
+makeArrName arr_name i = arr_name ++ "$$$" ++ show i
+
 expr2SExpr :: Constraint -> CovVecM (SExpr,[SExpr])
 expr2SExpr expr = runStateT (expr2sexpr expr) []
 
@@ -2461,6 +2466,55 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 				CNegOp  -> "not"
 				_ -> error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
 
+		(CCast _ subexpr@(CVar arr_ident (_,(from_ty,_))) (_,(to_ty@(Z3_Array (Z3_BitVector 16 True) _ ),_))) | from_ty `elem` [Z3_Float,Z3_Double] -> do
+			sexpr <- expr2sexpr' subexpr
+			counters <- lift $ gets countersCVS
+			let
+				arr_s = lValueToVarName subexpr
+				j = case Map.lookup arr_s counters of
+					Just i -> i-1
+					Nothing -> 1
+				arr_name = makeArrName arr_s j
+				
+			case (from_ty,to_ty) of
+				( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> cast_fp2arr arr_name sexpr Z3_Float arr_ty
+
+				( Z3_Double, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> cast_fp2arr arr_name sexpr Z3_Double arr_ty
+
+			where
+
+			cast_fp2arr :: String -> SExpr -> Z3_Type -> Z3_Type -> StateT [SExpr] CovVecM SExpr
+			cast_fp2arr arrname sexpr fp_ty arr_ty@(Z3_Array elem_ty _) = do
+				bv_size <- lift $ sizeofZ3Ty fp_ty
+				elem_size <- lift $ sizeofZ3Ty elem_ty
+				let num_elems = div bv_size elem_size
+				(bv, bv_decl)  <- new_var "bv" (Z3_BitVector bv_size True)
+--				(arr,arr_decl) <- new_var "arr" arr_ty
+				let arr = SLeaf arrname
+				(z3_inttype,_) <- lift $ _IntTypesM
+				is <- forM [0..(num_elems-1)] $ make_intconstant z3_inttype
+				Just MachineSpec{endianness} <- lift $ gets machineSpecCVS
+				let addresses = for (
+					(case endianness of Little -> id; Big -> reverse)
+						[ ( (i+1)*elem_size-1 , i*elem_size ) | i <- [0..(num_elems-1)] ] ) $
+							\ (h,l) -> 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 h l bv
+				modify ( ([
+					bv_decl ,
+--					arr_decl ,
+					𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, bv ] ＝ sexpr ] ++
+					map (\(i,address) -> 𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i address) (zip is addresses)) ++ )
+
+				return arr
+
+			new_var :: String -> Z3_Type -> SECovVecM (SExpr,SExpr)
+			new_var name z3ty = do
+				n <- lift $ newNameM
+				-- avoiding name clashes using "$$" for "temporary" variables
+				let new_name = name ++ "$$" ++ show n
+				decl <- lift $ declConst2SExpr new_name z3ty
+				return (SLeaf new_name,decl)
+
+
 		castexpr@(CCast _ subexpr (_,to_ty)) -> do
 			sexpr <- expr2sexpr' subexpr
 			let from_ty = extractTypes subexpr
@@ -2495,51 +2549,8 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 				( Z3_BitVector size_from True, Z3_BitVector size_to _ ) | size_from < size_to ->
 					return $ SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
 
-				( Z3_Double, Z3_Float ) -> do
-					targetsize <- lift $ sizeofZ3Ty Z3_Float
-					return $ SExpr [ _𝓉𝑜_𝒻𝓅 targetsize, SLeaf roundingMode, sexpr ]
-				( Z3_Float, Z3_Double ) -> do
-					targetsize <- lift $ sizeofZ3Ty Z3_Double
-				 	return $ SExpr [ _𝓉𝑜_𝒻𝓅 targetsize, SLeaf roundingMode, sexpr ]
-
-				( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> cast_fp2arr sexpr Z3_Float arr_ty
-
-				( Z3_Double, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> cast_fp2arr sexpr Z3_Double arr_ty
-
 				(from_ty,to_ty) -> lift $ myError $ "expr2sexpr cast: " ++ show from_ty ++ " => " ++ show to_ty ++ " in " ++
 					(render.pretty) castexpr ++ " " ++ " not implemented!"
-
-			where
-
-			cast_fp2arr :: SExpr -> Z3_Type -> Z3_Type -> StateT [SExpr] CovVecM SExpr
-			cast_fp2arr sexpr fp_ty arr_ty@(Z3_Array elem_ty _) = do
-				bv_size <- lift $ sizeofZ3Ty fp_ty
-				elem_size <- lift $ sizeofZ3Ty elem_ty
-				let num_elems = div bv_size elem_size
-				(bv, bv_decl)  <- new_var "bv" (Z3_BitVector bv_size True)
-				(arr,arr_decl) <- new_var "arr" arr_ty
-				(z3_inttype,_) <- lift $ _IntTypesM
-				is <- forM [0..(num_elems-1)] $ make_intconstant z3_inttype
-				Just MachineSpec{endianness} <- lift $ gets machineSpecCVS
-				let addresses = for (
-					(case endianness of Little -> id; Big -> reverse)
-						[ ( (i+1)*elem_size-1 , i*elem_size ) | i <- [0..(num_elems-1)] ] ) $
-							\ (h,l) -> 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 h l bv
-				modify ( ([
-					bv_decl ,
-					arr_decl ,
-					𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, bv ] ＝ sexpr ] ++
-					map (\(i,address) -> 𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i address) (zip is addresses)) ++ )
-					
-				return arr
-
-			new_var :: String -> Z3_Type -> SECovVecM (SExpr,SExpr)
-			new_var name z3ty = do
-				n <- lift $ newNameM
-				-- avoiding name clashes using "$$" for "temporary" variables
-				let new_name = name ++ "$$" ++ show n
-				decl <- lift $ declConst2SExpr new_name z3ty
-				return (SLeaf new_name,decl)
 
 		ccond@(CCond cond (Just then_expr) else_expr _) -> do
 			lift $ myError $ "expr2sexpr CCond should not appear: " ++ (render.pretty) ccond

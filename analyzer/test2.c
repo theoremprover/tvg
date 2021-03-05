@@ -1,14 +1,11 @@
 #include <stdio.h>
 
-short f()
-{
-    unsigned short x = 0xc010;
-    return x;
-}
-
 int main(int argc,char *argv[])
 {
-   unsigned short x = f();
- printf("%hi\n",x);
+   float f = 3.14;
+
+   float *fp = &f;
+
+   printf("u=%u\n",*((unsigned long int*)fp));
 
  }
