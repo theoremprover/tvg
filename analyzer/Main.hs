@@ -2466,54 +2466,6 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 				CNegOp  -> "not"
 				_ -> error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
 
-		(CCast _ subexpr@(CVar arr_ident (_,(from_ty,_))) (_,(to_ty@(Z3_Array (Z3_BitVector 16 True) _ ),_))) | from_ty `elem` [Z3_Float,Z3_Double] -> do
-			sexpr <- expr2sexpr' subexpr
-			case (from_ty,to_ty) of
-				( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> cast_fp2arr sexpr Z3_Float arr_ty
-
-				( Z3_Double, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> cast_fp2arr sexpr Z3_Double arr_ty
-
-			where
-
-			cast_fp2arr :: SExpr -> Z3_Type -> Z3_Type -> StateT [SExpr] CovVecM SExpr
-			cast_fp2arr sexpr fp_ty arr_ty@(Z3_Array elem_ty _) = do
-				bv_size <- lift $ sizeofZ3Ty fp_ty
-				elem_size <- lift $ sizeofZ3Ty elem_ty
-				let num_elems = div bv_size elem_size
-				(bv, bv_decl) <- new_var "bv" (Z3_BitVector bv_size True)
-				(arr,arr_decl) <- new_var "arr" arr_ty
-
-				counters <- lift $ gets countersCVS
-				let arr_s = lValueToVarName subexpr
-				arr_eqs <- case Map.lookup arr_s counters of
-					Just i -> do
-						let arr_name = makeArrName arr_s (i-1)
-						return [ 𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ SLeaf arr_name ]
-					Nothing -> return []
-
-				(z3_inttype,_) <- lift $ _IntTypesM
-				is <- forM [0..(num_elems-1)] $ make_intconstant z3_inttype
-				Just MachineSpec{endianness} <- lift $ gets machineSpecCVS
-				let addresses = for (
-					(case endianness of Little -> id; Big -> reverse)
-						[ ( (i+1)*elem_size-1 , i*elem_size ) | i <- [0..(num_elems-1)] ] ) $
-							\ (h,l) -> 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 h l bv
-				modify ( (arr_decl : arr_eqs ++ [
-					bv_decl ,
-					𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, bv ] ＝ sexpr ] ++
-					map (\(i,address) -> 𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i address) (zip is addresses)) ++ )
-
-				return arr
-
-			new_var :: String -> Z3_Type -> SECovVecM (SExpr,SExpr)
-			new_var name z3ty = do
-				n <- lift $ newNameM
-				-- avoiding name clashes using "$$" for "temporary" variables
-				let new_name = name ++ "$$" ++ show n
-				decl <- lift $ declConst2SExpr new_name z3ty
-				return (SLeaf new_name,decl)
-
-
 		castexpr@(CCast _ subexpr (_,to_ty)) -> do
 			sexpr <- expr2sexpr' subexpr
 			let from_ty = extractTypes subexpr
@@ -2548,8 +2500,44 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 				( Z3_BitVector size_from True, Z3_BitVector size_to _ ) | size_from < size_to ->
 					return $ SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
 
+				( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> cast_fp2arr sexpr Z3_Float arr_ty
+
+				( Z3_Double, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) -> cast_fp2arr sexpr Z3_Double arr_ty
+
 				(from_ty,to_ty) -> lift $ myError $ "expr2sexpr cast: " ++ show from_ty ++ " => " ++ show to_ty ++ " in " ++
 					(render.pretty) castexpr ++ " " ++ " not implemented!"
+
+			where
+
+			cast_fp2arr :: SExpr -> Z3_Type -> Z3_Type -> StateT [SExpr] CovVecM SExpr
+			cast_fp2arr sexpr fp_ty arr_ty@(Z3_Array elem_ty _) = do
+				bv_size <- lift $ sizeofZ3Ty fp_ty
+				elem_size <- lift $ sizeofZ3Ty elem_ty
+				let num_elems = div bv_size elem_size
+				(bv, bv_decl) <- new_var "bv" (Z3_BitVector bv_size True)
+				(arr,arr_decl) <- new_var "arr" arr_ty
+				(z3_inttype,_) <- lift $ _IntTypesM
+				is <- forM [0..(num_elems-1)] $ make_intconstant z3_inttype
+				Just MachineSpec{endianness} <- lift $ gets machineSpecCVS
+				let addresses = for (
+					(case endianness of Little -> id; Big -> reverse)
+						[ ( (i+1)*elem_size-1 , i*elem_size ) | i <- [0..(num_elems-1)] ] ) $
+							\ (h,l) -> 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 h l bv
+				modify ( ([
+					arr_decl,
+					bv_decl ,
+					𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, bv ] ＝ sexpr ] ++
+					map (\(i,address) -> 𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i address) (zip is addresses)) ++ )
+
+				return arr
+
+			new_var :: String -> Z3_Type -> SECovVecM (SExpr,SExpr)
+			new_var name z3ty = do
+				n <- lift $ newNameM
+				-- avoiding name clashes using "$$" for "temporary" variables
+				let new_name = name ++ "$$" ++ show n
+				decl <- lift $ declConst2SExpr new_name z3ty
+				return (SLeaf new_name,decl)
 
 		ccond@(CCond cond (Just then_expr) else_expr _) -> do
 			lift $ myError $ "expr2sexpr CCond should not appear: " ++ (render.pretty) ccond
