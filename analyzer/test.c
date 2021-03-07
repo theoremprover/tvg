@@ -17,21 +17,105 @@ short _FDint(float *px, short xexp)
 
 
 /*
-ASSN ( (ushort []) (*px) ) [0] = 49168
-COND return_val == ( (ushort []) (*px) ) [0]
+--- TRACE after Initial [] -----------
+<leaving out builtins...>
+DECL _FDint :: short (float * px, short xexp)
+DECL px :: float *
+DECL PTR_px :: float
+DECL xexp :: short
+DECL ps$1 :: union $18 *
 
-  |
-  v
+ASSN ps$1 = ((union*) ((Z3_Ptr (Z3_BitVector 8 True)) px))
+ASSN (ps$1  -> _Sh)[0] = ((Z3_BitVector 16 True) 49168)
+DECL return_val :: short
+COND Nothing (return_val == (ps$1  -> _Sh)[0])
+RET  (ps$1  -> _Sh)[0]
 
--- new temp array PTR_px$$$1 for *px:
-ASSN PTR_px$$$1 -> PTR_px$$$1 [0] = (ushort) 49168
-ASSN ( (ushort []) (*px) ) = PTR_px$$$1
+--- TRACE after elimInds [] -----------
+<leaving out builtins...>
+DECL _FDint :: short (float * px, short xexp)
+DECL px :: float *
+DECL PTR_px :: float
+DECL xexp :: short
+DECL ps$1 :: union $18 *
+ASSN ((union *) ((Z3_Ptr (Z3_BitVector 8 True)) px))  -> _Sh)[0] = ((Z3_BitVector 16 True) 49168)
+DECL return_val :: short
+COND Nothing (return_val == ((union *) ((Z3_Ptr (Z3_BitVector 8 True)) px))  -> _Sh)[0])
+RET  ((union *) ((Z3_Ptr (Z3_BitVector 8 True)) px))  -> _Sh)[0]
 
-COND return_val == ( (ushort []) (*px) ) [0]
+--- TRACE after 1. simplifyTraceM [] -----------
+<leaving out builtins...>
+DECL _FDint :: short (float * px, short xexp)
+DECL px :: float *
+DECL PTR_px :: float
+DECL xexp :: short
+DECL ps$1 :: union $18 *
+ASSN ((Z3_Array (Z3_BitVector 16 True) Nothing) (* px))[0] = ((Z3_BitVector 16 True) 49168)
+DECL return_val :: short
+COND Nothing (return_val == ((Z3_Array (Z3_BitVector 16 True) Nothing) (* px))[0])
+RET  ((Z3_Array (Z3_BitVector 16 True) Nothing) (* px))[0]
 
-  |
-  v
+--- TRACE after 1. elimAssignmentsM [] -----------
+<leaving out builtins...>
+DECL _FDint :: short (float * px, short xexp)
+DECL px :: float *
+DECL PTR_px :: float
+DECL xexp :: short
+DECL ps$1 :: union $18 *
+ASSN ((Z3_Array (Z3_BitVector 16 True) Nothing) (* px))[0] = ((Z3_BitVector 16 True) 49168)
+DECL return_val :: short
+COND Nothing (return_val == ((Z3_Array (Z3_BitVector 16 True) Nothing) (* px))[0])
+RET  ((Z3_Array (Z3_BitVector 16 True) Nothing) (* px))[0]
 
+--- TRACE after elimArrayAssignsM [] -----------
+<leaving out builtins...>
+DECL _FDint :: short (float * px, short xexp)
+DECL px :: float *
+DECL PTR_px :: float
+DECL xexp :: short
+DECL ps$1 :: union $18 *
+DECL PTR_px$$$1 :: unsigned short [sizeof(float) / sizeof(short)]
+ASSN PTR_px$$$1->PTR_px$$$1[0] = ((Z3_BitVector 16 True) 49168)
+ASSN ((Z3_Array (Z3_BitVector 16 True) Nothing) (* px)) = PTR_px$$$1
+DECL return_val :: short
+COND Nothing (return_val == ((Z3_Array (Z3_BitVector 16 True) Nothing) (* px))[0])
+RET  ((Z3_Array (Z3_BitVector 16 True) Nothing) (* px))[0]
 
+--- TRACE after 2. elimAssignmentsM [] -----------
+<leaving out builtins...>
+DECL _FDint :: short (float * px, short xexp)
+DECL px :: float *
+DECL PTR_px :: float
+DECL xexp :: short
+DECL ps$1 :: union $18 *
+DECL PTR_px$$$1 :: unsigned short [sizeof(float) / sizeof(short)]
+ASSN PTR_px$$$1->PTR_px$$$1[0] = ((Z3_BitVector 16 True) 49168)
+DECL return_val :: short
+COND Nothing (return_val == ((Z3_Array (Z3_BitVector 16 True) Nothing) (* px))[0])
+RET  ((Z3_Array (Z3_BitVector 16 True) Nothing) (* px))[0]
 
-*/
+--- TRACE after 2. simplifyTraceM [] -----------
+<leaving out builtins...>
+DECL _FDint :: short (float * px, short xexp)
+DECL px :: float *
+DECL PTR_px :: float
+DECL xexp :: short
+DECL ps$1 :: union $18 *
+DECL PTR_px$$$1 :: unsigned short [sizeof(float) / sizeof(short)]
+ASSN PTR_px$$$1->PTR_px$$$1[0] = ((Z3_BitVector 16 True) 49168)
+DECL return_val :: short
+COND Nothing (return_val == ((Z3_Array (Z3_BitVector 16 True) Nothing) (* px))[0])
+RET  ((Z3_Array (Z3_BitVector 16 True) Nothing) (* px))[0]
+
+--- TRACE after createSymbolicVarsM [] -----------
+<leaving out builtins...>
+DECL _FDint :: short (float * px, short xexp)
+DECL px :: float *
+DECL PTR_px :: float
+DECL xexp :: short
+DECL ps$1 :: union $18 *
+DECL PTR_px$$$1 :: unsigned short [sizeof(float) / sizeof(short)]
+ASSN PTR_px$$$1->PTR_px$$$1[0] = ((Z3_BitVector 16 True) 49168)
+DECL return_val :: short
+COND Nothing (return_val == ((Z3_Array (Z3_BitVector 16 True) Nothing) PTR_px)[0])
+RET  ((Z3_Array (Z3_BitVector 16 True) Nothing) PTR_px)[0]*/

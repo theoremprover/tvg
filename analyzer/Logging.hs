@@ -72,7 +72,6 @@ css = primHtml "\
 \ \
 \ .leaf {\
 \  cursor: pointer;\
-\  user-select: none;\
 \ }\
 \ \
 \ .leaf::before {\

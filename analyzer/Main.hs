@@ -94,7 +94,7 @@ main = do
 
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest3.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\checkvarsdefinedtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\commatest.c") : []
 
 		-- loops:
@@ -103,7 +103,7 @@ main = do
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ []
 
-		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-writeModels",noHaltOnVerificationErrorOpt]
+--		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-writeModels",noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdcsubfunctiontest.c") : [subfuncovOpt] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
@@ -2165,7 +2165,6 @@ elimInds trace = elim_indsM [] $ reverse trace
 
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
--- trace should be given reversed!
 
 elimAssignmentsM :: Trace -> CovVecM Trace
 elimAssignmentsM trace = foldtraceM [] $ reverse trace
