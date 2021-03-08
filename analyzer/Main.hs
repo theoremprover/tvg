@@ -92,6 +92,9 @@ main = do
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 
+		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\xdtest.c") : ["-writeModels"]
+
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest3.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\checkvarsdefinedtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
@@ -103,13 +106,11 @@ main = do
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ []
 
-		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\xdtest.c") : ["-writeModels"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-writeModels",noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdcsubfunctiontest.c") : [subfuncovOpt] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
 --		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
---		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-MCDC","-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : [] --"-writeAST","-writeGlobalDecls"]
@@ -587,12 +588,28 @@ printCondPoints alls = liftIO $ do
 data CoverageKind = Branch_Cov | MCDC_Cov
 	deriving (Show,Eq)
 
-type MCDC_Matrix = [MCDC_Line]
-type MCDC_Line = ([Bool],Bool,CExpr)
+--type MCDC_Matrix = [MCDC_Line]
+--type MCDC_Line = ([Bool],Bool,CExpr)
+
+-- ⋏ ⋎
+eval_cond :: CExpr -> [(String,[Bool],Bool)]
+eval_cond (CBinary CLorOp expr1 expr2 _) =
+	[ (s1++"||"++s2,e1s++e2s,b1||b2) | (s1,e1s,b1) <- eval_cond expr1, (s2,e2s,b2) <- eval_cond expr2 ]
+eval_cond (CBinary CLndOp expr1 expr2 _) =
+	[ (s1++"&&"++s2,e1s++e2s,b1&&b2) | (s1,e1s,b1) <- eval_cond expr1, (s2,e2s,b2) <- eval_cond expr2 ]
+eval_cond _ = [("T",[True],True),("F",[False],False)]
+
+{-
+create_mcdc_table :: [(String,[Bool],Bool)] -> [(String,[Bool],Bool)]
+create_mcdc_table ps = foldl (\ cs (i,p) -> nub $ cs ++ select_impact i) [] $ zip [0..(length ps - 1)] ps
+	where
+	select_impact i = [ l1++l2 | ]
+-}
 createBranches :: String -> CExpr -> CovVecM [(Branch,CExpr)]
 createBranches default_name cond = do
  	gets coverageKindCVS >>= \case
  		Branch_Cov -> return [ (Branch (lineColNodeInfo cond) 1 False "",cond), (Branch (lineColNodeInfo cond) 2 True "",not_c cond) ]
+--		MCDC_Cov   -> do
  		MCDC_Cov   -> return $ case cond of
   			CBinary CLorOp (CBinary CLorOp (CBinary CLorOp expr1 expr2 _) expr3  _) expr4  _ -> or4 [expr1,expr2,expr3,expr4]
   			CBinary CLorOp expr1 (CBinary CLorOp expr2 (CBinary CLorOp expr3 expr4 _) _) _ -> or4 [expr1,expr2,expr3,expr4]
