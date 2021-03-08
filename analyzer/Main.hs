@@ -94,7 +94,7 @@ main = do
 
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest3.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\checkvarsdefinedtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
-		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\commatest.c") : []
 
 		-- loops:
@@ -103,6 +103,7 @@ main = do
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ []
 
+		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\xdtest.c") : ["-writeModels",noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-writeModels",noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdcsubfunctiontest.c") : [subfuncovOpt] --["-writeAST","-writeGlobalDecls"]
@@ -2116,12 +2117,12 @@ translateExprM envs toplevel expr0 mb_target_ty trace forks = logWrapper ["trans
 
 
 -- Substitutes an expression x by y everywhere in d
-substituteBy :: (Eq a,Data a,Data d) => a -> a -> d -> d
+substituteBy :: (Pretty a,Data a,Data d) => a -> a -> d -> d
 substituteBy x y d = everywhere (mkT (substexpr x y)) d
 	where
-	substexpr :: (Eq a) => a -> a -> a -> a
-	substexpr x y found_expr | x == found_expr = y
-	substexpr _ _ found_expr                   = found_expr
+	substexpr :: (Pretty a) => a -> a -> a -> a
+	substexpr x y found_expr | (render.pretty) x == (render.pretty) found_expr = y
+	substexpr _ _ found_expr                                                   = found_expr
 
 
 -- elimInds:
@@ -2173,9 +2174,14 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 	foldtraceM result [] = return result
 	-- Skip assignments to array elements
 	foldtraceM result (ass@(Assignment (Normal (CIndex _ _ _)) _) : rest) = foldtraceM (ass : result) rest
-	foldtraceM result (Assignment (Normal lvalue) expr : rest) = foldtraceM (substituteBy lvalue expr result) rest
---	foldtraceM result (Assignment lvalue expr : rest) = foldtraceM (substituteBy lvalue expr result) rest
---	foldtraceM result (ass@(Assignment (ArrayUpdate _ _ _ _) _) : rest) = foldtraceM (ass : result) rest
+	foldtraceM result (ass@(Assignment (Normal lvalue) expr) : rest) = do
+		let s = substituteBy lvalue expr result
+		r <- foldtraceM s rest
+		printLogV 1 $ "############# " ++ show ass
+		printLogV 1 $ "s=" ++ show s
+		printLogV 1 $ "lvalue=" ++ (render.pretty) lvalue ++ "\nexpr = " ++ (render.pretty) expr
+		printLogV 1 $ "---------------"
+		return r
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
 
 -- eliminate assignments to arrays, replacing them by a new array declaration
@@ -2372,6 +2378,9 @@ extractNodeInfo :: CExprWithType -> NodeInfo
 extractNodeInfo = fst.annotation
 
 type NodeInfoWithType = (NodeInfo,Types)
+instance {-# OVERLAPPING #-} Eq NodeInfoWithType where
+	x == y = True
+
 type CExprWithType = CExpression NodeInfoWithType
 
 

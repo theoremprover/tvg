@@ -503,6 +503,9 @@ long double *_LXp_sqrtx(long double *, int, long double *);
 
 
 
+
+
+/*
 short _Dtest(double *px)
  {
  _Dval *ps = (_Dval *)(char *)px;
@@ -517,3 +520,20 @@ short _Dtest(double *px)
  else
   return (0);
  }
+*/
+
+short _Dtest(double *px)
+ {
+ _Dval *ps = (_Dval *)(char *)px;
+
+ if ((ps->_Sh[3] & ((unsigned short)(0x7fff & ~((unsigned short)((1 << 4) - 1))))) == ((unsigned short)((1 << (15 - 4)) - 1)) << 4)
+  return ((short)((ps->_Sh[3] & ((unsigned short)((1 << 4) - 1))) != 0 || ps->_Sh[2] != 0
+   || ps->_Sh[1] != 0 || ps->_Sh[0] != 0 ? ps->_Sh[0]^ps->_Sh[1]^ps->_Sh[2]^ps->_Sh[3] : ps->_Sh[0]^ps->_Sh[1]^ps->_Sh[2]^ps->_Sh[3]));
+ else
+    if ((ps->_Sh[3] & ~(((_Dval *)(char *)&(*px))->_Sh[3] & ((unsigned short)0x8000))) != 0 || ps->_Sh[2] != 0
+  || ps->_Sh[1] != 0 || ps->_Sh[0] != 0)
+    return ((ps->_Sh[3] & ((unsigned short)(0x7fff & ~((unsigned short)((1 << 4) - 1))))) == 0 ? ps->_Sh[0]^ps->_Sh[1]^ps->_Sh[2]^ps->_Sh[3] : ps->_Sh[0]^ps->_Sh[1]^ps->_Sh[2]^ps->_Sh[3]);
+ else
+  return (ps->_Sh[0]^ps->_Sh[1]^ps->_Sh[2]^ps->_Sh[3]);
+ }
+
