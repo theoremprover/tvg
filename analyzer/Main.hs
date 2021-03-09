@@ -91,13 +91,14 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
+		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels",noIndentLog] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-writeModels"]
 
-		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\xdtest.c") : ["-writeModels"]
 
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest3.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\checkvarsdefinedtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\commatest.c") : []
 
 		-- loops:
@@ -109,7 +110,6 @@ main = do
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-writeModels",noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdcsubfunctiontest.c") : [subfuncovOpt] --["-writeAST","-writeGlobalDecls"]
---		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-MCDC"]
 --		[] -> "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
 --		[] -> "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
@@ -200,11 +200,9 @@ main = do
 			(every_branch_covered,s) <- runStateT covVectorsM $
 				CovVecState globdecls 1 allFileName Nothing funname [] gcc opts
 					Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1) coveragekind
-					Map.empty
 
 			let
-				(testvectors_rev,covered) = analysisStateCVS s
-				testvectors = reverse testvectors_rev
+				(testvectors,covered) = analysisStateCVS s
 				alls = allCondPointsCVS s
 
 			printLog 0 "\n"
@@ -266,6 +264,7 @@ once f x = f x `mplus` gmapMo (once f) x
 
 subfuncovOpt = "-subfuncov"
 noHaltOnVerificationErrorOpt = "-nohalt"
+noIndentLog = "-noindentlog"
 
 isOptionSet :: String -> CovVecM Bool
 isOptionSet optname = do
@@ -438,7 +437,9 @@ printLogM :: Int -> String -> CovVecM ()
 printLogM verbosity text = do
 	indent <- gets logIndentCVS
 	let ind_prefix = concat (replicate indent indentPrefix)
-	let ind_text = unlines $ map (ind_prefix++) $ lines text
+	ind_text <- isOptionSet noIndentLog >>= \case
+		False -> return $ unlines $ map (ind_prefix++) $ lines text
+		True -> return text
 	liftIO $ printLogInd verbosity text ind_text
 
 printLogV :: Int -> String -> CovVecM ()
@@ -518,8 +519,7 @@ data CovVecState = CovVecState {
 	machineSpecCVS   :: Maybe MachineSpec,
 	defTableCVS      :: DefTable,
 	logIndentCVS     :: Int,
-	coverageKindCVS  :: CoverageKind,
-	countersCVS      :: Map.Map String Int
+	coverageKindCVS  :: CoverageKind
 	}
 
 data Stats = Stats {
@@ -1617,10 +1617,7 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 
 			CExpr (Just expr) _ -> do
 				transids expr Nothing trace $ \ (envs',_,trace') -> do
-					printLogV 1 $ "1 ############## " ++ ren expr
-					r <- unfoldTracesM mb_ret_type toplevel forks envs' trace' ( (rest,breakable) : rest2 )
-					printLogV 1 $ "2 ############## " ++ ren r
-					return r
+					unfoldTracesM mb_ret_type toplevel forks envs' trace' ( (rest,breakable) : rest2 )
 
 			-- That's cheating: Insert condition into trace (for loop unrolling and switch) via GOTO
 			CGotoPtr wrapped ni -> do
@@ -2192,13 +2189,7 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 	-- Skip assignments to array elements
 	foldtraceM result (ass@(Assignment (Normal (CIndex _ _ _)) _) : rest) = foldtraceM (ass : result) rest
 	foldtraceM result (ass@(Assignment (Normal lvalue) expr) : rest) = do
-		let s = substituteBy lvalue expr result
-		r <- foldtraceM s rest
-		printLogV 1 $ "############# " ++ show ass
-		printLogV 1 $ "s=" ++ show s
-		printLogV 1 $ "lvalue=" ++ (render.pretty) lvalue ++ "\nexpr = " ++ (render.pretty) expr
-		printLogV 1 $ "---------------"
-		return r
+		foldtraceM (substituteBy lvalue expr result) rest
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
 
 -- eliminate assignments to arrays, replacing them by a new array declaration
@@ -2208,20 +2199,20 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 -}
 -- trace is in the right order.
 elimArrayAssignsM :: Trace -> CovVecM Trace
-elimArrayAssignsM trace = elim_arr_assnsM
+elimArrayAssignsM trace = evalStateT elimarrassns Map.empty
 	where
-	elim_arr_assnsM :: CovVecM Trace
-	elim_arr_assnsM = do
-		ls <- forM trace $ \case
+	elimarrassns :: StateT (Map.Map String Int) CovVecM Trace
+	elimarrassns = do
+		concatForM trace $ \case
 			Assignment (Normal (CIndex arr_expr index_expr _)) ass_expr -> do
-				counters <- gets countersCVS
+				counters <- get
 				let arr_name = lValueToVarName arr_expr
 				i <- case Map.lookup arr_name counters of
 					Nothing -> do
-						modify $ \ s -> s { countersCVS = Map.insert arr_name 2 (countersCVS s) }
+						modify $ Map.insert arr_name 2
 						return 1
 					Just i -> do
-						modify $ \ s -> s { countersCVS = Map.adjust (+1) arr_name (countersCVS s) }
+						modify $ Map.adjust (+1) arr_name
 						return i
 				let
 					-- Three '$' denote the class of array names (to avoid name clashes)
@@ -2238,7 +2229,6 @@ elimArrayAssignsM trace = elim_arr_assnsM
 					Assignment (ArrayUpdate store_arr_ident new_arr_ident arr_types index_expr) ass_expr,
 					Assignment (Normal arr_expr) new_arr ]
 			other -> return [other]
-		return $ concat ls
 
 -- Simplify:
 -- *(&x)  ~> x
@@ -2759,7 +2749,7 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 	printLogV 2 $ "Running model " ++ takeFileName modelpathfile ++ "..."
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
 		readProcessWithExitCode z3FilePath ["-smt2","-in","parallel.enable=true"] model_string
-	printLogV 2 output
+	printLogV 1 $ "\nZ3 says:\n" ++ output
 	case lines output of
 		"unsat"   : _ -> return (model_string_linenumbers,Nothing)
 		"unknown" : _ -> return (model_string_linenumbers,Nothing)
