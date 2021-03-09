@@ -552,7 +552,8 @@ data TraceElem =
 	Condition (Maybe Branch) CExprWithType |
 	NewDeclaration (Ident,Type) |
 	Return CExprWithType |
-	DebugOutput String CExprWithType
+	DebugOutput String CExprWithType |
+	SolverFind
 	deriving Data
 
 data Branch = Branch { branchLocation::Location, numBranch::Int, isElseBranch::Bool, nameBranch::String } 
@@ -641,6 +642,7 @@ instance CNode TraceElem where
 	nodeInfo (NewDeclaration (ident,_)) = nodeInfo ident
 	nodeInfo (Return expr)              = extractNodeInfo expr
 	nodeInfo (DebugOutput _ _)          = undefNode
+	nodeInfo SolverFind                 = undefNode
 
 
 instance Pretty CExprWithType where
@@ -687,6 +689,7 @@ instance Show TraceElem where
 		NewDeclaration (lval,ty) -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
 		Return exprs             -> "RET  " ++ (render.pretty) exprs
 		DebugOutput varname expr -> "DBGOUT " ++ varname ++ " " ++ (render.pretty) expr
+		SolverFind               -> "SOLVER_FIND"
 		) ++ if printLocations then "  (" ++ (showLocation.lineColNodeInfo) te ++ ")" else ""
 
 showTrace :: Trace -> String
@@ -816,8 +819,7 @@ int __attribute__((__cdecl__)) sscanf(const char *,const char *,...) ;
 int solver_pragma(int x,...) { return 1; }
 void solver_debug(unsigned short x) { printf("DEBUG_VAL=%x\n",x); }
 
-int solver_find_found = 0;
-void solver_find() { solver_find_found=1; }
+void* solver_find(void* x) { printf("SOLVER_FIND!\n"); return x; }
 
 $esc:incl
 
@@ -978,11 +980,11 @@ analyzeTraceM :: Maybe Type -> [TraceElem] -> CovVecM Bool
 analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_type,ren res_line,ren "traceid=",ren traceid] $ do
 	findmode <- isOptionSet findModeOpt
 	let
-		found_finds = everything (++) (mkQ [] searchfinds) res_line
-		searchfinds :: CExprWithType -> [Ident]
-		searchfinds (CVar ident@(Ident "solver_find" _ _) _) = [ident]
-		searchfinds _ = []
-	case findmode && null found_finds of
+		found_finds = any is_solverfind res_line
+		is_solverfind :: TraceElem -> Bool
+		is_solverfind SolverFind = True
+		is_solverfind _ = False
+	case findmode && not found_finds of
 		True -> do
 			printLogV 1 $ "Did not find solver_find, cutting off."
 			return False
@@ -1617,6 +1619,9 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 					return $ DebugOutput ("solver_debug_" ++ lValueToVarName expr') expr'
 				unfoldTracesM mb_ret_type toplevel forks envs (reverse dbgouts ++ trace) ((rest,breakable):rest2)
 
+			CExpr (Just (CCall (CVar (Ident "solver_find" _ _) _) _ _)) _ -> do
+				unfoldTracesM mb_ret_type toplevel forks envs (SolverFind:trace) ((rest,breakable):rest2)
+
 			CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ -> do
 				-- translate the whole assignment expression, so we also get the translated lexpr
 				transids (CAssign CAssignOp lexpr assigned_expr' ni) Nothing trace $
@@ -2047,6 +2052,9 @@ scanExprM envs toplevel expr0 mb_target_ty trace forks = logWrapper ["scanExprM"
 
 		to_call_or_ternaryifs ccall@(CCall funexpr args ni) = case funexpr of
 			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
+			CVar (Ident "solver_find" _ _) _ -> do
+				modify ((Right [[CBlockStmt $ CExpr (Just (CCall (CVar (internalIdent "solver_find") undefNode) [head args] undefNode)) undefNode]]) :)
+				return $ head args
 			CVar (Ident "solver_pragma" _ _) _ -> lift $ ⅈ 1
 			CVar funident _ -> do
 				modify ( Left (funident,args,ni) : )
