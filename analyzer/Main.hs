@@ -218,7 +218,7 @@ main = do
 					False -> return ()
 					True -> printLog 0 $ unlines $ mbshowtraces (
 						[ "","=== TRACE " ++ show traceid ++ " ========================","<leaving out builtins...>" ] ++
-						[ showLine trace ] ++
+						[ showLine (reverse trace) ] ++
 						[ "",
 						"--- MODEL " ++ show traceid ++ " -------------------------",
 						model_string,
@@ -819,7 +819,7 @@ int __attribute__((__cdecl__)) sscanf(const char *,const char *,...) ;
 int solver_pragma(int x,...) { return 1; }
 void solver_debug(unsigned short x) { printf("DEBUG_VAL=%x\n",x); }
 
-void* solver_find(void* x) { printf("SOLVER_FIND!\n"); return x; }
+void solver_find() { printf("SOLVER_FIND!\n"); }
 
 $esc:incl
 
@@ -2052,9 +2052,7 @@ scanExprM envs toplevel expr0 mb_target_ty trace forks = logWrapper ["scanExprM"
 
 		to_call_or_ternaryifs ccall@(CCall funexpr args ni) = case funexpr of
 			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
-			CVar (Ident "solver_find" _ _) _ -> do
-				modify ((Right [[CBlockStmt $ CExpr (Just (CCall (CVar (internalIdent "solver_find") undefNode) [head args] undefNode)) undefNode]]) :)
-				return $ head args
+			CVar (Ident "solver_find" _ _) _ -> lift $ ⅈ 1
 			CVar (Ident "solver_pragma" _ _) _ -> lift $ ⅈ 1
 			CVar funident _ -> do
 				modify ( Left (funident,args,ni) : )
