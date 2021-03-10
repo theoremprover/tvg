@@ -2567,10 +2567,12 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 
 			cast_fp2arr :: SExpr -> Z3_Type -> Z3_Type -> StateT [SExpr] CovVecM SExpr
 			cast_fp2arr sexpr fp_ty arr_ty@(Z3_Array elem_ty _) = do
-				bv_size <- lift $ sizeofZ3Ty fp_ty
 				elem_size <- lift $ sizeofZ3Ty elem_ty
+				bv_size <- lift $ sizeofZ3Ty fp_ty
 				let num_elems = div bv_size elem_size
-				(bv, bv_decl) <- new_var "bv" (Z3_BitVector bv_size True)
+				let
+					CVar ident _ = subexpr
+					bv = SLeaf $ makeFloatBVVarName ident
 				(arr,arr_decl) <- new_var "arr" arr_ty
 				(z3_inttype,_) <- lift $ _IntTypesM
 				is <- forM [0..(num_elems-1)] $ make_intconstant z3_inttype
@@ -2579,10 +2581,8 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 					(case endianness of Little -> id; Big -> reverse)
 						[ ( (i+1)*elem_size-1 , i*elem_size ) | i <- [0..(num_elems-1)] ] ) $
 							\ (h,l) -> 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 h l bv
-				modify ( ([
-					arr_decl,
-					bv_decl ,
-					𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, bv ] ＝ sexpr ] ++
+				modify ( (
+					arr_decl :
 					map (\(i,address) -> 𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i address) (zip is addresses)) ++ )
 
 				return arr
@@ -2615,6 +2615,10 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 			Z3_Double -> fp
 			_ -> bv
 --			_ -> error $ "bitVectorTy for " ++ show operator_ty ++ " not implemented!"
+
+bvPrefix = "bv$"
+makeFloatBVVarName :: Ident -> String
+makeFloatBVVarName ident = bvPrefix ++ identToString ident
 
 
 data Z3_Type =
@@ -2739,7 +2743,10 @@ declConst2SExpr id_name ty = do
 	return $ SExpr [ SLeaf "declare-const", SLeaf id_name, ty_sexpr ]
 
 makeAndSolveZ3ModelM :: [Int] -> [(Ident,Z3_Type)] -> [Constraint] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
-makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents modelpathfile = do
+makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents0 modelpathfile = do
+	let output_idents = for output_idents0 $ \ oid -> case lookup oid z3tyenv of
+		Just ty | ty `elem` [Z3_Float,Z3_Double] -> internalIdent $ makeFloatBVVarName oid
+		_ -> oid
 	opts <- gets optsCVS
 	let  -- prefix a "a_" for identifiers starting with underscore (Z3 does not like leading underscores...)
 		(a_constraints,a_output_idents) = everywhere (mkT prefix_a) (constraints,output_idents) where
@@ -2754,9 +2761,21 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 			Assignment (ArrayUpdate ident1 ident2 _ index) ass_expr -> [ident1,ident2] ++ fvar index ++ fvar ass_expr
 	printLogV 20 $ "constraints_vars = " ++ showIdents constraints_vars
 
-	varsZ3 :: [SCompound] <- forM (filter ((`elem` (constraints_vars ++ a_output_idents)).fst) z3tyenv) $ \ (ident,ty) -> do
-		decl <- declConst2SExpr (identToString ident) ty
-		return $ SExprLine (SOnOneLine decl)
+	varsZ3 :: [SCompound] <- concatForM (filter ((`elem` (constraints_vars ++ a_output_idents)).fst) z3tyenv) $ \ (ident,ty) -> do
+		let varname = identToString ident
+		decl <- declConst2SExpr varname ty
+		-- if a variable is floating point, also declare its bitvector representation and the corresponding equality
+		bv_decls <- case ty `elem` [Z3_Float,Z3_Double] of
+			False -> return []
+			True  -> do
+				let
+					bv_name = makeFloatBVVarName ident
+					bv = SLeaf bv_name
+				bv_size <- sizeofZ3Ty ty
+				decl_sexpr <- declConst2SExpr bv_name (Z3_BitVector bv_size True)
+				let bv_eq_assert = 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, bv ] ＝ SLeaf varname
+				return [decl_sexpr,bv_eq_assert]
+		return $ map (SExprLine . SOnOneLine) (decl:bv_decls)
 	constraintsZ3 :: [SCompound] <- concatForM a_constraints $ \ constraint -> do
 		(assert_sexpr,add_sexprs) <- expr2SExpr constraint
 		return $ [ SEmptyLine,
@@ -2795,19 +2814,24 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 		"unsat"   : _ -> return (model_string_linenumbers,Nothing)
 		"unknown" : _ -> return (model_string_linenumbers,Nothing)
 		"sat" : rest -> do
-			sol_params <- forM (zip a_output_idents rest) $ \ (ident,line) -> do
-				let is = escapeDollars $ identToString ident
+			sol_params <- forM (zip a_output_idents rest) $ \ (ident0,line) -> do
+				let
+					ident_s = identToString ident0
+					ident = case stripPrefix bvPrefix ident_s of
+						Just ident_wo_prefix -> internalIdent ident_wo_prefix
+						Nothing -> ident0
+					is = escapeDollars $ identToString ident0
 				case line =~ ("\\(\\(" ++ is ++ " ([^\\)]+)\\)\\)") :: (String,String,String,[String]) of
 					(_,_,_,[val_string]) -> case lookup ident z3tyenv of
-						Nothing -> myError $ "Parsing z3 output: Could not find type of " ++ is
-						Just ty -> return (is, case ty of
+						Nothing -> myError $ "Parsing z3 output: Could not find type of " ++ (render.pretty) ident
+						Just ty -> return (identToString ident, case ty of
 							Z3_BitVector size unsigned -> let
 								'#':'x':hexdigits = val_string
 								[(i :: Integer,"")] = readHex hexdigits
 								in
 								IntVal $ case unsigned of
-									True -> fromIntegral i
-									False  -> fromIntegral $ if i < 2^(size-1) then i else i - 2^size
+									True  -> fromIntegral i
+									False -> fromIntegral $ if i < 2^(size-1) then i else i - 2^size
 							Z3_Float -> parseFloat val_string
 							Z3_Double -> parseDouble val_string
 							Z3_LDouble -> error $ "long double is not supported"
@@ -2841,44 +2865,13 @@ fb_cast :: (MArray (STUArray s) a (ST s), MArray (STUArray s) b (ST s)) => a -> 
 fb_cast x = newArray (0::Int,0) x >>= castSTUArray >>= flip readArray 0
 
 parseFloat :: String -> SolutionVal
-parseFloat s =
-	let [(w,"")] = case s of
-		_ | "(_ NaN "   `isPrefixOf` s -> readxb "b01111111110000000000000000000001"   -- this is a quiet NaN!
-		_ | "(_ +oo "   `isPrefixOf` s -> readxb "b01111111100000000000000000000000"
-		_ | "(_ -oo "   `isPrefixOf` s -> readxb "b11111111100000000000000000000000"
-		_ | "(_ +zero " `isPrefixOf` s -> readxb "b00000000000000000000000000000000"
-		_ | "(_ -zero " `isPrefixOf` s -> readxb "b10000000000000000000000000000000"
-		_ -> [(word32,"")]
-	in FloatVal (w,wordToFloat w) 
-	where
-	word32 = shift b1 31 .|. shift b2 23 .|. b3
-	(_,_,_,[s1,s2,s3]) = s =~ ("fp #([x|b][0|1]) #([x|b][0-9a-f]+) #([x|b][0-9a-f]+)") :: (String,String,String,[String])	
-	([(b1,"")],[(b2,"")],[(b3,"")]) = (readxb s1,readxb s2,readxb s3)
-	readxb :: ReadS Word32
-	readxb ('b':bs) = readInt 2 (`elem` "01") digitToInt bs
-	readxb ('x':bs) = readHex bs
+parseFloat ('#':'x':s) = let [(w,"")] = readHex s in FloatVal (w,wordToFloat w)
 
 parseDouble :: String -> SolutionVal
-parseDouble s =
-	let [(w,"")] = case s of
-		_ | "(_ NaN "   `isPrefixOf` s -> readxb "b0111111111111000000000000000000000000000000000000000000000000001"  -- this is a quiet NaN!
-		_ | "(_ +oo "   `isPrefixOf` s -> readxb "b0111111111110000000000000000000000000000000000000000000000000000"
-		_ | "(_ -oo "   `isPrefixOf` s -> readxb "b1111111111110000000000000000000000000000000000000000000000000000"
-		_ | "(_ +zero " `isPrefixOf` s -> readxb "b0000000000000000000000000000000000000000000000000000000000000000"
-		_ | "(_ -zero " `isPrefixOf` s -> readxb "b1000000000000000000000000000000000000000000000000000000000000000"
-		_ -> [(word64,"")]
-	in DoubleVal (w,wordToDouble w) 
-	where
-	word64 = shift b1 63 .|. shift b2 52 .|. b3
-	(_,_,_,[s1,s2,s3]) = s =~ ("fp #([x|b][0|1]) #([x|b][0-9a-f]+) #([x|b][0-9a-f]+)") :: (String,String,String,[String])	
-	([(b1,"")],[(b2,"")],[(b3,"")]) = (readxb s1,readxb s2,readxb s3)
-	readxb :: ReadS Word64
-	readxb ('b':bs) = readInt 2 (`elem` "01") digitToInt bs
-	readxb ('x':bs) = readHex bs
+parseDouble ('#':'x':s) = let [(w,"")] = readHex s in DoubleVal (w,wordToDouble w)
 
--- Find solutions for floating point constants close to 1.0 (in order to no produce mismatches due to rounding stuff)
-fPMinimizer name = [ SExpr [SLeaf "minimize",SExpr [SLeaf "bvsub", SLeaf "#x00000001",
-	SExpr [ SExpr [SLeaf "_",SLeaf "fp.to_sbv", SLeaf "32"], SLeaf "RNE", SLeaf (identToString name) ] ]] ]
+-- Find solutions for floating point constants close to 1.0 (in order to not produce mismatches due to rounding stuff)
+fPMinimizer name = [ SExpr [SLeaf "minimize",SExpr [SLeaf "bvsub", SLeaf "#x00000001", SLeaf $ makeFloatBVVarName name ] ] ]
 
 --getArgRetNames :: Maybe Type -> CovVecM ()
 getArgRetNames mb_ret_type = do
