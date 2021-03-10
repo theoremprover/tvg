@@ -45,7 +45,8 @@ short _FDint(float *px, short xexp)
 
   ps->_Sh[sub[xchar]] ^= frac;
 
-  if (0 < xchar) frac |= ps->_Sh[0], ps->_Sh[0] = 0;
+  if (0 < xchar)
+  { frac |= ps->_Sh[0]; ps->_Sh[0] = 0; }
 
 
     if(frac!=0) return (-1);

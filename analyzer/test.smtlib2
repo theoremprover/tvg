@@ -1,12 +1,6 @@
 (set-option :smt.relevancy 0)
 (set-option :produce-models true)
 
-
-(declare-const f Float32)
-(declare-const g Float64)
-(assert (= f ((_ to_fp 8 24) RNE 3.14 0)))
-(assert (= g ((_ to_fp 11 53) RNE 2.71 0)))
+(assert (= (_ -oo 8 24) (_ +oo 8 24)))
 
 (check-sat)
-(get-value (f))
-(get-value (g))
