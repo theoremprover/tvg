@@ -91,7 +91,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels",noIndentLogOpt{-,noHaltOnVerificationErrorOpt-},findModeOpt] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt,findModeOpt] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-writeModels"]
 
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
@@ -242,15 +242,18 @@ main = do
 			forM_ deaths $ \ branch -> do
 				printLog 0 $ "DEAD " ++ showBranch branch
 
-			printLog 0 $ "Full path coverage: " ++ show every_branch_covered ++ "\n\n"
+			printLog 0 $ "Full path coverage: " ++ show every_branch_covered ++ "\n"
 			when (every_branch_covered && not (null deaths)) $ printLog 0 $ "There is unreachable code, in spite of full path coverage."
 
-			let errs = checkSolutionErrsCVS s
-			when (errs>0) $ printLog 0 $ "CHECK SOLUTION ERRORS: " ++ show errs
-
-			printLog 0 $ case null deaths of
-				False -> "FAIL, there are coverage gaps!\n"
-				True  -> "OK, we have full coverage.\n"
+			let errs = verificationErrsCVS s
+			case (errs>0) of
+				True -> do
+					let errmsg = "VERIFICATION ERRORS: " ++ show errs
+					printToSolutions errmsg
+					printLog 0 errmsg
+				False -> printLog 0 $ case null deaths of
+					False -> "FAIL, there are coverage gaps!\n"
+					True  -> "OK, we have full coverage.\n"
 
 			createHTMLLog
 
@@ -303,7 +306,7 @@ floatType = DirectType (TyFloating TyFloat) noTypeQuals noAttributes
 doubleType = DirectType (TyFloating TyDouble) noTypeQuals noAttributes
 
 showInitialTrace = True && not fastMode
-showModels = True && not fastMode
+showModels = False && not fastMode
 showOnlySolutions = True
 showTraces = True && not fastMode
 showFinalTrace = True && not fastMode
@@ -525,7 +528,7 @@ data CovVecState = CovVecState {
 	defTableCVS      :: DefTable,
 	logIndentCVS     :: Int,
 	coverageKindCVS  :: CoverageKind,
-	checkSolutionErrsCVS :: Int
+	verificationErrsCVS :: Int
 	}
 
 data Stats = Stats {
@@ -2964,7 +2967,14 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 	printLogV 1 $ "stdout=\n" ++ stdout ++ "\n"
 	
 	findmode <- isOptionSet findModeOpt
-	when (findmode && not (solverFindMagicString `isInfixOf` stdout)) $ myError $ "solver_find() not called!"
+	nohalt <- isOptionSet noHaltOnVerificationErrorOpt
+	when (findmode && not (solverFindMagicString `isInfixOf` stdout)) $ do
+		let errtxt = "\nsolver_find() not called!"
+		printToSolutions errtxt
+		modify $ \ s -> s { verificationErrsCVS = verificationErrsCVS s + 1 }
+		case nohalt of
+			False -> myError errtxt
+			True -> printLogV 0 $ errtxt
 
 	let
 		outputs = words $ last $ lines stdout
@@ -2994,7 +3004,7 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 					let txt = "\ncheckSolutionM ERROR for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result ++ "\n"
 					printToSolutions txt
 					printLogV 0 txt
-					modify $ \ s -> s { checkSolutionErrsCVS = checkSolutionErrsCVS s + 1 }
+					modify $ \ s -> s { verificationErrsCVS = verificationErrsCVS s + 1 }
 					whenOptionSet noHaltOnVerificationErrorOpt False $ myError "Halting on verification errors."
 				return check_OK
 	let all_ok = all (==True) oks

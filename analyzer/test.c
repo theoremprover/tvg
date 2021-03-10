@@ -45,10 +45,6 @@ short _FDint(float *px, short xexp)
 
   ps->_Sh[sub[xchar]] ^= frac;
 
-    solver_find();
-    return(frac);
-
-
   if (0 < xchar) frac |= ps->_Sh[0], ps->_Sh[0] = 0;
 
 
