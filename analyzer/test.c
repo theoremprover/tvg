@@ -47,19 +47,17 @@ short _FDint(float *px, short xexp)
 
     solver_find();
     return(frac);
-/*
 
 
-  if (0 < xchar)
-  { frac |= ps->_Sh[0]; ps->_Sh[0] = 0; }
-*/
+  if (0 < xchar) frac |= ps->_Sh[0], ps->_Sh[0] = 0;
+
 
     if(frac!=0) return (-1);
     else {
     solver_find();
     return 0;
     }
-
 //  return (frac != 0 ? (-1) : (solver_find(),0) );
   }
  }
+

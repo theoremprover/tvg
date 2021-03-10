@@ -91,7 +91,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt,findModeOpt] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels",noIndentLogOpt{-,noHaltOnVerificationErrorOpt-},findModeOpt] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-writeModels"]
 
 --		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
@@ -199,7 +199,7 @@ main = do
 			let coveragekind = if "-Branch" `elem` opts then Branch_Cov else MCDC_Cov
 			(every_branch_covered,s) <- runStateT covVectorsM $
 				CovVecState globdecls 1 allFileName Nothing funname [] gcc opts
-					Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1) coveragekind
+					Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1) coveragekind 0
 
 			let
 				(testvectors,covered) = analysisStateCVS s
@@ -245,6 +245,9 @@ main = do
 			printLog 0 $ "Full path coverage: " ++ show every_branch_covered ++ "\n\n"
 			when (every_branch_covered && not (null deaths)) $ printLog 0 $ "There is unreachable code, in spite of full path coverage."
 
+			let errs = checkSolutionErrsCVS s
+			when (errs>0) $ printLog 0 $ "CHECK SOLUTION ERRORS: " ++ show errs
+
 			printLog 0 $ case null deaths of
 				False -> "FAIL, there are coverage gaps!\n"
 				True  -> "OK, we have full coverage.\n"
@@ -266,6 +269,7 @@ subfuncovOpt = "-subfuncov"
 noHaltOnVerificationErrorOpt = "-nohalt"
 noIndentLogOpt = "-noindentlog"
 findModeOpt = "-findmode"
+solverFindMagicString = "solver_find() encountered!"
 
 isOptionSet :: String -> CovVecM Bool
 isOptionSet optname = do
@@ -520,7 +524,8 @@ data CovVecState = CovVecState {
 	machineSpecCVS   :: Maybe MachineSpec,
 	defTableCVS      :: DefTable,
 	logIndentCVS     :: Int,
-	coverageKindCVS  :: CoverageKind
+	coverageKindCVS  :: CoverageKind,
+	checkSolutionErrsCVS :: Int
 	}
 
 data Stats = Stats {
@@ -620,9 +625,9 @@ createBranches default_name cond = do
  				(Branch (lineColNodeInfo cond) 2 True  "F||F", (not_c expr1) ⋏ (not_c expr2)),
  				(Branch (lineColNodeInfo cond) 3 False "F||T", (not_c expr1) ⋏        expr2) ]
  			CBinary CLndOp expr1 expr2 _ -> [
- 				(Branch (lineColNodeInfo cond) 1 False "T&&F",        expr1  ⋏ (not_c expr2)),
- 				(Branch (lineColNodeInfo cond) 2 True  "F&&F", (not_c expr1) ⋏ (not_c expr2)),
- 				(Branch (lineColNodeInfo cond) 3 False "F&&T", (not_c expr1) ⋏        expr2) ]
+ 				(Branch (lineColNodeInfo cond) 1 True   "T&&F",        expr1  ⋏ (not_c expr2)),
+ 				(Branch (lineColNodeInfo cond) 2 False  "T&&T",        expr1  ⋏        expr2) ,
+ 				(Branch (lineColNodeInfo cond) 3 True   "F&&T", (not_c expr1) ⋏        expr2) ]
  			_ -> [
   				(Branch (lineColNodeInfo cond) 1 False default_name,       cond),
   				(Branch (lineColNodeInfo cond) 2 True  default_name, not_c cond) ]
@@ -819,7 +824,7 @@ int __attribute__((__cdecl__)) sscanf(const char *,const char *,...) ;
 int solver_pragma(int x,...) { return 1; }
 void solver_debug(unsigned short x) { printf("DEBUG_VAL=%x\n",x); }
 
-void solver_find() { printf("SOLVER_FIND!\n"); }
+void solver_find() { printf($esc:solverfindstr); }
 
 $esc:incl
 
@@ -843,7 +848,8 @@ int main(int argc, char* argv[])
 	return 0;
 }
 |]
-	where
+	where 
+	solverfindstr = show $ solverFindMagicString ++ "\n"
 	uns_float = "union { float float_val; unsigned long int uint_val; } float_conv;"
 	uns_double = "union { double double_val; unsigned long long int ulong_val; } double_conv;"
 
@@ -2956,6 +2962,9 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 	printLogV 1 $ "checkSolution args = " ++ show args
 	(stdout,stderr) <- runHereM (takeDirectory absolute_filename) (takeFileName filename) args
 	printLogV 1 $ "stdout=\n" ++ stdout ++ "\n"
+	
+	findmode <- isOptionSet findModeOpt
+	when (findmode && not (solverFindMagicString `isInfixOf` stdout)) $ myError $ "solver_find() not called!"
 
 	let
 		outputs = words $ last $ lines stdout
@@ -2985,6 +2994,7 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 					let txt = "\ncheckSolutionM ERROR for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result ++ "\n"
 					printToSolutions txt
 					printLogV 0 txt
+					modify $ \ s -> s { checkSolutionErrsCVS = checkSolutionErrsCVS s + 1 }
 					whenOptionSet noHaltOnVerificationErrorOpt False $ myError "Halting on verification errors."
 				return check_OK
 	let all_ok = all (==True) oks
