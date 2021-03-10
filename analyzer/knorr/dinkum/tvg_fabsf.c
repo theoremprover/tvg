@@ -72,11 +72,11 @@ short _FDtest(float *px)
 
 // Inf = 0x7f800000 => _Sh[0]=0000, _Sh[1]=7f80
 
-    if (
+    if (  // For [1,2]:  _Sh[1] & ff80 == 7f80
         (ps->_Sh[1] & ((unsigned short)(0x7fff & ~((unsigned short)((1 << 7) - 1))))) ==
         ((unsigned short)((1 << (15 - 7)) - 1)) << 7)
     {
-        // _Sh[1]
+        // For [1,2]: _Sh[0] = 0000, _Sh[1]=x000
         if((ps->_Sh[1] & ((unsigned short)((1 << 7) - 1))) != 0 || ps->_Sh[0] != 0)
         {
 //            solver_debug(ps->_Sh[0]);
