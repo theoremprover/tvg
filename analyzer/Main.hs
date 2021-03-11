@@ -91,8 +91,10 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
---		[] -> "gcc" : "fabs" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabs.i"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt,findModeOpt]
+		[] -> "gcc" : "sqrtf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels",noIndentLogOpt]
+--		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writeModels",noIndentLogOpt]
+--		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
+--		[] -> "gcc" : "fabsf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt,findModeOpt] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-writeModels"]
 
@@ -289,7 +291,7 @@ whenOptionSet opt_s target action = do
 
 ------------------------
 
-fastMode = False
+fastMode = True
 
 outputVerbosity = if fastMode then 1 else 1
 logFileVerbosity = if fastMode then 0 else 10
@@ -1891,21 +1893,23 @@ cinitializer2blockitems :: CExpr -> Type -> CInit -> CovVecM [CBlockItem]
 cinitializer2blockitems lexpr ty initializer =
 	case initializer of
 		CInitExpr expr ni_init -> return [ CBlockStmt $ lexpr ≔ expr ]
-		CInitList initlist ni_init -> case ty of
-			DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
-				memberidentstypes <- getMembersM sueref
-				concatForM (zip initlist memberidentstypes) $ \case
-					(([],initializer),(memberident,memberty)) -> do
-						memberty' <- elimTypeDefsM memberty
-						cinitializer2blockitems (CMember lexpr memberident False (nodeInfo memberident)) memberty' initializer
-					_ -> myError $ "cinitializer2blockitems DirectType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
-			ArrayType elem_ty _ _ _ -> concatForM (zip [0..] initlist) $ \ (i,(partdesigs,cinitializer)) -> do
-				case partdesigs of
-					[] -> do
-						ii <- ⅈ i
-						cinitializer2blockitems (CIndex lexpr ii ni_init) elem_ty cinitializer
-					_ -> myError $ "cinitializer2blockitems ArrayType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
-			_ -> myError $ "cinitializer2blockitems: " ++ (render.pretty) ty ++ " at " ++ (show $ nodeInfo lexpr) ++ " not implemented!"
+		CInitList initlist ni_init -> do
+			ty' <- elimTypeDefsM ty
+			case ty' of
+				DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
+					memberidentstypes <- getMembersM sueref
+					concatForM (zip initlist memberidentstypes) $ \case
+						(([],initializer),(memberident,memberty)) -> do
+							memberty' <- elimTypeDefsM memberty
+							cinitializer2blockitems (CMember lexpr memberident False (nodeInfo memberident)) memberty' initializer
+						_ -> myError $ "cinitializer2blockitems DirectType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
+				ArrayType elem_ty _ _ _ -> concatForM (zip [0..] initlist) $ \ (i,(partdesigs,cinitializer)) -> do
+					case partdesigs of
+						[] -> do
+							ii <- ⅈ i
+							cinitializer2blockitems (CIndex lexpr ii ni_init) elem_ty cinitializer
+						_ -> myError $ "cinitializer2blockitems ArrayType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
+				_ -> myError $ "cinitializer2blockitems: " ++ (render.pretty) ty' ++ " at " ++ (show $ nodeInfo lexpr) ++ " not implemented!"
 
 showFullLocation :: (CNode a) => a -> String
 showFullLocation cnode = (posFile $ posOfNode $ nodeInfo cnode) ++ " : " ++ (showLocation.lineColNodeInfo) cnode
@@ -2728,14 +2732,24 @@ type Solution = [(String,SolutionVal)]
 data SolutionVal = IntVal Int | FloatVal (Word32,Float) | DoubleVal (Word64,Double) | PtrVal
 instance Show SolutionVal where
 	show (IntVal i) = show i
-	show (FloatVal (w,f)) = printf "%s = 0x%08.8x = %g" (showHFloat f "") w f
-	show (DoubleVal (w,d)) = printf "%s = 0x%016.16x = %g" (showHFloat d "") w d
+	show (FloatVal (w,f)) | isNaN f = printf "NaN(0x%06x) = 0x%08x = %g" (w .&. (fromIntegral 0x7fffff)) w f
+	show (FloatVal (w,f)) = printf "%s = 0x%08x = %g" (showHFloat f "") w f
+	show (DoubleVal (w,d)) | isNaN d = printf "NaN(0x%013x) = 0x%016x = %g" (w .&. (fromIntegral 0xfffffffffffff)) w d
+	show (DoubleVal (w,d)) = printf "%s = 0x%016x = %g" (showHFloat d "") w d
 	show PtrVal = "<SOME_PTR>"
 instance Eq SolutionVal where
 	IntVal i1    == IntVal i2    = i1==i2
 	PtrVal       == PtrVal       = True
-	FloatVal (_,f1)  == FloatVal (_,f2)  = abs (f2-f1) <= floatTolerance
+	FloatVal (_,f1)  == FloatVal (_,f2) | isNaN f1 && isNaN f2 = True
+	FloatVal (_,f1)  == FloatVal (_,f2) | isInfinite f1 && isInfinite f2 = True
+	FloatVal (_,f1)  == FloatVal (_,f2) = abs (f2-f1) <= floatTolerance
+	DoubleVal (_,f1) == DoubleVal (_,f2) | isNaN f1 && isNaN f2 = True
+	DoubleVal (_,f1) == DoubleVal (_,f2) | isInfinite f1 && isInfinite f2 = True
 	DoubleVal (_,f1) == DoubleVal (_,f2) = abs (f2-f1) <= doubleTolerance
+{- Bitwise equality looks like that:
+	FloatVal (w1,_)  == FloatVal (w2,_)  = w1==w2
+	DoubleVal (w1,_) == DoubleVal (w2,_) = w1==w2
+-}
 
 declConst2SExpr :: String -> Z3_Type -> CovVecM SExpr
 declConst2SExpr id_name ty = do
@@ -2871,7 +2885,7 @@ parseDouble :: String -> SolutionVal
 parseDouble ('#':'x':s) = let [(w,"")] = readHex s in DoubleVal (w,wordToDouble w)
 
 -- Find solutions for floating point constants close to 1.0 (in order to not produce mismatches due to rounding stuff)
-fPMinimizer name = [ SExpr [SLeaf "minimize",SExpr [SLeaf "bvsub", SLeaf "#x00000001", SLeaf $ makeFloatBVVarName name ] ] ]
+fPMinimizer cons name = [ SExpr [SLeaf "minimize",SExpr [SLeaf "bvsub", SLeaf cons, SLeaf $ makeFloatBVVarName name ] ] ]
 
 --getArgRetNames :: Maybe Type -> CovVecM ()
 getArgRetNames mb_ret_type = do
@@ -2912,9 +2926,9 @@ solveTraceM mb_ret_type traceid trace = do
 		(tyenv1 ++ debug_tyenv)
 		(constraints ++ debug_constraints)
 		(concat $ for param_env_exprs $ \ ((_,(name,_)),expr) -> case extractZ3Type expr of
-			Z3_Float -> fPMinimizer name
-			Z3_Double -> fPMinimizer name
-			Z3_LDouble -> fPMinimizer name
+			Z3_Float -> fPMinimizer "#x00000001" name
+			Z3_Double -> fPMinimizer "#x0000000000000001" name
+			Z3_LDouble -> fPMinimizer "#x00000000000000000000000000000001" name
 			_ -> [ SExpr [SLeaf "minimize",SLeaf (identToString name)] ])
 		(param_names ++ ret_names ++ debug_idents)
 		(analyzerPath </> "models" </> "model_" ++ tracename ++ ".smtlib2")
