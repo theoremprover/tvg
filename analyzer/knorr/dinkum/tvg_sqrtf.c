@@ -526,6 +526,8 @@ typedef union
 void (_Feraise)(int except)
  {
 
+int __attribute__((fardata)) _Errno;
+
  int errh = (1 | 2);
 
  if ((errh & 2) != 0)
