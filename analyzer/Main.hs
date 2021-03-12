@@ -601,23 +601,27 @@ printCondPoints alls = liftIO $ do
 data CoverageKind = Branch_Cov | MCDC_Cov
 	deriving (Show,Eq)
 
---type MCDC_Matrix = [MCDC_Line]
---type MCDC_Line = ([Bool],Bool,CExpr)
-
+type MCDC_Branch = (String,[Bool],Bool,CExpr)
 -- ⋏ ⋎
-eval_cond :: CExpr -> [(String,[Bool],Bool)]
-eval_cond (CBinary CLorOp expr1 expr2 _) =
-	[ (s1++"||"++s2,e1s++e2s,b1||b2) | (s1,e1s,b1) <- eval_cond expr1, (s2,e2s,b2) <- eval_cond expr2 ]
-eval_cond (CBinary CLndOp expr1 expr2 _) =
-	[ (s1++"&&"++s2,e1s++e2s,b1&&b2) | (s1,e1s,b1) <- eval_cond expr1, (s2,e2s,b2) <- eval_cond expr2 ]
-eval_cond _ = [("T",[True],True),("F",[False],False)]
+eval_cond :: CExpr -> [MCDC_Branch]
+eval_cond (CBinary CLorOp expr1 expr2 _) = [ ("("++s1++"||"++s2++")",e1s++e2s,b1||b2,cond1⋎cond2) |
+	(s1,e1s,b1,cond1) <- eval_cond expr1,
+	(s2,e2s,b2,cond2) <- eval_cond expr2 ]
+eval_cond (CBinary CLndOp expr1 expr2 _) = [ ("("++s1++"&&"++s2++")",e1s++e2s,b1&&b2,cond1⋏cond2) |
+	(s1,e1s,b1,cond1) <- eval_cond expr1,
+	(s2,e2s,b2,cond2) <- eval_cond expr2 ]
+eval_cond expr = [ ("T",[True],True,expr), ("F",[False],False,not_c expr) ]
 
-{-
-create_mcdc_table :: [(String,[Bool],Bool)] -> [(String,[Bool],Bool)]
-create_mcdc_table ps = foldl (\ cs (i,p) -> nub $ cs ++ select_impact i) [] $ zip [0..(length ps - 1)] ps
+create_mcdc_table :: CExpr -> [MCDC_Branch]
+create_mcdc_table cexpr = foldl (\ cs i -> nub (cs ++ select_impact i)) [] [0..(length fst_l)]
 	where
-	select_impact i = [ l1++l2 | ]
--}
+	all_possibilities@((_,fst_l,_,_):_) = eval_cond cexpr
+	without l i_th = take i_th l ++ drop (i_th+1) l
+	select_impact i_th = concat [ [p1,p2] |
+		p1@(_,l1,v1,_) <- all_possibilities,
+		p2@(_,l2,v2,_) <- all_possibilities, v1/=v2,
+		(l1 `without` i_th) == (l2 `without` i_th) ]
+
 createBranches :: String -> CExpr -> CovVecM [(Branch,CExpr)]
 createBranches default_name cond = do
  	gets coverageKindCVS >>= \case
