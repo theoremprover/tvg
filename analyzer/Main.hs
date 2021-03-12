@@ -91,7 +91,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] -> "gcc" : "sqrtf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels",noIndentLogOpt]
+		[] -> "gcc" : "sqrtf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels","-writeAST",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "fabsf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt]
@@ -1548,6 +1548,11 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 								default_not_last_err = error $ ren default_ni ++ " : " ++
 									"collect_stmts: the case when 'default' is not the last item in the switch is not implemented"
 
+					-- flatten if the stmt of the case is the next case
+					collect_stmts branchnum notconds (CBlockStmt ccase@(CCase caseexpr subcase@(CCase _ _ _) case_ni) : rest) =
+						collect_stmts branchnum notconds (
+							CBlockStmt (CCase caseexpr (CExpr Nothing undefNode) case_ni) : CBlockStmt subcase : rest )
+
 					-- if we have a "case <expr>: stmt", insert "if (expr==cond_var) { stmt; rest } else <recurse_collect_stmts>"
 					collect_stmts branchnum notconds (CBlockStmt ccase@(CCase caseexpr stmt case_ni) : rest) = [
 						CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr case_ni)
@@ -1656,6 +1661,8 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 				transids expr Nothing trace $ \ (envs',_,trace') -> do
 					unfoldTracesM mb_ret_type toplevel forks envs' trace' ( (rest,breakable) : rest2 )
 
+			CExpr Nothing _ -> unfoldTracesM mb_ret_type toplevel forks envs trace ( (rest,breakable) : rest2 )
+
 			-- That's cheating: Insert condition into trace (for loop unrolling and switch) via GOTO
 			CGotoPtr wrapped ni -> do
 				let (mb_branch,cond) :: (Maybe Branch,CExpr) = unwrapGoto wrapped
@@ -1685,13 +1692,16 @@ unfoldTraces1M mb_ret_type toplevel forks envs trace bstss@((CBlockStmt stmt : r
 					[ wrapGoto (Just $ Branch (lineColNodeInfo cond) 2 True "",not_c cond) ]
 
 			-- Express the for loop as a bisimular while loop
-			CFor (Right decl) mb_cond mb_inc_expr stmt ni -> do
+			CFor precond mb_cond mb_inc_expr stmt ni -> do
 				ii <- ⅈ 1
 				let
+					cbis = case precond of
+						Right decl -> [CBlockDecl decl]
+						Left Nothing -> []
 					while_body = makeCompound $ CBlockStmt stmt :
 						maybe [] (\ expr -> [ CBlockStmt $ CExpr (Just expr) (nodeInfo expr) ]) mb_inc_expr
 					body_stmt = CWhile (maybe ii id mb_cond) while_body False ni
-				unfoldTracesM mb_ret_type toplevel forks envs trace ((CBlockDecl decl : CBlockStmt body_stmt : rest,breakable) : rest2)
+				unfoldTracesM mb_ret_type toplevel forks envs trace ((cbis ++ [CBlockStmt body_stmt] ++ rest,breakable) : rest2)
 
 			_ -> myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 
