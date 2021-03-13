@@ -2,6 +2,7 @@ int f(double x,double y,int z)
 {
     switch(z)
     {
+        case 0:
         case 1: z++; break;
         case 2: return z;
         default: return z+1;
