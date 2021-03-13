@@ -71,15 +71,6 @@ type TraceAnalysisResult = ([Int],Trace,Set.Set Branch,ResultData)
 type UnfoldTracesRet = Either [([Env],Trace)] Bool
 type SolveFunRet = (Bool,([TraceAnalysisResult],Set.Set Branch))
 
-{-
-_Dtest
-_FDtest
-_FDint
-_FDeraise
-_FDscale
-_FDunscale
-_FDnorm
--}
 
 main :: IO ()
 main = do
@@ -91,14 +82,14 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] -> "gcc" : "sqrtf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels","-writeAST",noIndentLogOpt]
+--		[] -> "gcc" : "sqrtf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels","-writeAST",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "fabsf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt,findModeOpt] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\xfdint.i") : ["-writeModels"]
 
---		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 --		[] -> "gcc" : "_Dtest" : (analyzerPath++"\\xdtest.c") : ["-writeModels"]
 
 --		[] -> "gcc" : "f" : (analyzerPath++"\\arraytest3.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
@@ -601,32 +592,42 @@ printCondPoints alls = liftIO $ do
 data CoverageKind = Branch_Cov | MCDC_Cov
 	deriving (Show,Eq)
 
-type MCDC_Branch = (String,[Bool],Bool,CExpr)
--- ⋏ ⋎
-eval_cond :: CExpr -> [MCDC_Branch]
-eval_cond (CBinary CLorOp expr1 expr2 _) = [ ("("++s1++"||"++s2++")",e1s++e2s,b1||b2,cond1⋎cond2) |
-	(s1,e1s,b1,cond1) <- eval_cond expr1,
-	(s2,e2s,b2,cond2) <- eval_cond expr2 ]
-eval_cond (CBinary CLndOp expr1 expr2 _) = [ ("("++s1++"&&"++s2++")",e1s++e2s,b1&&b2,cond1⋏cond2) |
-	(s1,e1s,b1,cond1) <- eval_cond expr1,
-	(s2,e2s,b2,cond2) <- eval_cond expr2 ]
-eval_cond expr = [ ("T",[True],True,expr), ("F",[False],False,not_c expr) ]
+data MCDC_Branch = MCDC_Branch { nameMCDCB::String, resultMCDCB::Bool, condMCDCB::CExpr }
+instance Show MCDC_Branch where
+	show (MCDC_Branch n r c) = n ++ " = " ++ show r ++ " (" ++ (render.pretty) c ++ ")"
 
-create_mcdc_table :: CExpr -> [MCDC_Branch]
-create_mcdc_table cexpr = foldl (\ cs i -> nub (cs ++ select_impact i)) [] [0..(length fst_l)]
-	where
-	all_possibilities@((_,fst_l,_,_):_) = eval_cond cexpr
-	without l i_th = take i_th l ++ drop (i_th+1) l
-	select_impact i_th = concat [ [p1,p2] |
-		p1@(_,l1,v1,_) <- all_possibilities,
-		p2@(_,l2,v2,_) <- all_possibilities, v1/=v2,
-		(l1 `without` i_th) == (l2 `without` i_th) ]
+-- join two MCDC tables by &&:
+-- 1. take one row evaluating to True from the left table, and attach it to all rows from the right table.
+-- 2. take one row evaluating to True from the right table, and attach it to all other remaining rows from 1. from the left table
+-- concatenate the rows resulting from 1. and 2.
+-- This works dually for ||, just set "...evaluating to False" above.
+
+createMCDCTables :: CExpr -> [MCDC_Branch]
+createMCDCTables expr = case expr of
+	CBinary binop expr1 expr2 _ | binop `elem` [CLorOp,CLndOp] -> case binop of
+		CLndOp -> map (join_b $ head trues1 ) t2 ++ map ((flip join_b) $ head trues2 ) (tail trues1 ++ falses1)
+		CLorOp -> map (join_b $ head falses1) t2 ++ map ((flip join_b) $ head falses2) (tail falses1 ++ trues1)
+		where
+		join_b (MCDC_Branch name1 result1 cond1) (MCDC_Branch name2 result2 cond2) =
+			MCDC_Branch ("(" ++ name1 ++ (render.pretty) binop ++ name2 ++ ")") (log_op result1 result2) (expr_op cond1 cond2)
+		(log_op,expr_op) = if binop==CLorOp then ((||),(⋎)) else ((&&),(⋏))
+		(t1,t2) = (createMCDCTables expr1,createMCDCTables expr2)
+		(trues1,falses1) = partition resultMCDCB t1
+		(trues2,falses2) = partition resultMCDCB t2
+	expr -> [ MCDC_Branch "T" True expr, MCDC_Branch "F" False (not_c expr) ]
 
 createBranches :: String -> CExpr -> CovVecM [(Branch,CExpr)]
 createBranches default_name cond = do
  	gets coverageKindCVS >>= \case
  		Branch_Cov -> return [ (Branch (lineColNodeInfo cond) 1 False "",cond), (Branch (lineColNodeInfo cond) 2 True "",not_c cond) ]
---		MCDC_Cov   -> do
+		MCDC_Cov   -> return $ case createMCDCTables cond of
+			[ MCDC_Branch name1 result1 bcond1, MCDC_Branch name2 result2 bcond2 ] -> [
+				(Branch (lineColNodeInfo cond) 1 result1 default_name,bcond1),
+				(Branch (lineColNodeInfo cond) 2 result2 default_name,bcond2) ]
+			mcdctable -> for (zip [1..] mcdctable) $ \ (i,MCDC_Branch name result bcond) ->
+				(Branch (lineColNodeInfo cond) i result name,bcond)
+
+{-
  		MCDC_Cov   -> return $ case cond of
   			CBinary CLorOp (CBinary CLorOp (CBinary CLorOp expr1 expr2 _) expr3  _) expr4  _ -> or4 [expr1,expr2,expr3,expr4]
   			CBinary CLorOp expr1 (CBinary CLorOp expr2 (CBinary CLorOp expr3 expr4 _) _) _ -> or4 [expr1,expr2,expr3,expr4]
@@ -648,6 +649,7 @@ createBranches default_name cond = do
 			(Branch (lineColNodeInfo cond) 3 False "F||F||T||F", (not_c expr1) ⋏ (not_c expr2) ⋏        expr3  ⋏ (not_c expr4)),
 			(Branch (lineColNodeInfo cond) 4 False "F||F||F||T", (not_c expr1) ⋏ (not_c expr2) ⋏ (not_c expr3) ⋏        expr4 ),
 			(Branch (lineColNodeInfo cond) 5 True  "F||F||F||F", (not_c expr1) ⋏ (not_c expr2) ⋏ (not_c expr3) ⋏ (not_c expr4)) ]
+-}
 
 instance CNode TraceElem where
 	nodeInfo (Assignment kind _)        = case kind of
