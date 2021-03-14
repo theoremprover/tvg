@@ -609,8 +609,8 @@ createMCDCTables expr = case expr of
 		CLorOp -> map (join_b $ head falses1) t2 ++ map ((flip join_b) $ head falses2) (tail falses1 ++ trues1)
 		where
 		join_b (MCDC_Branch name1 result1 cond1) (MCDC_Branch name2 result2 cond2) =
-			MCDC_Branch ("(" ++ name1 ++ (render.pretty) binop ++ name2 ++ ")") (log_op result1 result2) (expr_op cond1 cond2)
-		(log_op,expr_op) = if binop==CLorOp then ((||),(⋎)) else ((&&),(⋏))
+			MCDC_Branch ("(" ++ name1 ++ (render.pretty) binop ++ name2 ++ ")")
+				(if binop==CLorOp then result1 || result2  else result1 && result2) (cond1 ⋏ cond2)
 		(t1,t2) = (createMCDCTables expr1,createMCDCTables expr2)
 		(trues1,falses1) = partition resultMCDCB t1
 		(trues2,falses2) = partition resultMCDCB t2
@@ -622,10 +622,10 @@ createBranches default_name cond = do
  		Branch_Cov -> return [ (Branch (lineColNodeInfo cond) 1 False "",cond), (Branch (lineColNodeInfo cond) 2 True "",not_c cond) ]
 		MCDC_Cov   -> return $ case createMCDCTables cond of
 			[ MCDC_Branch name1 result1 bcond1, MCDC_Branch name2 result2 bcond2 ] -> [
-				(Branch (lineColNodeInfo cond) 1 result1 default_name,bcond1),
-				(Branch (lineColNodeInfo cond) 2 result2 default_name,bcond2) ]
+				(Branch (lineColNodeInfo cond) 1 (not result1) default_name,bcond1),
+				(Branch (lineColNodeInfo cond) 2 (not result2) default_name,bcond2) ]
 			mcdctable -> for (zip [1..] mcdctable) $ \ (i,MCDC_Branch name result bcond) ->
-				(Branch (lineColNodeInfo cond) i result name,bcond)
+				(Branch (lineColNodeInfo cond) i (not result) name,bcond)
 
 {-
  		MCDC_Cov   -> return $ case cond of
@@ -767,8 +767,8 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 				CSwitch swcond (CCompound _ cbis _) _ -> return $ collectcases 1 cbis
 					where
 					collectcases _ [] = []
-					collectcases i ( CBlockStmt (CCase cond casestmt@(CCase _ _ _) _) : rest) =
-						collectcases i $ CBlockStmt (CCase cond (CExpr Nothing undefNode) undefNode) : (CBlockStmt casestmt) : rest
+					collectcases i ( CBlockStmt (CCase cond casestmt@(CCase _ _ _) caseni) : rest) =
+						collectcases i $ CBlockStmt (CCase cond (CExpr Nothing undefNode) caseni) : (CBlockStmt casestmt) : rest
 					collectcases i ( CBlockStmt ccase@(CCase caseexpr _ _) : rest ) =
 						Branch (lineColNodeInfo ccase) i False (makeCaseBranchName caseexpr) : collectcases (i+1) rest
 					collectcases i ( CBlockStmt cdefault@(CDefault _ _) : _ ) =
@@ -2778,12 +2778,13 @@ declConst2SExpr id_name ty = do
 
 makeAndSolveZ3ModelM :: [Int] -> [(Ident,Z3_Type)] -> [Constraint] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_idents0 modelpathfile = do
+	printLogV 0 $ "output_idents0 = " ++ showIdents output_idents0
 	(output_idents,z3tyenv) <- runStateT (forM output_idents0 $ \ oid -> case lookup oid z3tyenv0 of
 		Just ty | ty `elem` [Z3_Float,Z3_Double] -> do
 			let bv_name = makeFloatBVVarName oid
 			bv_size <- lift $ sizeofZ3Ty ty
 			let bvid = internalIdent bv_name
-			modify $ ((bvid,Z3_BitVector bv_size True) :)
+			modify $ \ tyenv -> tyenv ++ [(bvid,Z3_BitVector bv_size True)]
 			return bvid
 		_ -> return oid ) z3tyenv0
 	opts <- gets optsCVS
@@ -2800,10 +2801,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			Assignment (ArrayUpdate ident1 ident2 _ index) ass_expr -> [ident1,ident2] ++ fvar index ++ fvar ass_expr
 	printLogV 20 $ "constraints_vars = " ++ showIdents constraints_vars
 
-	let
-		create_decl (ident,_) | bvPrefix `isPrefixOf` (identToString ident) = True
-		create_decl (ident,_) = ident `elem` constraints_vars || ident `elem` a_output_idents
-
+	let create_decl (ident,_) = ident `elem` (constraints_vars ++ a_output_idents ++ output_idents0)
 	varsZ3 :: [SCompound] <- concatForM (filter create_decl z3tyenv) $ \ (ident,ty) -> do
 		let varname = identToString ident
 		decl <- declConst2SExpr varname ty
