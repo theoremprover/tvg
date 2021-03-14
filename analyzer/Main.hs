@@ -761,15 +761,19 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 		liftandfst createbranches = do
 			branchesexprs <- lift createbranches
 			return $ map fst branchesexprs
-		iscaseordefault (CBlockStmt (CCase _ _ _)) = True
-		iscaseordefault (CBlockStmt (CDefault _ _)) = True
-		iscaseordefault _ = False
 		searchcondpoint :: CStat -> StateT [Branch] CovVecM CStat
 		searchcondpoint stmt = do
 			add_branches <- case stmt of
-				CSwitch swcond (CCompound _ cbis _) _ -> forM (zip [1..] $ filter iscaseordefault cbis) $ \ (i,CBlockStmt stmt) -> return $ case stmt of
-					CCase caseexpr _ _ -> Branch (lineColNodeInfo stmt) i False (makeCaseBranchName caseexpr)
-					CDefault _ _       -> Branch (lineColNodeInfo stmt) i False makeDefaultBranchName
+				CSwitch swcond (CCompound _ cbis _) _ -> return $ collectcases 1 cbis
+					where
+					collectcases _ [] = []
+					collectcases i ( CBlockStmt (CCase cond casestmt@(CCase _ _ _) _) : rest) =
+						collectcases i $ CBlockStmt (CCase cond (CExpr Nothing undefNode) undefNode) : (CBlockStmt casestmt) : rest
+					collectcases i ( CBlockStmt ccase@(CCase caseexpr _ _) : rest ) =
+						Branch (lineColNodeInfo ccase) i False (makeCaseBranchName caseexpr) : collectcases (i+1) rest
+					collectcases i ( CBlockStmt cdefault@(CDefault _ _) : _ ) =
+						[ Branch (lineColNodeInfo cdefault) i False makeDefaultBranchName ]
+					collectcases i (_:rest) = collectcases i rest
 				CSwitch _ _ _            -> error $ "searchcondpoint: Strange Switch " ++ (render.pretty) stmt
 				CWhile cond _ _ _        -> liftandfst $ createBranches (makeWhileBranchName cond) cond
 				CFor _ (Just cond) _ _ _ -> liftandfst $ createBranches (makeForBranchName cond) cond
@@ -2773,17 +2777,22 @@ declConst2SExpr id_name ty = do
 	return $ SExpr [ SLeaf "declare-const", SLeaf id_name, ty_sexpr ]
 
 makeAndSolveZ3ModelM :: [Int] -> [(Ident,Z3_Type)] -> [Constraint] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
-makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents0 modelpathfile = do
-	let output_idents = for output_idents0 $ \ oid -> case lookup oid z3tyenv of
-		Just ty | ty `elem` [Z3_Float,Z3_Double] -> internalIdent $ makeFloatBVVarName oid
-		_ -> oid
+makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_idents0 modelpathfile = do
+	(output_idents,z3tyenv) <- runStateT (forM output_idents0 $ \ oid -> case lookup oid z3tyenv0 of
+		Just ty | ty `elem` [Z3_Float,Z3_Double] -> do
+			let bv_name = makeFloatBVVarName oid
+			bv_size <- lift $ sizeofZ3Ty ty
+			let bvid = internalIdent bv_name
+			modify $ ((bvid,Z3_BitVector bv_size True) :)
+			return bvid
+		_ -> return oid ) z3tyenv0
 	opts <- gets optsCVS
 	let  -- prefix a "a_" for identifiers starting with underscore (Z3 does not like leading underscores...)
 		(a_constraints,a_output_idents) = everywhere (mkT prefix_a) (constraints,output_idents) where
 			prefix_a :: Ident -> Ident
 			prefix_a (Ident s@('_':_) i ni) = Ident (safeZ3IdentifierPrefix:s) i ni
 			prefix_a ident = ident
-	printLogV 20 $ "output_idents = " ++ showIdents output_idents
+	printLogV 0 $ "output_idents = " ++ showIdents output_idents
 	let
 		constraints_vars = nub $ concat $ for a_constraints $ \case
 			Condition _ expr -> fvar expr
@@ -2791,20 +2800,20 @@ makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents
 			Assignment (ArrayUpdate ident1 ident2 _ index) ass_expr -> [ident1,ident2] ++ fvar index ++ fvar ass_expr
 	printLogV 20 $ "constraints_vars = " ++ showIdents constraints_vars
 
-	varsZ3 :: [SCompound] <- concatForM (filter ((`elem` (constraints_vars ++ a_output_idents)).fst) z3tyenv) $ \ (ident,ty) -> do
+	let
+		create_decl (ident,_) | bvPrefix `isPrefixOf` (identToString ident) = True
+		create_decl (ident,_) = ident `elem` constraints_vars || ident `elem` a_output_idents
+
+	varsZ3 :: [SCompound] <- concatForM (filter create_decl z3tyenv) $ \ (ident,ty) -> do
 		let varname = identToString ident
 		decl <- declConst2SExpr varname ty
-		-- if a variable is floating point, also declare its bitvector representation and the corresponding equality
-		bv_decls <- case ty `elem` [Z3_Float,Z3_Double] of
-			False -> return []
-			True  -> do
-				let
-					bv_name = makeFloatBVVarName ident
-					bv = SLeaf bv_name
+		printLogV 1 $ "#### " ++ (render.pretty) ident ++ " :: " ++ show ty
+		-- if a variable is a bitvector stemming from a floating point argument, also declare its bitvector representation and the corresponding equality
+		bv_decls <- case stripPrefix bvPrefix (identToString ident) of
+			Nothing -> return []
+			Just rest_varname  -> do
 				bv_size <- sizeofZ3Ty ty
-				decl_sexpr <- declConst2SExpr bv_name (Z3_BitVector bv_size True)
-				let bv_eq_assert = 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, bv ] ＝ SLeaf varname
-				return [decl_sexpr,bv_eq_assert]
+				return [ 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, (SLeaf $ identToString ident) ] ＝ SLeaf rest_varname ]
 		return $ map (SExprLine . SOnOneLine) (decl:bv_decls)
 	constraintsZ3 :: [SCompound] <- concatForM a_constraints $ \ constraint -> do
 		(assert_sexpr,add_sexprs) <- expr2SExpr constraint
