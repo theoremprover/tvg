@@ -269,6 +269,8 @@ subfuncovOpt = "-subfuncov"
 noHaltOnVerificationErrorOpt = "-nohalt"
 noIndentLogOpt = "-noindentlog"
 findModeOpt = "-findmode"
+minimizeOpt = "-minimize"
+
 solverFindMagicString = "solver_find() encountered!"
 
 isOptionSet :: String -> CovVecM Bool
@@ -629,30 +631,6 @@ createBranches default_name cond = do
 				(Branch (lineColNodeInfo cond) 2 (not result2) default_name,bcond2) ]
 			mcdctable -> for (zip [1..] mcdctable) $ \ (i,MCDC_Branch name result bcond) ->
 				(Branch (lineColNodeInfo cond) i (not result) name,bcond)
-
-{-
- 		MCDC_Cov   -> return $ case cond of
-  			CBinary CLorOp (CBinary CLorOp (CBinary CLorOp expr1 expr2 _) expr3  _) expr4  _ -> or4 [expr1,expr2,expr3,expr4]
-  			CBinary CLorOp expr1 (CBinary CLorOp expr2 (CBinary CLorOp expr3 expr4 _) _) _ -> or4 [expr1,expr2,expr3,expr4]
- 			CBinary CLorOp expr1 expr2 _ -> [
- 				(Branch (lineColNodeInfo cond) 1 False "T||F",        expr1  ⋏ (not_c expr2)),
- 				(Branch (lineColNodeInfo cond) 2 True  "F||F", (not_c expr1) ⋏ (not_c expr2)),
- 				(Branch (lineColNodeInfo cond) 3 False "F||T", (not_c expr1) ⋏        expr2) ]
- 			CBinary CLndOp expr1 expr2 _ -> [
- 				(Branch (lineColNodeInfo cond) 1 True   "T&&F",        expr1  ⋏ (not_c expr2)),
- 				(Branch (lineColNodeInfo cond) 2 False  "T&&T",        expr1  ⋏        expr2) ,
- 				(Branch (lineColNodeInfo cond) 3 True   "F&&T", (not_c expr1) ⋏        expr2) ]
- 			_ -> [
-  				(Branch (lineColNodeInfo cond) 1 False default_name,       cond),
-  				(Branch (lineColNodeInfo cond) 2 True  default_name, not_c cond) ]
-		where
-		or4 [expr1,expr2,expr3,expr4] = [
-			(Branch (lineColNodeInfo cond) 1 False "T||F||F||F",        expr1  ⋏ (not_c expr2) ⋏ (not_c expr3) ⋏ (not_c expr4)),
-			(Branch (lineColNodeInfo cond) 2 False "F||T||F||F", (not_c expr1) ⋏ expr2         ⋏ (not_c expr3) ⋏ (not_c expr4)),
-			(Branch (lineColNodeInfo cond) 3 False "F||F||T||F", (not_c expr1) ⋏ (not_c expr2) ⋏        expr3  ⋏ (not_c expr4)),
-			(Branch (lineColNodeInfo cond) 4 False "F||F||F||T", (not_c expr1) ⋏ (not_c expr2) ⋏ (not_c expr3) ⋏        expr4 ),
-			(Branch (lineColNodeInfo cond) 5 True  "F||F||F||F", (not_c expr1) ⋏ (not_c expr2) ⋏ (not_c expr3) ⋏ (not_c expr4)) ]
--}
 
 instance CNode TraceElem where
 	nodeInfo (Assignment kind _)        = case kind of
@@ -1112,7 +1090,6 @@ checkVarsDefined mb_ret_type trace = do
 	let
 		Return ret_expr : resttrace = reverse trace
 		ret_vars = fvar ret_expr
-	printLogV 1 $ "################ ret_vars =" ++ show (map (render.pretty) ret_vars)
 	-- find out all variables that are undefined in the trace, and also not parameters
 	return Nothing {- TODO
 	return $ case collect_undef_vars (fvar ret_expr) resttrace \\ param_names of
@@ -1498,15 +1475,18 @@ recognizeAnnotation real_cond _ = (real_cond,Nothing)
 createBranchesWithAnno :: CExpr -> (CExpr -> String) -> Trace -> Int -> CovVecM ([(Branch,CExpr)],Int)
 createBranchesWithAnno cond makebranchname trace forks = do
 	let (real_cond,mb_annotation) = recognizeAnnotation cond trace
+	printLogV 1 $ "mb_annotation = " ++ show mb_annotation
 	all_branches <- createBranches (makebranchname real_cond) real_cond
 	case mb_annotation of
 		-- 12 is a wildcard in the choice list
 		-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
 		Just (ns,num_reached) | length ns > num_reached && ns!!num_reached /= 12 -> do
-			printLogV 2 $ "Recognized \"if\" annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
+			printLogV 1 $ "Recognized \"if\" annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
 				" (reached " ++ show num_reached ++ " times)"
 			return ([all_branches !! (ns!!num_reached - 1)],forks)
-		Nothing -> return (all_branches,forks+1)
+		_ -> do
+			printLogV 1 $ "Not in annotation range"
+			return (all_branches,forks+1)
 
 type LabelEnv = [(Ident,CovVecM UnfoldTracesRet)]
 
@@ -2503,7 +2483,7 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 				op_ty = extractZ3Type expr1
 				op_sexpr = case binop of
 					CMulOp -> bitVectorTy op_ty "bvmul" ("fp.mul " ++ roundingMode)
-					CDivOp -> bitVectorTy op_ty "bvdiv" ("fp.div " ++ roundingMode)
+					CDivOp -> bitVectorTy op_ty "bvudiv" ("fp.div " ++ roundingMode)
 					CAddOp -> bitVectorTy op_ty "bvadd" ("fp.add " ++ roundingMode)
 					CSubOp -> bitVectorTy op_ty "bvsub" ("fp.sub " ++ roundingMode)
 					CRmdOp -> bitVectorTy op_ty (unSignedTy op_ty "bvurem" "bvsrem") "fp.rem"
@@ -2624,7 +2604,7 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 
 		cmember@(CMember _ _ _ _) -> lift $ myError $ "expr2sexpr of member " ++ (render.pretty) cmember ++ " should not occur!"
 
-		CCall (CVar (Ident "__builtin_clz" _ _) _) [arg] _ -> do
+		CCall (CVar (Ident (_:"__builtin_clz") _ _) _) [arg] _ -> do
 			inttypes@(z3_inttype,_) <- lift $ _IntTypesM
 			(n,n_decl) <- new_var "n_clz" z3_inttype
 			let to_anno = (undefNode,inttypes)
@@ -2632,7 +2612,9 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 			i_0 <- make_intconstant z3_inttype 0
 			Just MachineSpec{..} <- lift $ gets machineSpecCVS
 			sintsize <- make_intconstant z3_inttype intSize
-			let n_cond = SExpr [SLeaf "bvlshr", arg_sexpr, SExpr [SLeaf "bvsub",sintsize,n]] ＝ i_0
+			sintsize_minus_1 <- make_intconstant z3_inttype (intSize-1)
+			let n_cond = 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [SLeaf "and", SExpr [SLeaf "bvlshr", arg_sexpr, SExpr [SLeaf "bvsub",sintsize,n]] ＝ i_0,
+				SExpr [ SLeaf "bvugt", SExpr [SLeaf "bvlshr", arg_sexpr, SExpr [SLeaf "bvsub",sintsize_minus_1,n]], i_0 ] ]
 			modify (++[n_decl,n_cond])
 			return n
 
@@ -2798,7 +2780,6 @@ declConst2SExpr id_name ty = do
 
 makeAndSolveZ3ModelM :: [Int] -> [(Ident,Z3_Type)] -> [Constraint] -> [SExpr] -> [Ident] -> String -> CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_idents0 modelpathfile = do
-	printLogV 0 $ "output_idents0 = " ++ showIdents output_idents0
 	(output_idents,z3tyenv) <- runStateT (forM output_idents0 $ \ oid -> case lookup oid z3tyenv0 of
 		Just ty | ty `elem` [Z3_Float,Z3_Double] -> do
 			let bv_name = makeFloatBVVarName oid
@@ -2813,7 +2794,6 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			prefix_a :: Ident -> Ident
 			prefix_a (Ident s@('_':_) i ni) = Ident (safeZ3IdentifierPrefix:s) i ni
 			prefix_a ident = ident
-	printLogV 0 $ "output_idents = " ++ showIdents output_idents
 	let
 		constraints_vars = nub $ concat $ for a_constraints $ \case
 			Condition _ expr -> fvar expr
@@ -2962,16 +2942,17 @@ solveTraceM mb_ret_type traceid trace = do
 			(name_id,Condition Nothing $ CBinary CEqOp (CVar name_id (annotation expr)) expr (annotation expr),(name_id,extractZ3Type expr))
 
 	tyenv1 <- tyEnvFromTraceM trace
+	minimize <- isOptionSet minimizeOpt
 
 	(model_string,mb_sol) <- makeAndSolveZ3ModelM
 		traceid
 		(tyenv1 ++ debug_tyenv)
 		(constraints ++ debug_constraints)
-		(concat $ for param_env_exprs $ \ ((_,(name,_)),expr) -> case extractZ3Type expr of
+		(if minimize then (concat $ for param_env_exprs $ \ ((_,(name,_)),expr) -> case extractZ3Type expr of
 			Z3_Float -> fPMinimizer "#x00000001" name
 			Z3_Double -> fPMinimizer "#x0000000000000001" name
 			Z3_LDouble -> fPMinimizer "#x00000000000000000000000000000001" name
-			_ -> [ SExpr [SLeaf "minimize",SLeaf (identToString name)] ])
+			_ -> [ SExpr [SLeaf "minimize",SLeaf (identToString name)] ]) else [])
 		(param_names ++ ret_names ++ debug_idents)
 		(analyzerPath </> "models" </> "model_" ++ tracename ++ ".smtlib2")
 

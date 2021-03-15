@@ -97,8 +97,6 @@ extern uint64_t __udivmoddi4 (uint64_t, uint64_t, uint64_t*);
 
 uint32_t __udiv6432 (uint64_t n, uint32_t d)
 {
-    return __builtin_clz(d);
-/*
   const uint32_t b = (1<<16);
 
 
@@ -159,8 +157,7 @@ again1:
     {
       q1 = q1 - 1;
       rhat = rhat + dn1;
-      if (rhat < b)
-        goto again1;
+      if (solver_pragma(12,12,2) && rhat < b) goto again1;
     }
 
 
@@ -175,10 +172,8 @@ again2:
     {
       q0 = q0 - 1;
       rhat = rhat + dn1;
-      if (rhat < b)
-        goto again2;
+     if (solver_pragma(12,12,2) && rhat < b) goto again2;
     }
 
     return q1*b + q0;
-    */
 }
