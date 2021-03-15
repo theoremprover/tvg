@@ -70,3 +70,30 @@ float (fmaxf)(float x, float y)
 
 
 
+double (fmin)(double x, double y)
+ {
+ if (_Dtest(&x) == 2)
+  return (y);
+ else if (_Dtest(&y) == 2)
+  return (x);
+ else if (x < y || x == y && (((_Dval *)(char *)&(x))->_Sh[3] & ((unsigned short)0x8000)))
+  return (x);
+ else
+  return (y);
+ }
+
+
+
+float (fminf)(float x, float y)
+ {
+ if (_FDtest(&x) == 2)
+  return (y);
+ else if (_FDtest(&y) == 2)
+  return (x);
+ else if (x < y || x == y && (((_Fval *)(char *)&(x))->_Sh[1] & ((unsigned short)0x8000)))
+  return (x);
+ else
+  return (y);
+ }
+
+
