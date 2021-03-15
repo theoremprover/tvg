@@ -2091,10 +2091,9 @@ scanExprM envs toplevel expr0 mb_target_ty trace forks = logWrapper ["scanExprM"
 		-- extract a list of all calls from the input expression expr0
 		-- (including fun-identifier, the arguments, and NodeInfo)
 
-		-- TODO: Implementation of builtin functions should be moved to an outermost "builtin" scope
 		to_call_or_ternaryifs ccall@(CCall funexpr args ni) = case funexpr of
 			CVar (Ident "__builtin_expect" _ _) _ -> return $ head args
-			CVar (Ident "__builtin_clz" _ _) _ -> lift $ ⅈ 1
+			CVar (Ident "__builtin_clz" _ _) _ -> return ccall
 			CVar (Ident "solver_find" _ _) _ -> lift $ ⅈ 1
 			CVar (Ident "solver_pragma" _ _) _ -> lift $ ⅈ 1
 			CVar funident _ -> do
@@ -2508,7 +2507,7 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 					CAddOp -> bitVectorTy op_ty "bvadd" ("fp.add " ++ roundingMode)
 					CSubOp -> bitVectorTy op_ty "bvsub" ("fp.sub " ++ roundingMode)
 					CRmdOp -> bitVectorTy op_ty (unSignedTy op_ty "bvurem" "bvsrem") "fp.rem"
-					CShlOp -> unSignedTy op_ty "bvshl" "bvshl"
+					CShlOp -> "bvshl"
 					CShrOp -> unSignedTy op_ty "bvlshr" "bvashr"
 					CAndOp -> "bvand"
 					COrOp  -> "bvor"
@@ -2620,24 +2619,36 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 
 				return arr
 
-			new_var :: String -> Z3_Type -> SECovVecM (SExpr,SExpr)
-			new_var name z3ty = do
-				n <- lift $ newNameM
-				-- avoiding name clashes using "$$" for "temporary" variables
-				let new_name = name ++ "$$" ++ show n
-				decl <- lift $ declConst2SExpr new_name z3ty
-				return (SLeaf new_name,decl)
-
 		ccond@(CCond cond (Just then_expr) else_expr _) -> do
 			lift $ myError $ "expr2sexpr CCond should not appear: " ++ (render.pretty) ccond
 
 		cmember@(CMember _ _ _ _) -> lift $ myError $ "expr2sexpr of member " ++ (render.pretty) cmember ++ " should not occur!"
+
+		CCall (CVar (Ident "__builtin_clz" _ _) _) [arg] _ -> do
+			inttypes@(z3_inttype,_) <- lift $ _IntTypesM
+			(n,n_decl) <- new_var "n_clz" z3_inttype
+			let to_anno = (undefNode,inttypes)
+			arg_sexpr <- expr2sexpr' $ CCast (CDecl [] [] to_anno) arg to_anno
+			i_0 <- make_intconstant z3_inttype 0
+			Just MachineSpec{..} <- lift $ gets machineSpecCVS
+			sintsize <- make_intconstant z3_inttype intSize
+			let n_cond = SExpr [SLeaf "bvlshr", arg_sexpr, SExpr [SLeaf "bvsub",sintsize,n]] ＝ i_0
+			modify (++[n_decl,n_cond])
+			return n
 
 		ccall@(CCall _ _ _) -> lift $ myError $ "expr2sexpr of call " ++ (render.pretty) ccall ++ " should not occur!"
 
 		other -> lift $ myError $ "expr2SExpr " ++ (render.pretty) other ++ " not implemented"
 
 		where
+
+		new_var :: String -> Z3_Type -> SECovVecM (SExpr,SExpr)
+		new_var name z3ty = do
+			n <- lift $ newNameM
+			-- avoiding name clashes using "$$" for "temporary" variables
+			let new_name = name ++ "$$" ++ show n
+			decl <- lift $ declConst2SExpr new_name z3ty
+			return (SLeaf new_name,decl)
 
 		unSignedTy ty unsigned signed = case ty of
 			Z3_BitVector _ is_unsigned -> if is_unsigned then unsigned else signed

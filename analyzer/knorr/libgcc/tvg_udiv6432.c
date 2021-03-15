@@ -97,7 +97,7 @@ extern uint64_t __udivmoddi4 (uint64_t, uint64_t, uint64_t*);
 
 uint32_t __udiv6432 (uint64_t n, uint32_t d)
 {
-
+/*
   const uint32_t b = (1<<16);
 
 
@@ -179,4 +179,5 @@ again2:
     }
 
     return q1*b + q0;
+    */
 }
