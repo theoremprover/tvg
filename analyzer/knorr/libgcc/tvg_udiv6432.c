@@ -97,6 +97,7 @@ extern uint64_t __udivmoddi4 (uint64_t, uint64_t, uint64_t*);
 
 uint32_t __udiv6432 (uint64_t n, uint32_t d)
 {
+    return __builtin_clz(d);
 /*
   const uint32_t b = (1<<16);
 
