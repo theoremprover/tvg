@@ -635,6 +635,7 @@ createBranches default_name cond = do
 			mcdctable -> for (zip [1..] mcdctable) $ \ (i,MCDC_Branch name result bcond) ->
 				(Branch (lineColNodeInfo cond) i (not result) name,set_ni bcond)
 	where
+	-- set the condition's NodeInfo to 
 	set_ni = setNodeInfo (nodeInfo cond)
 
 instance CNode TraceElem where
@@ -1466,21 +1467,28 @@ forkUnfoldTraces toplevel l m = do
 			False -> or successes
 			True  -> and successes
 
-recognizeAnnotation :: CExpr -> Trace -> (CExpr,Maybe ([Int],Int))
-recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) trace =
+recognizeAnnotation :: CExpr -> Trace -> CovVecM (CExpr,Maybe ([Int],Int))
+recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) trace = do
+{-
+	printLogV 0 $ "++++ ni = " ++ show ni
+	forM_ trace $ \case
+		Condition _ c -> printLogV 1 $ "---- nodeInfo " ++ (render.pretty) c ++ " = " ++ show (extractNodeInfo c)
+		_ -> return ()
+-}
 	-- set the NodeInfo in real_cond to the original NodeInfo of the *whole* condition that includes the solver_annotation
 	-- otherwise, it will be reported as uncovered (have in mind: all branching points are determined before the analysis starts!)
-	(setNodeInfo ni real_cond,Just (map arg2int args,num_reached)) where
-		num_reached = length $ filter is_this_cond trace where
-			is_this_cond (Condition _ c) = extractNodeInfo c == ni
-			is_this_cond _ = False
-		arg2int (CConst (CIntConst (CInteger i _ _) _)) = fromIntegral i
-recognizeAnnotation real_cond _ = (real_cond,Nothing)
+	return (setNodeInfo ni real_cond,Just (map arg2int args,num_reached))
+	where
+	this_conditions = filter is_this_cond trace where
+		is_this_cond (Condition _ c) = extractNodeInfo c == ni
+		is_this_cond _ = False
+	num_reached = length this_conditions 
+	arg2int (CConst (CIntConst (CInteger i _ _) _)) = fromIntegral i
+recognizeAnnotation real_cond _ = return (real_cond,Nothing)
 
 createBranchesWithAnno :: CExpr -> (CExpr -> String) -> Trace -> Int -> CovVecM ([(Branch,CExpr)],Int)
 createBranchesWithAnno cond makebranchname trace forks = do
-	let (real_cond,mb_annotation) = recognizeAnnotation cond trace
-	printLogV 1 $ "mb_annotation = " ++ show mb_annotation
+	(real_cond,mb_annotation) <- recognizeAnnotation cond trace
 	all_branches <- createBranches (makebranchname real_cond) real_cond
 	case mb_annotation of
 		-- 12 is a wildcard in the choice list
@@ -1489,11 +1497,9 @@ createBranchesWithAnno cond makebranchname trace forks = do
 			printLogV 1 $ "Recognized \"if\" annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
 				" (reached " ++ show num_reached ++ " times)"
 			return ([all_branches !! (ns!!num_reached - 1)],forks)
-		_ -> do
-			printLogV 1 $ "Not in annotation range"
-			return (all_branches,forks+1)
+		_ -> return (all_branches,forks+1)
 
-type LabelEnv = [(Ident,CovVecM UnfoldTracesRet)]
+type LabelEnv = [(Ident,Trace -> Int -> CovVecM UnfoldTracesRet)]
 
 unfoldTracesM labelenv ret_type toplevel forks envs trace cbss = do
 --	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren envs,ren trace,'\n':ren cbss] $ do
@@ -1522,8 +1528,8 @@ unfoldTraces1M labelenv mb_ret_type toplevel forks envs trace bstss@((CBlockStmt
 			CCompound _ cbis _ -> unfoldTracesM labelenv mb_ret_type toplevel forks ([]:envs) trace ((cbis,False) : (rest,breakable) : rest2)
 	
 			CLabel labelident cstat _ _ -> do
-				let jumphere_m = unfoldTracesM ((labelident,jumphere_m):labelenv) mb_ret_type toplevel forks envs trace (((CBlockStmt cstat : rest, breakable)) : rest2)
-				jumphere_m
+				let jumphere_m = \ trace forks -> unfoldTracesM ((labelident,jumphere_m):labelenv) mb_ret_type toplevel forks envs trace (((CBlockStmt cstat : rest, breakable)) : rest2)
+				jumphere_m trace forks
 
 			CSwitch condexpr (CCompound [] cbis _) switch_ni -> do
 				ctrue <- ⅈ 1
@@ -1669,7 +1675,7 @@ unfoldTraces1M labelenv mb_ret_type toplevel forks envs trace bstss@((CBlockStmt
 			CGoto ident _ -> do
 				case lookup ident labelenv of
 					-- label already encountered, execute memoized action
-					Just m  -> m
+					Just m  -> m trace forks
 					Nothing -> search_label envs ( (rest,breakable) : rest2 )
 						where
 						search_label envs cbiss@( (CBlockStmt (CLabel labelident cstat _ _) : rest,breakable) : rest2 ) | labelident == ident =
@@ -1724,7 +1730,7 @@ unfoldTraces1M labelenv mb_ret_type toplevel forks envs trace bstss@((CBlockStmt
 
 		infer_loopingsM :: CExpr -> CStat -> CovVecM (Maybe [Int],String)
 		infer_loopingsM cond0 body = logWrapper [ren "infer_loopingsM",ren cond0,'\n':ren body] $ do
-			case recognizeAnnotation cond0 trace of
+			recognizeAnnotation cond0 trace >>= \case
 				(real_cond,Just (ns,_)) -> return (Just ns,"Recognized LOOP annotation to " ++ (render.pretty) cond0)
 				(real_cond,Nothing) -> do
 					let default_ns = [0,1,2]
