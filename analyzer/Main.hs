@@ -82,7 +82,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-writeModels",noHaltOnVerificationErrorOpt] --["-writeAST","-writeGlobalDecls"]
 
 --		[] -> "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
@@ -288,7 +288,7 @@ whenOptionSet opt_s target action = do
 
 ------------------------
 
-fastMode = True
+fastMode = False
 
 outputVerbosity = if fastMode then 1 else 1
 logFileVerbosity = if fastMode then 0 else 10
