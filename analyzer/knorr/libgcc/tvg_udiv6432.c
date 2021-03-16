@@ -173,7 +173,7 @@ again2:
     {
       q0 = q0 - 1;
       rhat = rhat + dn1;
-//     if (solver_pragma(1,1,2) && rhat < b) goto again2;
+     if (solver_pragma(1,1,2) && rhat < b) goto again2;
     }
 
     return q1*b + q0;
