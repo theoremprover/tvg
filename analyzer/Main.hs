@@ -621,16 +621,21 @@ createMCDCTables expr = case expr of
 		(trues2,falses2) = partition resultMCDCB t2
 	expr -> [ MCDC_Branch "T" True expr, MCDC_Branch "F" False (not_c expr) ]
 
+setNodeInfo :: NodeInfo -> CExpr -> CExpr
+setNodeInfo ni expr = amap (const ni) expr
+
 createBranches :: String -> CExpr -> CovVecM [(Branch,CExpr)]
 createBranches default_name cond = do
  	gets coverageKindCVS >>= \case
- 		Branch_Cov -> return [ (Branch (lineColNodeInfo cond) 1 False "",cond), (Branch (lineColNodeInfo cond) 2 True "",not_c cond) ]
+ 		Branch_Cov -> return [ (Branch (lineColNodeInfo cond) 1 False "",set_ni cond), (Branch (lineColNodeInfo cond) 2 True "",set_ni $ not_c cond) ]
 		MCDC_Cov   -> return $ case createMCDCTables cond of
 			[ MCDC_Branch name1 result1 bcond1, MCDC_Branch name2 result2 bcond2 ] -> [
-				(Branch (lineColNodeInfo cond) 1 (not result1) default_name,bcond1),
-				(Branch (lineColNodeInfo cond) 2 (not result2) default_name,bcond2) ]
+				(Branch (lineColNodeInfo cond) 1 (not result1) default_name,set_ni bcond1),
+				(Branch (lineColNodeInfo cond) 2 (not result2) default_name,set_ni bcond2) ]
 			mcdctable -> for (zip [1..] mcdctable) $ \ (i,MCDC_Branch name result bcond) ->
-				(Branch (lineColNodeInfo cond) i (not result) name,bcond)
+				(Branch (lineColNodeInfo cond) i (not result) name,set_ni bcond)
+	where
+	set_ni = setNodeInfo (nodeInfo cond)
 
 instance CNode TraceElem where
 	nodeInfo (Assignment kind _)        = case kind of
@@ -1465,7 +1470,7 @@ recognizeAnnotation :: CExpr -> Trace -> (CExpr,Maybe ([Int],Int))
 recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) trace =
 	-- set the NodeInfo in real_cond to the original NodeInfo of the *whole* condition that includes the solver_annotation
 	-- otherwise, it will be reported as uncovered (have in mind: all branching points are determined before the analysis starts!)
-	(amap (const ni) real_cond,Just (map arg2int args,num_reached)) where
+	(setNodeInfo ni real_cond,Just (map arg2int args,num_reached)) where
 		num_reached = length $ filter is_this_cond trace where
 			is_this_cond (Condition _ c) = extractNodeInfo c == ni
 			is_this_cond _ = False
@@ -2651,7 +2656,7 @@ data Z3_Type =
 	Z3_Unit |   -- The proper type-theoretical name for C's void is "1" (i.e. "unit")
 	Z3_Bool |
 -- Z3_BitVector Int (is*Un*signed::Bool), hence
--- the derived ordering intentionally coincides with the type cast ordering :-)
+-- the derived ordering intentionally coincides with the type cast hierarchy :-)
 	Z3_BitVector Int Bool |
 	Z3_Float |
 	Z3_Double |
