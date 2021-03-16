@@ -635,7 +635,7 @@ createBranches default_name cond = do
 			mcdctable -> for (zip [1..] mcdctable) $ \ (i,MCDC_Branch name result bcond) ->
 				(Branch (lineColNodeInfo cond) i (not result) name,set_ni bcond)
 	where
-	-- set the condition's NodeInfo to 
+	-- set the condition's NodeInfo to
 	set_ni = setNodeInfo (nodeInfo cond)
 
 instance CNode TraceElem where
@@ -1482,7 +1482,7 @@ recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) 
 	this_conditions = filter is_this_cond trace where
 		is_this_cond (Condition _ c) = extractNodeInfo c == ni
 		is_this_cond _ = False
-	num_reached = length this_conditions 
+	num_reached = length this_conditions
 	arg2int (CConst (CIntConst (CInteger i _ _) _)) = fromIntegral i
 recognizeAnnotation real_cond _ = return (real_cond,Nothing)
 

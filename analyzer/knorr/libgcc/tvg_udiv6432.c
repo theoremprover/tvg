@@ -157,9 +157,8 @@ again1:
     {
       q1 = q1 - 1;
       rhat = rhat + dn1;
-      if (solver_pragma(12,12,2) && rhat < b) goto again1;
+      if (solver_pragma(1,1,2) && rhat < b) goto again1;
     }
-
 
   nn21 = nn32*b + nn1 - q1*d;
 
@@ -167,12 +166,14 @@ again1:
   q0 = nn21/dn1;
   rhat = nn21 - q0*dn1;
 
+    return rhat;
+
 again2:
   if (q0 >= b || q0*dn0 > b*rhat + nn0)
     {
       q0 = q0 - 1;
       rhat = rhat + dn1;
-     if (solver_pragma(12,12,2) && rhat < b) goto again2;
+//     if (solver_pragma(1,1,2) && rhat < b) goto again2;
     }
 
     return q1*b + q0;
