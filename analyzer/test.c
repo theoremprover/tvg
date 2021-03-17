@@ -5,3 +5,10 @@ int f(int x)
     arr[0] = 10;
     return a;
 }
+
+/*
+int a = arr0[0];
+arr0->arr1 [0] = 10;
+return a;
+
+*/

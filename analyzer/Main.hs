@@ -82,10 +82,10 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 
 --		[] -> "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writeModels",noIndentLogOpt]
---		[] -> "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
+		[] -> "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
 
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels"]
 --		[] -> "gcc" : "sqrtf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels","-writeAST",noIndentLogOpt]
@@ -1018,7 +1018,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 				showtraceM showTraces "elimInds"             elimInds
 			trace' <-
 				showtraceM showTraces "1. simplifyTraceM"    simplifyTraceM trace_for_def_analysis >>=
-				showtraceM showTraces "1. elimAssignmentsM"  elimAssignmentsM >>=
+--				showtraceM showTraces "1. elimAssignmentsM"  elimAssignmentsM >>=
 				showtraceM showTraces "elimArrayAssignsM"    elimArrayAssignsM >>=
 				showtraceM showTraces "2. elimAssignmentsM"  elimAssignmentsM >>=
 				showtraceM showTraces "2. simplifyTraceM"    simplifyTraceM >>=
