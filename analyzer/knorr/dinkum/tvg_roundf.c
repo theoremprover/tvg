@@ -19,7 +19,9 @@ short _FDint(float *px, short xexp)
    ? 1 : 2);
  else if ((ps->_Sh[1] & ~((unsigned short)0x8000)) == 0 && ps->_Sh[0] == 0)
   return (0);
+
  xchar = (0x7e + 16 + 7 + 1) - xchar - xexp;
+
  if (xchar <= 0)
   return (0);
  else if ((16 + 7 + 1) <= xchar)
@@ -43,12 +45,7 @@ short _FDint(float *px, short xexp)
   ps->_Sh[sub[xchar]] ^= frac;
   if (0 < xchar)
    frac |= ps->_Sh[0], ps->_Sh[0] = 0;
-/*
-  if(frac != 0) return -1; else {
-  solver_find();
-  return 0;
-  }
-*/
+
   return (frac != 0 ? (-1) : 0);
   }
  }
