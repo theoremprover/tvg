@@ -8,7 +8,6 @@ typedef union
  } __attribute__ ((__may_alias__)) _Fval;
 
 
-
 short _FDint(float *px, short xexp)
  {
  _Fval *ps = (_Fval *)(char *)px;
@@ -20,9 +19,8 @@ short _FDint(float *px, short xexp)
    ? 1 : 2);
  else if ((ps->_Sh[1] & ~((unsigned short)0x8000)) == 0 && ps->_Sh[0] == 0)
   return (0);
-
  xchar = (0x7e + 16 + 7 + 1) - xchar - xexp;
-if (xchar <= 0)
+ if (xchar <= 0)
   return (0);
  else if ((16 + 7 + 1) <= xchar)
   {
@@ -38,25 +36,24 @@ if (xchar <= 0)
    0x00ff, 0x01ff, 0x03ff, 0x07ff,
    0x0fff, 0x1fff, 0x3fff, 0x7fff};
   static const size_t sub[] = {0, 1};
+
   frac = mask[xchar & 0xf];
   xchar >>= 4;
   frac &= ps->_Sh[sub[xchar]];
   ps->_Sh[sub[xchar]] ^= frac;
-
- // if (0 < xchar)
-  {
-   frac |= ps->_Sh[0];
- //   return(frac);
-// solver_debug(frac);
-   ps->_Sh[0] = 0;
-//  solver_debug(frac);
-  return(frac);
+  if (0 < xchar)
+   frac |= ps->_Sh[0], ps->_Sh[0] = 0;
+/*
+  if(frac != 0) return -1; else {
+  solver_find();
+  return 0;
   }
-
-if(frac!=0) return -1; else return 0;
-//  return (frac != 0 ? (-1) : 0);
+*/
+  return (frac != 0 ? (-1) : 0);
   }
  }
+
+
 
 
 
