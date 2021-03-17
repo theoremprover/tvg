@@ -166,7 +166,7 @@ again1:
   q0 = nn21/dn1;
   rhat = nn21 - q0*dn1;
 
-    return rhat;
+//    return rhat;
 
 again2:
   if (q0 >= b || q0*dn0 > b*rhat + nn0)
