@@ -14,7 +14,7 @@ short _FDint(float *px, short xexp)
  unsigned short frac;
  short xchar = (ps->_Sh[1] & ((unsigned short)(0x7fff & ~((unsigned short)((1 << 7) - 1))))) >> 7;
 
-if (((ps->_Sh[1] & ~((unsigned short)0x8000)) == 0 && ps->_Sh[0] == 0)) {return 0;} else
+//if (((ps->_Sh[1] & ~((unsigned short)0x8000)) == 0 && ps->_Sh[0] == 0)) {return 0;} else
 {
  xchar = (0x7e + 16 + 7 + 1) - xchar - xexp;
 
