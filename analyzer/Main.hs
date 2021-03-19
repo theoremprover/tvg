@@ -82,12 +82,12 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 
 --		[] -> "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
 
---		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels",findModeOpt]
+		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels"]
 --		[] -> "gcc" : "sqrtf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels","-writeAST",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
@@ -1030,11 +1030,10 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 				Right resultdata@(model_string,mb_solution) -> do
 					funname <- gets funNameCVS
 					let show_solution_msg = show_solution funname mb_solution ++ "\n"
-					printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n" ++ show_solution_msg
+					printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n\n" ++ show_solution_msg
 					case mb_solution of
 						Nothing -> do
 							incNumNoSolutionM
-							printLogV 1 "No solution."
 							return False
 						Just (_,_,[]) -> myError $ "Empty solution: \n" ++ show_solution_msg
 						Just solution -> do
@@ -2288,7 +2287,7 @@ elimArrayAssignsM trace = evalStateT elimarrassns Map.empty
 				return [
 					NewDeclaration (new_arr_ident,extractType arr_expr) ,
 					Assignment (ArrayUpdate store_arr_ident new_arr_ident arr_types index_expr) ass_expr,
-					Condition Nothing $ arr_expr ⩵ new_arr,
+--					Condition Nothing $ arr_expr ⩵ new_arr,
 					Assignment (Normal arr_expr) new_arr ]
 			other -> return [other]
 
