@@ -502,7 +502,18 @@ long double *_LXp_sqrtx(long double *, int, long double *);
 
 
 
+/*
+short _FDint(float *px, short xexp)
+ {
+ _Fval *ps = (_Fval *)(char *)px;
 
+ ps->_Sh[0] = 0x2000;
+
+ if (ps->_Sh[1] == 255) return 2;
+
+  return 99;
+}
+*/
 
 
 

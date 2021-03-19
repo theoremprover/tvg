@@ -82,12 +82,12 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 
 --		[] -> "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
 
-		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels",findModeOpt]
+--		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels",findModeOpt]
 --		[] -> "gcc" : "sqrtf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels","-writeAST",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
@@ -890,7 +890,7 @@ createCHarness orig_rettype fun_args filename funname extdecls = do
 	return $ PPM.prettyCompact $ PPMC.ppr $ harnessAST incl_srcfilename (unlines extdecls) funcall print_retval1 print_retval2
 
 	where
-	
+
 	ty2argwrapper cexprwithty = case extractType cexprwithty of
 		DirectType (TyFloating TyFloat)  _ _ -> printf "f2u(%s)" ((render.pretty) (fmap fst cexprwithty))
 		DirectType (TyFloating TyDouble) _ _ -> printf "d2u(%s)" ((render.pretty) (fmap fst cexprwithty))
