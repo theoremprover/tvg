@@ -524,6 +524,7 @@ short _FDint(float *px, short xexp)
   {
   ps->_Sh[1] &= ((unsigned short)0x8000);
   ps->_Sh[0] = 0;
+  solver_find();
   return ((-1));
   }
  else

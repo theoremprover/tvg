@@ -82,12 +82,12 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "_FDint" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 
 --		[] -> "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
 
---		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels"]
+		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels",findModeOpt]
 --		[] -> "gcc" : "sqrtf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels","-writeAST",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
@@ -2288,6 +2288,7 @@ elimArrayAssignsM trace = evalStateT elimarrassns Map.empty
 				return [
 					NewDeclaration (new_arr_ident,extractType arr_expr) ,
 					Assignment (ArrayUpdate store_arr_ident new_arr_ident arr_types index_expr) ass_expr,
+					Condition Nothing $ arr_expr ⩵ new_arr,
 					Assignment (Normal arr_expr) new_arr ]
 			other -> return [other]
 
@@ -2946,7 +2947,10 @@ solveTraceM mb_ret_type traceid trace = do
 		constraints = concatMap traceitem2constr trace where
 		traceitem2constr constraint@(Condition _ _) = [constraint]
 		traceitem2constr constraint@(Assignment (ArrayUpdate _ _ _ _) _) = [constraint]
-		traceitem2constr _ = []
+		traceitem2constr (Return _) = []
+		traceitem2constr SolverFind = []
+		traceitem2constr (NewDeclaration _) = []
+		traceitem2constr traceelem = error $ "traceitem2constr: There is a strange TraceElem left in the final trace: " ++ show traceelem
 		debug_outputs = concatMap is_debug_output trace where
 			is_debug_output (DebugOutput name expr) = [(name,expr)]
 			is_debug_output _ = []
