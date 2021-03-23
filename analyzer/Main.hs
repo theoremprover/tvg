@@ -652,7 +652,7 @@ instance CNode TraceElem where
 
 instance Pretty CExprWithType where
 	pretty (CBinary op expr1 expr2 (_,ty)) = prettyCE (pretty op) [pretty expr1,pretty expr2] ty
-	pretty (CCast decl expr (_,ty)) = prettyCE (lparen <> (text $ show (fst ty)) <> rparen) [pretty expr] ty
+	pretty (CCast _ expr (_,ty)) = prettyCE (lparen <> pretty (fst ty) <> rparen) [pretty expr] ty
 	pretty (CUnary op expr (_,ty)) = prettyCE (pretty op) [pretty expr] ty
 	pretty (CMember expr ident deref (_,ty)) = prettyCE (text "")
 		[pretty expr,text (if deref then "->" else ".") <+> pretty ident] ty
@@ -671,7 +671,7 @@ instance Pretty CExprWithType where
 	pretty other = error $ "instance Pretty CExprWithType not implemented for " ++ show other
 
 prettyType ty = case printTypes of
-	True -> text "::" <+> text (show $ fst ty)
+	True -> text "::" <+> pretty (fst ty)
 	False -> Text.PrettyPrint.empty
 
 prettyCE head subs _ | not printTypes = parens $ case subs of
@@ -689,7 +689,7 @@ instance (Pretty a) => Pretty [a] where
 
 instance Show TraceElem where
 	show te = ( case te of
-		Assignment kind expr     -> "ASSN " ++ (render.pretty) kind ++ " = " ++ (render.pretty) expr
+		Assignment lexpr expr    -> "ASSN " ++ (render.pretty) lexpr ++ " = " ++ (render.pretty) expr
 		Condition mb_b expr      -> "COND " ++ (case mb_b of Nothing -> "Nothing"; Just b -> showBranch b) ++ " " ++ (render.pretty) expr
 		NewDeclaration (lval,ty) -> "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
 		Return exprs             -> "RET  " ++ (render.pretty) exprs
@@ -2677,6 +2677,12 @@ data Z3_Type =
 	Z3_VaList |
 	Z3_Any
 	deriving (Show,Eq,Ord,Data)
+
+instance Pretty Z3_Type where
+	pretty (Z3_Compound sueref kind) = pretty kind <+> pretty sueref
+	pretty (Z3_Ptr ty) = pretty ty <+> text "*"
+	pretty (Z3_Array elem_ty mb_size) = pretty elem_ty <+> text "[" <> text (maybe "" show mb_size) <> text "]"
+	pretty other = text $ show other
 
 ty2Z3Type :: Type -> CovVecM (Z3_Type,Type)
 ty2Z3Type ty = do
