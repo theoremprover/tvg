@@ -84,11 +84,11 @@ main = do
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 
-		[] -> "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
+--		[] -> "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
 
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels"]
---		[] -> "gcc" : "sqrtf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels","-writeAST",noIndentLogOpt]
+		[] -> "gcc" : "sqrtf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels","-writeAST",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "fabsf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt]
@@ -238,7 +238,9 @@ main = do
 				forM_ branches $ \ branch -> printLog 0 $ "    " ++ showBranch branch
 				printLog 0 $ "    " ++ showTestVector funname v ++ "\n"
 			forM_ deaths $ \ branch -> do
-				printLog 0 $ "DEAD " ++ showBranch branch
+				let msg = "\n--------------------------\n\nDEAD " ++ showBranch branch ++ "\n"
+				printLog 0 msg
+				printToSolutions $ msg
 
 			printLog 0 $ "Full path coverage: " ++ show every_branch_covered ++ "\n"
 			when (every_branch_covered && not (null deaths)) $ printLog 0 $ "There is unreachable code, in spite of full path coverage."
@@ -288,7 +290,7 @@ whenOptionSet opt_s target action = do
 
 ------------------------
 
-fastMode = False
+fastMode = True
 
 outputVerbosity = if fastMode then 1 else 1
 logFileVerbosity = if fastMode then 0 else 10
@@ -1457,7 +1459,11 @@ makeCompound cstats = CCompound [] cstats undefNode
 wrapGoto :: (Maybe Branch,CExpr) -> CBlockItem
 wrapGoto (mb_branch,cond) = CBlockStmt $ CGotoPtr (CBinary CEqOp cond (CConst $ CStrConst (CString (show mb_branch) True) undefNode) undefNode) undefNode
 unwrapGoto :: CExpr -> (Maybe Branch,CExpr)
-unwrapGoto (CBinary CEqOp cond (CConst (CStrConst (CString s _) _)) _) = (read s :: Maybe Branch,cond)
+unwrapGoto (CBinary CEqOp cond (CConst (CStrConst (CString s _) _)) _) = (mb_branch :: Maybe Branch,cond) where
+	mb_branch = case reads s of
+		[(mb_branch,"")] -> mb_branch
+		[] -> error $ "unwrapGoto: reads error for " ++ s
+	
 unwrapGoto x = error $ "unwrapGoto " ++ show x
 
 forkUnfoldTraces :: Bool -> [a] -> (a -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
@@ -2521,13 +2527,16 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 			CCharConst cchar _         -> return $ SLeaf $ (render.pretty) cconst
 			CFloatConst (CFloat f_s) (_,ty) -> return $ SExpr [ SLeaf "fp", SLeaf ("#b"++s1), SLeaf ("#b"++s2), SLeaf ("#b"++s3) ]
 				where
+				readfloat s = case reads s of
+					[(w,suffix)] | suffix `elem` ["F","f"] -> w
+					_ -> error $ "error: readfloat " ++ show s
 				show_bin :: (Integral a,PrintfArg a) => Int -> a -> String
 				show_bin l i = printf "%0*.*b" l l i
 				(s1,s2,s3) = case fst ty of
 					Z3_Float  -> (take 1 val,take 8 $ drop 1 val,take 23 $ drop 9 val) where
-						val = show_bin 32 (floatToWord $ read f_s)
+						val = show_bin 32 (floatToWord $ readfloat f_s)
 					Z3_Double -> (take 1 val,take 11 $ drop 1 val,take 52 $ drop 12 val) where
-						val = show_bin 64 (doubleToWord $ read f_s)
+						val = show_bin 64 (doubleToWord $ readfloat f_s)
 					Z3_LDouble -> error "long double is not supported"
 
 			CStrConst cstr _           -> return $ SLeaf $ (render.pretty) cconst
