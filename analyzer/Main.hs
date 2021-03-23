@@ -84,10 +84,10 @@ main = do
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 
---		[] -> "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writeModels",noIndentLogOpt]
+		[] -> "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
 
-		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels"]
+--		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels"]
 --		[] -> "gcc" : "sqrtf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels","-writeAST",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
@@ -2284,11 +2284,13 @@ elimArrayAssignsM trace = evalStateT elimarrassns Map.empty
 						1 -> (new_arr,new_arr_ident)
 						i -> (CVar prev_ident (undefNode,arr_types),prev_ident) where
 							prev_ident = internalIdent $ arr_name ++ "$$$" ++ show (i-1)
-				return [
+				return $ [
 					NewDeclaration (new_arr_ident,extractType arr_expr) ,
-					Assignment (ArrayUpdate store_arr_ident new_arr_ident arr_types index_expr) ass_expr,
---					Condition Nothing $ arr_expr ⩵ new_arr,
-					Assignment (Normal arr_expr) new_arr ]
+					Assignment (ArrayUpdate store_arr_ident new_arr_ident arr_types index_expr) ass_expr ] ++
+					-- Only insert the following condition when the new array is introduced (i.e. i==1)
+					-- in order to logically connect the array with the argument
+					( if i==1 then [ Condition Nothing $ arr_expr ⩵ new_arr ] else [] ) ++
+					[ Assignment (Normal arr_expr) new_arr ]
 			other -> return [other]
 
 -- Simplify:
