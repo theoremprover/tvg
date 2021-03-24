@@ -65,6 +65,45 @@ import DataTree
 import GlobDecls
 import Logging
 
+--------------
+
+fastMode = False
+
+outputVerbosity = if fastMode then 1 else 2
+logFileVerbosity = if fastMode then 0 else 10
+
+subfuncovOpt = "-subfuncov"
+noHaltOnVerificationErrorOpt = "-nohalt"
+noIndentLogOpt = "-noindentlog"
+findModeOpt = "-findmode"
+minimizeOpt = "-minimize"
+
+mAX_REN_LIST_LENGTH = 3
+
+showInitialTrace = True && not fastMode
+showModels = False && not fastMode
+showOnlySolutions = True
+showTraces = True && not fastMode
+showFinalTrace = True && not fastMode
+checkSolutions = True
+returnval_var_name = "return_val"
+floatTolerance = 1e-7 :: Float
+doubleTolerance = 1e-10 :: Double
+showBuiltins = False
+logToFile = True
+logToHtml = True && not fastMode
+mainFileName = "main.c"
+printTypes = False
+printLocations = False
+
+mAX_UNROLLS = 4
+uNROLLING_STRATEGY = [0..mAX_UNROLLS]
+
+cutOffs = False
+sizeConditionChunks = 8
+
+-------------
+
 type Trace = [TraceElem]
 type ResultData = (String,Maybe (Env,Env,Solution))
 type TraceAnalysisResult = ([Int],Trace,Set.Set Branch,ResultData)
@@ -88,7 +127,7 @@ main = do
 --		[] -> "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
 
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels"]
-		[] -> "gcc" : "sqrtf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels","-writeAST",noIndentLogOpt]
+		[] -> "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels","-writeAST",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "fabsf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt]
@@ -268,12 +307,6 @@ once :: MonadPlus m => GenericM m -> GenericM m
 once f x = f x `mplus` gmapMo (once f) x
 -}
 
-subfuncovOpt = "-subfuncov"
-noHaltOnVerificationErrorOpt = "-nohalt"
-noIndentLogOpt = "-noindentlog"
-findModeOpt = "-findmode"
-minimizeOpt = "-minimize"
-
 solverFindMagicString = "solver_find() encountered!"
 
 isOptionSet :: String -> CovVecM Bool
@@ -290,15 +323,8 @@ whenOptionSet opt_s target action = do
 
 ------------------------
 
-fastMode = True
-
-outputVerbosity = if fastMode then 1 else 1
-logFileVerbosity = if fastMode then 0 else 10
-
-mAX_REN_LIST_LENGTH = 3
-
-haltOnVerificationError = True
 roundingMode = "roundNearestTiesToEven"
+
 intType = integral TyInt :: Type
 uLongType = integral TyULong :: Type
 uLongLongType = integral TyULLong :: Type
@@ -306,28 +332,6 @@ charType = integral TyChar :: Type
 ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
 floatType = DirectType (TyFloating TyFloat) noTypeQuals noAttributes
 doubleType = DirectType (TyFloating TyDouble) noTypeQuals noAttributes
-
-showInitialTrace = True && not fastMode
-showModels = False && not fastMode
-showOnlySolutions = True
-showTraces = True && not fastMode
-showFinalTrace = True && not fastMode
-checkSolutions = True
-returnval_var_name = "return_val"
-floatTolerance = 1e-7 :: Float
-doubleTolerance = 1e-10 :: Double
-showBuiltins = False
-logToFile = True
-logToHtml = True && not fastMode
-mainFileName = "main.c"
-printTypes = False
-printLocations = False
-
-mAX_UNROLLS = 4
-uNROLLING_STRATEGY = [0..mAX_UNROLLS]
-
-cutOffs = False
-sizeConditionChunks = 8
 
 z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
 
@@ -1463,7 +1467,7 @@ unwrapGoto (CBinary CEqOp cond (CConst (CStrConst (CString s _) _)) _) = (mb_bra
 	mb_branch = case reads s of
 		[(mb_branch,"")] -> mb_branch
 		[] -> error $ "unwrapGoto: reads error for " ++ s
-	
+
 unwrapGoto x = error $ "unwrapGoto " ++ show x
 
 forkUnfoldTraces :: Bool -> [a] -> (a -> CovVecM UnfoldTracesRet) -> CovVecM UnfoldTracesRet
@@ -1762,7 +1766,7 @@ unfoldTraces1M labelenv mb_ret_type toplevel forks envs trace bstss@((CBlockStmt
 							let
 								body_assigns = foldl1 intersect (map (exists_once) body_traces_ass)
 								exists_once l = filter (\ e -> length (filter (==e) l) == 1) l
-							printLogV 2 $ "body_assigns = \n" ++
+							printLogV 10 $ "body_assigns = \n" ++
 								intercalate " , " (map (\(a,b) -> "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") body_assigns)
 
 							case body_assigns :: [(CExprWithType,CExprWithType)] of
