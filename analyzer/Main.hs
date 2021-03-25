@@ -1424,9 +1424,9 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 	case ty' of
 
 		-- STRUCT* p
-		PtrType (DirectType (TyComp (CompTypeRef sueref _ _)) _ _) _ _ -> prepend_plainvar ty' $ do
+		PtrType (DirectType (TyComp (CompTypeRef sueref kind _)) _ _) _ _ -> prepend_plainvar ty' $ do
 			member_ty_s <- lift $ getMembersM sueref
-			ress <- forM member_ty_s $ \ (m_ident,m_ty) -> do
+			ress <- forM ((if kind==UnionTag then take 1 else id) member_ty_s) $ \ (m_ident,m_ty) -> do
 				z3_m_ty <- lift $ ty2Z3Type m_ty
 				createInterfaceFromExpr_WithEnvItemsM (CMember expr m_ident True (extractNodeInfo expr,z3_m_ty)) m_ty
 			return $ concat ress
@@ -1498,12 +1498,6 @@ forkUnfoldTraces toplevel l m = do
 
 recognizeAnnotation :: CExpr -> Trace -> CovVecM (CExpr,Maybe ([Int],Int))
 recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) trace = do
-{-
-	printLogV 0 $ "++++ ni = " ++ show ni
-	forM_ trace $ \case
-		Condition _ c -> printLogV 1 $ "---- nodeInfo " ++ (render.pretty) c ++ " = " ++ show (extractNodeInfo c)
-		_ -> return ()
--}
 	-- set the NodeInfo in real_cond to the original NodeInfo of the *whole* condition that includes the solver_annotation
 	-- otherwise, it will be reported as uncovered (have in mind: all branching points are determined before the analysis starts!)
 	return (setNodeInfo ni real_cond,Just (map arg2int args,num_reached))
