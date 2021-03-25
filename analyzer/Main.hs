@@ -67,7 +67,7 @@ import Logging
 
 --------------
 
-fastMode = False
+fastMode = True
 
 outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
@@ -277,7 +277,7 @@ main = do
 				forM_ branches $ \ branch -> printLog 0 $ "    " ++ showBranch branch
 				printLog 0 $ "    " ++ showTestVector funname v ++ "\n"
 			forM_ deaths $ \ branch -> do
-				let msg = "\n--------------------------\n\nDEAD " ++ showBranch branch ++ "\n"
+				let msg = "--------------------------\n\nDEAD " ++ showBranch branch ++ "\n"
 				printLog 0 msg
 				printToSolutions $ msg
 
@@ -924,15 +924,16 @@ createDeclsM formal_params = do
 			let
 				subexpr = CUnary CIndOp expr undefNode
 				subexpr_varname = lValueToVarName subexpr
-			create_decls subexpr target_ty target_ty True $ decls ++ [
+			create_decls (CVar (internalIdent subexpr_varname) undefNode) target_ty target_ty True $ decls ++ [
 				-- if we encounter a pointer type, we have to declare it anyway.
 				(render.pretty) target_ty ++ " " ++ subexpr_varname ++ ";",
 				(render.pretty) ty ++ " " ++ lval_varname ++ " = &" ++ subexpr_varname ++ ";" ]
 
-		-- case: deref_ty = STRUCT expr
-		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
+		-- case: deref_ty = STRUCT/UNION expr
+		DirectType (TyComp (CompTypeRef sueref kind _)) _ _ -> do
 			member_ty_s <- getMembersM sueref
-			res_decls <- concatForM member_ty_s $ \ (m_ident,m_ty) -> do
+			-- If it is a union, only take the first member
+			res_decls <- concatForM ((if kind==UnionTag then take 1 else id) member_ty_s) $ \ (m_ident,m_ty) -> do
 				create_decls (CMember expr m_ident False undefNode) m_ty m_ty True []
 			let decl = case all_declared of
 				True  -> []
@@ -957,11 +958,13 @@ createDeclsM formal_params = do
 			arr_size <- evalConstExprM arr_size_expr
 			let
 				(CVar (Ident _ _ _) _) = expr
-				arr_decl = (render.pretty) elem_ty ++ " " ++ (render.pretty) expr ++ "[" ++ show arr_size ++ "];"
+				arr_decl = case all_declared of
+					False -> [(render.pretty) elem_ty ++ " " ++ (render.pretty) expr ++ "[" ++ show arr_size ++ "];"]
+					True -> []
 			arr_decls <- concatForM [0..(arr_size - 1)] $ \ i -> do
 				ii <- ⅈ i
 				create_decls (CIndex expr ii undefNode) elem_ty elem_ty True []
-			return $ decls ++ [arr_decl] ++ arr_decls
+			return $ decls ++ arr_decl ++ arr_decls
 
 		_ -> myError $ "createDeclsM " ++ (render.pretty) expr ++ " " ++ show ty ++ " not implemented"
 
@@ -1433,10 +1436,11 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 			prepend_plainvar ty' $
 				createInterfaceFromExpr_WithEnvItemsM (CUnary CIndOp expr (extractNodeInfo expr,z3_target_ty)) target_ty
 
-		-- STRUCT expr
-		DirectType (TyComp (CompTypeRef sueref _ _)) _ _ -> do
+		-- STRUCT/UNION expr
+		DirectType (TyComp (CompTypeRef sueref kind _)) _ _ -> do
 			member_ty_s <- lift $ getMembersM sueref
-			ress <- forM member_ty_s $ \ (m_ident,m_ty) -> do
+			-- if it is a union, only take the first element
+			ress <- forM ((if kind==UnionTag then take 1 else id) member_ty_s) $ \ (m_ident,m_ty) -> do
 				z3_m_ty <- lift $ ty2Z3Type m_ty
 				createInterfaceFromExpr_WithEnvItemsM (CMember expr m_ident False (extractNodeInfo expr,z3_m_ty)) m_ty
 			return $ concat ress
@@ -1447,12 +1451,11 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 		ArrayType elem_ty (ArraySize False constexpr) _ _ -> do
 			arr_size <- lift $ evalConstExprM constexpr
 			elem_ty' <- lift $ elimTypeDefsM elem_ty
-			let
-				CVar (Ident _ _ _) (ni,_) = expr    -- Just to be sure...
 			ress <- forM [0..(arr_size - 1)] $ \ i -> do
 				elem_ty2 <- lift $ ty2Z3Type elem_ty'
 				intty <- lift $ ty2Z3Type intType
 				let
+					ni = extractNodeInfo expr
 					arrayelemexpr = CIndex expr (CConst $ CIntConst (cInteger i) (undefNode,intty)) (ni,elem_ty2)
 					arrayelem_var = CVar (internalIdent $ lValueToVarName arrayelemexpr) (ni,elem_ty2)
 					eqcond = Condition Nothing $ CBinary CEqOp arrayelem_var arrayelemexpr (ni,_BoolTypes)
