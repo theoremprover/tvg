@@ -953,10 +953,10 @@ createDeclsM formal_params = do
 			return $ decls ++ decl ++
 				[ "if(sscanf(argv[i++],\"" ++ tyfs ++ "\",&(" ++ (render.pretty) expr ++ "))!=1) return 1;" ]
 
-		ArrayType elem_ty (ArraySize False (CConst (CIntConst cint _))) _ _ -> do
+		ArrayType elem_ty (ArraySize False arr_size_expr) _ _ -> do
+			arr_size <- evalConstExprM arr_size_expr
 			let
 				(CVar (Ident _ _ _) _) = expr
-				arr_size = getCInteger cint
 				arr_decl = (render.pretty) elem_ty ++ " " ++ (render.pretty) expr ++ "[" ++ show arr_size ++ "];"
 			arr_decls <- concatForM [0..(arr_size - 1)] $ \ i -> do
 				ii <- ⅈ i
@@ -968,6 +968,21 @@ createDeclsM formal_params = do
 		where
 
 		lval_varname = lValueToVarName expr
+
+evalConstExprM :: CExpr -> CovVecM Integer
+evalConstExprM expr = eval_const_expr expr
+	where
+	eval_const_expr (CConst (CIntConst cint _)) = return $ getCInteger cint
+	eval_const_expr (CBinary binop expr1 expr2 _) = op <$> (eval_const_expr expr1) <*> (eval_const_expr expr2) where
+		Just op = lookup binop [(CMulOp,(*)),(CDivOp,div),(CAddOp,(+)),(CSubOp,(-)),(CRmdOp,mod)]
+	eval_const_expr (CUnary unop expr _) = op <$> (eval_const_expr expr) where
+		Just op = lookup unop [(CPlusOp,id),(CMinOp,negate)]
+--	TODO: eval_const_expr (CSizeofExpr expr _) = do
+	eval_const_expr (CSizeofType decl _) = do
+		size <- decl2TypeM decl >>= sizeofTy
+		-- round up the number of bytes, if necessary
+		return $ div (fromIntegral size + 7) 8
+	eval_const_expr other = myError $ "eval_const_expr " ++ (render.pretty) other ++ " impossible or not implemented!"
 
 type_format_string :: Type -> CovVecM String
 type_format_string ty = do
@@ -1429,12 +1444,12 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 		-- direct-type expr where direct-type is no struct/union
 		DirectType _ _ _ -> prepend_plainvar ty' $ return []
 
-		ArrayType elem_ty (ArraySize False (CConst (CIntConst cint _))) _ _ -> do
+		ArrayType elem_ty (ArraySize False constexpr) _ _ -> do
+			arr_size <- lift $ evalConstExprM constexpr
 			elem_ty' <- lift $ elimTypeDefsM elem_ty
 			let
-				arr_size = getCInteger cint
 				CVar (Ident _ _ _) (ni,_) = expr    -- Just to be sure...
-			ress <- forM [0..(getCInteger cint - 1)] $ \ i -> do
+			ress <- forM [0..(arr_size - 1)] $ \ i -> do
 				elem_ty2 <- lift $ ty2Z3Type elem_ty'
 				intty <- lift $ ty2Z3Type intType
 				let
@@ -2756,7 +2771,7 @@ sizeofTy ty@(DirectType tyname _ attrs) = do
 		TyFloating floatty -> case floatty of
 			TyFloat  -> 32
 			TyDouble -> 64
-			other           -> error $ "sizeofTy " ++ show other ++ " not implemented!"
+			other    -> error $ "sizeofTy " ++ show other ++ " not implemented!"
 		other -> error $ "sizeofTy: " ++ (render.pretty) ty ++ " is not implemented!"
 	where
 	to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
