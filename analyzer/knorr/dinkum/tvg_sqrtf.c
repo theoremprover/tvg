@@ -60,15 +60,11 @@ short _FDnorm(_Fval *ps)
   if (solver_pragma(1) && ps->_Sh[1] == 0)
   { ps->_Sh[1] = ps->_Sh[0]; ps->_Sh[0] = 0; xchar -= 16; }
 
-  for (; solver_pragma(1,1,1,1,2) && ps->_Sh[1] < 1 << 7; --xchar)
+  for (; solver_pragma(1,1,1,1,2) && (ps->_Sh[1] < 1 << 7); --xchar)
    {
-  return 99;
-
-   ps->_Sh[1] = (unsigned short)(ps->_Sh[1] << 1
-    | ps->_Sh[0] >> 15);
+   ps->_Sh[1] = (unsigned short)(ps->_Sh[1] << 1 | ps->_Sh[0] >> 15);
    ps->_Sh[0] <<= 1;
    }
-   return 100;
   for (; solver_pragma(2) && 1 << (7 + 1) <= ps->_Sh[1]; ++xchar)
    {
    ps->_Sh[0] = (unsigned short)(ps->_Sh[0] >> 1

@@ -67,7 +67,7 @@ import Logging
 
 --------------
 
-fastMode = True
+fastMode = False
 
 outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
@@ -121,13 +121,15 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] -> "gcc" : "f" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] -> "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+		[] -> "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
+
+--		[] -> "gcc" : "f" : (analyzerPath++"\\loopmcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 
 --		[] -> "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
 
 --		[] -> "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels"]
-		[] -> "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels","-writeAST",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writeModels",noIndentLogOpt]
 --		[] -> "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
 --		[] -> "gcc" : "fabsf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt]
@@ -586,9 +588,8 @@ showBranch (Branch loc num is_else name) = (if is_else then "Else" else "Then") 
 
 makeCondBranchName cond = (render.pretty) cond ++ " ? _ : _"
 makeIfBranchName cond = "if(" ++ (render.pretty) cond ++ ")"
-makeWhileBranchName cond = "while(" ++ (render.pretty) cond ++ ")"
+makeForWhileBranchName cond = "for/while(" ++ (render.pretty) cond ++ ")"
 makeDefaultBranchName = "default"
-makeForBranchName cond = "for(_," ++ (render.pretty) cond ++ ",_)"
 makeCaseBranchName cond = "case " ++ (render.pretty) cond
 
 printCondPoints :: (MonadIO m) => Set.Set Branch -> m ()
@@ -631,14 +632,15 @@ createMCDCTables expr = case expr of
 setNodeInfo :: NodeInfo -> CExpr -> CExpr
 setNodeInfo ni expr = amap (const ni) expr
 
-createBranches :: String -> CExpr -> CovVecM [(Branch,CExpr)]
-createBranches default_name cond = do
+createBranches :: (CExpr -> String) -> CExpr -> CovVecM [(Branch,CExpr)]
+createBranches name_creator cond = do
+	let (real_cond,_) = extractAnnotation cond
  	gets coverageKindCVS >>= \case
  		Branch_Cov -> return [ (Branch (lineColNodeInfo cond) 1 False "",set_ni cond), (Branch (lineColNodeInfo cond) 2 True "",set_ni $ not_c cond) ]
 		MCDC_Cov   -> return $ case createMCDCTables cond of
 			[ MCDC_Branch name1 result1 bcond1, MCDC_Branch name2 result2 bcond2 ] -> [
-				(Branch (lineColNodeInfo cond) 1 (not result1) default_name,set_ni bcond1),
-				(Branch (lineColNodeInfo cond) 2 (not result2) default_name,set_ni bcond2) ]
+				(Branch (lineColNodeInfo cond) 1 (not result1) (name_creator real_cond),set_ni bcond1),
+				(Branch (lineColNodeInfo cond) 2 (not result2) (name_creator real_cond),set_ni bcond2) ]
 			mcdctable -> for (zip [1..] mcdctable) $ \ (i,MCDC_Branch name result bcond) ->
 				(Branch (lineColNodeInfo cond) i (not result) name,set_ni bcond)
 	where
@@ -770,10 +772,10 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 						[ Branch (lineColNodeInfo cdefault) i False makeDefaultBranchName ]
 					collectcases i (_:rest) = collectcases i rest
 				CSwitch _ _ _            -> error $ "searchcondpoint: Strange Switch " ++ (render.pretty) stmt
-				CWhile cond _ _ _        -> liftandfst $ createBranches (makeWhileBranchName cond) cond
-				CFor _ (Just cond) _ _ _ -> liftandfst $ createBranches (makeForBranchName cond) cond
+				CWhile cond _ _ _        -> liftandfst $ createBranches makeForWhileBranchName cond
+				CFor _ (Just cond) _ _ _ -> liftandfst $ createBranches makeForWhileBranchName cond
 				CFor _ Nothing _ _ _     -> error $ "searchcondpoint: for(_,Nothing,_) not implemented!"
-				CIf cond _ _ _           -> liftandfst $ createBranches (makeIfBranchName cond) cond
+				CIf cond _ _ _           -> liftandfst $ createBranches makeIfBranchName cond
 				_                        -> return []
 			modify (add_branches++)
 			return stmt
@@ -781,7 +783,7 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 		searchexprcondpoint :: CExpr -> StateT [Branch] CovVecM CExpr
 		searchexprcondpoint expr = do
 			add_branches <- case expr of
-				CCond cond _ _ _ -> liftandfst $ createBranches (makeCondBranchName cond) cond
+				CCond cond _ _ _ -> liftandfst $ createBranches makeCondBranchName cond
 				-- Recurse on allpoints_in_body if called functions should be covered as well
 				CCall (CVar funident _) _ _ | subfuncov -> lift $ allpoints_in_body funident
 				_ -> return []
@@ -1496,23 +1498,31 @@ forkUnfoldTraces toplevel l m = do
 			False -> or successes
 			True  -> and successes
 
+extractAnnotation :: CExpr -> (CExpr,Maybe [Int])
+extractAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) =
+	(setNodeInfo ni real_cond,Just $ map arg2int args)
+	where
+	arg2int (CConst (CIntConst (CInteger i _ _) _)) = fromIntegral i
+extractAnnotation cond = (cond,Nothing)
+
 recognizeAnnotation :: CExpr -> Trace -> CovVecM (CExpr,Maybe ([Int],Int))
-recognizeAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) trace = do
+recognizeAnnotation cond trace = do
+	let (real_cond,mb_args) = extractAnnotation cond
 	-- set the NodeInfo in real_cond to the original NodeInfo of the *whole* condition that includes the solver_annotation
 	-- otherwise, it will be reported as uncovered (have in mind: all branching points are determined before the analysis starts!)
-	return (setNodeInfo ni real_cond,Just (map arg2int args,num_reached))
-	where
+	return ( real_cond, case mb_args of
+		Nothing -> Nothing
+		Just args -> Just (args,num_reached) )
+	where	
 	this_conditions = filter is_this_cond trace where
-		is_this_cond (Condition _ c) = extractNodeInfo c == ni
+		is_this_cond (Condition _ c) = extractNodeInfo c == nodeInfo cond
 		is_this_cond _ = False
 	num_reached = length this_conditions
-	arg2int (CConst (CIntConst (CInteger i _ _) _)) = fromIntegral i
-recognizeAnnotation real_cond _ = return (real_cond,Nothing)
 
 createBranchesWithAnno :: CExpr -> (CExpr -> String) -> Trace -> Int -> CovVecM ([(Branch,CExpr)],Int)
 createBranchesWithAnno cond makebranchname trace forks = do
 	(real_cond,mb_annotation) <- recognizeAnnotation cond trace
-	all_branches <- createBranches (makebranchname real_cond) real_cond
+	all_branches <- createBranches makebranchname real_cond
 	case mb_annotation of
 		-- 12 is a wildcard in the choice list
 		-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
@@ -1714,26 +1724,27 @@ unfoldTraces1M labelenv mb_ret_type toplevel forks envs trace bstss@((CBlockStmt
 					unfoldTracesM labelenv mb_ret_type toplevel forks envs' (Condition mb_branch cond' : trace') ( (rest,breakable) : rest2 )
 
 			CWhile cond body False ni -> do
-				(mb_unrolling_depth,msg) <- infer_loopingsM cond body
-				unroll_loopM $ case mb_unrolling_depth of
+				(mb_unrolling_depths,msg) <- infer_loopingsM cond body
+				createBranches makeForWhileBranchName cond >>= unroll_loopM ( case mb_unrolling_depths of
 					Nothing -> uNROLLING_STRATEGY
-					Just ns -> ns
+					Just ns -> ns )
 
 				where
 
-				unroll_loopM :: [Int] -> CovVecM UnfoldTracesRet
-				unroll_loopM depths = do
-					ress <- forM depths $ \ depth ->
-						unfoldTracesM labelenv mb_ret_type toplevel forks ([]:envs) trace ( (unroll depth,True) : (rest,breakable) : rest2 )
-					return $ case toplevel of
-						False -> Left $ concat $ lefts ress
-						True  -> Right $ any id $ rights ress
+				unroll_loopM :: [Int] -> [(Branch,CExpr)] -> CovVecM UnfoldTracesRet
+				unroll_loopM depths branch_exprs = do
+					forkUnfoldTraces toplevel depths $ \ depth -> do
+						forkUnfoldTraces toplevel (unroll depth) $ \ cbi_trace -> do
+							unfoldTracesM labelenv mb_ret_type toplevel forks ([]:envs) trace ( (cbi_trace,True) : (rest,breakable) : rest2 )
 
-				-- TODO: use createBranches for loop conditions!
-				unroll :: Int -> [CBlockItem]
-				unroll n =
-					concat ( replicate n [ wrapGoto (Just $ Branch (lineColNodeInfo cond) 1 False "",cond), CBlockStmt body ] ) ++
-					[ wrapGoto (Just $ Branch (lineColNodeInfo cond) 2 True "",not_c cond) ]
+					where
+
+					(else_branches,then_branches) = partition (isElseBranch.fst) branch_exprs
+
+					unroll :: Int -> [[CBlockItem]]
+					unroll 0 = for else_branches $ \ (branch,cond) -> [ wrapGoto (Just branch,cond) ]
+					unroll n = for then_branches $ \ (branch,cond) ->
+						concatMap (\ l -> wrapGoto (Just branch,cond) : CBlockStmt body : l) $ unroll (n-1)
 
 			-- Express the for loop as a bisimular while loop
 			CFor precond mb_cond mb_inc_expr stmt ni -> do
@@ -1741,7 +1752,7 @@ unfoldTraces1M labelenv mb_ret_type toplevel forks envs trace bstss@((CBlockStmt
 				let
 					cbis = case precond of
 						Right decl -> [CBlockDecl decl]
-						Left Nothing -> []
+						Left mb_expr -> [ CBlockStmt $ CExpr mb_expr undefNode ]
 					while_body = makeCompound $ CBlockStmt stmt :
 						maybe [] (\ expr -> [ CBlockStmt $ CExpr (Just expr) (nodeInfo expr) ]) mb_inc_expr
 					body_stmt = CWhile (maybe ii id mb_cond) while_body False ni
@@ -1756,7 +1767,7 @@ unfoldTraces1M labelenv mb_ret_type toplevel forks envs trace bstss@((CBlockStmt
 			recognizeAnnotation cond0 trace >>= \case
 				(real_cond,Just (ns,_)) -> return (Just ns,"Recognized LOOP annotation to " ++ (render.pretty) cond0)
 				(real_cond,Nothing) -> do
-					let default_ns = [0,1,2]
+	--				let default_ns = [0,1,2]
 	--				return (Just default_ns,"No annotation, trying " ++ show default_ns)
 
 					translateExprM labelenv envs toplevel real_cond (Just _BoolTypes) trace 0 >>= \case
