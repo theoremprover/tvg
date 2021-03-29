@@ -98,7 +98,7 @@ mainFileName = "main.c"
 printTypes = False
 printLocations = False
 
-mAX_UNROLLS = 4
+mAX_UNROLLS = 3
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
 
 cutOffs = False
@@ -246,7 +246,7 @@ main = do
 				(testvectors,covered) = analysisStateCVS s
 
 				alls = allCondPointsCVS s
-			
+
 
 			printLog 0 "\n"
 
@@ -580,7 +580,7 @@ data TraceElem =
 
 data Branch = Branch { branchLocation::Location, numBranch::Int, isElseBranch::Bool, nameBranch::String } 
 	deriving (Data,Show,Read)
--- Order decision points first by location, and second by the direction (Then/Else)
+-- Order decision points first by location, then by number, and last by the direction (Then/Else)
 
 -- For equality for Branches, the branch's name should be irrelevant (it is only given for documentation purposes)
 instance Eq Branch where
@@ -1045,7 +1045,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 					incNumTracesM
 					printStatsM
 					printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
-				
+
 					opts <- gets optsCVS
 					when ("-exportPaths" `elem` opts) $ liftIO $ do
 						writeFile (analyzerPath </> "models" </> "path_" ++ show traceid <.> ".c") $ unlines $ concat $ for trace $ \case
@@ -1053,7 +1053,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 							NewDeclaration (ident,ty) → [ "(" ++ (render.pretty) ty ++ ") " ++ (render.pretty) ident ++ " ;" ]
 							Return expr → [ "return " ++ (render.pretty) expr ++ " ;" ]
 							_ → []
-				
+
 					trace_for_def_analysis <-
 						showtraceM showInitialTrace "Initial" return trace >>=
 						showtraceM showTraces "elimInds"             elimInds
@@ -1063,7 +1063,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 						showtraceM showTraces "elimAssignmentsM"  elimAssignmentsM >>=
 						showtraceM showTraces "2. simplifyTraceM"    simplifyTraceM >>=
 						showtraceM showFinalTrace "createSymbolicVarsM"  createSymbolicVarsM
-				
+
 					solveTraceM mb_ret_type traceid trace' >>= \case
 						Left solvable → return solvable
 						Right resultdata@(model_string,mb_solution) → do
@@ -1079,7 +1079,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 									incNumSolutionM
 									printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
 									printToSolutions show_solution_msg
-				
+
 									startends <- gets funStartEndCVS
 									printLogV 1 $ "startends = " ++ show startends
 									let visible_trace = Set.fromList $ concatMap to_branch res_line
@@ -1088,18 +1088,18 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 										is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
 										to_branch (Condition (Just branch) _) | is_visible_branch startends (branchLocation branch) = [ branch ]
 										to_branch _ = []
-				
+
 									let cov_branches = "\tCOVERED BRANCHES:\n" ++ unlines (map (("\t"++).showBranch) $ Set.toList visible_trace)
 									printLogV 1 cov_branches
 									printToSolutions cov_branches
-				
+
 									checkVarsDefined mb_ret_type trace_for_def_analysis >>= \case
 										Just msg → do
 											printLogV 0 msg
 											printLogV 0 $ "Will not checkSolutions for " ++ show traceid
 										Nothing → do
 											when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
-				
+
 									(tas,covered) <- gets analysisStateCVS
 									all_branches <- gets allCondPointsCVS
 									let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
@@ -1112,7 +1112,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 									when (not $ visible_trace ⊆ covered) $
 										modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],visible_trace ∪ covered) }
 									return True
-		
+
 		where
 	
 		trace = reverse res_line
@@ -1517,6 +1517,11 @@ extractAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) ar
 	arg2int (CConst (CIntConst (CInteger i _ _) _)) = fromIntegral i
 extractAnnotation cond = (cond,Nothing)
 
+expandAssignRightSide :: CExpr → CExpr 
+expandAssignRightSide (CAssign assignop lexpr assigned_expr ni) = case assignop of
+	CAssignOp → assigned_expr
+	ass_op    → CBinary (assignBinop ass_op) lexpr assigned_expr ni
+
 recognizeAnnotation :: CExpr → Trace → CovVecM (CExpr,Maybe ([Int],Int))
 recognizeAnnotation cond trace = do
 	let (real_cond,mb_args) = extractAnnotation cond
@@ -1693,15 +1698,11 @@ unfoldTraces1M labelenv mb_ret_type toplevel forks envs trace bstss@((CBlockStmt
 			CExpr (Just (CCall (CVar (Ident "solver_find" _ _) _) _ _)) _ → do
 				unfoldTracesM labelenv mb_ret_type toplevel forks envs (SolverFind:trace) ((rest,breakable):rest2)
 
-			CExpr (Just cass@(CAssign assignop lexpr assigned_expr ni)) _ → do
+			CExpr (Just cass@(CAssign _ lexpr _ ni)) _ → do
 				-- translate the whole assignment expression, so we also get the translated lexpr
-				transids (CAssign CAssignOp lexpr assigned_expr' ni) Nothing trace $
+				transids (CAssign CAssignOp lexpr (expandAssignRightSide cass) ni) Nothing trace $
 					\ (envs',CAssign CAssignOp lexpr' assigned_expr'' _,trace') → do
 						unfoldTracesM labelenv mb_ret_type toplevel forks envs' (Assignment (Normal lexpr') assigned_expr'' : trace') ((rest,breakable):rest2)
-				where
-				assigned_expr' = case assignop of
-					CAssignOp → assigned_expr
-					ass_op    → CBinary (assignBinop ass_op) lexpr assigned_expr ni
 
 			CExpr (Just (CUnary unaryop expr ni_op)) ni | unaryop `elem` (map fst unaryops) → do
 				ii <- ⅈ 1
@@ -2166,18 +2167,23 @@ scanExprM envs toplevel expr0 mb_target_ty trace forks = logWrapper ["scanExprM"
 		to_call_or_ternaryifs (CComma exprs _) = do
 			let
 				all_but_last_exprs = reverse $ tail $ reverse exprs
-				last_expr = last exprs
-			modify ( (Right [
-				map CBlockStmt $ map (\ e → CExpr (Just e) undefNode) all_but_last_exprs ]) :)
+			modify ( ( Right [
+				map CBlockStmt $ map (\ e → CExpr (Just e) undefNode) all_but_last_exprs ] : ) )
 			return $ last exprs
+
+		to_call_or_ternaryifs cass@(CAssign _ lexpr _ _) = do
+			modify ( (Right [ [ CBlockStmt $ CExpr (Just cass) undefNode ] ] ) : )
+			return lexpr
 
 		to_call_or_ternaryifs expr = return expr
 
+	-- important: everywhereM works bottom-up, which is crucial!
 	runStateT (everywhereM (mkM to_call_or_ternaryifs) expr0) []
 
 createCombinationsM :: LabelEnv → [Env] → Bool → (CExpr,CallOrTernaryIfs) → Maybe Types → Trace → Int → CovVecM [([Env],CExprWithType,Trace)]
 createCombinationsM labelenv envs toplevel (expr,call_or_ternaryifs) mb_target_ty trace forks = do
-	create_combinations envs expr [] [] call_or_ternaryifs
+	-- reverse the list of side effect code, since it was constructed bottom-up using the cons operator ":"
+	create_combinations envs expr [] [] (reverse call_or_ternaryifs)
 
 	where
 

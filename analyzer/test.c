@@ -48,7 +48,7 @@ short _FDnorm(_Fval *ps)
  if (ps->_Sh[1] != 0 || ps->_Sh[0])
   {
   if (ps->_Sh[1] == 0)
-  { ps->_Sh[1] = ps->_Sh[0]; ps->_Sh[0] = 0; xchar -= 16; }
+    ps->_Sh[1] = ps->_Sh[0], ps->_Sh[0] = 0, xchar -= 16;
   for (; ps->_Sh[1] < 1 << 7; --xchar)
    {
    ps->_Sh[1] = (unsigned short)(ps->_Sh[1] << 1
