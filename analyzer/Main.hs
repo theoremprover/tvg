@@ -292,7 +292,7 @@ main = do
 			let
 				errs = verificationErrsCVS s
 				coverage_kind_txt = show coveragekind
-				msg = case (errs>0) of
+				msg = "\n================================\n" ++ case (errs>0) of
 					True → "\nVERIFICATION ERRORS: " ++ show errs ++ "\n"
 					False → case null deaths of
 						False → "FAIL, there are " ++ coverage_kind_txt ++ " gaps!\n"
@@ -331,11 +331,11 @@ whenOptionSet opt_s target action = do
 
 roundingMode = "roundNearestTiesToEven"
 
-intType = integral TyInt :: Type
-uLongType = integral TyULong :: Type
-uLongLongType = integral TyULLong :: Type
-charType = integral TyChar :: Type
-ptrType to_ty = PtrType to_ty noTypeQuals noAttributes :: Type
+intType = integral TyInt
+uLongType = integral TyULong
+uLongLongType = integral TyULLong
+charType = integral TyChar
+ptrType to_ty = PtrType to_ty noTypeQuals noAttributes
 floatType = DirectType (TyFloating TyFloat) noTypeQuals noAttributes
 doubleType = DirectType (TyFloating TyDouble) noTypeQuals noAttributes
 
