@@ -78,6 +78,7 @@ noIndentLogOpt = "-noindentlog"
 findModeOpt = "-findmode"
 minimizeOpt = "-minimize"
 branchCovOpt = "-branchcov"
+htmlLogOpt = "-htmllog"
 
 mAX_REN_LIST_LENGTH = 3
 
@@ -301,7 +302,7 @@ main = do
 						False → "FAIL, there are " ++ coverage_kind_txt ++ " gaps!\n"
 						True  → "OK, we have full " ++ coverage_kind_txt ++ ".\n"
 
-			createHTMLLog
+			when (htmlLogOpt `elem` opts) $ createHTMLLog
 
 for :: [a] → (a → b) → [b]
 for = flip map
@@ -1792,7 +1793,7 @@ unfoldTraces1M labelenv mb_ret_type toplevel forks envs trace bstss@((CBlockStmt
 								body_traces_ass = map (concatMap from_ass) $ map snd body_traces where
 									from_ass (Assignment (Normal a@(CVar i _)) b) | i `elem` cond_idents = [(a,b)]
 									from_ass _ = []
-							printLogV 2 $ "body_traces_ass =\n" ++
+							printLogV 20 $ "body_traces_ass =\n" ++
 								(unlines $ for body_traces_ass $ \ bta →
 									intercalate " , " (map (\(a,b) → "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") bta))
 
