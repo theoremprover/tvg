@@ -38,51 +38,34 @@ int __attribute__((fardata)) _Errno;
 }
 
 
-/*
-C:\Data\tvg\analyzer>main.exe 10 0
-_FDnorm(ps->_Sh[0] = 10, ps->_Sh[1] = 0, f2u(ps->_Val) = a) =
-1.1.xchar=-15
-2.1.xchar=-19
-2.2.xchar=-19
--19
-*/
 short _FDnorm(_Fval *ps)
  {
+ short xchar;
+ unsigned short sign = (unsigned short)(ps->_Sh[1] & ((unsigned short)0x8000));
 
-// short xchar;
-// unsigned short sign = (unsigned short)(ps->_Sh[1] & ((unsigned short)0x8000));
-
-// xchar = 1;
-   ps->_Sh[1] &= ((unsigned short)((1 << 7) - 1));
-//   ps->_Sh[1] &= (unsigned short)0x007f;
-   if (ps->_Sh[1] != 0 || ps->_Sh[0]) return 99;
-   else return 100;
-/*
-// if ((ps->_Sh[1] &= ((unsigned short)((1 << 7) - 1))) != 0 || ps->_Sh[0])
+ xchar = 1;
+ if ((ps->_Sh[1] &= ((unsigned short)((1 << 7) - 1))) != 0 || ps->_Sh[0])
   {
-  return 99;
-  if (solver_pragma(1) && ps->_Sh[1] == 0)
-  { ps->_Sh[1] = ps->_Sh[0]; ps->_Sh[0] = 0; xchar -= 16; }
-
-  for (; solver_pragma(12,12,12,12,2) && (ps->_Sh[1] < 1 << 7); --xchar)
+  if (ps->_Sh[1] == 0)
+   ps->_Sh[1] = ps->_Sh[0], ps->_Sh[0] = 0, xchar -= 16;
+  for (; ps->_Sh[1] < 1 << 7; --xchar)
    {
-   ps->_Sh[1] = (unsigned short)(ps->_Sh[1] << 1 | ps->_Sh[0] >> 15);
+   ps->_Sh[1] = (unsigned short)(ps->_Sh[1] << 1
+    | ps->_Sh[0] >> 15);
    ps->_Sh[0] <<= 1;
    }
-
-  for (; solver_pragma(12,12,2) && 1 << (7 + 1) <= ps->_Sh[1]; ++xchar)
+  for (; 1 << (7 + 1) <= ps->_Sh[1]; ++xchar)
    {
    ps->_Sh[0] = (unsigned short)(ps->_Sh[0] >> 1
     | ps->_Sh[1] << 15);
    ps->_Sh[1] >>= 1;
    }
   ps->_Sh[1] &= ((unsigned short)((1 << 7) - 1));
-
   }
-// ps->_Sh[1] |= sign;
+ ps->_Sh[1] |= sign;
  return (xchar);
-*/
  }
+
 
 
 short _FDunscale(short *pex, float *px)
