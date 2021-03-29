@@ -1699,10 +1699,11 @@ unfoldTraces1M labelenv mb_ret_type toplevel forks envs trace bstss@((CBlockStmt
 				unfoldTracesM labelenv mb_ret_type toplevel forks envs (SolverFind:trace) ((rest,breakable):rest2)
 
 			CExpr (Just cass@(CAssign _ lexpr _ ni)) _ → do
-				-- translate the whole assignment expression, so we also get the translated lexpr
-				transids (CAssign CAssignOp lexpr (expandAssignRightSide cass) ni) Nothing trace $
-					\ (envs',CAssign CAssignOp lexpr' assigned_expr'' _,trace') → do
-						unfoldTracesM labelenv mb_ret_type toplevel forks envs' (Assignment (Normal lexpr') assigned_expr'' : trace') ((rest,breakable):rest2)
+				transids (expandAssignRightSide cass) Nothing trace $ \ (envs',assigned_expr,trace') →
+					-- No side effects in the LExpr, hence we ignore the trace/envs resulting from the translation
+					transids lexpr Nothing trace' $ \ (_,lexpr',_) →
+						unfoldTracesM labelenv mb_ret_type toplevel forks envs'
+							(Assignment (Normal lexpr') assigned_expr : trace') ((rest,breakable):rest2)
 
 			CExpr (Just (CUnary unaryop expr ni_op)) ni | unaryop `elem` (map fst unaryops) → do
 				ii <- ⅈ 1
@@ -2177,7 +2178,7 @@ scanExprM envs toplevel expr0 mb_target_ty trace forks = logWrapper ["scanExprM"
 
 		to_call_or_ternaryifs expr = return expr
 
-	-- important: everywhereM works bottom-up, which is crucial!
+	-- important: everywhereM works bottom-up, which is crucial for the sequence of side effects!
 	runStateT (everywhereM (mkM to_call_or_ternaryifs) expr0) []
 
 createCombinationsM :: LabelEnv → [Env] → Bool → (CExpr,CallOrTernaryIfs) → Maybe Types → Trace → Int → CovVecM [([Env],CExprWithType,Trace)]
