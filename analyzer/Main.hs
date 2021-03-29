@@ -123,8 +123,8 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
+--		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
+		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\loopmcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 
@@ -237,7 +237,7 @@ main = do
 			when ("-writeGlobalDecls" `elem` opts) $
 				writeFile "globdecls.html" $ globdeclsToHTMLString globdecls
 
-			let coveragekind = if branchCovOpt `elem` opts then Branch_Cov else MCDC_Cov
+			let coveragekind = if branchCovOpt `elem` opts then Branch_Coverage else MCDC_Coverage
 			(every_branch_covered,s) <- runStateT covVectorsM $
 				CovVecState globdecls 1 allFileName Nothing funname [] gcc opts
 					Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1) coveragekind 0
@@ -246,7 +246,6 @@ main = do
 				(testvectors,covered) = analysisStateCVS s
 
 				alls = allCondPointsCVS s
-
 
 			printLog 0 "\n"
 
@@ -281,26 +280,25 @@ main = do
 			forM_ testvectors $ \ (traceid,trace,branches,(model,Just v)) → do
 				printLog 0 $ "Test Vector " ++ show traceid ++ " covering "
 				forM_ branches $ \ branch → printLog 0 $ "    " ++ showBranch branch
-				printLog 0 $ "    " ++ showTestVector funname v ++ "\n"
+				printLog 0 $ "\n    " ++ showTestVector funname v ++ "\n"
 			forM_ deaths $ \ branch → do
 				let msg = "\n--------------------------\n\nDEAD " ++ showBranch branch ++ "\n"
 				printLog 0 msg
-				printToSolutions $ msg
+				printToSolutions msg
 
 			printLog 0 $ "Full path coverage: " ++ show every_branch_covered ++ "\n"
 			when (every_branch_covered && not (null deaths)) $ printLog 0 $ "There is unreachable code, in spite of full path coverage."
 
-			let errs = verificationErrsCVS s
-			case (errs>0) of
-				True → do
-					let errmsg = "\nVERIFICATION ERRORS: " ++ show errs ++ "\n"
-					printToSolutions errmsg
-					printLog 0 errmsg
-				False → do
-					let coverage_kind_txt = show coveragekind
-					printLog 0 $ case null deaths of
+			let
+				errs = verificationErrsCVS s
+				coverage_kind_txt = show coveragekind
+				msg = case (errs>0) of
+					True → "\nVERIFICATION ERRORS: " ++ show errs ++ "\n"
+					False → case null deaths of
 						False → "FAIL, there are " ++ coverage_kind_txt ++ " gaps!\n"
 						True  → "OK, we have full " ++ coverage_kind_txt ++ ".\n"
+			printToSolutions msg
+			printLog 0 msg
 
 			when (htmlLogOpt `elem` opts) $ createHTMLLog
 
@@ -600,7 +598,7 @@ makeCaseBranchName cond = "case " ++ (render.pretty) cond
 
 printCondPoints :: (MonadIO m) => Set.Set Branch → m ()
 printCondPoints alls = liftIO $ do
-	printLog 0 $ "All decision points:"
+	printLog 0 $ "All decision point outcomes:"
 	let decisionpoints = Set.toList alls
 	case null decisionpoints of
 		True  → printLog 0 "<none>"
@@ -608,7 +606,7 @@ printCondPoints alls = liftIO $ do
 			printLog 0 $ "    " ++ showBranch decisionpoint
 
 
-data CoverageKind = Branch_Cov | MCDC_Cov
+data CoverageKind = Branch_Coverage | MCDC_Coverage
 	deriving (Show,Eq)
 
 data MCDC_Branch = MCDC_Branch { nameMCDCB::String, resultMCDCB::Bool, condMCDCB::CExpr }
@@ -642,8 +640,8 @@ createBranches :: (CExpr → String) → CExpr → CovVecM [(Branch,CExpr)]
 createBranches name_creator cond = do
 	let (real_cond,_) = extractAnnotation cond
  	gets coverageKindCVS >>= \case
- 		Branch_Cov → return [ (Branch (lineColNodeInfo cond) 1 False "",set_ni cond), (Branch (lineColNodeInfo cond) 2 True "",set_ni $ not_ cond) ]
-		MCDC_Cov   → return $ case createMCDCTables real_cond of
+ 		Branch_Coverage → return [ (Branch (lineColNodeInfo cond) 1 False "",set_ni cond), (Branch (lineColNodeInfo cond) 2 True "",set_ni $ not_ cond) ]
+		MCDC_Coverage   → return $ case createMCDCTables real_cond of
 			[ MCDC_Branch name1 result1 bcond1, MCDC_Branch name2 result2 bcond2 ] → [
 				(Branch (lineColNodeInfo cond) 1 (not result1) (name_creator real_cond),set_ni bcond1),
 				(Branch (lineColNodeInfo cond) 2 (not result2) (name_creator real_cond),set_ni bcond2) ]
@@ -1699,11 +1697,10 @@ unfoldTraces1M labelenv mb_ret_type toplevel forks envs trace bstss@((CBlockStmt
 				unfoldTracesM labelenv mb_ret_type toplevel forks envs (SolverFind:trace) ((rest,breakable):rest2)
 
 			CExpr (Just cass@(CAssign _ lexpr _ ni)) _ → do
-				transids (expandAssignRightSide cass) Nothing trace $ \ (envs',assigned_expr,trace') →
-					-- No side effects in the LExpr, hence we ignore the trace/envs resulting from the translation
-					transids lexpr Nothing trace' $ \ (_,lexpr',_) →
-						unfoldTracesM labelenv mb_ret_type toplevel forks envs'
-							(Assignment (Normal lexpr') assigned_expr : trace') ((rest,breakable):rest2)
+				lexpr' <- transcribeExprM envs Nothing lexpr
+				transids (expandAssignRightSide cass) (Just $ extractTypes lexpr') trace $ \ (envs',assigned_expr,trace') →
+					unfoldTracesM labelenv mb_ret_type toplevel forks envs'
+						(Assignment (Normal lexpr') assigned_expr : trace') ((rest,breakable):rest2)
 
 			CExpr (Just (CUnary unaryop expr ni_op)) ni | unaryop `elem` (map fst unaryops) → do
 				ii <- ⅈ 1

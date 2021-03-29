@@ -44,8 +44,7 @@ short _FDnorm(_Fval *ps)
  unsigned short sign = (unsigned short)(ps->_Sh[1] & ((unsigned short)0x8000));
 
  xchar = 1;
- ps->_Sh[1] &= ((unsigned short)((1 << 7) - 1));
- if (ps->_Sh[1] != 0 || ps->_Sh[0])
+ if ((ps->_Sh[1] &= ((unsigned short)((1 << 7) - 1))) != 0 || ps->_Sh[0])
   {
   if (ps->_Sh[1] == 0)
     ps->_Sh[1] = ps->_Sh[0], ps->_Sh[0] = 0, xchar -= 16;
