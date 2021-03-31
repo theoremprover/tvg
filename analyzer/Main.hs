@@ -3121,3 +3121,7 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 		printToSolutions all_ok_msg
 
 	return resultdata
+
+checkFormulaM :: [Int] → Trace → ResultData → CovVecM Bool
+checkFormulaM traceid trace resultdata@(_,Just (param_env0,ret_env0,solution)) = do
+	return True
