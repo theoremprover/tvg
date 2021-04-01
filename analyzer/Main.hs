@@ -124,12 +124,12 @@ main = do
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
-		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
+--		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\loopmcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 
 --		[] → "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
---		[] → "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
+		[] → "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
 
 --		[] → "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels"]
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writeModels",noIndentLogOpt]
