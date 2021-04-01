@@ -505,7 +505,7 @@ show_solution _ (Just (_,_,[])) = "Empty solution"
 show_solution funname (Just v) = unlines [ showTestVector funname v ]
 
 showEnv :: Env → String
-showEnv ϕ = "{\n    " ++ intercalate " ,\n    " (map (render.pretty) ϕ) ++ "\n    }"
+showEnv ϵ = "{\n    " ++ intercalate " ,\n    " (map (render.pretty) ϵ) ++ "\n    }"
 
 showTyEnv :: TyEnv → String
 showTyEnv tyenv = "{\n    " ++ intercalate " ,\n    " (map (render.pretty) tyenv) ++ "\n    }"
@@ -514,7 +514,7 @@ showIdents :: [Ident] → String
 showIdents idents = "[ " ++ intercalate ", " (map (render.pretty) idents) ++ " ]"
 
 showTestVector :: String → (Env,Env,Solution) → String
-showTestVector funname (ϕ,ret_env,solution) = funname ++ " ( " ++ intercalate " , " (map showarg ϕ) ++ " )" ++
+showTestVector funname (ϵ,ret_env,solution) = funname ++ " ( " ++ intercalate " , " (map showarg ϵ) ++ " )" ++
 	"\n    = " ++ intercalate " , " (map showarg ret_env)
 	where
 	showarg :: EnvItem → String
@@ -1236,11 +1236,11 @@ instance Pretty EnvItem where
 type Env = [EnvItem]
 
 dumpEnvs :: [Env] → String
-dumpEnvs ϕs = unlines $ for ϕs $ \ ϕ → "[ " ++
-	(concat $ intersperse ", " $ for ϕ $ \ (a,(at,ty)) → (render.pretty) a ++ "->" ++ (render.pretty) at) ++ " ]"
+dumpEnvs ϵs = unlines $ for ϵs $ \ ϵ → "[ " ++
+	(concat $ intersperse ", " $ for ϵ $ \ (a,(at,ty)) → (render.pretty) a ++ "->" ++ (render.pretty) at) ++ " ]"
 
 envToString :: Env → String
-envToString ϕ = unlines $ map (render.pretty) $ filter (isnotbuiltinIdent.fst) ϕ
+envToString ϵ = unlines $ map (render.pretty) $ filter (isnotbuiltinIdent.fst) ϵ
 
 lookupTypeDefM :: Ident → CovVecM Type
 lookupTypeDefM ident = do
@@ -1255,7 +1255,7 @@ lookupTypeDefM ident = do
 		Nothing → myError $ "TypeDef " ++ (show ident) ++ " not found"
 
 envs2tyenv :: [Env] → TyEnv
-envs2tyenv ϕs = map snd $ concat ϕs
+envs2tyenv ϵs = map snd $ concat ϵs
 
 decl2TypeM :: CDecl → CovVecM Type
 decl2TypeM decl = do
@@ -1392,7 +1392,7 @@ newNameM = do
 	modify $ \ s → s { newNameIndexCVS = newNameIndexCVS s + 1 }
 	return new_var_num
 
--- Takes an identifier and a type, and creates ϕ item(s) from that.
+-- Takes an identifier and a type, and creates ϵ item(s) from that.
 
 identTy2EnvItemM :: Ident → Type → CovVecM [EnvItem]
 identTy2EnvItemM srcident@(Ident _ i ni) ty = do
@@ -1551,10 +1551,10 @@ createBranchesWithAnno cond makebranchname trace forks = do
 
 type LabelEnv = [(Ident,Trace → Int → CovVecM UnfoldTracesRet)]
 
-unfoldTracesM labelϕ ret_type toplevel forks ϕs trace cbss = do
---	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren ϕs,ren trace,'\n':ren cbss] $ do
+unfoldTracesM labelϵ ret_type toplevel forks ϵs trace cbss = do
+--	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren ϵs,ren trace,'\n':ren cbss] $ do
 		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $
-			unfoldTraces1M labelϕ ret_type toplevel forks ϕs trace cbss
+			unfoldTraces1M labelϵ ret_type toplevel forks ϵs trace cbss
 		where
 		maybe_cutoff :: CovVecM UnfoldTracesRet → CovVecM UnfoldTracesRet
 		maybe_cutoff cont | cutOffs = do
@@ -1571,14 +1571,14 @@ unfoldTracesM labelϕ ret_type toplevel forks ϕs trace cbss = do
 		maybe_cutoff cont = cont
 
 unfoldTraces1M :: LabelEnv → Maybe Type → Bool → Int → [Env] → Trace → [([CBlockItem],Bool)] → CovVecM UnfoldTracesRet
-unfoldTraces1M labelϕ mb_ret_type toplevel forks ϕs trace bstss@((CBlockStmt stmt : rest,breakable) : rest2) =
-	logWrapper [ren "unfoldTraces1M",ren "<labelϕ>",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 ϕs,ren trace,'\n':ren bstss] $ do
+unfoldTraces1M labelϵ mb_ret_type toplevel forks ϵs trace bstss@((CBlockStmt stmt : rest,breakable) : rest2) =
+	logWrapper [ren "unfoldTraces1M",ren "<labelϵ>",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 ϵs,ren trace,'\n':ren bstss] $ do
 		case stmt of
 
-			CCompound _ cbis _ → unfoldTracesM labelϕ mb_ret_type toplevel forks ([]:ϕs) trace ((cbis,False) : (rest,breakable) : rest2)
+			CCompound _ cbis _ → unfoldTracesM labelϵ mb_ret_type toplevel forks ([]:ϵs) trace ((cbis,False) : (rest,breakable) : rest2)
 
 			CLabel labelident cstat _ _ → do
-				let jumphere_m = \ trace forks →unfoldTracesM ((labelident,jumphere_m):labelϕ) mb_ret_type toplevel forks ϕs trace (((CBlockStmt cstat : rest, breakable)) : rest2)
+				let jumphere_m = \ trace forks →unfoldTracesM ((labelident,jumphere_m):labelϵ) mb_ret_type toplevel forks ϵs trace (((CBlockStmt cstat : rest, breakable)) : rest2)
 				jumphere_m trace forks
 
 			CSwitch condexpr (CCompound [] cbis _) switch_ni → do
@@ -1637,7 +1637,7 @@ unfoldTraces1M labelϕ mb_ret_type toplevel forks ϕs trace bstss@((CBlockStmt s
 					-- This is the whole switch, rewritten as nested if-then-elses.
 					case_replacement = collect_stmts 1 ctrue cbis
 
-				unfoldTracesM labelϕ mb_ret_type toplevel (forks+1) ([]:ϕs) trace (
+				unfoldTracesM labelϵ mb_ret_type toplevel (forks+1) ([]:ϵs) trace (
 					(CBlockDecl (CDecl [CTypeSpec $ CLongType cond_ni]
 						[(Just $ CDeclr (Just cond_var_ident) [] Nothing [] cond_ni,
 						Just $ CInitExpr condexpr cond_ni, Nothing)] cond_ni) :
@@ -1650,8 +1650,8 @@ unfoldTraces1M labelϕ mb_ret_type toplevel forks ϕs trace bstss@((CBlockStmt s
 					drop_after_true (_:l1s) ((_,False):l2s) = drop_after_true l1s l2s
 					drop_after_true (_:l1s) ((_,True):l2s) = return (l1s,l2s)
 					drop_after_true l1s l2s = myError $ "drop_after_true " ++ ren l1s ++ " " ++ ren l2s
-				(new_envs,new_bstss) <- drop_after_true ϕs bstss
-				unfoldTracesM labelϕ mb_ret_type toplevel forks new_envs trace new_bstss
+				(new_envs,new_bstss) <- drop_after_true ϵs bstss
+				unfoldTracesM labelϵ mb_ret_type toplevel forks new_envs trace new_bstss
 
 			CIf cond then_stmt mb_else_stmt ni → do
 				(branches_to_follow,forks') <- createBranchesWithAnno cond makeIfBranchName trace forks
@@ -1664,10 +1664,10 @@ unfoldTraces1M labelϕ mb_ret_type toplevel forks ϕs trace bstss@((CBlockStmt s
 							True  → case mb_else_stmt of
 								Nothing → []
 								Just else_stmt → [CBlockStmt else_stmt]
-					unfoldTracesM labelϕ mb_ret_type toplevel (forks+1) ϕs trace ( (cbstmts ++ rest,breakable) : rest2 )
+					unfoldTracesM labelϵ mb_ret_type toplevel (forks+1) ϵs trace ( (cbstmts ++ rest,breakable) : rest2 )
 
 			CReturn Nothing _ | toplevel → analyzeTraceM mb_ret_type trace >>= return.Right
-			CReturn Nothing _            → return $ Left [(ϕs,trace)]
+			CReturn Nothing _            → return $ Left [(ϵs,trace)]
 
 			CReturn (Just ret_expr) _ | Just ret_type <- mb_ret_type → do
 				z3_ret_type <- ty2Z3Type ret_type
@@ -1691,50 +1691,50 @@ unfoldTraces1M labelϕ mb_ret_type toplevel forks ϕs trace bstss@((CBlockStmt s
 
 			CExpr (Just (CCall (CVar (Ident "solver_debug" _ _) _) args ni)) _ → do
 				dbgouts <- forM args $ \ arg → do
-					expr' <- transcribeExprM ϕs Nothing arg
+					expr' <- transcribeExprM ϵs Nothing arg
 					return $ DebugOutput ("solver_debug_" ++ lValueToVarName expr') expr'
-				unfoldTracesM labelϕ mb_ret_type toplevel forks ϕs (reverse dbgouts ++ trace) ((rest,breakable):rest2)
+				unfoldTracesM labelϵ mb_ret_type toplevel forks ϵs (reverse dbgouts ++ trace) ((rest,breakable):rest2)
 
 			CExpr (Just (CCall (CVar (Ident "solver_find" _ _) _) _ _)) _ → do
-				unfoldTracesM labelϕ mb_ret_type toplevel forks ϕs (SolverFind:trace) ((rest,breakable):rest2)
+				unfoldTracesM labelϵ mb_ret_type toplevel forks ϵs (SolverFind:trace) ((rest,breakable):rest2)
 
 			CExpr (Just cass@(CAssign _ lexpr _ ni)) _ → do
-				lexpr' <- transcribeExprM ϕs Nothing lexpr
-				transids (expandAssignRightSide cass) (Just $ extractTypes lexpr') trace $ \ (ϕs',assigned_expr,trace') →
-					unfoldTracesM labelϕ mb_ret_type toplevel forks ϕs'
+				lexpr' <- transcribeExprM ϵs Nothing lexpr
+				transids (expandAssignRightSide cass) (Just $ extractTypes lexpr') trace $ \ (ϵs',assigned_expr,trace') →
+					unfoldTracesM labelϵ mb_ret_type toplevel forks ϵs'
 						(Assignment (Normal lexpr') assigned_expr : trace') ((rest,breakable):rest2)
 
 			CExpr (Just (CUnary unaryop expr ni_op)) ni | unaryop `elem` (map fst unaryops) → do
 				ii <- ⅈ 1
 				let stmt' = CExpr (Just $ CAssign assignop expr ii ni) ni
-				unfoldTracesM labelϕ mb_ret_type toplevel forks ϕs trace ( (CBlockStmt stmt' : rest,breakable) : rest2 )
+				unfoldTracesM labelϵ mb_ret_type toplevel forks ϵs trace ( (CBlockStmt stmt' : rest,breakable) : rest2 )
 				where
 				Just assignop = lookup unaryop unaryops
 				unaryops = [ (CPreIncOp,CAddAssOp),(CPostIncOp,CAddAssOp),(CPreDecOp,CSubAssOp),(CPostDecOp,CSubAssOp) ]
 
 			CExpr (Just expr) _ → do
-				transids expr Nothing trace $ \ (ϕs',_,trace') → do
-					unfoldTracesM labelϕ mb_ret_type toplevel forks ϕs' trace' ( (rest,breakable) : rest2 )
+				transids expr Nothing trace $ \ (ϵs',_,trace') → do
+					unfoldTracesM labelϵ mb_ret_type toplevel forks ϵs' trace' ( (rest,breakable) : rest2 )
 
-			CExpr Nothing _ → unfoldTracesM labelϕ mb_ret_type toplevel forks ϕs trace ( (rest,breakable) : rest2 )
+			CExpr Nothing _ → unfoldTracesM labelϵ mb_ret_type toplevel forks ϵs trace ( (rest,breakable) : rest2 )
 
 			CGoto ident _ → do
-				case lookup ident labelϕ of
+				case lookup ident labelϵ of
 					-- label already encountered, execute memoized action
 					Just m  → m trace forks
-					Nothing → search_label ϕs ( (rest,breakable) : rest2 )
+					Nothing → search_label ϵs ( (rest,breakable) : rest2 )
 						where
-						search_label ϕs cbiss@( (CBlockStmt (CLabel labelident cstat _ _) : rest,breakable) : rest2 ) | labelident == ident =
-							unfoldTracesM labelϕ mb_ret_type toplevel forks ϕs trace cbiss
-						search_label ϕs ( (_ : rest,breakable) : rest2 ) = search_label ϕs ( (rest,breakable) : rest2 )
-						search_label (_:envs) ( ([],_) : rest2 ) = search_label ϕs rest2
+						search_label ϵs cbiss@( (CBlockStmt (CLabel labelident cstat _ _) : rest,breakable) : rest2 ) | labelident == ident =
+							unfoldTracesM labelϵ mb_ret_type toplevel forks ϵs trace cbiss
+						search_label ϵs ( (_ : rest,breakable) : rest2 ) = search_label ϵs ( (rest,breakable) : rest2 )
+						search_label (_:envs) ( ([],_) : rest2 ) = search_label ϵs rest2
 						search_label [] [] = error $ "search_label: " ++ (render.pretty) ident ++ " not found!"
 
 			-- That's cheating: Insert condition into trace (for loop unrolling and switch) via GOTO
 			CGotoPtr wrapped ni → do
 				let (mb_branch,cond) :: (Maybe Branch,CExpr) = unwrapGoto wrapped
-				transids cond (Just _BoolTypes) trace $ \ (ϕs',cond',trace') → do
-					unfoldTracesM labelϕ mb_ret_type toplevel forks ϕs' (Condition mb_branch cond' : trace') ( (rest,breakable) : rest2 )
+				transids cond (Just _BoolTypes) trace $ \ (ϵs',cond',trace') → do
+					unfoldTracesM labelϵ mb_ret_type toplevel forks ϵs' (Condition mb_branch cond' : trace') ( (rest,breakable) : rest2 )
 
 			CWhile cond body False ni → do
 				(mb_unrolling_depths,msg) <- infer_loopingsM cond body
@@ -1748,7 +1748,7 @@ unfoldTraces1M labelϕ mb_ret_type toplevel forks ϕs trace bstss@((CBlockStmt s
 				unroll_loopM depths branch_exprs = do
 					forkUnfoldTraces toplevel depths $ \ depth → do
 						forkUnfoldTraces toplevel (unroll depth) $ \ cbi_trace → do
-							unfoldTracesM labelϕ mb_ret_type toplevel forks ([]:ϕs) trace ( (cbi_trace,True) : (rest,breakable) : rest2 )
+							unfoldTracesM labelϵ mb_ret_type toplevel forks ([]:ϵs) trace ( (cbi_trace,True) : (rest,breakable) : rest2 )
 
 					where
 
@@ -1769,7 +1769,7 @@ unfoldTraces1M labelϕ mb_ret_type toplevel forks ϕs trace bstss@((CBlockStmt s
 					while_body = makeCompound $ CBlockStmt stmt :
 						maybe [] (\ expr → [ CBlockStmt $ CExpr (Just expr) (nodeInfo expr) ]) mb_inc_expr
 					body_stmt = CWhile (maybe ii id mb_cond) while_body False ni
-				unfoldTracesM labelϕ mb_ret_type toplevel forks ϕs trace ((cbis ++ [CBlockStmt body_stmt] ++ rest,breakable) : rest2)
+				unfoldTracesM labelϵ mb_ret_type toplevel forks ϵs trace ((cbis ++ [CBlockStmt body_stmt] ++ rest,breakable) : rest2)
 
 			_ → myError $ "unfoldTracesM " ++ (render.pretty) stmt ++ " not implemented yet"
 
@@ -1783,13 +1783,13 @@ unfoldTraces1M labelϕ mb_ret_type toplevel forks ϕs trace bstss@((CBlockStmt s
 	--				let default_ns = [0,1,2]
 	--				return (Just default_ns,"No annotation, trying " ++ show default_ns)
 
-					translateExprM labelϕ ϕs toplevel real_cond (Just _BoolTypes) trace 0 >>= \case
+					translateExprM labelϵ ϵs toplevel real_cond (Just _BoolTypes) trace 0 >>= \case
 						[(_,cond,[])] → do
 							let
 								-- get all variables used in the condition
 								cond_idents = fvar cond
 							-- unfold body to all body traces and filter for all Assignments to variables from the condition
-							Left body_traces <- unfoldTracesM labelϕ mb_ret_type False forks ϕs [] [([CBlockStmt body],True)]
+							Left body_traces <- unfoldTracesM labelϵ mb_ret_type False forks ϵs [] [([CBlockStmt body],True)]
 							let
 								body_traces_ass = map (concatMap from_ass) $ map snd body_traces where
 									from_ass (Assignment (Normal a@(CVar i _)) b) | i `elem` cond_idents = [(a,b)]
@@ -1826,7 +1826,7 @@ unfoldTraces1M labelϕ mb_ret_type toplevel forks ϕs trace bstss@((CBlockStmt s
 												n_ident = internalIdent n_name
 												n_var = CVar n_ident (undefNode,inttypes)
 												modelpath = analyzerPath </> n_name ++ show (lineColNodeInfo $ extractNodeInfo cond) ++ ".smtlib2"
-											n_types <- case lookup ass_ident (envs2tyenv ϕs) of
+											n_types <- case lookup ass_ident (envs2tyenv ϵs) of
 												Nothing → myError $ "infer_loopingsM: Could not find type of " ++ (render.pretty) counter_var
 												Just ty → ty2Z3Type ty
 											i_n_n_var <- i_n n_var
@@ -1866,12 +1866,12 @@ unfoldTraces1M labelϕ mb_ret_type toplevel forks ϕs trace bstss@((CBlockStmt s
 		-- mb_ty is Nothing if the result type of expr is not known, i.e. no casting necessary.
 		transids :: CExpr → Maybe Types → Trace → (([Env],CExprWithType,Trace) → CovVecM UnfoldTracesRet) → CovVecM UnfoldTracesRet
 		transids expr mb_ty trace cont = logWrapper ["transids",ren expr,ren mb_ty,ren trace,"<cont>"] $ do
-			additional_envs_expr_traces :: [([Env],CExprWithType,Trace)] <- translateExprM labelϕ ϕs toplevel expr mb_ty trace forks
-			forkUnfoldTraces toplevel additional_envs_expr_traces $ \ (ϕs',expr',trace') → do
-				cont (ϕs',expr',trace'++trace)
+			additional_envs_expr_traces :: [([Env],CExprWithType,Trace)] <- translateExprM labelϵ ϵs toplevel expr mb_ty trace forks
+			forkUnfoldTraces toplevel additional_envs_expr_traces $ \ (ϵs',expr',trace') → do
+				cont (ϵs',expr',trace'++trace)
 
-unfoldTraces1M labelϕ mb_ret_type toplevel forks ϕs@(ϕ:restϕs) trace ( (cblockitem@(CBlockDecl decl@(CDecl typespecs triples _)) : rest, breakable) : rest2 ) =
-	logWrapper [ren "unfoldTraces1M CBlockDecl",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 ϕs,ren trace,'\n':ren cblockitem] $ do
+unfoldTraces1M labelϵ mb_ret_type toplevel forks ϵs@(ϵ:restϵs) trace ( (cblockitem@(CBlockDecl decl@(CDecl typespecs triples _)) : rest, breakable) : rest2 ) =
+	logWrapper [ren "unfoldTraces1M CBlockDecl",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 ϵs,ren trace,'\n':ren cblockitem] $ do
 		ty <- decl2TypeM decl
 		new_env_items <- forM triples $ \case
 			(Just (CDeclr (Just ident) derivdeclrs _ _ ni),mb_init,Nothing) → do
@@ -1882,16 +1882,16 @@ unfoldTraces1M labelϕ mb_ret_type toplevel forks ϕs@(ϕ:restϕs) trace ( (cblo
 					Just initializer → cinitializer2blockitems (CVar ident ni) ty initializer
 				return (newenvitems,newdecls,initializers)
 			triple → myError $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
-		let (newϕs,newitems,initializerss) = unzip3 $ reverse new_env_items
-		unfoldTracesM labelϕ mb_ret_type toplevel forks ((concat newϕs ++ ϕ) : restϕs) (concat newitems ++ trace) ((concat initializerss ++ rest,breakable):rest2)
+		let (newϵs,newitems,initializerss) = unzip3 $ reverse new_env_items
+		unfoldTracesM labelϵ mb_ret_type toplevel forks ((concat newϵs ++ ϵ) : restϵs) (concat newitems ++ trace) ((concat initializerss ++ rest,breakable):rest2)
 
-unfoldTraces1M labelϕ mb_ret_type toplevel@False forks ϕs trace cbss@[([],_)] =
-	logWrapper [ren "unfoldTraces1M END_NOT_TOPLEVEL",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 ϕs,ren trace,'\n':ren cbss] $ do
-		return $ Left [(ϕs,trace)]
+unfoldTraces1M labelϵ mb_ret_type toplevel@False forks ϵs trace cbss@[([],_)] =
+	logWrapper [ren "unfoldTraces1M END_NOT_TOPLEVEL",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 ϵs,ren trace,'\n':ren cbss] $ do
+		return $ Left [(ϵs,trace)]
 
-unfoldTraces1M labelϕ mb_ret_type toplevel forks ϕs@(_:restenvs) trace cbss@(([],_):rest2) =
-	logWrapper [ren "unfoldTraces1M LEAVE_SCOPE",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 ϕs,ren trace,'\n':ren cbss] $ do
-		unfoldTracesM labelϕ mb_ret_type toplevel forks restenvs trace rest2
+unfoldTraces1M labelϵ mb_ret_type toplevel forks ϵs@(_:restenvs) trace cbss@(([],_):rest2) =
+	logWrapper [ren "unfoldTraces1M LEAVE_SCOPE",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 ϵs,ren trace,'\n':ren cbss] $ do
+		unfoldTracesM labelϵ mb_ret_type toplevel forks restenvs trace rest2
 
 unfoldTraces1M _ mb_ret_type True  _ _ trace [] = analyzeTraceM mb_ret_type trace >>= return.Right
 
@@ -1981,9 +1981,9 @@ showFullLocation cnode = (posFile $ posOfNode $ nodeInfo cnode) ++ " : " ++ (sho
 
 -- Creates an CExprWithType from a CExpr
 transcribeExprM :: [Env] → Maybe Types → CExpr → CovVecM CExprWithType
-transcribeExprM ϕs mb_target_ty expr = do
-	vars' <- renameVars ϕs expr
-	annotateTypesAndCastM ϕs vars' mb_target_ty
+transcribeExprM ϵs mb_target_ty expr = do
+	vars' <- renameVars ϵs expr
+	annotateTypesAndCastM ϵs vars' mb_target_ty
 	where
 	-- Renames Variables to unique names, looking up their unique name (wíth a number suffix)
 
@@ -1993,20 +1993,20 @@ transcribeExprM ϕs mb_target_ty expr = do
 	--
 	-- But the above would be over-engineering, since renameVars is only used here.
 	renameVars :: [Env] → CExpr → CovVecM CExpr
-	renameVars ϕs expr = everywhereM (mkM subst_var) expr where
+	renameVars ϵs expr = everywhereM (mkM subst_var) expr where
 		subst_var :: CExpr → CovVecM CExpr
-		subst_var (CVar ident ni) = case lookup ident (concat ϕs) of
+		subst_var (CVar ident ni) = case lookup ident (concat ϵs) of
 			Just (ident',_) → return $ CVar ident' ni
 			Nothing → myError $ " in subst_var: Could not find " ++ (render.pretty) ident ++
 				" when renaming " ++ (render.pretty) expr ++ " at " ++ showFullLocation expr ++ "\n" ++
-				"env = \n" ++ envToString (concat ϕs)
+				"env = \n" ++ envToString (concat ϵs)
 		subst_var expr = return expr
 
 	-- adds Z3 types and Language.C.Type's to the annotation that the expressions have
 	-- also inserts implicit casts
 	-- if mb_target_ty is Nothing, the result CExprWithType will not be casted to the mb_target_ty type.
 	annotateTypesAndCastM :: [Env] → CExpr → Maybe Types → CovVecM CExprWithType
-	annotateTypesAndCastM ϕs cexpr mb_target_ty = logWrapper ["annotateTypesAndCastM",ren $ take 1 ϕs,ren cexpr,ren mb_target_ty] $ do
+	annotateTypesAndCastM ϵs cexpr mb_target_ty = logWrapper ["annotateTypesAndCastM",ren $ take 1 ϵs,ren cexpr,ren mb_target_ty] $ do
 		cexpr' <- annotate_types cexpr
 		return $ case mb_target_ty of
 			Just target_ty → mb_cast target_ty cexpr'
@@ -2014,7 +2014,7 @@ transcribeExprM ϕs mb_target_ty expr = do
 
 		where
 
-		tyenv = envs2tyenv ϕs
+		tyenv = envs2tyenv ϵs
 
 		annotate_types :: CExpr → CovVecM CExprWithType
 
@@ -2123,7 +2123,7 @@ transcribeExprM ϕs mb_target_ty expr = do
 type CallOrTernaryIfs = [Either (Ident,[CExpr],NodeInfo) [[CBlockItem]]]
 
 scanExprM :: [Env] → Bool → CExpr → Maybe Types → Trace → Int → CovVecM (CExpr,CallOrTernaryIfs)
-scanExprM ϕs toplevel expr0 mb_target_ty trace forks = logWrapper ["scanExprM",ren $ take 2 ϕs,ren toplevel,ren expr0,ren mb_target_ty,ren trace,ren forks] $ do
+scanExprM ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["scanExprM",ren $ take 2 ϵs,ren toplevel,ren expr0,ren mb_target_ty,ren trace,ren forks] $ do
 	let
 		to_call_or_ternaryifs :: CExpr → StateT CallOrTernaryIfs CovVecM CExpr
 		-- extract a list of all calls from the input expression expr0
@@ -2150,7 +2150,7 @@ scanExprM ϕs toplevel expr0 mb_target_ty trace forks = logWrapper ["scanExprM",
 			let
 				var_ident = internalIdent $ "condexpr$" ++ locationToName (lineColNodeInfo ccond)
 				var = CVar var_ident ni
-			ccond' <- lift $ transcribeExprM ϕs Nothing ccond
+			ccond' <- lift $ transcribeExprM ϵs Nothing ccond
 
 			(branches_to_follow,forks') <- lift $ createBranchesWithAnno cond makeCondBranchName trace forks
 			let
@@ -2181,9 +2181,9 @@ scanExprM ϕs toplevel expr0 mb_target_ty trace forks = logWrapper ["scanExprM",
 	runStateT (everywhereM (mkM to_call_or_ternaryifs) expr0) []
 
 createCombinationsM :: LabelEnv → [Env] → Bool → (CExpr,CallOrTernaryIfs) → Maybe Types → Trace → Int → CovVecM [([Env],CExprWithType,Trace)]
-createCombinationsM labelϕ ϕs toplevel (expr,call_or_ternaryifs) mb_target_ty trace forks = do
+createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty trace forks = do
 	-- reverse the list of side effect code, since it was constructed bottom-up using the cons operator ":"
-	create_combinations ϕs expr [] [] (reverse call_or_ternaryifs)
+	create_combinations ϵs expr [] [] (reverse call_or_ternaryifs)
 
 	where
 
@@ -2205,8 +2205,8 @@ createCombinationsM labelϕ ϕs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 	-- also substitutes ternary ifs
 	create_combinations :: [Env] → CExpr → Trace → [(NodeInfo,CExprWithType)] → CallOrTernaryIfs → CovVecM [([Env],CExprWithType,Trace)]
 
-	create_combinations ϕs expr trace subs [] = do
-		expr' <- transcribeExprM ϕs mb_target_ty expr
+	create_combinations ϵs expr trace subs [] = do
+		expr' <- transcribeExprM ϵs mb_target_ty expr
 		let
 			-- substitute all function calls by the respective return expressions
 			expr_substituted = foldr substitute expr' subs
@@ -2215,30 +2215,30 @@ createCombinationsM labelϕ ϕs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 				subst_ret_expr :: CExprWithType → CExprWithType
 				subst_ret_expr (CCall _ _ (ni,_)) | call_ni == ni = retexpr
 				subst_ret_expr expr = expr
-		return [(ϕs,expr_substituted,trace)]
+		return [(ϵs,expr_substituted,trace)]
 
-	create_combinations ϕs expr trace subs (Left (funident,args,call_ni) : rest) = do
+	create_combinations ϵs expr trace subs (Left (funident,args,call_ni) : rest) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
 		expanded_params_args <- expand_params_argsM paramdecls args
 		-- β-reduction of the arguments:
 		let body' = replace_param_with_arg expanded_params_args body
-		Left ϕs_funtraces <- unfoldTracesM [] (Just ret_ty) False 0 ϕs [] [ ([ CBlockStmt body' ],False) ]
-		let funtraces_rets :: [([Env],CExprWithType,Trace)] = for ϕs_funtraces $ \case
+		Left ϵs_funtraces <- unfoldTracesM [] (Just ret_ty) False 0 ϵs [] [ ([ CBlockStmt body' ],False) ]
+		let funtraces_rets :: [([Env],CExprWithType,Trace)] = for ϵs_funtraces $ \case
 			(envs',(Return retexpr : tr)) → (envs',retexpr,tr)
 			(_,tr) → error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
 		concatForM funtraces_rets $ \ (_,retexpr,fun_trace) → do
-			create_combinations ϕs expr (fun_trace++trace) ((call_ni,retexpr):subs) rest
+			create_combinations ϵs expr (fun_trace++trace) ((call_ni,retexpr):subs) rest
 
-	create_combinations ϕs expr trace subs (Right cbiss : rest) = do
+	create_combinations ϵs expr trace subs (Right cbiss : rest) = do
 		concatForM cbiss $ \ cbis → do
-			Left ϕs_ternaryiftraces <- unfoldTracesM labelϕ Nothing False 0 ϕs [] [ (cbis,False) ]
-			concatForM ϕs_ternaryiftraces $ \ (ϕs',ternaryif_trace) → do
-				create_combinations ϕs' expr (ternaryif_trace++trace) subs rest
+			Left ϵs_ternaryiftraces <- unfoldTracesM labelϵ Nothing False 0 ϵs [] [ (cbis,False) ]
+			concatForM ϵs_ternaryiftraces $ \ (ϵs',ternaryif_trace) → do
+				create_combinations ϵs' expr (ternaryif_trace++trace) subs rest
 
 translateExprM :: LabelEnv → [Env] → Bool → CExpr → Maybe Types → Trace → Int → CovVecM [([Env],CExprWithType,Trace)]
-translateExprM labelϕ ϕs toplevel expr0 mb_target_ty trace forks = logWrapper ["translateExprM",ren $ take 2 ϕs,ren toplevel,ren expr0,ren mb_target_ty] $ do
-	scan_res <- scanExprM ϕs toplevel expr0 mb_target_ty trace forks
-	createCombinationsM labelϕ ϕs toplevel scan_res mb_target_ty trace forks
+translateExprM labelϵ ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["translateExprM",ren $ take 2 ϵs,ren toplevel,ren expr0,ren mb_target_ty] $ do
+	scan_res <- scanExprM ϵs toplevel expr0 mb_target_ty trace forks
+	createCombinationsM labelϵ ϵs toplevel scan_res mb_target_ty trace forks
 
 
 -- Substitutes an expression x by y everywhere in d
