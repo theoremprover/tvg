@@ -5,6 +5,8 @@
 	TypeSynonymInstances,FlexibleInstances,FlexibleContexts,StandaloneDeriving,
 	DeriveDataTypeable,DeriveGeneric,PatternGuards,UndecidableInstances,Rank2Types,NamedFieldPuns #-}
 
+-- https://rise4fun.com/Z3/tutorial/strategies
+
 module Main where
 
 import Prelude hiding ((<>)) -- Making way for Text.Pretty.<>
@@ -2908,6 +2910,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			[SEmptyLine] ++
 			map (SExprLine . SOnOneLine) additional_sexprs ++
 			[SEmptyLine] ++
+			[ SExprLine $ SOnOneLine $ SExpr [SLeaf "apply",SExpr [SLeaf "then",SLeaf "simplify",SLeaf "solve-eqs"]] ] ++
 			[ SExprLine $ SOnOneLine $ SExpr [SLeaf "check-sat"] ] ++
 			[SEmptyLine] ++
 			outputvarsZ3
@@ -2919,7 +2922,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
 		readProcessWithExitCode z3FilePath ["-smt2","-in","parallel.enable=true"] model_string
 	printLogV 1 $ "\nZ3 says:\n" ++ output
-	case lines output of
+	case dropWhile (not . (`elem` ["unsat","sat","unknown"])) $ lines output of
 		"unsat"   : _ → return (model_string_linenumbers,Nothing)
 		"unknown" : _ → return (model_string_linenumbers,Nothing)
 		"sat" : rest → do
