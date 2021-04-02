@@ -1406,10 +1406,10 @@ identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 	return $ [ (srcident,(newident,ty')) ]
 
 
+type CIFE = StateT ([EnvItem],[TraceElem]) CovVecM [(EnvItem,CExprWithType)]
+
 -- From a list of identifiers and types (i.e. the signature of the function to be analyzed),
 -- create a list of EnvItems (representing the declarations) and CExprs.
--- the returned string list is the list of declarations/definitions for the C test harness
-
 createInterfaceM :: [(Ident,Type)] → CovVecM ([(EnvItem,CExprWithType)],([EnvItem],[TraceElem]))
 createInterfaceM ty_env = runStateT cifes_m ([],[])
 	where
@@ -1418,7 +1418,7 @@ createInterfaceM ty_env = runStateT cifes_m ([],[])
 		res <- forM ty_env $ \ tyenvitem@(srcident,ty) → do
 			ty' <- lift $ elimTypeDefsM ty
 			case ty' of
-				ArrayType _ _ _ _ → modify $ \ (envitems,traceitems) →((srcident,tyenvitem):envitems,traceitems)
+				ArrayType _ _ _ _ → modify $ \ (envitems,traceitems) → ((srcident,tyenvitem):envitems,traceitems)
 				_ → return ()
 			z3ty' <- lift $ ty2Z3Type ty'
 			createInterfaceFromExpr_WithEnvItemsM (CVar srcident (nodeInfo srcident,z3ty')) ty
@@ -1426,8 +1426,6 @@ createInterfaceM ty_env = runStateT cifes_m ([],[])
 
 createInterfaceFromExprM :: CExprWithType → Type → CovVecM [(EnvItem,CExprWithType)]
 createInterfaceFromExprM expr ty = evalStateT (createInterfaceFromExpr_WithEnvItemsM expr ty) ([],[])
-
-type CIFE = StateT ([EnvItem],[TraceElem]) CovVecM [(EnvItem,CExprWithType)]
 
 createInterfaceFromExpr_WithEnvItemsM :: CExprWithType → Type → CIFE
 createInterfaceFromExpr_WithEnvItemsM expr ty = do
@@ -3124,7 +3122,3 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 		printToSolutions all_ok_msg
 
 	return resultdata
-
-checkFormulaM :: [Int] → Trace → ResultData → CovVecM Bool
-checkFormulaM traceid trace resultdata@(_,Just (param_env0,ret_env0,solution)) = do
-	return True
