@@ -125,13 +125,14 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
+		[] → "gcc" : "f" : (analyzerPath++"\\nesttest.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\loopmcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 
 --		[] → "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
-		[] → "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
+--		[] → "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
 
 --		[] → "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels"]
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writeModels",noIndentLogOpt]
@@ -1570,7 +1571,7 @@ unfoldTracesM labelϵ ret_type toplevel forks ϵs trace cbss = do
 
 unfoldTraces1M :: LabelEnv → Maybe Type → Bool → Int → [Env] → Trace → [([CBlockItem],Bool)] → CovVecM UnfoldTracesRet
 unfoldTraces1M labelϵ mb_ret_type toplevel forks ϵs trace bstss@((CBlockStmt stmt : rest,breakable) : rest2) =
-	logWrapper [ren "unfoldTraces1M",ren "<labelϵ>",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 ϵs,ren trace,'\n':ren bstss] $ do
+	logWrapper [ren "unfoldTraces1M",ren "<labelenv>",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 ϵs,ren trace,'\n':ren bstss] $ do
 		case stmt of
 
 			CCompound _ cbis _ → unfoldTracesM labelϵ mb_ret_type toplevel forks ([]:ϵs) trace ((cbis,False) : (rest,breakable) : rest2)
