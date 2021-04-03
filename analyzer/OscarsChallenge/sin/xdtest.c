@@ -16,3 +16,13 @@ short _Dtest(double *px)
   return ((short)((ps->_Sh[3] & ((unsigned short)((1 << 4) - 1))) != 0 || ps->_Sh[2] != 0));
   return (0);
  }
+
+unsigned short *_Plsw(double *px)
+ {
+ return (&((_Dval *)(char *)px)->_Sh[0]);
+ }
+
+unsigned short *_Pmsw(double *px)
+ {
+ return (&((_Dval *)(char *)px)->_Sh[3]);
+ }
