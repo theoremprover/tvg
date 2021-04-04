@@ -71,7 +71,7 @@ import Logging
 
 fastMode = False
 
-outputVerbosity = if fastMode then 1 else 2
+outputVerbosity = if fastMode then 1 else 20
 logFileVerbosity = if fastMode then 0 else 10
 
 subfuncovOpt = "-subfuncov"
@@ -125,7 +125,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.c") : [] --"-writeAST","-writeGlobalDecls"]
+		[] → "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.i") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\nesttest.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
@@ -415,6 +415,10 @@ safeZ3IdentifierPrefix = 'a'
 
 class (Show a) => LogRender a where
 	ren :: a → String
+instance LogRender [Env] where
+	ren (e1:_) = "<envs>"
+instance LogRender [([Env],CExprWithType,Trace)] where
+	ren _ = "<translateexpr result>"
 instance {-# OVERLAPPABLE #-} (Show a) => LogRender a where
 	ren a = show a
 instance LogRender String where
@@ -2122,7 +2126,7 @@ transcribeExprM ϵs mb_target_ty expr = do
 type CallOrTernaryIfs = [Either (Ident,[CExpr],NodeInfo) [[CBlockItem]]]
 
 scanExprM :: [Env] → Bool → CExpr → Maybe Types → Trace → Int → CovVecM (CExpr,CallOrTernaryIfs)
-scanExprM ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["scanExprM",ren $ take 2 ϵs,ren toplevel,ren expr0,ren mb_target_ty,ren trace,ren forks] $ do
+scanExprM ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["scanExprM",ren ϵs,ren toplevel,ren expr0,ren mb_target_ty,ren trace,ren forks] $ do
 	let
 		to_call_or_ternaryifs :: CExpr → StateT CallOrTernaryIfs CovVecM CExpr
 		-- extract a list of all calls from the input expression expr0
@@ -2235,7 +2239,7 @@ createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 				create_combinations ϵs' expr (ternaryif_trace++trace) subs rest
 
 translateExprM :: LabelEnv → [Env] → Bool → CExpr → Maybe Types → Trace → Int → CovVecM [([Env],CExprWithType,Trace)]
-translateExprM labelϵ ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["translateExprM",ren $ take 2 ϵs,ren toplevel,ren expr0,ren mb_target_ty] $ do
+translateExprM labelϵ ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["translateExprM",ren ϵs,ren toplevel,ren expr0,ren mb_target_ty] $ do
 	scan_res <- scanExprM ϵs toplevel expr0 mb_target_ty trace forks
 	createCombinationsM labelϵ ϵs toplevel scan_res mb_target_ty trace forks
 
