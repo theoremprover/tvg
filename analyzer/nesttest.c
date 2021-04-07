@@ -1,5 +1,10 @@
+int g(int x)
+{
+    return 2*x;
+}
+
 int f(int x,int y)
 {
-    int a = x>=0 ? (y>=0 ? 1 : 2 ) : 3;
-    return a;
+    return ( ++x >= 0 ? (y++ || y>=0 ? x++ : g(g(x)) ) : (x++, y+x) );
 }
+

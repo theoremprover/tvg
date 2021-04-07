@@ -2123,6 +2123,7 @@ transcribeExprM ϵs mb_target_ty expr = do
 				where
 				to_anno = (extractNodeInfo cexpr,to_ty)
 
+{-
 type CallOrTernaryIfs = [Either (Ident,[CExpr],NodeInfo) [[CBlockItem]]]
 
 scanExprM :: [Env] → Bool → CExpr → Maybe Types → Trace → Int → CovVecM (CExpr,CallOrTernaryIfs)
@@ -2242,6 +2243,12 @@ translateExprM :: LabelEnv → [Env] → Bool → CExpr → Maybe Types → Trac
 translateExprM labelϵ ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["translateExprM",ren ϵs,ren toplevel,ren expr0,ren mb_target_ty] $ do
 	scan_res <- scanExprM ϵs toplevel expr0 mb_target_ty trace forks
 	createCombinationsM labelϵ ϵs toplevel scan_res mb_target_ty trace forks
+-}
+translateExprM :: LabelEnv → [Env] → Bool → CExpr → Maybe Types → Trace → Int → CovVecM [([Env],CExprWithType,Trace)]
+translateExprM labelϵ ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["translateExprM",ren ϵs,ren toplevel,ren expr0,ren mb_target_ty] $ do
+	case expr0 of
+		
+	return []
 
 
 -- Substitutes an expression x by y everywhere in d
