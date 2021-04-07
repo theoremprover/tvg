@@ -71,7 +71,7 @@ import Logging
 
 fastMode = False
 
-outputVerbosity = if fastMode then 1 else 20
+outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
 
 subfuncovOpt = "-subfuncov"
@@ -87,7 +87,7 @@ mAX_REN_LIST_LENGTH = 3
 showInitialTrace = True && not fastMode
 showModels = False && not fastMode
 showOnlySolutions = True
-showTraces = True && not fastMode
+showTraces = False && not fastMode
 showFinalTrace = True && not fastMode
 checkSolutions = True
 returnval_var_name = "return_val"
@@ -125,10 +125,10 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.i") : [] --"-writeAST","-writeGlobalDecls"]
+--		[] → "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.i") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\nesttest.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
---		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
+		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\loopmcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 
