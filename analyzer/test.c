@@ -14,6 +14,10 @@ typedef union
  float _Val;
  } __attribute__ ((__may_alias__)) _Fval;
 
+int (feraiseexcept)(int except)
+ {
+          return 0;
+        }
 
 void (_Feraise)(int except)
  {
@@ -65,6 +69,7 @@ short _FDnorm(_Fval *ps)
  ps->_Sh[1] |= sign;
  return (xchar);
  }
+
 
 
 short _FDunscale(short *pex, float *px)

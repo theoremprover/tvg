@@ -125,10 +125,10 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : ["-writeModels",subfuncovOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
 --		[] → "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.i") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\nesttest.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
---		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
-		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\loopmcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
 
@@ -455,9 +455,13 @@ printLog :: Int → String → IO ()
 printLog verbosity text = do
 	printLogInd verbosity text (text++"\n")
 
+printConsole :: (MonadIO m) => Int → String → m ()
+printConsole verbosity text = do
+	when (verbosity<=outputVerbosity) $ liftIO $ putStr text
+
 printLogInd :: Int → String → String → IO ()
 printLogInd verbosity text ind_text = do
-	when (verbosity<=outputVerbosity) $ putStrLn text
+	printConsole verbosity (text++"\n")
 	when (logToFile && verbosity<=logFileVerbosity) $ appendFile logFileTxt ind_text
 
 printLogM :: Int → String → CovVecM ()
@@ -1556,7 +1560,8 @@ type LabelEnv = [(Ident,Trace → Int → CovVecM UnfoldTracesRet)]
 
 unfoldTracesM labelϵ ret_type toplevel forks ϵs trace cbss = do
 --	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren ϵs,ren trace,'\n':ren cbss] $ do
-		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $
+		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
+			printConsole 1 $ "\r" ++ show (trace2traceid trace) ++ "                     "
 			unfoldTraces1M labelϵ ret_type toplevel forks ϵs trace cbss
 		where
 		maybe_cutoff :: CovVecM UnfoldTracesRet → CovVecM UnfoldTracesRet
@@ -2123,7 +2128,6 @@ transcribeExprM ϵs mb_target_ty expr = do
 				where
 				to_anno = (extractNodeInfo cexpr,to_ty)
 
-{-
 type CallOrTernaryIfs = [Either (Ident,[CExpr],NodeInfo) [[CBlockItem]]]
 
 scanExprM :: [Env] → Bool → CExpr → Maybe Types → Trace → Int → CovVecM (CExpr,CallOrTernaryIfs)
@@ -2225,7 +2229,9 @@ createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
 		expanded_params_args <- expand_params_argsM paramdecls args
 		-- β-reduction of the arguments:
-		let body' = replace_param_with_arg expanded_params_args body
+		let
+			body' = replace_param_with_arg expanded_params_args body
+		covsubfuns <- isOptionSet subfuncovOpt
 		Left ϵs_funtraces <- unfoldTracesM [] (Just ret_ty) False 0 ϵs [] [ ([ CBlockStmt body' ],False) ]
 		let funtraces_rets :: [([Env],CExprWithType,Trace)] = for ϵs_funtraces $ \case
 			(envs',(Return retexpr : tr)) → (envs',retexpr,tr)
@@ -2243,12 +2249,14 @@ translateExprM :: LabelEnv → [Env] → Bool → CExpr → Maybe Types → Trac
 translateExprM labelϵ ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["translateExprM",ren ϵs,ren toplevel,ren expr0,ren mb_target_ty] $ do
 	scan_res <- scanExprM ϵs toplevel expr0 mb_target_ty trace forks
 	createCombinationsM labelϵ ϵs toplevel scan_res mb_target_ty trace forks
--}
+
+{-
 translateExprM :: LabelEnv → [Env] → Bool → CExpr → Maybe Types → Trace → Int → CovVecM [([Env],CExprWithType,Trace)]
 translateExprM labelϵ ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["translateExprM",ren ϵs,ren toplevel,ren expr0,ren mb_target_ty] $ do
 	case expr0 of
 		
 	return []
+-}
 
 
 -- Substitutes an expression x by y everywhere in d
