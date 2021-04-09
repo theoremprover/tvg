@@ -1,7 +1,7 @@
 int f(int x,int n)
 {
     int j = 1;
-    for(int i=0;solver_pragma(3) && i<n;i++)
+    for(int i=0;solver_pragma(1,1,1,2) && i<n;i++)
     {
         j *= x;
     }

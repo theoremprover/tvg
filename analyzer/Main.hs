@@ -125,7 +125,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "f" : (analyzerPath++"\\test.c") : ["-writeModels",subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writeModels",subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
 --		[] → "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.i") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\nesttest.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
@@ -800,7 +800,8 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 			add_branches <- case expr of
 				CCond cond _ _ _ → liftandfst $ createBranches makeCondBranchName cond
 				-- Recurse on allpoints_in_body if called functions should be covered as well
-				CCall (CVar funident _) _ _ | subfuncov → lift $ allpoints_in_body funident
+				CCall (CVar funident _) _ _ | subfuncov && not ( (identToString funident) `elem` ["solver_pragma","solver_find"] ) → do
+					lift $ allpoints_in_body funident
 				_ → return []
 			modify (add_branches++)
 			return expr
@@ -1553,7 +1554,7 @@ createBranchesWithAnno cond makebranchname trace forks = do
 		-- 12 is a wildcard in the choice list
 		-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
 		Just (ns,num_reached) | length ns > num_reached && ns!!num_reached /= 12 → do
-			printLogV 1 $ "Recognized \"if\" annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
+			printLogV 1 $ "Recognized annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
 				" (reached " ++ show num_reached ++ " times)"
 			return ([all_branches !! (ns!!num_reached - 1)],forks)
 		_ → return (all_branches,forks+1)
