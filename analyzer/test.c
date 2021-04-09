@@ -201,3 +201,11 @@ float (sqrtf)(float x)
   }
  }
 
+int g(int x)
+{
+    if(x>0) return x; else return 2*x;
+}
+int f(int x)
+{
+    if(g(x)>1) return 1; else return 2;
+}
