@@ -43,6 +43,7 @@ import Text.Regex.TDFA
 import Text.Regex.TDFA.String
 import Numeric (readHex,readInt)
 import Data.Either
+import Data.Ord (comparing)
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
 import qualified Data.Map.Strict as Map
@@ -631,7 +632,9 @@ instance Show MCDC_Branch where
 -- This works dually for ||, just set "...evaluating to False" above.
 
 createMCDCTables :: CExpr → [MCDC_Branch]
-createMCDCTables expr = case expr of
+-- sort the branches by the result, having Falses first.
+-- This is for loops, where it is desired to check the shortest loops first.
+createMCDCTables expr = {-sortBy (comparing resultMCDCB) $-} case expr of
 	CBinary binop expr1 expr2 _ | binop `elem` [CLorOp,CLndOp] → case binop of
 		CLndOp → map (join_b $ head trues1 ) t2 ++ map ((flip join_b) $ head trues2 ) (tail trues1 ++ falses1)
 		CLorOp → map (join_b $ head falses1) t2 ++ map ((flip join_b) $ head falses2) (tail falses1 ++ trues1)
@@ -651,11 +654,13 @@ createBranches :: (CExpr → String) → CExpr → CovVecM [(Branch,CExpr)]
 createBranches name_creator cond = do
 	let (real_cond,_) = extractAnnotation cond
  	gets coverageKindCVS >>= \case
- 		Branch_Coverage → return [ (Branch (lineColNodeInfo cond) 1 False "",set_ni cond), (Branch (lineColNodeInfo cond) 2 True "",set_ni $ not_ cond) ]
+ 		Branch_Coverage → return [
+ 			(Branch (lineColNodeInfo cond) 1 False "", set_ni cond),
+ 			(Branch (lineColNodeInfo cond) 2 True "", set_ni $ not_ cond) ]
 		MCDC_Coverage   → return $ case createMCDCTables real_cond of
 			[ MCDC_Branch name1 result1 bcond1, MCDC_Branch name2 result2 bcond2 ] → [
-				(Branch (lineColNodeInfo cond) 1 (not result1) (name_creator real_cond),set_ni bcond1),
-				(Branch (lineColNodeInfo cond) 2 (not result2) (name_creator real_cond),set_ni bcond2) ]
+				(Branch (lineColNodeInfo cond) 2 (not result1) (name_creator real_cond),set_ni bcond1),
+				(Branch (lineColNodeInfo cond) 1 (not result2) (name_creator real_cond),set_ni bcond2) ]
 			mcdctable → for (zip [1..] mcdctable) $ \ (i,MCDC_Branch name result bcond) →
 				(Branch (lineColNodeInfo cond) i (not result) name,set_ni bcond)
 	where
@@ -1092,7 +1097,7 @@ analyzeTraceM mb_ret_type res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_
 									printToSolutions show_solution_msg
 
 									startends <- gets funStartEndCVS
-									printLogV 1 $ "startends = " ++ show startends
+									printLogV 20 $ "startends = " ++ show startends
 									let visible_trace = Set.fromList $ concatMap to_branch res_line
 										where
 										is_visible_branch :: [(Location,Location)] → Location → Bool
@@ -1791,7 +1796,9 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks ϵs trace bstss@((CBlockStmt s
 		infer_loopingsM :: CExpr → CStat → CovVecM (Maybe [Int],String)
 		infer_loopingsM cond0 body = logWrapper [ren "infer_loopingsM",ren cond0,'\n':ren body] $ do
 			recognizeAnnotation cond0 trace >>= \case
-				(real_cond,Just (ns,_)) → return (Just ns,"Recognized LOOP annotation to " ++ (render.pretty) cond0)
+				(real_cond,Just (ns,_)) → do
+					printLogV 20 $ "### Loop anno = " ++ show ns
+					return (Just ns,"Recognized LOOP annotation to " ++ (render.pretty) cond0)
 				(real_cond,Nothing) → do
 	--				let default_ns = [0,1,2]
 	--				return (Just default_ns,"No annotation, trying " ++ show default_ns)
@@ -2948,8 +2955,9 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	printLogV 2 $ "Running model " ++ takeFileName modelpathfile ++ "..."
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
 		readProcessWithExitCode z3FilePath ["-smt2","-in","parallel.enable=true"] model_string
-	printLogV 1 $ "\nZ3 says:\n" ++ output
-	case dropWhile (not . (`elem` ["unsat","sat","unknown"])) $ lines output of
+	let dropped_output = dropWhile (not . (`elem` ["unsat","sat","unknown"])) $ lines output
+	printLogV 20 $ "\nZ3 says:\n" ++ unlines dropped_output
+	case dropped_output of
 		"unsat"   : _ → return (model_string_linenumbers,Nothing)
 		"unknown" : _ → return (model_string_linenumbers,Nothing)
 		"sat" : rest → do
