@@ -70,7 +70,7 @@ import Logging
 
 --------------
 
-fastMode = False
+fastMode = True
 
 outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
@@ -101,11 +101,11 @@ mainFileName = "main.c"
 printTypes = False
 printLocations = False
 
-mAX_UNROLLS = 3
+mAX_UNROLLS = 2
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
 
-cutOffs = False
-sizeConditionChunks = 8
+cutOffs = True
+sizeConditionChunks = 4
 
 -------------
 
@@ -126,7 +126,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writeModels",subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : ["-writeModels",subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
 --		[] → "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.i") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\nesttest.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
