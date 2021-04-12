@@ -83,9 +83,8 @@ short _FDunscale(short *pex, float *px)
   return ((ps->_Sh[1] & ((unsigned short)((1 << 7) - 1))) != 0 || ps->_Sh[0] != 0
    ? 2 : 1);
   }
- else if (0 < xchar || _FDnorm(ps) <= 0)
+ else if (0 < xchar || (xchar = _FDnorm(ps)) <= 0)
   {
-    if(0 >= xchar) xchar = _FDnorm(ps);
   ps->_Sh[1] = ps->_Sh[1] & ~((unsigned short)(0x7fff & ~((unsigned short)((1 << 7) - 1)))) | 0x7e << 7;
   *pex = xchar - 0x7e;
   return ((-1));
@@ -101,7 +100,7 @@ short _FDunscale(short *pex, float *px)
 
 short _FDscale(float *px, long lexp)
  {
-  _Dconst _FInf = {{0, ((unsigned short)((1 << (15 - 7)) - 1)) << 7}};
+                   _Dconst _FInf = {{0, ((unsigned short)((1 << (15 - 7)) - 1)) << 7}};
 
  _Fval *ps = (_Fval *)(char *)px;
  short xchar = (short)((ps->_Sh[1] & ((unsigned short)(0x7fff & ~((unsigned short)((1 << 7) - 1))))) >> 7);
@@ -109,15 +108,8 @@ short _FDscale(float *px, long lexp)
  if (xchar == ((unsigned short)((1 << (15 - 7)) - 1)))
   return ((short)((ps->_Sh[1] & ((unsigned short)((1 << 7) - 1))) != 0 || ps->_Sh[0] != 0
    ? 2 : 1));
- else {
-    short xchar1 = _FDnorm(ps);
-    if (xchar == 0 && 0 < xchar1)
-    {
-    xchar = xchar1;
-    return (0);
-    }
-    xchar = xchar1;
-  }
+ else if (xchar == 0 && 0 < (xchar = _FDnorm(ps)))
+  return (0);
 
  if (0 < lexp && ((unsigned short)((1 << (15 - 7)) - 1)) - xchar <= lexp)
   {
@@ -154,8 +146,7 @@ short _FDscale(float *px, long lexp)
     ps->_Sh[1] = 0;
     xexp += 16;
     }
-    xexp = (short)-xexp;
-   if (xexp != 0)
+   if ((xexp = (short)-xexp) != 0)
     {
     psx = (ps->_Sh[0] << (16 - xexp)) | (psx != 0 ? 1 : 0);
     ps->_Sh[0] = (unsigned short)(ps->_Sh[0] >> xexp
@@ -166,7 +157,7 @@ short _FDscale(float *px, long lexp)
    ps->_Sh[1] |= sign;
    if ((0x8000 < psx
     || 0x8000 == psx && (ps->_Sh[0] & 0x0001) != 0)
-    && (++ps->_Sh[0], ps->_Sh[0] & 0xffff) == 0)
+    && (++ps->_Sh[0] & 0xffff) == 0)
     ++ps->_Sh[1];
    else if (ps->_Sh[1] == sign && ps->_Sh[0] == 0)
     return (0);

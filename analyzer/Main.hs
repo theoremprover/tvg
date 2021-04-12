@@ -126,7 +126,8 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : ["-writeModels",subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : ["-writeModels"] --["-writeGlobalDecls"]
+--		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : ["-writeModels",subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
 --		[] → "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.i") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\nesttest.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
@@ -2264,9 +2265,10 @@ translateExprM labelϵ ϵs toplevel expr0 mb_target_ty trace forks = logWrapper 
 
 {-
 translateExprM :: LabelEnv → [Env] → Bool → CExpr → Maybe Types → Trace → Int → CovVecM [([Env],CExprWithType,Trace)]
-translateExprM labelϵ ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["translateExprM",ren ϵs,ren toplevel,ren expr0,ren mb_target_ty] $ do
-	case expr0 of
-		
+translateExprM labelϵ ϵs toplevel expr mb_target_ty trace forks = logWrapper ["translateExprM",ren ϵs,ren toplevel,ren expr,ren mb_target_ty] $ do
+	case expr of
+		CCall 
+		CComma exprs _ → 
 	return []
 -}
 
