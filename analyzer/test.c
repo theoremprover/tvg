@@ -110,8 +110,12 @@ short _FDscale(float *px, long lexp)
    ? 2 : 1));
  else
  {
+
  short xchar_old = xchar;
  xchar = _FDnorm(ps);
+
+ if(xchar_old!=0) return 99;
+
  if (xchar_old == 0 && 0 < xchar)
   return (0);
  }

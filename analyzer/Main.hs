@@ -128,6 +128,7 @@ main = do
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : ["-writeModels"] --["-writeGlobalDecls"]
 		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : ["-writeModels",subfuncovOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writeModels",subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
 --		[] → "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.i") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\nesttest.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
@@ -627,12 +628,15 @@ instance Show MCDC_Branch where
 	show (MCDC_Branch n r c) = n ++ " = " ++ show r ++ " (" ++ (render.pretty) c ++ ")"
 
 -- join two MCDC tables by &&:
--- 1. take one row evaluating to True from the left table, and attach it to all rows from the right table.
--- 2. take one row evaluating to True from the right table, and attach it to all other remaining rows from 1. from the left table
+-- 1. take one row evaluating to True from the left table,
+-- and attach it to all rows from the right table.
+-- 2. take one row evaluating to True from the right table,
+-- and attach it to all other remaining rows from 1. from the left table
 -- concatenate the rows resulting from 1. and 2.
 -- This works dually for ||, just set "...evaluating to False" above.
 
 createMCDCTables :: CExpr → [MCDC_Branch]
+{- 
 -- sort the branches by the result, having Falses first.
 -- This is for loops, where it is desired to check the shortest loops first.
 createMCDCTables expr = {-sortBy (comparing resultMCDCB) $-} case expr of
@@ -647,6 +651,25 @@ createMCDCTables expr = {-sortBy (comparing resultMCDCB) $-} case expr of
 		(trues1,falses1) = partition resultMCDCB t1
 		(trues2,falses2) = partition resultMCDCB t2
 	expr → [ MCDC_Branch "T" True expr, MCDC_Branch "F" False (not_ expr) ]
+-}
+createMCDCTables expr = case expr of
+	CBinary binop expr1 expr2 _ | binop `elem` [CLorOp,CLndOp] →
+		[ MCDC_Branch ("(" ++ name1 ++ (render.pretty) binop ++ to_dontcare name2 ++ ")") shortcut cond1 |
+			MCDC_Branch name1 result1 cond1 <- t1, result1 == shortcut,
+			MCDC_Branch name2 _ _ <- take 1 t2 ] ++
+		[ MCDC_Branch ("(" ++ name1 ++ (render.pretty) binop ++ name2 ++ ")") result2 (cond1 ⋏ cond2) |
+			MCDC_Branch name1 result1 cond1 <- t1, result1 == not shortcut,
+			MCDC_Branch name2 result2 cond2 <- t2 ]
+		where
+		shortcut = case binop of
+			CLorOp -> True
+			CLndOp -> False
+		(t1,t2) = (createMCDCTables expr1,createMCDCTables expr2)
+		to_dontcare s = for s $ \case
+			'F'   -> '_'
+			'T'   -> '_'
+			other -> other
+	expr → [ MCDC_Branch "T" True expr, MCDC_Branch "F" False (not_ expr) ]
 
 setNodeInfo :: NodeInfo → CExpr → CExpr
 setNodeInfo ni expr = amap (const ni) expr
@@ -660,8 +683,8 @@ createBranches name_creator cond = do
  			(Branch (lineColNodeInfo cond) 2 True "", set_ni $ not_ cond) ]
 		MCDC_Coverage   → return $ case createMCDCTables real_cond of
 			[ MCDC_Branch name1 result1 bcond1, MCDC_Branch name2 result2 bcond2 ] → [
-				(Branch (lineColNodeInfo cond) 2 (not result1) (name_creator real_cond),set_ni bcond1),
-				(Branch (lineColNodeInfo cond) 1 (not result2) (name_creator real_cond),set_ni bcond2) ]
+				(Branch (lineColNodeInfo cond) 1 (not result1) (name_creator real_cond),set_ni bcond1),
+				(Branch (lineColNodeInfo cond) 2 (not result2) (name_creator real_cond),set_ni bcond2) ]
 			mcdctable → for (zip [1..] mcdctable) $ \ (i,MCDC_Branch name result bcond) →
 				(Branch (lineColNodeInfo cond) i (not result) name,set_ni bcond)
 	where
