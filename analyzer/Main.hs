@@ -627,31 +627,7 @@ data MCDC_Branch = MCDC_Branch { nameMCDCB::String, resultMCDCB::Bool, condMCDCB
 instance Show MCDC_Branch where
 	show (MCDC_Branch n r c) = n ++ " = " ++ show r ++ " (" ++ (render.pretty) c ++ ")"
 
--- join two MCDC tables by &&:
--- 1. take one row evaluating to True from the left table,
--- and attach it to all rows from the right table.
--- 2. take one row evaluating to True from the right table,
--- and attach it to all other remaining rows from 1. from the left table
--- concatenate the rows resulting from 1. and 2.
--- This works dually for ||, just set "...evaluating to False" above.
-
 createMCDCTables :: CExpr → [MCDC_Branch]
-{- 
--- sort the branches by the result, having Falses first.
--- This is for loops, where it is desired to check the shortest loops first.
-createMCDCTables expr = {-sortBy (comparing resultMCDCB) $-} case expr of
-	CBinary binop expr1 expr2 _ | binop `elem` [CLorOp,CLndOp] → case binop of
-		CLndOp → map (join_b $ head trues1 ) t2 ++ map ((flip join_b) $ head trues2 ) (tail trues1 ++ falses1)
-		CLorOp → map (join_b $ head falses1) t2 ++ map ((flip join_b) $ head falses2) (tail falses1 ++ trues1)
-		where
-		join_b (MCDC_Branch name1 result1 cond1) (MCDC_Branch name2 result2 cond2) =
-			MCDC_Branch ("(" ++ name1 ++ (render.pretty) binop ++ name2 ++ ")")
-				(if binop==CLorOp then result1 || result2  else result1 && result2) (cond1 ⋏ cond2)
-		(t1,t2) = (createMCDCTables expr1,createMCDCTables expr2)
-		(trues1,falses1) = partition resultMCDCB t1
-		(trues2,falses2) = partition resultMCDCB t2
-	expr → [ MCDC_Branch "T" True expr, MCDC_Branch "F" False (not_ expr) ]
--}
 createMCDCTables expr = case expr of
 	CBinary binop expr1 expr2 _ | binop `elem` [CLorOp,CLndOp] →
 		[ MCDC_Branch ("(" ++ name1 ++ (render.pretty) binop ++ to_dontcare name2 ++ ")") shortcut cond1 |

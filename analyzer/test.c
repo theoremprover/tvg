@@ -98,6 +98,12 @@ short _FDunscale(short *pex, float *px)
  }
 
 
+short ftest(_Fval *ps)
+ {
+ ps->_Sh[1] &= ((unsigned short)((1 << 7) - 1));
+ return (1);
+ }
+
 
 short _FDscale(float *px, long lexp)
  {
@@ -113,9 +119,8 @@ short _FDscale(float *px, long lexp)
  {
 
  short xchar_old = xchar;
- xchar = 0;//_FDnorm(ps);
+ ftest(ps);//xchar = _FDnorm(ps);
 
-// _FDscale ( px = <SOME_PTR> , PTR_px = 0x1p-126 = 0x00800000 = 1.1754944e-38 , lexp = 0 )
  if(xchar_old!=0) return 99;
 
  if (xchar_old == 0 && 0 < xchar)
