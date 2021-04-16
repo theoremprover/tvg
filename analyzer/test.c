@@ -48,7 +48,8 @@ short _FDnorm(_Fval *ps)
  unsigned short sign = (unsigned short)(ps->_Sh[1] & ((unsigned short)0x8000));
 
  xchar = 1;
- if ((ps->_Sh[1] &= ((unsigned short)((1 << 7) - 1))) != 0 || ps->_Sh[0])
+ ps->_Sh[1] &= ((unsigned short)((1 << 7) - 1));
+ if (ps->_Sh[1] != 0 || ps->_Sh[0])
   {
   if (ps->_Sh[1] == 0)
     ps->_Sh[1] = ps->_Sh[0], ps->_Sh[0] = 0, xchar -= 16;
@@ -112,9 +113,10 @@ short _FDscale(float *px, long lexp)
  {
 
  short xchar_old = xchar;
- if(xchar_old!=0) return 99;
  xchar = _FDnorm(ps);
 
+// _FDscale ( px = <SOME_PTR> , PTR_px = 0x1p-126 = 0x00800000 = 1.1754944e-38 , lexp = 0 )
+ if(xchar_old!=0) return 99;
 
  if (xchar_old == 0 && 0 < xchar)
   return (0);
