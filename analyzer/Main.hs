@@ -70,7 +70,7 @@ import Logging
 
 --------------
 
-fastMode = True
+fastMode = False
 
 outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
@@ -88,7 +88,7 @@ mAX_REN_LIST_LENGTH = 3
 showInitialTrace = True && not fastMode
 showModels = False && not fastMode
 showOnlySolutions = True
-showTraces = False && not fastMode
+showTraces = True && not fastMode
 showFinalTrace = True && not fastMode
 checkSolutions = True
 returnval_var_name = "return_val"
@@ -96,7 +96,6 @@ floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
 logToFile = True
-logToHtml = True && not fastMode
 mainFileName = "main.c"
 printTypes = False
 printLocations = False
@@ -127,7 +126,7 @@ main = do
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : ["-writeModels"] --["-writeGlobalDecls"]
-		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : ["-writeModels",subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : ["-writeModels",subfuncovOpt,htmlLogOpt,noIndentLogOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writeModels",subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
 --		[] → "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.i") : [] --"-writeAST","-writeGlobalDecls"]
