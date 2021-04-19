@@ -1,5 +1,11 @@
 
+typedef union
+ {
+ unsigned short _Sh[sizeof(float)/sizeof(short)];
+ float _Val;
+ } __attribute__ ((__may_alias__)) _Fval;
 
+/*
 typedef union
  {
  unsigned short _Word[8];
@@ -7,12 +13,6 @@ typedef union
  double _Double;
  long double _Long_double;
  } __attribute__ ((__may_alias__)) _Dconst;
-
-typedef union
- {
- unsigned short _Sh[sizeof(float)/sizeof(short)];
- float _Val;
- } __attribute__ ((__may_alias__)) _Fval;
 
 int (feraiseexcept)(int except)
  {
@@ -100,7 +100,7 @@ short _FDunscale(short *pex, float *px)
 
 short ftest(_Fval *ps)
  {
- ps->_Sh[1] &= ((unsigned short)((1 << 7) - 1));
+ ps->_Sh[1] = 1;
  return (1);
  }
 
@@ -221,3 +221,42 @@ float (sqrtf)(float x)
   return (y);
   }
  }
+*/
+
+/*
+short ftest(_Fval *ps)
+ {
+ ps->_Sh[1] = 1;
+ return (1);
+ }
+
+short _FDscale(float *px)
+ {
+ _Fval *ps = (_Fval *)(char *)px;
+ short xchar = ps->_Sh[1];
+
+ short xchar_old = xchar;
+ ftest(ps);
+
+ if(xchar_old!=0) return 99;
+ return 0;
+}
+*/
+
+short ftest(_Fval *ps)
+{
+ ps->_Val = 99.0f;
+ return (1);
+}
+
+short _FDscale(_Fval *px)
+{
+ float xchar = px->_Val;
+
+ float xchar_old = xchar;
+ ftest(px);
+
+ if(xchar_old!=0.0f) return 99;
+ return 0;
+}
+

@@ -82,11 +82,12 @@ findModeOpt = "-findmode"
 minimizeOpt = "-minimize"
 branchCovOpt = "-branchcov"
 htmlLogOpt = "-htmllog"
+showModelsOpt = "-showmodels"
+writeModelsOpt = "-writemodels"
 
 mAX_REN_LIST_LENGTH = 3
 
 showInitialTrace = True && not fastMode
-showModels = False && not fastMode
 showOnlySolutions = True
 showTraces = True && not fastMode
 showFinalTrace = True && not fastMode
@@ -125,54 +126,54 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : ["-writeModels"] --["-writeGlobalDecls"]
-		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : ["-writeModels",subfuncovOpt,htmlLogOpt,noIndentLogOpt] --["-writeGlobalDecls"]
---		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writeModels",subfuncovOpt] --["-writeGlobalDecls"]
---		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writeModels"]
+--		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : ["-writemodels"] --["-writeGlobalDecls"]
+		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writemodels",subfuncovOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writemodels"]
 --		[] → "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.i") : [] --"-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "f" : (analyzerPath++"\\nesttest.c") : ["-writeModels","-writeAST"] --["-writeGlobalDecls"]
+--		[] → "gcc" : "f" : (analyzerPath++"\\nesttest.c") : ["-writemodels","-writeAST"] --["-writeGlobalDecls"]
 
---		[] → "gcc" : "f" : (analyzerPath++"\\loopmcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] → "gcc" : "f" : (analyzerPath++"\\loopmcdctest.c") : ["-writemodels"] --["-writeAST","-writeGlobalDecls"]
 
---		[] → "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
---		[] → "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writeModels"]
+--		[] → "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writemodels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
+--		[] → "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writemodels"]
 
---		[] → "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writeModels"]
---		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writeModels",noIndentLogOpt]
---		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
---		[] → "gcc" : "fabsf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writeModels",noIndentLogOpt]
+--		[] → "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writemodels"]
+--		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writemodels",noIndentLogOpt]
+--		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writemodels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
+--		[] → "gcc" : "fabsf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writemodels",noIndentLogOpt]
 
---		[] → "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "_Dtest" : (analyzerPath++"\\xdtest.c") : ["-writeModels"]
+--		[] → "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-writemodels"] --["-writeAST","-writeGlobalDecls"]
+--		[] → "gcc" : "_Dtest" : (analyzerPath++"\\xdtest.c") : ["-writemodels"]
 
---		[] → "gcc" : "f" : (analyzerPath++"\\arraytest3.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "f" : (analyzerPath++"\\checkvarsdefinedtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] → "gcc" : "f" : (analyzerPath++"\\arraytest3.c") : ["-writemodels"] --"-writeAST","-writeGlobalDecls"]
+--		[] → "gcc" : "f" : (analyzerPath++"\\checkvarsdefinedtest.c") : ["-writemodels"] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\commatest.c") : []
 
 		-- loops:
 --		[] → "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ []
 
---		[] → "gcc" : "f" : (analyzerPath++"\\arraytest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
+--		[] → "gcc" : "f" : (analyzerPath++"\\arraytest.c") : ["-writemodels"] --"-writeAST","-writeGlobalDecls"]
 
---		[] → "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-writeModels",noHaltOnVerificationErrorOpt]
---		[] → "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writeModels"] --"-writeAST","-writeGlobalDecls"]
+--		[] → "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-writemodels",noHaltOnVerificationErrorOpt]
+--		[] → "gcc" : "f" : (analyzerPath++"\\arraytest2.c") : ["-MCDC","-writemodels"] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\mcdcsubfunctiontest.c") : [subfuncovOpt] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "sqrtf" : (analyzerPath++"\\knorr\\libgcc") : []
 --		[] → "gcc" : "f" : (analyzerPath++"\\uniontest.c") : [] --["-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "_Dtest" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "f" : (analyzerPath++"\\conditionaltest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] → "gcc" : "_Dtest" : (analyzerPath++"\\OscarsChallenge\\sin\\xdtest.c") : ["-writemodels"] --["-writeAST","-writeGlobalDecls"]
+--		[] → "gcc" : "f" : (analyzerPath++"\\conditionaltest.c") : ["-writemodels"] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\floattest.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\decltest.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\fortest.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\iffuntest.c") : [] --["-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : ["-writeModels"] --"-writeAST","-writeGlobalDecls"]
+--		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : ["-writemodels"] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\whiletest2.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\branchtest.c") : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\iftest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\deadtest.c") : [] --["-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "f" : (analyzerPath++"\\whiletest.c") : ["-writeModels"] --["-writeAST","-writeGlobalDecls"]
+--		[] → "gcc" : "f" : (analyzerPath++"\\whiletest.c") : ["-writemodels"] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\ptrtest_flat.c") : ["-writeAST"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\ptrtest.c") : [] --["-writeAST"]
 --		[] → "gcc" : "g" : (analyzerPath++"\\assigntest.c") : [] --["-writeAST","-writeGlobalDecls"]
@@ -2950,8 +2951,8 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			outputvarsZ3
 		model_string = unlines $ map (render.pretty) model
 		model_string_linenumbers = unlines $ map (\ (i,l) → show i ++ ": " ++ l) (zip [1..] (lines model_string))
-	when ("-writeModels" `elem` opts) $ liftIO $ writeFile modelpathfile model_string
-	when showModels $ printLogM 0 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
+	whenOptionSet writeModelsOpt True $ liftIO $ writeFile modelpathfile model_string
+	whenOptionSet showModelsOpt True $ printLogM 0 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
 	printLogV 2 $ "Running model " ++ takeFileName modelpathfile ++ "..."
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
 		readProcessWithExitCode z3FilePath ["-smt2","-in","parallel.enable=true"] model_string
