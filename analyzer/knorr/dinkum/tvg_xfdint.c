@@ -15,33 +15,6 @@ typedef union
 short _FDint(float *px, short xexp)
  {
  _Fval *ps = (_Fval *)(char *)px;
-
- ps->_Sh[0] = 0x2000;   // PTR_px$$$1 -> PTR_px$$$1 [0] = 0x2000;
- ps->_Sh[0] = 0x2001;   // PTR_px$$$1 -> PTR_px$$$2 [0] = 0x2001;
-
- // COND PTR_px$$$2[1]==255
- if (ps->_Sh[1] == 255) return 2;
-
- // ps->_Sh = PTR_px$$$
-
-  return 99;
-}
-
-/*
-int _FDint(float *px, short xexp)
-{
-    int arr[] = { 1,2,3 };
-    arr[0] = 1;
-    arr[0] = 10;
-    return arr[0];
-}
-*/
-
-/*
-
-short _FDint(float *px, short xexp)
- {
- _Fval *ps = (_Fval *)(char *)px;
  unsigned short frac;
  short xchar = (ps->_Sh[1] & ((unsigned short)(0x7fff & ~((unsigned short)((1 << 7) - 1))))) >> 7;
 
@@ -57,7 +30,7 @@ short _FDint(float *px, short xexp)
   {
   ps->_Sh[1] &= ((unsigned short)0x8000);
   ps->_Sh[0] = 0;
-  solver_find();
+  //solver_find();
   return ((-1));
   }
  else
@@ -80,10 +53,5 @@ short _FDint(float *px, short xexp)
   return (frac != 0 ? (-1) : 0);
   }
  }
-
- */
-
-
-
 
 

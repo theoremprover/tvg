@@ -84,6 +84,7 @@ branchCovOpt = "-branchcov"
 htmlLogOpt = "-htmllog"
 showModelsOpt = "-showmodels"
 writeModelsOpt = "-writemodels"
+cutoffsOpt = "-cutoffs"
 
 mAX_REN_LIST_LENGTH = 3
 
@@ -104,7 +105,6 @@ printLocations = False
 mAX_UNROLLS = 2
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
 
-cutOffs = True
 sizeConditionChunks = 4
 
 -------------
@@ -126,19 +126,20 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : ["-writemodels"] --["-writeGlobalDecls"]
 		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt] --["-writeGlobalDecls"]
---		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : ["-writemodels",subfuncovOpt] --["-writeGlobalDecls"]
+
+--		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : [writeModelsOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : [writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writemodels"]
 --		[] → "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.i") : [] --"-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "f" : (analyzerPath++"\\nesttest.c") : ["-writemodels","-writeAST"] --["-writeGlobalDecls"]
+--		[] → "gcc" : "f" : (analyzerPath++"\\nesttest.c") : [writeModelsOpt,"-writeAST"] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\loopmcdctest.c") : ["-writemodels"] --["-writeAST","-writeGlobalDecls"]
 
---		[] → "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writemodels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
+--		[] → "gcc" : "_FDint" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ ["-writemodels",noIndentLogOpt]
 --		[] → "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writemodels"]
 
---		[] → "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : ["-writemodels"]
+--		[] → "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : [showModelsOpt,writeModelsOpt]
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writemodels",noIndentLogOpt]
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writemodels",noIndentLogOpt,noHaltOnVerificationErrorOpt]
 --		[] → "gcc" : "fabsf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writemodels",noIndentLogOpt]
@@ -759,7 +760,6 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 	ret_env_exprs <- createInterfaceFromExprM (CVar srcident (nodeInfo srcident,z3_ret_type')) ret_type'
 	modify $ \ s → s { retEnvCVS = Just ret_env_exprs }
 
-	subfuncov <- isOptionSet subfuncovOpt
 	-- Go through the body of the function and determine all decision points
 	let
 		{-
@@ -802,6 +802,7 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 
 		searchexprcondpoint :: CExpr → StateT [Branch] CovVecM CExpr
 		searchexprcondpoint expr = do
+			subfuncov <- lift $ isOptionSet subfuncovOpt
 			add_branches <- case expr of
 				CCond cond _ _ _ → liftandfst $ createBranches makeCondBranchName cond
 				-- Recurse on allpoints_in_body if called functions should be covered as well
@@ -1451,13 +1452,14 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 	ty' <- lift $ elimTypeDefsM ty
 	case ty' of
 
-		-- STRUCT* p
+		-- STRUCT/UNION* p
 		PtrType (DirectType (TyComp (CompTypeRef sueref kind _)) _ _) _ _ → prepend_plainvar ty' $ do
 			member_ty_s <- lift $ getMembersM sueref
 			ress <- forM ((if kind==UnionTag then take 1 else id) member_ty_s) $ \ (m_ident,m_ty) → do
 				z3_m_ty <- lift $ ty2Z3Type m_ty
 				createInterfaceFromExpr_WithEnvItemsM (CMember expr m_ident True (extractNodeInfo expr,z3_m_ty)) m_ty
 			return $ concat ress
+
 		-- ty* p
 		PtrType target_ty _ _ → do
 			z3_target_ty <- lift $ ty2Z3Type target_ty
@@ -1485,9 +1487,9 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 				let
 					ni = extractNodeInfo expr
 					arrayelemexpr = CIndex expr (CConst $ CIntConst (cInteger i) (undefNode,intty)) (ni,elem_ty2)
-					arrayelem_var = CVar (internalIdent $ lValueToVarName arrayelemexpr) (ni,elem_ty2)
-					eqcond = Condition Nothing $ CBinary CEqOp arrayelem_var arrayelemexpr (ni,_BoolTypes)
-				modify $ \ (envitems,traceitems) →( envitems,traceitems ++ [eqcond] )
+--					arrayelem_var = CVar (internalIdent $ lValueToVarName arrayelemexpr) (ni,elem_ty2)
+--					eqcond = Condition Nothing $ CBinary CEqOp arrayelem_var arrayelemexpr (ni,_BoolTypes)
+--				modify $ \ (envitems,traceitems) → ( envitems,traceitems ++ [eqcond] )
 				createInterfaceFromExpr_WithEnvItemsM arrayelemexpr elem_ty'
 			return $ concat ress
 
@@ -1574,18 +1576,19 @@ unfoldTracesM labelϵ ret_type toplevel forks ϵs trace cbss = do
 			unfoldTraces1M labelϵ ret_type toplevel forks ϵs trace cbss
 		where
 		maybe_cutoff :: CovVecM UnfoldTracesRet → CovVecM UnfoldTracesRet
-		maybe_cutoff cont | cutOffs = do
-			incCutoffTriesM
-			printLogV 1 $ "******* Probing for CutOff in depth " ++ show (length trace) ++ " ..."
-			analyzeTraceM Nothing trace >>= \case
-				False → do
-					printLogV 1 $ "******** Cutting off !"
-					incCutoffsM
-					return $ Right False
-				True  → do
-					printLogV 1 $ "******** Continuing..."
-					cont
-		maybe_cutoff cont = cont
+		maybe_cutoff cont = isOptionSet cutoffsOpt >>= \case
+			False -> cont
+			True  -> do
+				incCutoffTriesM
+				printLogV 1 $ "******* Probing for CutOff in depth " ++ show (length trace) ++ " ..."
+				analyzeTraceM Nothing trace >>= \case
+					False → do
+						printLogV 1 $ "******** Cutting off !"
+						incCutoffsM
+						return $ Right False
+					True  → do
+						printLogV 1 $ "******** Continuing..."
+						cont
 
 unfoldTraces1M :: LabelEnv → Maybe Type → Bool → Int → [Env] → Trace → [([CBlockItem],Bool)] → CovVecM UnfoldTracesRet
 unfoldTraces1M labelϵ mb_ret_type toplevel forks ϵs trace bstss@((CBlockStmt stmt : rest,breakable) : rest2) =
