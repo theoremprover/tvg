@@ -1454,6 +1454,8 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 
 		-- STRUCT/UNION* p
 		PtrType (DirectType (TyComp (CompTypeRef sueref kind _)) _ _) _ _ → prepend_plainvar ty' $ do
+			union_constraints <- lift $ unionEqConstraintsM expr ty'
+			modify $ \ (envitems,traceitems) -> (envitems,union_constraints++traceitems)
 			member_ty_s <- lift $ getMembersM sueref
 			ress <- forM ((if kind==UnionTag then take 1 else id) member_ty_s) $ \ (m_ident,m_ty) → do
 				z3_m_ty <- lift $ ty2Z3Type m_ty
@@ -1468,6 +1470,8 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 
 		-- STRUCT/UNION expr
 		DirectType (TyComp (CompTypeRef sueref kind _)) _ _ → do
+			union_constraints <- lift $ unionEqConstraintsM expr ty'
+			modify $ \ (envitems,traceitems) -> (envitems,union_constraints++traceitems)
 			member_ty_s <- lift $ getMembersM sueref
 			-- if it is a union, only take the first element
 			ress <- forM ((if kind==UnionTag then take 1 else id) member_ty_s) $ \ (m_ident,m_ty) → do
@@ -1598,7 +1602,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks ϵs trace bstss@((CBlockStmt s
 			CCompound _ cbis _ → unfoldTracesM labelϵ mb_ret_type toplevel forks ([]:ϵs) trace ((cbis,False) : (rest,breakable) : rest2)
 
 			CLabel labelident cstat _ _ → do
-				let jumphere_m = \ trace forks →unfoldTracesM ((labelident,jumphere_m):labelϵ) mb_ret_type toplevel forks ϵs trace (((CBlockStmt cstat : rest, breakable)) : rest2)
+				let jumphere_m = \ trace forks → unfoldTracesM ((labelident,jumphere_m):labelϵ) mb_ret_type toplevel forks ϵs trace (((CBlockStmt cstat : rest, breakable)) : rest2)
 				jumphere_m trace forks
 
 			CSwitch condexpr (CCompound [] cbis _) switch_ni → do
@@ -1899,11 +1903,16 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks ϵs@(ϵ:restϵs) trace ( (cblo
 		new_env_items <- forM triples $ \case
 			(Just (CDeclr (Just ident) derivdeclrs _ _ ni),mb_init,Nothing) → do
 				newenvitems <- identTy2EnvItemM ident ty
-				let newdecls = map (NewDeclaration . snd) newenvitems
+				let
+					newdecls = map (NewDeclaration . snd) newenvitems
+					ident_var = CVar ident ni
+				tys <- ty2Z3Type ty
+				ident_var' <- transcribeExprM ϵs (Just tys) ident_var
+				union_eq_constraints <- unionEqConstraintsM ident_var' ty
 				initializers <- case mb_init of
 					Nothing → return []
-					Just initializer → cinitializer2blockitems (CVar ident ni) ty initializer
-				return (newenvitems,newdecls,initializers)
+					Just initializer → cinitializer2blockitems ident_var ty initializer
+				return (newenvitems,union_eq_constraints++newdecls,initializers)
 			triple → myError $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 		let (newϵs,newitems,initializerss) = unzip3 $ reverse new_env_items
 		unfoldTracesM labelϵ mb_ret_type toplevel forks ((concat newϵs ++ ϵ) : restϵs) (concat newitems ++ trace) ((concat initializerss ++ rest,breakable):rest2)
@@ -1920,6 +1929,21 @@ unfoldTraces1M _ mb_ret_type True  _ _ trace [] = analyzeTraceM mb_ret_type trac
 
 unfoldTraces1M _ _ _ _ _ _ ((cbi:_,_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
 
+
+unionEqConstraintsM :: CExprWithType -> Type -> CovVecM [TraceElem]
+unionEqConstraintsM expr ty = do
+{-
+	case ty of
+		PtrType (DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _) _ _ → do
+			ident_types <- getMembersM sueref
+			forM ident_types $ \ (ident,member_ty) -> do
+				return $ Condition 
+		DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _ → do
+			create_eq_constraints expr sueref
+
+		_ -> return []
+-}
+	return []
 
 infix 4 ⩵
 (⩵) :: CExpression a → CExpression a → CExpression a
