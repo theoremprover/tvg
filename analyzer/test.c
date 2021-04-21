@@ -5,7 +5,7 @@ typedef union
  float _Val;
  } __attribute__ ((__may_alias__)) _Fval;
 
-/*
+
 typedef union
  {
  unsigned short _Word[8];
@@ -221,28 +221,9 @@ float (sqrtf)(float x)
   return (y);
   }
  }
-*/
+
 
 /*
-short ftest(_Fval *ps)
- {
- ps->_Sh[1] = 1;
- return (1);
- }
-
-short _FDscale(float *px)
- {
- _Fval *ps = (_Fval *)(char *)px;
- short xchar = ps->_Sh[1];
-
- short xchar_old = xchar;
- ftest(ps);
-
- if(xchar_old!=0) return 99;
- return 0;
-}
-*/
-
 short ftest(_Fval *ps)
 {
  ps->_Val = 99.0f;
@@ -259,4 +240,4 @@ short _FDscale(_Fval *px)
  if(xchar_old!=0.0f) return 99;
  return 0;
 }
-
+*/

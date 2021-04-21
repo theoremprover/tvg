@@ -70,7 +70,7 @@ import Logging
 
 --------------
 
-fastMode = False
+fastMode = True
 
 outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
@@ -126,7 +126,8 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : [writeModelsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : [writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
@@ -1491,9 +1492,9 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 				let
 					ni = extractNodeInfo expr
 					arrayelemexpr = CIndex expr (CConst $ CIntConst (cInteger i) (undefNode,intty)) (ni,elem_ty2)
---					arrayelem_var = CVar (internalIdent $ lValueToVarName arrayelemexpr) (ni,elem_ty2)
---					eqcond = Condition Nothing $ CBinary CEqOp arrayelem_var arrayelemexpr (ni,_BoolTypes)
---				modify $ \ (envitems,traceitems) → ( envitems,traceitems ++ [eqcond] )
+					arrayelem_var = CVar (internalIdent $ lValueToVarName arrayelemexpr) (ni,elem_ty2)
+					eqcond = Condition Nothing $ CBinary CEqOp arrayelem_var arrayelemexpr (ni,_BoolTypes)
+				modify $ \ (envitems,traceitems) → ( envitems,traceitems ++ [eqcond] )
 				createInterfaceFromExpr_WithEnvItemsM arrayelemexpr elem_ty'
 			return $ concat ress
 
@@ -2922,11 +2923,13 @@ declConst2SExpr id_name ty = do
 makeAndSolveZ3ModelM :: [Int] → [(Ident,Z3_Type)] → [Constraint] → [SExpr] → [Ident] → String → CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_idents0 modelpathfile = do
 	(output_idents,z3tyenv) <- runStateT (forM output_idents0 $ \ oid → case lookup oid z3tyenv0 of
+		-- if ty is floating point, add bv$fp :: Z3_BitVector size to tyenv and
+		-- add bv$fp to output_idents
 		Just ty | ty `elem` [Z3_Float,Z3_Double] → do
 			let bv_name = makeFloatBVVarName oid
 			bv_size <- lift $ sizeofZ3Ty ty
 			let bvid = internalIdent bv_name
-			modify $ \ tyenv →tyenv ++ [(bvid,Z3_BitVector bv_size True)]
+			modify $ \ tyenv → tyenv ++ [(bvid,Z3_BitVector bv_size True)]
 			return bvid
 		_ → return oid ) z3tyenv0
 	opts <- gets optsCVS
