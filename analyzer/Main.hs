@@ -1905,13 +1905,13 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks ϵs@(ϵ:restϵs) trace ( (cblo
 				newenvitems <- identTy2EnvItemM ident ty
 				let
 					newdecls = map (NewDeclaration . snd) newenvitems
-					ident_var = CVar ident ni
 				tys <- ty2Z3Type ty
-				ident_var' <- transcribeExprM ϵs (Just tys) ident_var
-				union_eq_constraints <- unionEqConstraintsM ident_var' ty
+				let
+					Just (ident',_) = lookup ident newenvitems
+				union_eq_constraints <- unionEqConstraintsM (CVar ident' (undefNode,tys)) ty
 				initializers <- case mb_init of
 					Nothing → return []
-					Just initializer → cinitializer2blockitems ident_var ty initializer
+					Just initializer → cinitializer2blockitems (CVar ident ni) ty initializer
 				return (newenvitems,union_eq_constraints++newdecls,initializers)
 			triple → myError $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 		let (newϵs,newitems,initializerss) = unzip3 $ reverse new_env_items
@@ -1932,18 +1932,22 @@ unfoldTraces1M _ _ _ _ _ _ ((cbi:_,_):_) = myError $ "unfoldTracesM " ++ (render
 
 unionEqConstraintsM :: CExprWithType -> Type -> CovVecM [TraceElem]
 unionEqConstraintsM expr ty = do
-{-
 	case ty of
 		PtrType (DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _) _ _ → do
-			ident_types <- getMembersM sueref
-			forM ident_types $ \ (ident,member_ty) -> do
-				return $ Condition 
+			((ident_0,member_ty_0) : ident_types) <- getMembersM sueref
+			ident_0_ty <- ty2Z3Type member_ty_0
+			forM ident_types $ \ (ident_i,member_ty_i) -> do
+				ident_i_ty <- ty2Z3Type member_ty_i
+				return $ Condition Nothing $
+					CMember expr ident_0 True (undefNode,ident_0_ty) ⩵
+					CCast (CDecl [] [] (undefNode,ident_0_ty))
+						( CMember expr ident_i True (undefNode,ident_i_ty) )
+						(undefNode,ident_0_ty)
+{-
 		DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _ → do
 			create_eq_constraints expr sueref
-
-		_ -> return []
 -}
-	return []
+		_ -> return []
 
 infix 4 ⩵
 (⩵) :: CExpression a → CExpression a → CExpression a
