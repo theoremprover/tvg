@@ -70,7 +70,7 @@ import Logging
 
 --------------
 
-fastMode = True
+fastMode = False
 
 outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
@@ -126,7 +126,8 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : [writeModelsOpt] --["-writeGlobalDecls"]
@@ -1525,7 +1526,7 @@ unwrapGoto x = error $ "unwrapGoto " ++ show x
 
 forkUnfoldTraces :: Bool → [a] → (a → CovVecM UnfoldTracesRet) → CovVecM UnfoldTracesRet
 forkUnfoldTraces toplevel l m = do
-	forM l m >>= \ results →return $ case partitionEithers results of
+	forM l m >>= \ results → return $ case partitionEithers results of
 		(left_results,[]) → Left $ concat left_results
 		([],successes) → Right $ case toplevel of
 			False → or successes

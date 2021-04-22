@@ -84,24 +84,23 @@ short _FDunscale(short *pex, float *px)
   return ((ps->_Sh[1] & ((unsigned short)((1 << 7) - 1))) != 0 || ps->_Sh[0] != 0
    ? 2 : 1);
   }
- else if (0 < xchar || (xchar = _FDnorm(ps)) <= 0)
-  {
-  ps->_Sh[1] = ps->_Sh[1] & ~((unsigned short)(0x7fff & ~((unsigned short)((1 << 7) - 1)))) | 0x7e << 7;
-  *pex = xchar - 0x7e;
-  return ((-1));
-  }
  else
   {
-  *pex = 0;
-  return (0);
+    short xchar1;
+    if(0>=xchar) xchar1 = _FDnorm(ps);
+    if (0 < xchar || xchar1 <= 0)
+    {
+      if(0>=xchar) xchar = xchar1;
+      ps->_Sh[1] = ps->_Sh[1] & ~((unsigned short)(0x7fff & ~((unsigned short)((1 << 7) - 1)))) | 0x7e << 7;
+      *pex = xchar - 0x7e;
+      return ((-1));
+      }
+     else
+      {
+      *pex = 0;
+      return (0);
+    }
   }
- }
-
-
-short ftest(_Fval *ps)
- {
- ps->_Sh[1] = 1;
- return (1);
  }
 
 
@@ -187,7 +186,7 @@ short _FDscale(float *px, long lexp)
 
 
 
-float (sqrtf)(float x)
+float (sqrtf)(float* px)
  {
    _Dconst _FNan = {{0, (((unsigned short)((1 << (15 - 7)) - 1)) << 7) | (1 << (7 - 1))}
       };
@@ -195,47 +194,27 @@ float (sqrtf)(float x)
  short xexp;
  float y;
 
- switch (_FDunscale(&xexp, &x))
+ switch (_FDunscale(&xexp, px))
   {
  case 2:
  case 0:
-  return (x);
+  return (*px);
  case 1:
-  if (!(((_Fval *)(char *)&(x))->_Sh[1] & ((unsigned short)0x8000)))
-   return (x);
+  if (!(((_Fval *)(char *)px)->_Sh[1] & ((unsigned short)0x8000)))
+   return (*px);
  default:
-  if ((((_Fval *)(char *)&(x))->_Sh[1] & ((unsigned short)0x8000)))
+  if ((((_Fval *)(char *)px)->_Sh[1] & ((unsigned short)0x8000)))
    {
    _Feraise(0x01);
    return (_FNan._Float);
    }
   if ((unsigned int)xexp & 1)
-   x *= 2.0F, --xexp;
-  y = (-0.09977F * x + 0.71035F) * x
+   *px *= 2.0F, --xexp;
+  y = (-0.09977F * x + 0.71035F) * *px
    + 0.38660F;
-  y += x / y;
-  y = 0.25F * y + x / y;
+  y += *px / y;
+  y = 0.25F * y + *px / y;
   _FDscale(&y, xexp / 2);
   return (y);
   }
  }
-
-
-/*
-short ftest(_Fval *ps)
-{
- ps->_Val = 99.0f;
- return (1);
-}
-
-short _FDscale(_Fval *px)
-{
- float xchar = px->_Val;
-
- float xchar_old = xchar;
- ftest(px);
-
- if(xchar_old!=0.0f) return 99;
- return 0;
-}
-*/
