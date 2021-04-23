@@ -186,7 +186,7 @@ short _FDscale(float *px, long lexp)
 
 
 
-float (sqrtf)(float* px)
+float (sqrtf)(float x)
  {
    _Dconst _FNan = {{0, (((unsigned short)((1 << (15 - 7)) - 1)) << 7) | (1 << (7 - 1))}
       };
@@ -194,26 +194,26 @@ float (sqrtf)(float* px)
  short xexp;
  float y;
 
- switch (_FDunscale(&xexp, px))
+ switch (_FDunscale(&xexp, &x))
   {
  case 2:
  case 0:
-  return (*px);
+  return (x);
  case 1:
-  if (!(((_Fval *)(char *)px)->_Sh[1] & ((unsigned short)0x8000)))
-   return (*px);
+  if (!(((_Fval *)(char *)&x)->_Sh[1] & ((unsigned short)0x8000)))
+   return (x);
  default:
-  if ((((_Fval *)(char *)px)->_Sh[1] & ((unsigned short)0x8000)))
+  if ((((_Fval *)(char *)&x)->_Sh[1] & ((unsigned short)0x8000)))
    {
    _Feraise(0x01);
    return (_FNan._Float);
    }
   if ((unsigned int)xexp & 1)
-   *px *= 2.0F, --xexp;
-  y = (-0.09977F * x + 0.71035F) * *px
+   x *= 2.0F, --xexp;
+  y = (-0.09977F * x + 0.71035F) * x
    + 0.38660F;
-  y += *px / y;
-  y = 0.25F * y + *px / y;
+  y += x / y;
+  y = 0.25F * y + x / y;
   _FDscale(&y, xexp / 2);
   return (y);
   }

@@ -126,7 +126,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -2175,8 +2175,8 @@ transcribeExprM ϵs mb_target_ty expr = do
 
 type CallOrTernaryIfs = [Either (Ident,[CExpr],NodeInfo) [[CBlockItem]]]
 
-scanExprM :: [Env] → Bool → CExpr → Maybe Types → Trace → Int → CovVecM (CExpr,CallOrTernaryIfs)
-scanExprM ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["scanExprM",ren ϵs,ren toplevel,ren expr0,ren mb_target_ty,ren trace,ren forks] $ do
+scanExprM :: [Env] → CExpr → Maybe Types → Trace → Int → CovVecM (CExpr,CallOrTernaryIfs)
+scanExprM ϵs expr0 mb_target_ty trace forks = logWrapper ["scanExprM",ren ϵs,ren expr0,ren mb_target_ty,ren trace,ren forks] $ do
 	let
 		to_call_or_ternaryifs :: CExpr → StateT CallOrTernaryIfs CovVecM CExpr
 		-- extract a list of all calls from the input expression expr0
@@ -2277,7 +2277,7 @@ createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 		let
 			body' = replace_param_with_arg expanded_params_args body
 		covsubfuns <- isOptionSet subfuncovOpt
-		Left ϵs_funtraces <- unfoldTracesM [] (Just ret_ty) False 0 ϵs [] [ ([ CBlockStmt body' ],False) ]
+		Left ϵs_funtraces <- unfoldTracesM [] (Just ret_ty) covsubfuns 0 ϵs [] [ ([ CBlockStmt body' ],False) ]
 		let funtraces_rets :: [([Env],CExprWithType,Trace)] = for ϵs_funtraces $ \case
 			(envs',(Return retexpr : tr)) → (envs',retexpr,tr)
 			(_,tr) → error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
@@ -2292,7 +2292,7 @@ createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 
 translateExprM :: LabelEnv → [Env] → Bool → CExpr → Maybe Types → Trace → Int → CovVecM [([Env],CExprWithType,Trace)]
 translateExprM labelϵ ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["translateExprM",ren ϵs,ren toplevel,ren expr0,ren mb_target_ty] $ do
-	scan_res <- scanExprM ϵs toplevel expr0 mb_target_ty trace forks
+	scan_res <- scanExprM ϵs expr0 mb_target_ty trace forks
 	createCombinationsM labelϵ ϵs toplevel scan_res mb_target_ty trace forks
 
 {-
