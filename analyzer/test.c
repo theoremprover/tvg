@@ -218,3 +218,11 @@ float (sqrtf)(float x)
   return (y);
   }
  }
+
+float f(float x)
+{
+ float y;
+
+  y = x + 0.38660F;
+  return (y);
+}
