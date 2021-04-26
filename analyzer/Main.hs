@@ -827,8 +827,8 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 	let
 		formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) → (srcident,ty)
 		actual_args = for formal_params $ \ (srcident,ty) → case ty of
-			DirectType (TyFloating TyFloat)  _ _ → printf "f2u(%s)" ((render.pretty) srcident)
-			DirectType (TyFloating TyDouble) _ _ → printf "d2u(%s)" ((render.pretty) srcident)
+			DirectType (TyFloating TyFloat)  _ _ → printf "u2f(%s)" ((render.pretty) srcident)
+			DirectType (TyFloating TyDouble) _ _ → printf "u2d(%s)" ((render.pretty) srcident)
 			_ → (render.pretty) srcident
 	ext_decls <- createDeclsM formal_params
 	(param_env_exprs,(arraydecl_env,arrayitem_conds)) <- createInterfaceM formal_params
@@ -901,7 +901,7 @@ createCHarness orig_rettype fun_args filename funname extdecls = do
 	let
 		param_env_exprs = filter (envItemNotPtrType.fst) param_env_exprs0
 		retenvexprs = filter (envItemNotPtrType.fst) retenvexprs0
-		argexprs = for param_env_exprs $ \ (_,cexprwithty) → ty2argwrapper cexprwithty
+		argexprs = for param_env_exprs $ \ (_,cexprwithty) → funcallargwrapper cexprwithty
 		incl_srcfilename = "#include \"" ++ filename ++ "\""
 
 		funcall = (render.pretty) orig_rettype ++ " " ++ returnval_var_name ++ " = " ++
@@ -909,13 +909,14 @@ createCHarness orig_rettype fun_args filename funname extdecls = do
 
 	argformats <- mapM type_format_string $ map (snd.snd.fst) param_env_exprs
 	let
-		argvals = intercalate ", " $ for (zip argexprs argformats) $ \ (argname,argformat) → argname ++ " = " ++ argformat
+		argvals = intercalate ", " $ for (zip argexprs argformats) $
+			\ (argname,argformat) → argname ++ " = " ++ argformat
 
 	ret_formatss <- mapM type_format_string $ map (snd.snd.fst) retenvexprs
 	let
 		ret_vals = for retenvexprs $ \ (_,cexprwithty) → ty2argwrapper cexprwithty
 		print_retval1 = "printf(\"" ++ funname ++ "(" ++ argvals ++ ") = \\n\"," ++
-			(if null argexprs then "" else (intercalate ", " argexprs)) ++ ");"
+			(if null argexprs then "" else (intercalate ", " $ map ((render.pretty).fst.fst) param_env_exprs)) ++ ");"
 		print_retval2 = "printf(\"" ++
 			intercalate " " ret_formatss ++ "\\n\", " ++
 			intercalate ", " ret_vals ++ ");"
@@ -923,6 +924,10 @@ createCHarness orig_rettype fun_args filename funname extdecls = do
 
 	where
 
+	funcallargwrapper cexprwithty = case extractType cexprwithty of
+		DirectType (TyFloating TyFloat)  _ _ → printf "u2f(%s)" ((render.pretty) (fmap fst cexprwithty))
+		DirectType (TyFloating TyDouble) _ _ → printf "u2d(%s)" ((render.pretty) (fmap fst cexprwithty))
+		_ → (render.pretty) (fmap fst cexprwithty)
 	ty2argwrapper cexprwithty = case extractType cexprwithty of
 		DirectType (TyFloating TyFloat)  _ _ → printf "f2u(%s)" ((render.pretty) (fmap fst cexprwithty))
 		DirectType (TyFloating TyDouble) _ _ → printf "d2u(%s)" ((render.pretty) (fmap fst cexprwithty))
