@@ -221,6 +221,7 @@ float (sqrtf)(float x)
 
 short _FDunscale2(float *px)
  {
+ *px = 3.14f;
  return (0);
  }
 

@@ -211,7 +211,8 @@ main = do
 	let init_msg =
 		"Compiler: " ++ gcc ++ "\n" ++
 		"Function: " ++ funname ++ "\n" ++
-		"Source files: " ++ show filenames ++ "\n"
+		"Source files: " ++ show filenames ++ "\n" ++
+		"Options: " ++ show opts
 	printToSolutions init_msg
 	printLog 0 $ init_msg
 
@@ -764,13 +765,6 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 
 	-- Go through the body of the function and determine all decision points
 	let
-		{-
-		srcfilename cnode | isNoPos (posOf cnode) = Nothing
-		srcfilename cnode | isBuiltinPos (posOf cnode) = Nothing
-		srcfilename cnode | isInternalPos (posOf cnode) = Nothing
-		srcfilename cnode = Just $ posFile $ posOf cnode
-		is_in_src_file fundef identdecl = srcfilename identdecl == srcfilename fundef
-		-}
 		fun_lc fundef = lineColNodeInfo (nodeInfo fundef)
 		next_lc fundef = case sort $ filter (> lineColNodeInfo (nodeInfo fundef)) $ map lineColNodeInfo $ {-filter (is_in_src_file fundef)-} globdecls of
 			[] → (maxBound,maxBound,-1)
@@ -2939,6 +2933,8 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			modify $ \ tyenv → tyenv ++ [(bvid,Z3_BitVector bv_size True)]
 			return bvid
 		_ → return oid ) z3tyenv0
+	printLogV 0 "z3tyenv="
+	forM_ z3tyenv $ \ tyenvitem -> printLogV 0 (show tyenvitem)
 
 	-- prefix a "a_" for identifiers starting with underscore (Z3 does not like leading underscores...)
 	-- in constraints and output_idents
@@ -2965,6 +2961,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	varsZ3 :: [SCompound] <- concatForM (filter create_decl z3tyenv) $ \ (ident,ty) → do
 		let varname = identToString ident
 		decl <- declConst2SExpr varname ty
+		printLogV 0 $ "varname=" ++ varname
 		-- if a variable is a bitvector stemming from a floating point argument, also declare its bitvector representation and the corresponding equality
 		bv_decls <- case stripPrefix bvPrefix (identToString ident) of
 			Nothing → return []
@@ -2973,6 +2970,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 				return [ 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, (SLeaf $ identToString ident) ] ＝ SLeaf rest_varname ]
 		return $ map (SExprLine . SOnOneLine) (decl:bv_decls)
 
+	-- create Z3 constraints
 	constraintsZ3 :: [SCompound] <- concatForM a_constraints $ \ constraint → do
 		(assert_sexpr,add_sexprs) <- expr2SExpr constraint
 		return $ [ SEmptyLine,
@@ -2981,9 +2979,12 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			[ SComment "----------------------------------------------" ] ++
 			map SExprLine add_sexprs ++
 			[ SExprLine $ 𝒶𝓈𝓈𝑒𝓇𝓉 assert_sexpr]
+
+	-- for all a_output_idents, create a (get-value ...) in the Z3 model 
 	let
-		outputvarsZ3 = for a_output_idents $ \ ident →SExprLine $ SOnOneLine $
+		outputvarsZ3 = for a_output_idents $ \ ident → SExprLine $ SOnOneLine $
 			SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
+
 		model :: [SCompound] = [
 			SComment $ show traceid,
 			SEmptyLine,
@@ -3002,6 +3003,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			outputvarsZ3
 		model_string = unlines $ map (render.pretty) model
 		model_string_linenumbers = unlines $ map (\ (i,l) → show i ++ ": " ++ l) (zip [1..] (lines model_string))
+
 	whenOptionSet writeModelsOpt True $ liftIO $ writeFile modelpathfile model_string
 	whenOptionSet showModelsOpt True $ printLogM 0 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
 	printLogV 2 $ "Running model " ++ takeFileName modelpathfile ++ "..."
