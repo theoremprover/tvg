@@ -126,7 +126,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "f" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,htmlLogOpt,writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [cutoffsOpt,writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -149,6 +149,7 @@ main = do
 --		[] → "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-writemodels"] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "_Dtest" : (analyzerPath++"\\xdtest.c") : ["-writemodels"]
 
+--		[] → "gcc" : "f" : (analyzerPath++"\\covsubfuntest.c") : [] --["-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\arraytest3.c") : ["-writemodels"] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\checkvarsdefinedtest.c") : ["-writemodels"] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\commatest.c") : []
@@ -1525,11 +1526,15 @@ unwrapGoto x = error $ "unwrapGoto " ++ show x
 
 forkUnfoldTraces :: Bool → [a] → (a → CovVecM UnfoldTracesRet) → CovVecM UnfoldTracesRet
 forkUnfoldTraces toplevel l m = do
-	forM l m >>= \ results → return $ case partitionEithers results of
-		(left_results,[]) → Left $ concat left_results
-		([],successes) → Right $ case toplevel of
-			False → or successes
-			True  → and successes
+	forM l m >>= \ results → case partitionEithers results of
+		(left_results,[]) → return $ Left $ concat left_results
+		([],successes) → do
+			subfuncov <- isOptionSet subfuncovOpt
+			return $ Right $ case subfuncov || toplevel of
+				-- Do not cover in subfunctions, and we are in a subfunction
+				False -> or successes
+				-- We should cover in subfunctions, or are toplevel
+				True  -> and successes
 
 extractAnnotation :: CExpr → (CExpr,Maybe [Int])
 extractAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) =
@@ -1692,8 +1697,9 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks ϵs trace bstss@((CBlockStmt s
 								Just else_stmt → [CBlockStmt else_stmt]
 					unfoldTracesM labelϵ mb_ret_type toplevel forks' ϵs trace ( (cbstmts ++ rest,breakable) : rest2 )
 
-			CReturn Nothing _ | toplevel → analyzeTraceM mb_ret_type trace >>= return.Right
-			CReturn Nothing _            → return $ Left [(ϵs,trace)]
+			CReturn Nothing _ → case toplevel of
+				False -> return $ Left [(ϵs,trace)]
+				True  -> analyzeTraceM mb_ret_type trace >>= return.Right
 
 			CReturn (Just ret_expr) _ | Just ret_type <- mb_ret_type → do
 				z3_ret_type <- ty2Z3Type ret_type
@@ -2257,6 +2263,7 @@ createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 	-- also substitutes ternary ifs
 	create_combinations :: [Env] → CExpr → Trace → [(NodeInfo,CExprWithType)] → CallOrTernaryIfs → CovVecM [([Env],CExprWithType,Trace)]
 
+	-- callOrTernaryIfs empty
 	create_combinations ϵs expr trace subs [] = do
 		expr' <- transcribeExprM ϵs mb_target_ty expr
 		let
@@ -2269,23 +2276,25 @@ createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 				subst_ret_expr expr = expr
 		return [(ϵs,expr_substituted,trace)]
 
+	-- Handle a function call
 	create_combinations ϵs expr trace subs (Left (funident,args,call_ni) : rest) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
 		expanded_params_args <- expand_params_argsM paramdecls args
 		-- β-reduction of the arguments:
 		let
 			body' = replace_param_with_arg expanded_params_args body
-		covsubfuns <- isOptionSet subfuncovOpt
-		Left ϵs_funtraces <- unfoldTracesM [] (Just ret_ty) covsubfuns 0 ϵs [] [ ([ CBlockStmt body' ],False) ]
+		Left ϵs_funtraces <- unfoldTracesM [] (Just ret_ty) False 0 ϵs [] [ ([ CBlockStmt body' ],False) ]
 		let funtraces_rets :: [([Env],CExprWithType,Trace)] = for ϵs_funtraces $ \case
 			(envs',(Return retexpr : tr)) → (envs',retexpr,tr)
 			(_,tr) → error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
 		concatForM funtraces_rets $ \ (_,retexpr,fun_trace) → do
 			create_combinations ϵs expr (fun_trace++trace) ((call_ni,retexpr):subs) rest
 
+	-- Handle additional CBlockItems stemming from
+	-- comma operator, assignments in expressions, or conditional expressions
 	create_combinations ϵs expr trace subs (Right cbiss : rest) = do
 		concatForM cbiss $ \ cbis → do
-			Left ϵs_ternaryiftraces <- unfoldTracesM labelϵ Nothing False 0 ϵs [] [ (cbis,False) ]
+			Left ϵs_ternaryiftraces <- unfoldTracesM labelϵ Nothing toplevel 0 ϵs [] [ (cbis,False) ]
 			concatForM ϵs_ternaryiftraces $ \ (ϵs',ternaryif_trace) → do
 				create_combinations ϵs' expr (ternaryif_trace++trace) subs rest
 
@@ -2293,15 +2302,6 @@ translateExprM :: LabelEnv → [Env] → Bool → CExpr → Maybe Types → Trac
 translateExprM labelϵ ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["translateExprM",ren ϵs,ren toplevel,ren expr0,ren mb_target_ty] $ do
 	scan_res <- scanExprM ϵs expr0 mb_target_ty trace forks
 	createCombinationsM labelϵ ϵs toplevel scan_res mb_target_ty trace forks
-
-{-
-translateExprM :: LabelEnv → [Env] → Bool → CExpr → Maybe Types → Trace → Int → CovVecM [([Env],CExprWithType,Trace)]
-translateExprM labelϵ ϵs toplevel expr mb_target_ty trace forks = logWrapper ["translateExprM",ren ϵs,ren toplevel,ren expr,ren mb_target_ty] $ do
-	case expr of
-		CCall 
-		CComma exprs _ → 
-	return []
--}
 
 
 -- Substitutes an expression x by y everywhere in d
@@ -2933,8 +2933,6 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			modify $ \ tyenv → tyenv ++ [(bvid,Z3_BitVector bv_size True)]
 			return bvid
 		_ → return oid ) z3tyenv0
-	printLogV 0 "z3tyenv="
-	forM_ z3tyenv $ \ tyenvitem -> printLogV 0 (show tyenvitem)
 
 	-- prefix a "a_" for identifiers starting with underscore (Z3 does not like leading underscores...)
 	-- in constraints and output_idents
@@ -2943,7 +2941,6 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			prefix_a :: Ident → Ident
 			prefix_a (Ident s@('_':_) i ni) = Ident (safeZ3IdentifierPrefix:s) i ni
 			prefix_a ident = ident
-	printLogV 0 $ "a_output_idents = " ++ showIdents a_output_idents
 
 	-- collect all variables that appear in the constraints and assignments
 	let
@@ -2951,7 +2948,6 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			Condition _ expr → fvar expr
 			Assignment (Normal lexpr@(CIndex _ _ _)) ass_expr → fvar lexpr ++ fvar ass_expr
 			Assignment (ArrayUpdate ident1 ident2 _ index) ass_expr → [ident1,ident2] ++ fvar index ++ fvar ass_expr
-	printLogV 0 $ "constraints_vars = " ++ showIdents constraints_vars
 
 	-- create declarations in the Z3 model for all variables from the z3tyenv that
 	-- appear in the constraints and assignments, or
@@ -2961,7 +2957,6 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	varsZ3 :: [SCompound] <- concatForM (filter create_decl z3tyenv) $ \ (ident,ty) → do
 		let varname = identToString ident
 		decl <- declConst2SExpr varname ty
-		printLogV 0 $ "varname=" ++ varname
 		-- if a variable is a bitvector stemming from a floating point argument, also declare its bitvector representation and the corresponding equality
 		bv_decls <- case stripPrefix bvPrefix (identToString ident) of
 			Nothing → return []
