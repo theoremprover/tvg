@@ -75,17 +75,6 @@ fastMode = False
 outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
 
-subfuncovOpt = "-subfuncov"
-noHaltOnVerificationErrorOpt = "-nohalt"
-noIndentLogOpt = "-noindentlog"
-findModeOpt = "-findmode"
-minimizeOpt = "-minimize"
-branchCovOpt = "-branchcov"
-htmlLogOpt = "-htmllog"
-showModelsOpt = "-showmodels"
-writeModelsOpt = "-writemodels"
-cutoffsOpt = "-cutoffs"
-
 mAX_REN_LIST_LENGTH = 3
 
 showInitialTrace = True && not fastMode
@@ -115,6 +104,17 @@ type TraceAnalysisResult = ([Int],Trace,Set.Set Branch,ResultData)
 type UnfoldTracesRet = Either [([Env],Trace)] Bool
 type SolveFunRet = (Bool,([TraceAnalysisResult],Set.Set Branch))
 
+subfuncovOpt = "-subfuncov"
+noHaltOnVerificationErrorOpt = "-nohalt"
+noIndentLogOpt = "-noindentlog"
+findModeOpt = "-findmode"
+minimizeOpt = "-minimize"
+branchCovOpt = "-branchcov"
+htmlLogOpt = "-htmllog"
+showModelsOpt = "-showmodels"
+writeModelsOpt = "-writemodels"
+cutoffsOpt = "-cutoffs"
+
 
 main :: IO ()
 main = do
@@ -126,7 +126,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "f" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "f" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,htmlLogOpt,writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -2928,6 +2928,7 @@ declConst2SExpr id_name ty = do
 
 makeAndSolveZ3ModelM :: [Int] → [(Ident,Z3_Type)] → [Constraint] → [SExpr] → [Ident] → String → CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_idents0 modelpathfile = do
+	-- For all floats, replace the float-Varname by the bitvector_Varname "bv$<floatvar>"
 	(output_idents,z3tyenv) <- runStateT (forM output_idents0 $ \ oid → case lookup oid z3tyenv0 of
 		-- if ty is floating point, add bv$fp :: Z3_BitVector size to tyenv and
 		-- add bv$fp to output_idents
@@ -2938,20 +2939,29 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			modify $ \ tyenv → tyenv ++ [(bvid,Z3_BitVector bv_size True)]
 			return bvid
 		_ → return oid ) z3tyenv0
-	opts <- gets optsCVS
-	let  -- prefix a "a_" for identifiers starting with underscore (Z3 does not like leading underscores...)
+
+	-- prefix a "a_" for identifiers starting with underscore (Z3 does not like leading underscores...)
+	-- in constraints and output_idents
+	let  
 		(a_constraints,a_output_idents) = everywhere (mkT prefix_a) (constraints,output_idents) where
 			prefix_a :: Ident → Ident
 			prefix_a (Ident s@('_':_) i ni) = Ident (safeZ3IdentifierPrefix:s) i ni
 			prefix_a ident = ident
+	printLogV 0 $ "a_output_idents = " ++ showIdents a_output_idents
+
+	-- collect all variables that appear in the constraints and assignments
 	let
 		constraints_vars = nub $ concat $ for a_constraints $ \case
 			Condition _ expr → fvar expr
 			Assignment (Normal lexpr@(CIndex _ _ _)) ass_expr → fvar lexpr ++ fvar ass_expr
 			Assignment (ArrayUpdate ident1 ident2 _ index) ass_expr → [ident1,ident2] ++ fvar index ++ fvar ass_expr
-	printLogV 20 $ "constraints_vars = " ++ showIdents constraints_vars
+	printLogV 0 $ "constraints_vars = " ++ showIdents constraints_vars
 
-	let create_decl (ident,_) = ident `elem` (constraints_vars ++ a_output_idents ++ output_idents0)
+	-- create declarations in the Z3 model for all variables from the z3tyenv that
+	-- appear in the constraints and assignments, or
+	-- are a_output_idents, or
+	-- ?
+	let create_decl (ident,_) = ident `elem` (constraints_vars ++ a_output_idents) -- ++ output_idents0)
 	varsZ3 :: [SCompound] <- concatForM (filter create_decl z3tyenv) $ \ (ident,ty) → do
 		let varname = identToString ident
 		decl <- declConst2SExpr varname ty
@@ -2962,6 +2972,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 				bv_size <- sizeofZ3Ty ty
 				return [ 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, (SLeaf $ identToString ident) ] ＝ SLeaf rest_varname ]
 		return $ map (SExprLine . SOnOneLine) (decl:bv_decls)
+
 	constraintsZ3 :: [SCompound] <- concatForM a_constraints $ \ constraint → do
 		(assert_sexpr,add_sexprs) <- expr2SExpr constraint
 		return $ [ SEmptyLine,
@@ -3077,7 +3088,7 @@ getArgRetNames mb_ret_type = do
 solveTraceM :: Maybe Type → [Int] → Trace → CovVecM (Either Bool ResultData)
 solveTraceM mb_ret_type traceid trace = do
 	(param_env_exprs,param_env,param_names,ret_names) <- getArgRetNames mb_ret_type
-	Just retval_env  <- case mb_ret_type of
+	Just retval_env <- case mb_ret_type of
 		Nothing  → return $ Just []
 		Just ret_type → gets retEnvCVS
 	let

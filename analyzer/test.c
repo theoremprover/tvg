@@ -219,10 +219,13 @@ float (sqrtf)(float x)
   }
  }
 
+short _FDunscale2(float *px)
+ {
+ return (0);
+ }
+
 float f(float x)
 {
- float y;
-
-  y = x + 0.38660F;
-  return (y);
+ _FDunscale2(&x);
+ return x;
 }
