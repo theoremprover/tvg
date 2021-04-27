@@ -70,40 +70,6 @@ import Logging
 
 --------------
 
-fastMode = False
-
-outputVerbosity = if fastMode then 1 else 2
-logFileVerbosity = if fastMode then 0 else 10
-
-mAX_REN_LIST_LENGTH = 3
-
-showInitialTrace = True && not fastMode
-showOnlySolutions = True
-showTraces = True && not fastMode
-showFinalTrace = True && not fastMode
-checkSolutions = True
-returnval_var_name = "return_val"
-floatTolerance = 1e-7 :: Float
-doubleTolerance = 1e-10 :: Double
-showBuiltins = False
-logToFile = True
-mainFileName = "main.c"
-printTypes = False
-printLocations = False
-
-mAX_UNROLLS = 2
-uNROLLING_STRATEGY = [0..mAX_UNROLLS]
-
-sizeConditionChunks = 4
-
--------------
-
-type Trace = [TraceElem]
-type ResultData = (String,Maybe (Env,Env,Solution))
-type TraceAnalysisResult = ([Int],Trace,Set.Set Branch,ResultData)
-type UnfoldTracesRet = Either [([Env],Trace)] Bool
-type SolveFunRet = (Bool,([TraceAnalysisResult],Set.Set Branch))
-
 subfuncovOpt = "-subfuncov"
 noHaltOnVerificationErrorOpt = "-nohalt"
 noIndentLogOpt = "-noindentlog"
@@ -115,7 +81,6 @@ showModelsOpt = "-showmodels"
 writeModelsOpt = "-writemodels"
 cutoffsOpt = "-cutoffs"
 
-
 main :: IO ()
 main = do
 	-- when there is an error, we'd like to have *all* output till then
@@ -126,7 +91,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [cutoffsOpt,writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -312,6 +277,41 @@ main = do
 			printLog 0 msg
 
 			when (htmlLogOpt `elem` opts) $ createHTMLLog
+
+
+fastMode = False
+
+outputVerbosity = if fastMode then 1 else 2
+logFileVerbosity = if fastMode then 0 else 10
+
+mAX_REN_LIST_LENGTH = 3
+
+showInitialTrace = True && not fastMode
+showOnlySolutions = True
+showTraces = True && not fastMode
+showFinalTrace = True && not fastMode
+checkSolutions = True
+returnval_var_name = "return_val"
+floatTolerance = 1e-7 :: Float
+doubleTolerance = 1e-10 :: Double
+showBuiltins = False
+logToFile = True
+mainFileName = "main.c"
+printTypes = False
+printLocations = False
+
+mAX_UNROLLS = 2
+uNROLLING_STRATEGY = [0..mAX_UNROLLS]
+
+sizeConditionChunks = 4
+
+-------------
+
+type Trace = [TraceElem]
+type ResultData = (String,Maybe (Env,Env,Solution))
+type TraceAnalysisResult = ([Int],Trace,Set.Set Branch,ResultData)
+type UnfoldTracesRet = Either [([Env],Trace)] Bool
+type SolveFunRet = (Bool,([TraceAnalysisResult],Set.Set Branch))
 
 for :: [a] → (a → b) → [b]
 for = flip map
@@ -1595,7 +1595,9 @@ unfoldTracesM labelϵ ret_type toplevel forks ϵs trace cbss = do
 					False → do
 						printLogV 1 $ "******** Cutting off !"
 						incCutoffsM
-						return $ Right False
+						return $ case toplevel of
+							True  -> Right False
+							False -> Left []
 					True  → do
 						printLogV 1 $ "******** Continuing..."
 						cont
@@ -2284,9 +2286,11 @@ createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 		let
 			body' = replace_param_with_arg expanded_params_args body
 		Left ϵs_funtraces <- unfoldTracesM [] (Just ret_ty) False 0 ϵs [] [ ([ CBlockStmt body' ],False) ]
-		let funtraces_rets :: [([Env],CExprWithType,Trace)] = for ϵs_funtraces $ \case
-			(envs',(Return retexpr : tr)) → (envs',retexpr,tr)
-			(_,tr) → error $ "funcalls_traces: trace of no return:\n" ++ showTrace tr
+		funtraces_rets :: [([Env],CExprWithType,Trace)] <- forM ϵs_funtraces $ \case
+			(envs',(Return retexpr : tr)) → return (envs',retexpr,tr)
+			-- if we have a "trace of no return", we assume return(99);
+			-- (not return (0) just to cause trouble in case of undefined behaviour)
+			(envs',tr) → ⅈ 99 >>= return.(envs',,tr)
 		concatForM funtraces_rets $ \ (_,retexpr,fun_trace) → do
 			create_combinations ϵs expr (fun_trace++trace) ((call_ni,retexpr):subs) rest
 
@@ -2294,7 +2298,8 @@ createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 	-- comma operator, assignments in expressions, or conditional expressions
 	create_combinations ϵs expr trace subs (Right cbiss : rest) = do
 		concatForM cbiss $ \ cbis → do
-			Left ϵs_ternaryiftraces <- unfoldTracesM labelϵ Nothing toplevel 0 ϵs [] [ (cbis,False) ]
+			-- TODO: toplevel=False is wrong here, could be a CCond in one of the expressions, or a return...
+			Left ϵs_ternaryiftraces <- unfoldTracesM labelϵ Nothing False 0 ϵs [] [ (cbis,False) ]
 			concatForM ϵs_ternaryiftraces $ \ (ϵs',ternaryif_trace) → do
 				create_combinations ϵs' expr (ternaryif_trace++trace) subs rest
 
@@ -2844,7 +2849,7 @@ sizeofTy :: Type → CovVecM Int
 sizeofTy ty@(DirectType tyname _ attrs) = do
 	Just MachineSpec{..} <- gets machineSpecCVS
 	return $ case tyname of
-		TyIntegral intty → case (intty,map to_mode attrs) of
+		TyIntegral intty → case (intty,concatMap to_mode attrs) of
 			(TyChar,[])     → 8
 			(TySChar,[])    → 8
 			(TyUChar,[])    → 8
@@ -2867,7 +2872,8 @@ sizeofTy ty@(DirectType tyname _ attrs) = do
 			other    → error $ "sizeofTy " ++ show other ++ " not implemented!"
 		other → error $ "sizeofTy: " ++ (render.pretty) ty ++ " is not implemented!"
 	where
-	to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = mode
+	to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = [mode]
+	to_mode (Attr (Ident "fardata" _ _) _ _) = []
 	to_mode attr = error $ "attrs2modes: unknown attr " ++ (render.pretty) attr
 
 sizeofZ3Ty :: Z3_Type → CovVecM Int
