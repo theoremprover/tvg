@@ -194,18 +194,16 @@ float (sqrtf)(float x)
  short xexp;
  float y;
 
- float* px = &x;
-
  switch (_FDunscale(&xexp, &x))
   {
  case 2:
  case 0:
   return (x);
  case 1:
-  if (!(((_Fval *)(char *)px)->_Sh[1] & ((unsigned short)0x8000)))
+  if (!(((_Fval *)(char *)&x)->_Sh[1] & ((unsigned short)0x8000)))
    return (x);
  default:
-  if ((((_Fval *)(char *)px)->_Sh[1] & ((unsigned short)0x8000)))
+  if ((((_Fval *)(char *)&x)->_Sh[1] & ((unsigned short)0x8000)))
    {
    _Feraise(0x01);
    return (_FNan._Float);

@@ -91,7 +91,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [cutoffsOpt,writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -1582,7 +1582,7 @@ type LabelEnv = [(Ident,Trace → Int → CovVecM UnfoldTracesRet)]
 unfoldTracesM labelϵ ret_type toplevel forks ϵs trace cbss = do
 --	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren ϵs,ren trace,'\n':ren cbss] $ do
 		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
-			printConsole 1 $ "\r" ++ show (trace2traceid trace) ++ "                     "
+			printConsole 1 $ "\rUnfolding " ++ show (trace2traceid trace) ++ "                     "
 			unfoldTraces1M labelϵ ret_type toplevel forks ϵs trace cbss
 		where
 		maybe_cutoff :: CovVecM UnfoldTracesRet → CovVecM UnfoldTracesRet
@@ -2675,7 +2675,7 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 			let from_ty = extractTypes subexpr
 			case (fst from_ty,fst to_ty) of
 
-				-- SAMECAST: identity
+				-- Identity cast
 				( ty1, ty2 ) | ty1==ty2 → return sexpr
 
 				-- Casting signed to unsigned or vice versa with same size: No cast needed (Z3 interprets it)
@@ -2724,9 +2724,11 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 				bv_size <- lift $ sizeofZ3Ty fp_ty
 				let
 					num_elems = div bv_size elem_size
-					bv = case subexpr of
-						CVar ident _ -> SLeaf $ makeFloatBVVarName ident
-						other -> error $ "cast_fp2arr: subexpr = " ++ (render.pretty) subexpr
+				bv <- case subexpr of
+					CVar ident _ -> return $ SLeaf $ makeFloatBVVarName ident
+					other -> expr2sexpr' subexpr
+--							error $ "cast_fp2arr: subexpr = " ++ (render.pretty) subexpr ++ "\n at " ++ show (extractNodeInfo subexpr)
+
 				(arr,arr_decl) <- new_var "arr" arr_ty
 				(z3_inttype,_) <- lift $ _IntTypesM
 				is <- forM [0..(num_elems-1)] $ make_intconstant z3_inttype
