@@ -2722,10 +2722,11 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 			cast_fp2arr sexpr fp_ty arr_ty@(Z3_Array elem_ty _) = do
 				elem_size <- lift $ sizeofZ3Ty elem_ty
 				bv_size <- lift $ sizeofZ3Ty fp_ty
-				let num_elems = div bv_size elem_size
 				let
-					CVar ident _ = subexpr
-					bv = SLeaf $ makeFloatBVVarName ident
+					num_elems = div bv_size elem_size
+					bv = case subexpr of
+						CVar ident _ -> SLeaf $ makeFloatBVVarName ident
+						other -> error $ "cast_fp2arr: subexpr = " ++ (render.pretty) subexpr
 				(arr,arr_decl) <- new_var "arr" arr_ty
 				(z3_inttype,_) <- lift $ _IntTypesM
 				is <- forM [0..(num_elems-1)] $ make_intconstant z3_inttype
