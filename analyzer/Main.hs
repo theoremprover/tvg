@@ -91,7 +91,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [cutoffsOpt,writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [cutoffsOpt,htmlLogOpt,writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -1587,8 +1587,8 @@ unfoldTracesM labelϵ ret_type toplevel forks ϵs trace cbss = do
 		where
 		maybe_cutoff :: CovVecM UnfoldTracesRet → CovVecM UnfoldTracesRet
 		maybe_cutoff cont = isOptionSet cutoffsOpt >>= \case
-			False -> cont
-			True  -> do
+			False → cont
+			True  → do
 				incCutoffTriesM
 				printLogV 1 $ "******* Probing for CutOff in depth " ++ show (length trace) ++ " ..."
 				analyzeTraceM Nothing trace >>= \case
@@ -1596,8 +1596,8 @@ unfoldTracesM labelϵ ret_type toplevel forks ϵs trace cbss = do
 						printLogV 1 $ "******** Cutting off !"
 						incCutoffsM
 						return $ case toplevel of
-							True  -> Right False
-							False -> Left []
+							True  → Right False
+							False → Left []
 					True  → do
 						printLogV 1 $ "******** Continuing..."
 						cont
@@ -2285,23 +2285,23 @@ createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 		-- β-reduction of the arguments:
 		let
 			body' = replace_param_with_arg expanded_params_args body
-		Left ϵs_funtraces <- unfoldTracesM [] (Just ret_ty) False 0 ϵs [] [ ([ CBlockStmt body' ],False) ]
+		Left ϵs_funtraces <- unfoldTracesM labelϵ (Just ret_ty) False 0 ϵs trace [ ([ CBlockStmt body' ],False) ]
 		funtraces_rets :: [([Env],CExprWithType,Trace)] <- forM ϵs_funtraces $ \case
 			(envs',(Return retexpr : tr)) → return (envs',retexpr,tr)
 			-- if we have a "trace of no return", we assume return(99);
 			-- (not return (0) just to cause trouble in case of undefined behaviour)
 			(envs',tr) → ⅈ 99 >>= return.(envs',,tr)
 		concatForM funtraces_rets $ \ (_,retexpr,fun_trace) → do
-			create_combinations ϵs expr (fun_trace++trace) ((call_ni,retexpr):subs) rest
+			create_combinations ϵs expr fun_trace ((call_ni,retexpr):subs) rest
 
 	-- Handle additional CBlockItems stemming from
 	-- comma operator, assignments in expressions, or conditional expressions
 	create_combinations ϵs expr trace subs (Right cbiss : rest) = do
 		concatForM cbiss $ \ cbis → do
 			-- TODO: toplevel=False is wrong here, could be a CCond in one of the expressions, or a return...
-			Left ϵs_ternaryiftraces <- unfoldTracesM labelϵ Nothing False 0 ϵs [] [ (cbis,False) ]
+			Left ϵs_ternaryiftraces <- unfoldTracesM labelϵ Nothing False 0 ϵs trace [ (cbis,False) ]
 			concatForM ϵs_ternaryiftraces $ \ (ϵs',ternaryif_trace) → do
-				create_combinations ϵs' expr (ternaryif_trace++trace) subs rest
+				create_combinations ϵs' expr ternaryif_trace subs rest
 
 translateExprM :: LabelEnv → [Env] → Bool → CExpr → Maybe Types → Trace → Int → CovVecM [([Env],CExprWithType,Trace)]
 translateExprM labelϵ ϵs toplevel expr0 mb_target_ty trace forks = logWrapper ["translateExprM",ren ϵs,ren toplevel,ren expr0,ren mb_target_ty] $ do
@@ -2726,6 +2726,7 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 					num_elems = div bv_size elem_size
 				bv <- case subexpr of
 					CVar ident _ -> return $ SLeaf $ makeFloatBVVarName ident
+					-- TODO: is this sufficient in all cases?
 					other -> expr2sexpr' subexpr
 --							error $ "cast_fp2arr: subexpr = " ++ (render.pretty) subexpr ++ "\n at " ++ show (extractNodeInfo subexpr)
 
