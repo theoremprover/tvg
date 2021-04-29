@@ -1541,18 +1541,20 @@ unwrapGoto x = error $ "unwrapGoto " ++ show x
 
 forkUnfoldTraces :: Int → Progress → Bool → [a] → (Int → Progress → a → CovVecM UnfoldTracesRet) → CovVecM UnfoldTracesRet
 forkUnfoldTraces forks progress toplevel l m = do
-	forM (zip [0..] l) (\ (i,a) -> m forks' ((i,alternatives):progress) a) >>= \ results → case partitionEithers results of
+	forM (zip [0..] l) (\ (i,a) -> m forks' (progress'f i) a) >>= \ results → case partitionEithers results of
 		(left_results,[]) → return $ Left $ concat left_results
 		([],successes) → do
 			subfuncov <- isOptionSet subfuncovOpt
 			return $ Right $ case subfuncov || toplevel of
 				-- Do not cover in subfunctions, and we are in a subfunction
 				False -> or successes
-				-- We should cover in subfunctions, or are toplevel
+				-- We should cover in subfunctions, or on toplevel
 				True  -> and successes
 	where
 	alternatives = length l
-	forks' = if alternatives > 1 then forks+1 else forks
+	(forks',progress'f) = case alternatives > 1 of
+		False -> (forks,const progress)
+		True  -> (forks+1,\ i -> (i,alternatives):progress)
 
 extractAnnotation :: CExpr → (CExpr,Maybe [Int])
 extractAnnotation (CBinary CLndOp (CCall (CVar (Ident "solver_pragma" _ _) _) args _) real_cond ni) =
