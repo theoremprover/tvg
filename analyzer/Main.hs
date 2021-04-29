@@ -90,7 +90,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -278,7 +278,7 @@ main = do
 			when (htmlLogOpt `elem` opts) $ createHTMLLog
 
 
-fastMode = False
+fastMode = True
 
 outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
@@ -509,7 +509,7 @@ logWrapper args m = do
 	indentLog 1
 	printLogV verbosity $ intercalate " " args
 	ret <- m
-	printLogV verbosity $ "RESULT = " ++ ren ret
+--	printLogV verbosity $ "RESULT = " ++ ren ret
 	indentLog (-1)
 	return ret
 
@@ -1042,8 +1042,10 @@ type Progress = [(Int,Int)]
 
 printProgressM :: Progress → CovVecM ()
 printProgressM progress = do
+	printLogV 0 $ printf "Current progress = %s" (show progress)
+	printLogV 0 $ printf "Current depth = %i" (length progress)
 	printLogV 0 $ printf "Current estimated total number of traces: %i" (product $ map snd progress) 
-	printLogV 0 $ printf "Progress: %.1f" (pct progress)
+	printLogV 0 $ printf "Progress: %.1f %%" (100.0 * (pct $ reverse progress))
 	where
 	pct :: Progress → Float
 	pct [] = 0.0
