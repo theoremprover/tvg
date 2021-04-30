@@ -35,8 +35,6 @@ import qualified Text.PrettyPrint.Mainland.Class as PPMC
 import Control.Monad
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State.Lazy
---import qualified Data.Set as Set
-import Data.Set.Unicode
 import Prelude.Unicode ((∧),(∨))
 import Text.Printf
 import Text.Regex.TDFA
@@ -90,7 +88,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -2045,17 +2043,20 @@ cinitializer2blockitems :: CExpr → Type → CInit → CovVecM [CBlockItem]
 cinitializer2blockitems lexpr ty initializer =
 	case initializer of
 		CInitExpr expr ni_init → return [ CBlockStmt $ lexpr ≔ expr ]
-		CInitList initlist ni_init → do
+		CInitList initlist0 ni_init → do
 			ty' <- elimTypeDefsM ty
 			case ty' of
-				DirectType (TyComp (CompTypeRef sueref _ _)) _ _ → do
-					memberidentstypes <- getMembersM sueref
+				DirectType (TyComp (CompTypeRef sueref comptykind _)) _ _ → do
+					memberidentstypes0 <- getMembersM sueref
+					let (initlist,memberidentstypes) = case comptykind of
+						StructTag → (initlist0,memberidentstypes0)
+						UnionTag  → ([last initlist0],[last memberidentstypes0])
 					concatForM (zip initlist memberidentstypes) $ \case
 						(([],initializer),(memberident,memberty)) → do
 							memberty' <- elimTypeDefsM memberty
 							cinitializer2blockitems (CMember lexpr memberident False (nodeInfo memberident)) memberty' initializer
 						_ → myError $ "cinitializer2blockitems DirectType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
-				ArrayType elem_ty _ _ _ → concatForM (zip [0..] initlist) $ \ (i,(partdesigs,cinitializer)) → do
+				ArrayType elem_ty _ _ _ → concatForM (zip [0..] initlist0) $ \ (i,(partdesigs,cinitializer)) → do
 					case partdesigs of
 						[] → do
 							ii <- ⅈ i
