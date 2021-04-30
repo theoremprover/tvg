@@ -34,8 +34,8 @@ import qualified Text.PrettyPrint.Mainland as PPM
 import qualified Text.PrettyPrint.Mainland.Class as PPMC
 import Control.Monad
 import Control.Monad.Trans.Class
-import Control.Monad.Trans.State.Strict
-import qualified Data.Set as Set
+import Control.Monad.Trans.State.Lazy
+--import qualified Data.Set as Set
 import Data.Set.Unicode
 import Prelude.Unicode ((∧),(∨))
 import Text.Printf
@@ -90,7 +90,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -215,7 +215,7 @@ main = do
 			let coveragekind = if branchCovOpt `elem` opts then Branch_Coverage else MCDC_Coverage
 			(every_branch_covered,s) <- runStateT covVectorsM $
 				CovVecState globdecls 1 allFileName Nothing funname [] gcc opts
-					Nothing ([],Set.empty) Set.empty intialStats Nothing Nothing deftable (-1) coveragekind 0 []
+					Nothing ([],[]) [] intialStats Nothing Nothing deftable (-1) coveragekind 0 []
 
 			let
 				(testvectors,covered) = analysisStateCVS s
@@ -224,7 +224,7 @@ main = do
 
 			printLog 0 "\n"
 
-			let deaths = Set.toList $ alls ∖ covered
+			let deaths = alls \\ covered
 
 			printLog 0 $ "\n###### FINAL RESULT #######\n\n"
 
@@ -308,9 +308,9 @@ sizeConditionChunks = 4
 
 type Trace = [TraceElem]
 type ResultData = (String,Maybe (Env,Env,Solution))
-type TraceAnalysisResult = ([Int],Trace,Set.Set Branch,ResultData)
+type TraceAnalysisResult = ([Int],Trace,[Branch],ResultData)
 type UnfoldTracesRet = Either [(Int,Progress,[Env],Trace)] Bool
-type SolveFunRet = (Bool,([TraceAnalysisResult],Set.Set Branch))
+type SolveFunRet = (Bool,([TraceAnalysisResult],[Branch]))
 
 for :: [a] → (a → b) → [b]
 for = flip map
@@ -550,8 +550,8 @@ data CovVecState = CovVecState {
 	compilerCVS      :: String,
 	optsCVS          :: [String],
 	paramEnvCVS      :: Maybe [(EnvItem,CExprWithType)],
-	analysisStateCVS :: ([TraceAnalysisResult],Set.Set Branch),
-	allCondPointsCVS :: Set.Set Branch,
+	analysisStateCVS :: ([TraceAnalysisResult],[Branch]),
+	allCondPointsCVS :: [Branch],
 	statsCVS         :: Stats,
 	retEnvCVS        :: Maybe [(EnvItem,CExprWithType)],
 	machineSpecCVS   :: Maybe MachineSpec,
@@ -615,10 +615,9 @@ makeForWhileBranchName cond = "for/while(" ++ (render.pretty) cond ++ ")"
 makeDefaultBranchName = "default"
 makeCaseBranchName cond = "case " ++ (render.pretty) cond
 
-printCondPoints :: (MonadIO m) => Set.Set Branch → m ()
-printCondPoints alls = liftIO $ do
+printCondPoints :: (MonadIO m) => [Branch] → m ()
+printCondPoints decisionpoints = liftIO $ do
 	printLog 0 $ "All decision point outcomes:"
-	let decisionpoints = Set.toList alls
 	case null decisionpoints of
 		True  → printLog 0 "<none>"
 		False → forM_ decisionpoints $ \ decisionpoint →
@@ -817,7 +816,7 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 			exprcondpoints <- execStateT (everywhereM (mkM searchexprcondpoint) body) []
 			return $ condpoints ++ exprcondpoints
 	allpoints <- allpoints_in_body (builtinIdent funname)
-	modify $ \ s → s { allCondPointsCVS = Set.fromList allpoints }
+	modify $ \ s → s { allCondPointsCVS = allpoints }
 
 	let
 		formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) → (srcident,ty)
@@ -1116,14 +1115,14 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 
 									startends <- gets funStartEndCVS
 									printLogV 20 $ "startends = " ++ show startends
-									let visible_trace = Set.fromList $ concatMap to_branch res_line
+									let visible_trace = concatMap to_branch res_line
 										where
 										is_visible_branch :: [(Location,Location)] → Location → Bool
 										is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
 										to_branch (Condition (Just branch) _) | is_visible_branch startends (branchLocation branch) = [ branch ]
 										to_branch _ = []
 
-									let cov_branches = "\tCOVERED BRANCHES:\n" ++ unlines (map (("\t"++).showBranch) $ Set.toList visible_trace)
+									let cov_branches = "\tCOVERED BRANCHES:\n" ++ unlines (map (("\t"++).showBranch) visible_trace)
 									printLogV 1 cov_branches
 									printToSolutions cov_branches
 
@@ -1137,14 +1136,14 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 									(tas,covered) <- gets analysisStateCVS
 									all_branches <- gets allCondPointsCVS
 									let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
-									let excess_branches = visible_trace `Set.difference` all_branches
+									let excess_branches = visible_trace \\ all_branches
 									when (not $ null excess_branches) $ do
 										printCondPoints all_branches
 										myError $ "Branches " ++ show excess_branches ++ " are covered but are not in all_branches!"
 									-- Are all the decision points are already covered? They can't, probably...?
 									-- If yes, this trace does not contribute to full coverage...
-									when (not $ visible_trace ⊆ covered) $
-										modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],visible_trace ∪ covered) }
+									when (not $ null (visible_trace \\ covered)) $
+										modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],visible_trace `union` covered) }
 									return True
 
 		where
