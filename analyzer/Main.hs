@@ -88,7 +88,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -1631,7 +1631,8 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 				let jumphere_m = \ trace forks → unfoldTracesM ((labelident,jumphere_m):labelϵ) mb_ret_type toplevel forks progress ϵs trace (((CBlockStmt cstat : rest, breakable)) : rest2)
 				jumphere_m trace forks
 
-			CSwitch condexpr (CCompound [] cbis _) switch_ni → do
+			CSwitch condexpr0 (CCompound [] cbis _) switch_ni → do
+				let (condexpr,mb_anno) = extractAnnotation condexpr0
 				ctrue <- ⅈ 1
 				let
 					cond_ni = nodeInfo condexpr
@@ -1641,11 +1642,11 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 					cond_var = CVar cond_var_ident cond_ni
 
 					-- Go through all the switch's "case"s and "default"s...
-					collect_stmts :: Int → CExpr → [CBlockItem] → [CBlockItem]
+					collect_stmts :: Maybe [Int] → Int → CExpr → [CBlockItem] → [CBlockItem]
 
-					collect_stmts _ _ [] = []
+					collect_stmts _ _ _ [] = []
 
-					collect_stmts branchnum notconds (CBlockStmt cdefault@(CDefault def_stmt default_ni) : rest) =
+					collect_stmts _ branchnum notconds (CBlockStmt cdefault@(CDefault def_stmt default_ni) : rest) =
 						-- This is to explicitly cover the "default" branch (located at the "default" keyword).
 						wrapGoto (Just $ Branch (lineColNodeInfo cdefault) branchnum False makeDefaultBranchName,notconds) :
 							CBlockStmt def_stmt :
@@ -1658,12 +1659,12 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 									"collect_stmts: the case when 'default' is not the last item in the switch is not implemented"
 
 					-- flatten if the stmt of the case is the next case
-					collect_stmts branchnum notconds (CBlockStmt ccase@(CCase caseexpr subcase@(CCase _ _ _) case_ni) : rest) =
+					collect_stmts mb_anno branchnum notconds (CBlockStmt ccase@(CCase caseexpr subcase@(CCase _ _ _) case_ni) : rest) =
 						collect_stmts branchnum notconds (
 							CBlockStmt (CCase caseexpr (CExpr Nothing undefNode) case_ni) : CBlockStmt subcase : rest )
 
 					-- if we have a "case <expr>: stmt", insert "if (expr==cond_var) { stmt; rest } else <recurse_collect_stmts>"
-					collect_stmts branchnum notconds (CBlockStmt ccase@(CCase caseexpr stmt case_ni) : rest) = [
+					collect_stmts mb_anno branchnum notconds (CBlockStmt ccase@(CCase caseexpr stmt case_ni) : rest) = [
 						CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr case_ni)
 							(makeCompound $
 								wrapGoto (Just $ Branch (lineColNodeInfo ccase) branchnum False ("case " ++ (render.pretty) caseexpr),cond) :
@@ -1680,9 +1681,10 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 							CBlockStmt (CCase _ stmt _)  → CBlockStmt stmt
 							CBlockStmt (CDefault stmt _) → CBlockStmt stmt
 							cbi → cbi
-
+						if_cond_with_anno = case (mb_anno,branchnum) of
+							(Just (i:_),
 					-- if it was neither a "case" or "default", skip it.
-					collect_stmts branchnum notconds (_:rest) = collect_stmts branchnum notconds rest
+					collect_stmts mb_anno branchnum notconds (_:rest) = collect_stmts mb_anno branchnum notconds rest
 
 					-- This is the whole switch, rewritten as nested if-then-elses.
 					case_replacement = collect_stmts 1 ctrue cbis
@@ -1704,7 +1706,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 				unfoldTracesM labelϵ mb_ret_type toplevel forks progress new_envs trace new_bstss
 
 			CIf cond then_stmt mb_else_stmt ni → do
-				(branches_to_follow) <- createBranchesWithAnno cond makeIfBranchName trace
+				branches_to_follow <- createBranchesWithAnno cond makeIfBranchName trace
 				forkUnfoldTraces forks progress toplevel branches_to_follow $ \ forks' progress' (branch,branch_cond) → do
 					printLogV 20 $ "### " ++ show branch ++ " , branch_cond = " ++ (render.pretty) branch_cond
 					let
@@ -2051,6 +2053,9 @@ cinitializer2blockitems lexpr ty initializer =
 					concatForM (zip initlist memberidentstypes) $ \case
 						(([],initializer),(memberident,memberty)) → do
 							memberty' <- elimTypeDefsM memberty
+							printLogV 0 $ "### memberty' = " ++ (render.pretty) memberty'
+							printLogV 0 $ "### memberident = " ++ (render.pretty) memberident
+							printLogV 0 $ "### initializer = " ++ (render.pretty) initializer	
 							cinitializer2blockitems (CMember lexpr memberident False (nodeInfo memberident)) memberty' initializer
 						_ → myError $ "cinitializer2blockitems DirectType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
 				ArrayType elem_ty _ _ _ → concatForM (zip [0..] initlist) $ \ (i,(partdesigs,cinitializer)) → do

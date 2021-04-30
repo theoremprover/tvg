@@ -108,10 +108,10 @@ short _FDunscale(short *pex, float *px)
  _Fval *ps = (_Fval *)(char *)px;
  short xchar = (ps->_Sh[1] & ((unsigned short)(0x7fff & ~((unsigned short)((1 << 7) - 1))))) >> 7;
 
- if (xchar == ((unsigned short)((1 << (15 - 7)) - 1))) //Then branch 1 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
+ if (solver_pragma(1) && xchar == ((unsigned short)((1 << (15 - 7)) - 1))) //Then branch 1 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
   {
   *pex = 0;
-  return ((ps->_Sh[1] & ((unsigned short)((1 << 7) - 1))) != 0 || ps->_Sh[0] != 0
+  return (solver_pragma(3) && ((ps->_Sh[1] & ((unsigned short)((1 << 7) - 1))) != 0 || ps->_Sh[0] != 0 )
    ? 2 : 1); //Else branch 3 "(F||F)" at line 114, col 12, len 70
   }
  else
@@ -136,7 +136,7 @@ short _FDunscale(short *pex, float *px)
 
 short _FDscale(float *px, long lexp)
  {
- _Dconst _FInf = { {0, ((unsigned short)((1 << (15 - 7)) - 1)) << 7} };
+ _Dconst _FInf = { { 0, ((unsigned short)((1 << (15 - 7)) - 1)) << 7 } };
 
  _Fval *ps = (_Fval *)(char *)px;
  short xchar = (short)((ps->_Sh[1] & ((unsigned short)(0x7fff & ~((unsigned short)((1 << 7) - 1))))) >> 7);
@@ -224,7 +224,7 @@ float (sqrtf)(float x)
  short xexp;
  float y;
 
- switch (_FDunscale(&xexp, &x))
+ switch (solver_pragma(3) && _FDunscale(&xexp, &x))
   {
  case 2:
  case 0:
