@@ -136,7 +136,7 @@ short _FDunscale(short *pex, float *px)
 
 short _FDscale(float *px, long lexp)
  {
- _Dconst _FInf = {{0, ((unsigned short)((1 << (15 - 7)) - 1)) << 7}};
+ _Dconst _FInf = { {0, ((unsigned short)((1 << (15 - 7)) - 1)) << 7} };
 
  _Fval *ps = (_Fval *)(char *)px;
  short xchar = (short)((ps->_Sh[1] & ((unsigned short)(0x7fff & ~((unsigned short)((1 << 7) - 1))))) >> 7);
