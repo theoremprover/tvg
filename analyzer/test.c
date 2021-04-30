@@ -59,7 +59,7 @@ int __attribute__((fardata)) _Errno;
  if ((errh & 2) != 0) //Then branch 1 "if((errh & 2) != 0)" at line 59, col 7, len 14
   {
   if ((except & (0x08 | 0x10)) != 0) //Else branch 2 "if((0x1 & (0x8 | 0x10)) != 0)" at line 61, col 8, len 28
-   except |= 0x20;
+     except |= 0x20;
   feraiseexcept(except);
   }
 
@@ -111,7 +111,7 @@ short _FDunscale(short *pex, float *px)
  if (solver_pragma(1) && xchar == ((unsigned short)((1 << (15 - 7)) - 1))) //Then branch 1 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
   {
   *pex = 0;
-  return (solver_pragma(3) && ((ps->_Sh[1] & ((unsigned short)((1 << 7) - 1))) != 0 || ps->_Sh[0] != 0 )
+  return ((solver_pragma(3) && ((ps->_Sh[1] & ((unsigned short)((1 << 7) - 1))) != 0 || ps->_Sh[0] != 0 ))
    ? 2 : 1); //Else branch 3 "(F||F)" at line 114, col 12, len 70
   }
  else

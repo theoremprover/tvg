@@ -1632,8 +1632,10 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 				jumphere_m trace forks
 
 			CSwitch condexpr0 (CCompound [] cbis _) switch_ni → do
-				let (condexpr,mb_anno) = extractAnnotation condexpr0
+				(condexpr,mb_anno) <- recognizeAnnotation condexpr0 trace
 				ctrue <- ⅈ 1
+				c_1 <- ⅈ 1
+				c_2 <- ⅈ 2
 				let
 					cond_ni = nodeInfo condexpr
 					cond_var_ident = mkIdentWithCNodePos condexpr $ "cond_" ++ (locationToName $ lineColNodeInfo condexpr)
@@ -1642,11 +1644,11 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 					cond_var = CVar cond_var_ident cond_ni
 
 					-- Go through all the switch's "case"s and "default"s...
-					collect_stmts :: Maybe [Int] → Int → CExpr → [CBlockItem] → [CBlockItem]
+					collect_stmts :: Int → CExpr → [CBlockItem] → [CBlockItem]
 
-					collect_stmts _ _ _ [] = []
+					collect_stmts _ _ [] = []
 
-					collect_stmts _ branchnum notconds (CBlockStmt cdefault@(CDefault def_stmt default_ni) : rest) =
+					collect_stmts branchnum notconds (CBlockStmt cdefault@(CDefault def_stmt default_ni) : rest) =
 						-- This is to explicitly cover the "default" branch (located at the "default" keyword).
 						wrapGoto (Just $ Branch (lineColNodeInfo cdefault) branchnum False makeDefaultBranchName,notconds) :
 							CBlockStmt def_stmt :
@@ -1659,13 +1661,13 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 									"collect_stmts: the case when 'default' is not the last item in the switch is not implemented"
 
 					-- flatten if the stmt of the case is the next case
-					collect_stmts mb_anno branchnum notconds (CBlockStmt ccase@(CCase caseexpr subcase@(CCase _ _ _) case_ni) : rest) =
+					collect_stmts branchnum notconds (CBlockStmt ccase@(CCase caseexpr subcase@(CCase _ _ _) case_ni) : rest) =
 						collect_stmts branchnum notconds (
 							CBlockStmt (CCase caseexpr (CExpr Nothing undefNode) case_ni) : CBlockStmt subcase : rest )
 
 					-- if we have a "case <expr>: stmt", insert "if (expr==cond_var) { stmt; rest } else <recurse_collect_stmts>"
-					collect_stmts mb_anno branchnum notconds (CBlockStmt ccase@(CCase caseexpr stmt case_ni) : rest) = [
-						CBlockStmt $ CIf (CBinary CEqOp cond_var caseexpr case_ni)
+					collect_stmts branchnum notconds (CBlockStmt ccase@(CCase caseexpr stmt case_ni) : rest) = [
+						CBlockStmt $ CIf if_cond_mb_with_anno
 							(makeCompound $
 								wrapGoto (Just $ Branch (lineColNodeInfo ccase) branchnum False ("case " ++ (render.pretty) caseexpr),cond) :
 								CBlockStmt stmt :
@@ -1681,10 +1683,18 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 							CBlockStmt (CCase _ stmt _)  → CBlockStmt stmt
 							CBlockStmt (CDefault stmt _) → CBlockStmt stmt
 							cbi → cbi
-						if_cond_with_anno = case (mb_anno,branchnum) of
-							(Just (i:_),
+						if_cond_mb_with_anno = case mb_anno of
+							Just (args,num_reached) | num_reached < length args && branchnum == args!!num_reached →
+								CBinary CLndOp (CCall (CVar (internalIdent "solver_pragma") undefNode) case_args undefNode)
+									pure_cond (nodeInfo pure_cond)
+								where
+								case_args = for (filter (>=branchnum) args) $ \ arg -> if arg==branchnum then c_1 else c_2
+							_ → pure_cond
+							where
+							pure_cond = CBinary CEqOp cond_var caseexpr case_ni
+
 					-- if it was neither a "case" or "default", skip it.
-					collect_stmts mb_anno branchnum notconds (_:rest) = collect_stmts mb_anno branchnum notconds rest
+					collect_stmts branchnum notconds (_:rest) = collect_stmts branchnum notconds rest
 
 					-- This is the whole switch, rewritten as nested if-then-elses.
 					case_replacement = collect_stmts 1 ctrue cbis
