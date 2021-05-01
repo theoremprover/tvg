@@ -67,6 +67,8 @@ import Logging
 
 --------------
 
+fastMode = False
+
 subfuncovOpt = "-subfuncov"
 noHaltOnVerificationErrorOpt = "-nohalt"
 noIndentLogOpt = "-noindentlog"
@@ -88,7 +90,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [writeModelsOpt,noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [htmlLogOpt,writeModelsOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -275,8 +277,6 @@ main = do
 
 			when (htmlLogOpt `elem` opts) $ createHTMLLog
 
-
-fastMode = True
 
 outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
@@ -746,7 +746,7 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 			return [ CBlockStmt $ CVar ident (nodeInfo ident) ≔ const_expr ]
 		def2stmt (ObjectDef (ObjDef (VarDecl (VarName ident _) _ ty) (Just initializer) ni)) = do
 			ty' <- elimTypeDefsM ty
-			cinitializer2blockitems (CVar ident ni) ty' initializer
+			cinitializer2blockitems True (CVar ident ni) ty' initializer
 		def2stmt _ = return []
 	-- creates the assignment statements from the global context
 	defs <- concatMapM def2stmt globdecls
@@ -1957,7 +1957,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs@(ϵ:restϵs) trac
 				union_eq_constraints <- unionEqConstraintsM (CVar ident' (undefNode,tys)) ty
 				initializers <- case mb_init of
 					Nothing → return []
-					Just initializer → cinitializer2blockitems (CVar ident ni) ty initializer
+					Just initializer → cinitializer2blockitems True (CVar ident ni) ty initializer
 				return (newenvitems,union_eq_constraints++newdecls,initializers)
 			triple → myError $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 		let (newϵs,newitems,initializerss) = unzip3 $ reverse new_env_items
@@ -2051,14 +2051,20 @@ fvar expr = nub $ everything (++) (mkQ [] searchvar) (everywhere (mkT delete_att
 	searchvar (CVar ident _) = [ ident ]
 	searchvar _ = []
 
-cinitializer2blockitems :: CExpr → Type → CInit → CovVecM [CBlockItem]
-cinitializer2blockitems lexpr ty initializer =
+cinitializer2blockitems :: Bool → CExpr → Type → CInit → CovVecM [CBlockItem]
+cinitializer2blockitems is_declared lexpr ty initializer = logWrapper ["cinitializer2blockitems",ren is_declared,ren lexpr,ren ty,ren initializer] $ do
 	case initializer of
-		CInitExpr expr ni_init → return [ CBlockStmt $ lexpr ≔ expr ]
+		CInitExpr expr ni_init → do
+			printLogV 0 $ "### CInitExpr expr = " ++ (render.pretty) (CBlockStmt $ lexpr ≔ expr)
+			return $ case is_declared of
+				True  → [ CBlockStmt $ lexpr ≔ expr ]
+				False → [ ]
 		CInitList initlist ni_init → do
+			printLogV 0 $ "### CInitList initlist"
 			ty' <- elimTypeDefsM ty
 			case ty' of
 				DirectType (TyComp (CompTypeRef sueref _ _)) _ _ → do
+					printLogV 0 $ "### DirectType ty' = " ++ (render.pretty) ty'
 					memberidentstypes <- getMembersM sueref
 					concatForM (zip initlist memberidentstypes) $ \case
 						(([],initializer),(memberident,memberty)) → do
@@ -2066,14 +2072,16 @@ cinitializer2blockitems lexpr ty initializer =
 							printLogV 0 $ "### memberty' = " ++ (render.pretty) memberty'
 							printLogV 0 $ "### memberident = " ++ (render.pretty) memberident
 							printLogV 0 $ "### initializer = " ++ (render.pretty) initializer	
-							cinitializer2blockitems (CMember lexpr memberident False (nodeInfo memberident)) memberty' initializer
+							cinitializer2blockitems False (CMember lexpr memberident False (nodeInfo memberident)) memberty' initializer
 						_ → myError $ "cinitializer2blockitems DirectType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
-				ArrayType elem_ty _ _ _ → concatForM (zip [0..] initlist) $ \ (i,(partdesigs,cinitializer)) → do
-					case partdesigs of
-						[] → do
-							ii <- ⅈ i
-							cinitializer2blockitems (CIndex lexpr ii ni_init) elem_ty cinitializer
-						_ → myError $ "cinitializer2blockitems ArrayType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
+				ArrayType elem_ty _ _ _ → do
+					printLogV 0 $ "### ArrayType elem_ty = " ++ (render.pretty) elem_ty
+					concatForM (zip [0..] initlist) $ \ (i,(partdesigs,cinitializer)) → do
+						case partdesigs of
+							[] → do
+								ii <- ⅈ i
+								cinitializer2blockitems False (CIndex lexpr ii ni_init) elem_ty cinitializer
+							_ → myError $ "cinitializer2blockitems ArrayType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
 				_ → myError $ "cinitializer2blockitems: " ++ (render.pretty) ty' ++ " at " ++ (show $ nodeInfo lexpr) ++ " not implemented!"
 
 showFullLocation :: (CNode a) => a → String
