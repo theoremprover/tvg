@@ -2058,7 +2058,7 @@ cinitializer2blockitems is_declared lexpr ty initializer = logWrapper ["cinitial
 			printLogV 0 $ "### CInitExpr expr = " ++ (render.pretty) (CBlockStmt $ lexpr ≔ expr)
 			return $ case is_declared of
 				True  → [ CBlockStmt $ lexpr ≔ expr ]
-				False → [ ]
+				False → [ CBlockStmt $ lexpr ≔ expr ]
 		CInitList initlist ni_init → do
 			printLogV 0 $ "### CInitList initlist"
 			ty' <- elimTypeDefsM ty
