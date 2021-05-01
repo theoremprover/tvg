@@ -88,7 +88,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [writeModelsOpt,noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -1113,7 +1113,7 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 
 									startends <- gets funStartEndCVS
 									printLogV 20 $ "startends = " ++ show startends
-									let visible_trace = concatMap to_branch res_line
+									let visible_trace = nub $ concatMap to_branch res_line
 										where
 										is_visible_branch :: [(Location,Location)] → Location → Bool
 										is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
@@ -3058,7 +3058,12 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	printLogV 2 $ "Running model " ++ takeFileName modelpathfile ++ "..."
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
 		readProcessWithExitCode z3FilePath ["-smt2","-in","parallel.enable=true"] model_string
-	let dropped_output = dropWhile (not . (`elem` ["unsat","sat","unknown"])) $ lines output
+	let
+		drop_prelude (l:ls) = case l of
+			_ | l `elem` ["unsat","sat","unknown"] → l:ls
+			_ | "(error " `isPrefixOf` l → l:ls
+			_ → drop_prelude ls
+		dropped_output = drop_prelude $ lines output
 	printLogV 20 $ "\nZ3 says:\n" ++ unlines dropped_output
 	case dropped_output of
 		"unsat"   : _ → return (model_string_linenumbers,Nothing)
