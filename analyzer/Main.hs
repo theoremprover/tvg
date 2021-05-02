@@ -746,7 +746,7 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 			return [ CBlockStmt $ CVar ident (nodeInfo ident) ≔ const_expr ]
 		def2stmt (ObjectDef (ObjDef (VarDecl (VarName ident _) _ ty) (Just initializer) ni)) = do
 			ty' <- elimTypeDefsM ty
-			cinitializer2blockitems True (CVar ident ni) ty' initializer
+			cinitializer2blockitems (CVar ident ni) ty' initializer
 		def2stmt _ = return []
 	-- creates the assignment statements from the global context
 	defs <- concatMapM def2stmt globdecls
@@ -1039,10 +1039,10 @@ type Progress = [(Int,Int)]
 
 printProgressM :: Progress → CovVecM ()
 printProgressM progress = do
-	printLogV 0 $ printf "Current progress = %s" (show progress)
-	printLogV 0 $ printf "Current depth = %i" (length progress)
-	printLogV 0 $ printf "Current estimated total number of traces: %i" (product $ map snd progress) 
-	printLogV 0 $ printf "Progress: %.1f %%" (100.0 * (pct $ reverse progress))
+	printLogV 1 $ printf "Current progress = %s" (show progress)
+	printLogV 1 $ printf "Current depth = %i" (length progress)
+	printLogV 1 $ printf "Current estimated total number of traces: %i" (product $ map snd progress) 
+	printLogV 1 $ printf "Progress: %.1f %%" (100.0 * (pct $ reverse progress))
 	where
 	pct :: Progress → Float
 	pct [] = 0.0
@@ -1087,12 +1087,12 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 
 					trace_for_def_analysis <-
 						showtraceM showInitialTrace "Initial" return trace >>=
-						showtraceM showTraces "elimInds"             elimInds
+						showtraceM showTraces "elimInds"                 elimInds
 					trace' <-
-						showtraceM showTraces "1. simplifyTraceM"    simplifyTraceM trace_for_def_analysis >>=
-						showtraceM showTraces "elimArrayAssignsM"    elimArrayAssignsM >>=
-						showtraceM showTraces "elimAssignmentsM"  elimAssignmentsM >>=
-						showtraceM showTraces "2. simplifyTraceM"    simplifyTraceM >>=
+						showtraceM showTraces "1. simplifyTraceM"        simplifyTraceM trace_for_def_analysis >>=
+						showtraceM showTraces "elimArrayAssignsM"        elimArrayAssignsM >>=
+						showtraceM showTraces "elimAssignmentsM"         elimAssignmentsM >>=
+						showtraceM showTraces "2. simplifyTraceM"        simplifyTraceM >>=
 						showtraceM showFinalTrace "createSymbolicVarsM"  createSymbolicVarsM
 
 					solveTraceM mb_ret_type traceid trace' >>= \case
@@ -1311,10 +1311,11 @@ decl2TypeM decl = do
 			(storagespec, attrs_decl, typequals, typespecs, funspecs, alignspecs) = partitionDeclSpecs declspecs
 		analyseTyDeclr other = error $ "analyseTyDeclr " ++ show other
 
-type2Decl :: Ident → NodeInfo → Type → CDecl
-type2Decl ident ni ty = CDecl (map CTypeSpec typespecs)
-	[(Just $ CDeclr (Just ident) derivdeclrs Nothing [] ni,Nothing,Nothing)] ni
+type2Decl :: Ident → NodeInfo → Type → Maybe CExpr → CDecl
+type2Decl ident ni ty mb_init_expr = CDecl (map CTypeSpec typespecs)
+	[(Just $ CDeclr (Just ident) derivdeclrs Nothing [] ni,mb_initializer,Nothing)] ni
 	where
+	mb_initializer = fmap (\ expr -> CInitExpr expr undefNode) mb_init_expr
 	(typespecs,derivdeclrs) = ty2specs ty
 	ty2specs ty = case ty of
 		DirectType tyname _ _ → (case tyname of
@@ -1423,7 +1424,7 @@ newNameM = do
 	modify $ \ s → s { newNameIndexCVS = newNameIndexCVS s + 1 }
 	return new_var_num
 
--- Takes an identifier and a type, and creates ϵ item(s) from that.
+-- Takes an identifier and a type, and creates envitem(s) from that.
 
 identTy2EnvItemM :: Ident → Type → CovVecM [EnvItem]
 identTy2EnvItemM srcident@(Ident _ i ni) ty = do
@@ -1433,9 +1434,25 @@ identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 		name_prefix = identToString srcident
 		-- a dollar sign is not allowed in a C identifier, but Z3 allows for it.
 		-- By inserting one in new names we avoid unlucky name collisions with already existing names in the source file
-		newident = Ident (name_prefix ++ "$" ++ show new_var_num) i ni
-	return $ [ (srcident,(newident,ty')) ]
+		newident_name = name_prefix ++ "$" ++ show new_var_num
+		newident = Ident newident_name i ni
 
+	-- also create envitems for structure/union members (recursively)
+	-- (without giving new names)
+		recurse_over_members new_ident new_ty = case new_ty of
+			DirectType (TyComp (CompTypeRef sueref _ _)) _ _ → do
+				members_tys <- getMembersM sueref
+				concatForM members_tys $ \ (member_ident,member_ty) → do
+					member_ty' <- elimTypeDefsM member_ty
+					let
+						newident = internalIdent $
+							lValueToVarName $ CMember (CVar new_ident undefNode) member_ident False undefNode
+					recs <- recurse_over_members newident member_ty'
+					return $ (newident,(newident,member_ty')) : recs
+			_ → return []
+	newenvitems <- recurse_over_members newident ty'
+
+	return $ newenvitems ++ [ (srcident,(newident,ty')) ]
 
 type CIFE = StateT ([EnvItem],[TraceElem]) CovVecM [(EnvItem,CExprWithType)]
 
@@ -1957,7 +1974,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs@(ϵ:restϵs) trac
 				union_eq_constraints <- unionEqConstraintsM (CVar ident' (undefNode,tys)) ty
 				initializers <- case mb_init of
 					Nothing → return []
-					Just initializer → cinitializer2blockitems True (CVar ident ni) ty initializer
+					Just initializer → cinitializer2blockitems (CVar ident ni) ty initializer
 				return (newenvitems,union_eq_constraints++newdecls,initializers)
 			triple → myError $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 		let (newϵs,newitems,initializerss) = unzip3 $ reverse new_env_items
@@ -2051,36 +2068,28 @@ fvar expr = nub $ everything (++) (mkQ [] searchvar) (everywhere (mkT delete_att
 	searchvar (CVar ident _) = [ ident ]
 	searchvar _ = []
 
-cinitializer2blockitems :: Bool → CExpr → Type → CInit → CovVecM [CBlockItem]
-cinitializer2blockitems is_declared lexpr ty initializer = logWrapper ["cinitializer2blockitems",ren is_declared,ren lexpr,ren ty,ren initializer] $ do
+cinitializer2blockitems :: CExpr → Type → CInit → CovVecM [CBlockItem]
+cinitializer2blockitems lexpr ty initializer = logWrapper ["cinitializer2blockitems",ren lexpr,ren ty,ren initializer] $ do
 	case initializer of
 		CInitExpr expr ni_init → do
-			printLogV 0 $ "### CInitExpr expr = " ++ (render.pretty) (CBlockStmt $ lexpr ≔ expr)
-			return $ case is_declared of
-				True  → [ CBlockStmt $ lexpr ≔ expr ]
-				False → [ CBlockStmt $ lexpr ≔ expr ]
+			let cbi = CBlockStmt $ lexpr ≔ expr
+			return [ cbi ]
 		CInitList initlist ni_init → do
-			printLogV 0 $ "### CInitList initlist"
 			ty' <- elimTypeDefsM ty
 			case ty' of
 				DirectType (TyComp (CompTypeRef sueref _ _)) _ _ → do
-					printLogV 0 $ "### DirectType ty' = " ++ (render.pretty) ty'
 					memberidentstypes <- getMembersM sueref
 					concatForM (zip initlist memberidentstypes) $ \case
 						(([],initializer),(memberident,memberty)) → do
 							memberty' <- elimTypeDefsM memberty
-							printLogV 0 $ "### memberty' = " ++ (render.pretty) memberty'
-							printLogV 0 $ "### memberident = " ++ (render.pretty) memberident
-							printLogV 0 $ "### initializer = " ++ (render.pretty) initializer	
-							cinitializer2blockitems False (CMember lexpr memberident False (nodeInfo memberident)) memberty' initializer
+							cinitializer2blockitems (CMember lexpr memberident False (nodeInfo memberident)) memberty' initializer
 						_ → myError $ "cinitializer2blockitems DirectType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
 				ArrayType elem_ty _ _ _ → do
-					printLogV 0 $ "### ArrayType elem_ty = " ++ (render.pretty) elem_ty
 					concatForM (zip [0..] initlist) $ \ (i,(partdesigs,cinitializer)) → do
 						case partdesigs of
 							[] → do
 								ii <- ⅈ i
-								cinitializer2blockitems False (CIndex lexpr ii ni_init) elem_ty cinitializer
+								cinitializer2blockitems (CIndex lexpr ii ni_init) elem_ty cinitializer
 							_ → myError $ "cinitializer2blockitems ArrayType: CPartDesignators not implemented yet in\n" ++ (render.pretty) ty
 				_ → myError $ "cinitializer2blockitems: " ++ (render.pretty) ty' ++ " at " ++ (show $ nodeInfo lexpr) ++ " not implemented!"
 
@@ -2262,7 +2271,7 @@ scanExprM ϵs expr0 mb_target_ty trace = logWrapper ["scanExprM",ren ϵs,ren exp
 
 			(branches_to_follow) <- lift $ createBranchesWithAnno cond makeCondBranchName trace
 			let
-				decl = CBlockDecl $ type2Decl var_ident ni ty
+				decl = CBlockDecl $ type2Decl var_ident ni ty Nothing
 				(_,ty) = extractTypes ccond'
 				cbiss = for branches_to_follow $ \ (branch,branch_cond) →
 					decl : wrapGoto (Just branch,branch_cond) : case isElseBranch branch of
@@ -2391,6 +2400,19 @@ substituteBy x y d = everywhere (mkT (substexpr x y)) d
 	p = &y;
 	*p = 4;
 -}
+
+{-
+-- Add declarations for struct/union members
+completeStructDeclsM :: Trace → CovVecM Trace
+completeStructDeclsM trace = complete_decls [] (reverse trace)
+	where
+	complete_decls Trace → Trace → CovVecM Trace
+	complete_decls res_trace [] = return res_trace
+	complete_decls res_trace (NewDeclaration (ident,ty) : rest) = case ty of
+		DirectType (TyComp (CompTypeRef sueref comptykind _)) _ _ → do
+			member_ty_s <- getMembersM sueref
+-}
+
 
 elimInds :: Trace → CovVecM Trace
 elimInds trace = elim_indsM [] $ reverse trace
@@ -2996,27 +3018,31 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			return bvid
 		_ → return oid ) z3tyenv0
 
+	-- collect all variables that appear in the constraints and assignments
+	let
+		constraints_vars = nub $ concat $ for constraints $ \case
+			Condition _ expr → fvar expr
+			Assignment (Normal lexpr@(CIndex _ _ _)) ass_expr → fvar lexpr ++ fvar ass_expr
+			Assignment (ArrayUpdate ident1 ident2 _ index) ass_expr → [ident1,ident2] ++ fvar index ++ fvar ass_expr
+
 	-- prefix a "a_" for identifiers starting with underscore (Z3 does not like leading underscores...)
 	-- in constraints and output_idents
-	let  
-		(a_constraints,a_output_idents) = everywhere (mkT prefix_a) (constraints,output_idents) where
+	let
+		(a_constraints_vars,a_constraints,a_output_idents,a_z3tyenv) = everywhere (mkT prefix_a) (constraints_vars,constraints,output_idents,z3tyenv) where
 			prefix_a :: Ident → Ident
 			prefix_a (Ident s@('_':_) i ni) = Ident (safeZ3IdentifierPrefix:s) i ni
 			prefix_a ident = ident
 
-	-- collect all variables that appear in the constraints and assignments
-	let
-		constraints_vars = nub $ concat $ for a_constraints $ \case
-			Condition _ expr → fvar expr
-			Assignment (Normal lexpr@(CIndex _ _ _)) ass_expr → fvar lexpr ++ fvar ass_expr
-			Assignment (ArrayUpdate ident1 ident2 _ index) ass_expr → [ident1,ident2] ++ fvar index ++ fvar ass_expr
+--	forM_ a_z3tyenv $ \ (ident,z3ty) -> printLogV 0 $ "### " ++ (render.pretty) ident ++ " :: " ++ show z3ty
+
+--	forM_ a_constraints_vars $ \ v -> printLogV 0 $ "*** " ++ (render.pretty) v
 
 	-- create declarations in the Z3 model for all variables from the z3tyenv that
 	-- appear in the constraints and assignments, or
 	-- are a_output_idents, or
 	-- ?
-	let create_decl (ident,_) = ident `elem` (constraints_vars ++ a_output_idents) -- ++ output_idents0)
-	varsZ3 :: [SCompound] <- concatForM (filter create_decl z3tyenv) $ \ (ident,ty) → do
+	let create_decl (ident,_) = ident `elem` (a_constraints_vars ++ a_output_idents) -- ++ output_idents0)
+	varsZ3 :: [SCompound] <- concatForM (filter create_decl a_z3tyenv) $ \ (ident,ty) → do
 		let varname = identToString ident
 		decl <- declConst2SExpr varname ty
 		-- if a variable is a bitvector stemming from a floating point argument, also declare its bitvector representation and the corresponding equality
@@ -3085,7 +3111,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 						Nothing → ident0
 					is = escapeDollars $ identToString ident0
 				case line =~ ("\\(\\(" ++ is ++ " ([^\\)]+)\\)\\)") :: (String,String,String,[String]) of
-					(_,_,_,[val_string]) → case lookup ident z3tyenv of
+					(_,_,_,[val_string]) → case lookup ident a_z3tyenv of
 						Nothing → myError $ "Parsing z3 output: Could not find type of " ++ (render.pretty) ident
 						Just ty → return (identToString ident, case ty of
 							Z3_BitVector size unsigned → let
