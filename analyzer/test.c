@@ -218,8 +218,7 @@ short _FDscale(float *px, long lexp)
 
 float (sqrtf)(float x)
  {
-   _Dconst _FNan = {{0, (((unsigned short)((1 << (15 - 7)) - 1)) << 7) | (1 << (7 - 1))}
-      };
+  _Dconst _FNan = {{0, (((unsigned short)((1 << (15 - 7)) - 1)) << 7) | (1 << (7 - 1))} };
 
  short xexp;
  float y;

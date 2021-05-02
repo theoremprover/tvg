@@ -67,7 +67,7 @@ import Logging
 
 --------------
 
-fastMode = False
+fastMode = True
 
 subfuncovOpt = "-subfuncov"
 noHaltOnVerificationErrorOpt = "-nohalt"
