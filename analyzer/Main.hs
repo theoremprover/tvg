@@ -1629,6 +1629,7 @@ unfoldTracesM labelϵ ret_type toplevel forks progress ϵs trace cbss = do
 					False → do
 						printLogV 1 $ "******** Cutting off !"
 						incCutoffsM
+						printStatsM
 						return $ case toplevel of
 							True  → Right False
 							False → Left []
