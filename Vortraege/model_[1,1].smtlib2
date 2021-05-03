@@ -1,0 +1,172 @@
+; [1,1]
+
+(set-option :smt.relevancy 0)
+(set-option :produce-models true)
+
+(declare-const px (_ BitVec 1))
+(declare-const PTR_px Float32)
+(declare-const return_val (_ BitVec 16))
+(declare-const bv$PTR_px (_ BitVec 32))
+(assert (= ((_ to_fp 8 24) bv$PTR_px) PTR_px))
+
+
+; ----------------------------------------------
+; COND Then branch 1 "if((ps->_Sh[1] & (unsigned short) (0x7fff & ~(unsigned short) ((1 << 7) - 1))) == (unsigned short) ((1 << 15 - 7) - 1) << 7)" at line 24, col 7, len 124 (((Z3_BitVector 32 False) (((Z3_BitVector 16 True []) PTR_px)[1] & ((Z3_BitVector 16 True) (32767 & ((Z3_BitVector 32 False) (~ ((Z3_BitVector 16 True) ((1 << 7) - 1)))))))) == (((Z3_BitVector 32 False) ((Z3_BitVector 16 True) ((1 << (15 - 7)) - 1))) << 7))
+; ----------------------------------------------
+(declare-const
+    arr$$5
+    (Array
+        (_ BitVec 32)
+        (_ BitVec 16)
+    )
+)
+(assert
+    (=
+        arr$$5
+        (store
+            arr$$5
+            #x00000000
+            ((_ extract 15 0)
+                bv$PTR_px
+            )
+        )
+    )
+)
+(assert
+    (=
+        arr$$5
+        (store
+            arr$$5
+            #x00000001
+            ((_ extract 31 16)
+                bv$PTR_px
+            )
+        )
+    )
+)
+(assert
+    (=
+        ((_ zero_extend 16)
+            (bvand
+                (select
+                    arr$$5
+                    #x00000001
+                )
+                ((_ extract 15 0)
+                    (bvand
+                        #x00007fff
+                        ((_ zero_extend 16)
+                            (bvnot
+                                ((_ extract 15 0)
+                                    (bvsub
+                                        (bvshl
+                                            #x00000001
+                                            #x00000007
+                                        )
+                                        #x00000001
+                                    )
+                                )
+                            )
+                        )
+                    )
+                )
+            )
+        )
+        (bvshl
+            ((_ zero_extend 16)
+                ((_ extract 15 0)
+                    (bvsub
+                        (bvshl
+                            #x00000001
+                            (bvsub
+                                #x0000000f
+                                #x00000007
+                            )
+                        )
+                        #x00000001
+                    )
+                )
+            )
+            #x00000007
+        )
+    )
+)
+
+; ----------------------------------------------
+; COND Then branch 1 "(T||_)" at line 25, col 20, len 70 (! (((Z3_BitVector 32 False) (((Z3_BitVector 16 True []) PTR_px)[1] & ((Z3_BitVector 16 True) ((1 << 7) - 1)))) == 0))
+; ----------------------------------------------
+(declare-const
+    arr$$6
+    (Array
+        (_ BitVec 32)
+        (_ BitVec 16)
+    )
+)
+(assert
+    (=
+        arr$$6
+        (store
+            arr$$6
+            #x00000000
+            ((_ extract 15 0)
+                bv$PTR_px
+            )
+        )
+    )
+)
+(assert
+    (=
+        arr$$6
+        (store
+            arr$$6
+            #x00000001
+            ((_ extract 31 16)
+                bv$PTR_px
+            )
+        )
+    )
+)
+(assert
+    (not
+        (=
+            ((_ zero_extend 16)
+                (bvand
+                    (select
+                        arr$$6
+                        #x00000001
+                    )
+                    ((_ extract 15 0)
+                        (bvsub
+                            (bvshl
+                                #x00000001
+                                #x00000007
+                            )
+                            #x00000001
+                        )
+                    )
+                )
+            )
+            #x00000000
+        )
+    )
+)
+
+; ----------------------------------------------
+; COND Nothing (return_val == ((Z3_BitVector 16 False) 2))
+; ----------------------------------------------
+(assert
+    (=
+        return_val
+        ((_ extract 15 0)
+            #x00000002
+        )
+    )
+)
+
+
+(apply (then simplify solve-eqs))
+(check-sat)
+
+(get-value (px))
+(get-value (bv$PTR_px))
+(get-value (return_val))
