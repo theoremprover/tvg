@@ -90,7 +90,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -107,7 +107,7 @@ main = do
 
 --		[] → "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : [showModelsOpt,writeModelsOpt]
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writemodels",noIndentLogOpt]
-		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [writeModelsOpt,subfuncovOpt,noIndentLogOpt]
+--		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [writeModelsOpt,subfuncovOpt,noIndentLogOpt]
 --		[] → "gcc" : "fabsf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writemodels",noIndentLogOpt]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\mcdctest.c") : ["-writemodels"] --["-writeAST","-writeGlobalDecls"]
