@@ -69,6 +69,8 @@ import Logging
 
 fastMode = True
 
+reachFixedTrace :: Maybe [Int] = Nothing --Just [1,3,1,3,3,2,2,1,2,1,1,2]
+
 subfuncovOpt = "-subfuncov"
 noHaltOnVerificationErrorOpt = "-nohalt"
 noIndentLogOpt = "-noindentlog"
@@ -1053,97 +1055,102 @@ analyzeTraceM :: Maybe Type → Progress → [TraceElem] → CovVecM Bool
 analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_type,ren res_line,ren "traceid=",ren traceid] $ do
 	printLogV 1 $ "\n"
 	-- check if the trace was already analyzed (this can happen because of unfolding loops containing a return).
-	(traceanalysisresults,_) <- gets analysisStateCVS
-	case traceid `elem` (map (\(tid,_,_,_)->tid) traceanalysisresults) of
-		True -> do
-			myError $ "Trace " ++ show traceid ++ " already analyzed!"
-			-- Since the trace is in analysisStateCVS, it must have been solvable (see below,
-			-- otherwise it wouldn't have been added to analysisStateCVS)
-			return True
-		False -> do
-			findmode <- isOptionSet findModeOpt
-			let
-				found_finds = any is_solverfind res_line
-				is_solverfind :: TraceElem → Bool
-				is_solverfind SolverFind = True
-				is_solverfind _ = False
-			case findmode && not found_finds of
-				True → do
-					printLogV 1 $ "Did not find solver_find, cutting off."
-					return False
-				False → do
-					incNumTracesM
-					printStatsM
-					printProgressM progress
-					printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
-
-					opts <- gets optsCVS
-					when ("-exportPaths" `elem` opts) $ liftIO $ do
-						writeFile (analyzerPath </> "models" </> "path_" ++ show traceid <.> ".c") $ unlines $ concat $ for trace $ \case
-							Assignment lexpr assexpr → [ (render.pretty) lexpr ++ " = " ++ (render.pretty) assexpr ++ " ;" ]
-							NewDeclaration (ident,ty) → [ "(" ++ (render.pretty) ty ++ ") " ++ (render.pretty) ident ++ " ;" ]
-							Return expr → [ "return " ++ (render.pretty) expr ++ " ;" ]
-							_ → []
-
-					trace_for_def_analysis <-
-						showtraceM showInitialTrace "Initial" return trace >>=
-						showtraceM showTraces "elimInds"                 elimInds
-					trace' <-
-						showtraceM showTraces "1. simplifyTraceM"        simplifyTraceM trace_for_def_analysis >>=
-						showtraceM showTraces "elimArrayAssignsM"        elimArrayAssignsM >>=
-						showtraceM showTraces "elimAssignmentsM"         elimAssignmentsM >>=
-						showtraceM showTraces "2. simplifyTraceM"        simplifyTraceM >>=
-						showtraceM showFinalTrace "createSymbolicVarsM"  createSymbolicVarsM
-
-					solveTraceM mb_ret_type traceid trace' >>= \case
-						Left solvable → return solvable
-						Right resultdata@(model_string,mb_solution) → do
-							funname <- gets funNameCVS
-							let show_solution_msg = show_solution funname mb_solution ++ "\n"
-							printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n\n" ++ show_solution_msg
-							case mb_solution of
-								Nothing → do
-									incNumNoSolutionM
-									return False
-								Just (_,_,[]) → myError $ "Empty solution: \n" ++ show_solution_msg
-								Just solution → do
-									incNumSolutionM
-									printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
-									printToSolutions show_solution_msg
-
-									startends <- gets funStartEndCVS
-									printLogV 20 $ "startends = " ++ show startends
-									let visible_trace = nub $ concatMap to_branch res_line
-										where
-										is_visible_branch :: [(Location,Location)] → Location → Bool
-										is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
-										to_branch (Condition (Just branch) _) | is_visible_branch startends (branchLocation branch) = [ branch ]
-										to_branch _ = []
-
-									let cov_branches = "\tCOVERED BRANCHES:\n" ++ unlines (map (("\t"++).showBranch) visible_trace)
-									printLogV 1 cov_branches
-									printToSolutions cov_branches
-
-									checkVarsDefined mb_ret_type trace_for_def_analysis >>= \case
-										Just msg → do
-											printLogV 0 msg
-											printLogV 0 $ "Will not checkSolutions for " ++ show traceid
+	case reachFixedTrace of
+		Just fixedtrace | not (traceid `isPrefixOf` fixedtrace) -> do
+			printConsole 1 $ "\r " ++ show traceid ++ " no prefix of " ++ show fixedtrace ++ "                   "
+			return False
+		_ -> do
+			(traceanalysisresults,_) <- gets analysisStateCVS
+			case traceid `elem` (map (\(tid,_,_,_)->tid) traceanalysisresults) of
+				True -> do
+					myError $ "Trace " ++ show traceid ++ " already analyzed!"
+					-- Since the trace is in analysisStateCVS, it must have been solvable (see below,
+					-- otherwise it wouldn't have been added to analysisStateCVS)
+					return True
+				False -> do
+					findmode <- isOptionSet findModeOpt
+					let
+						found_finds = any is_solverfind res_line
+						is_solverfind :: TraceElem → Bool
+						is_solverfind SolverFind = True
+						is_solverfind _ = False
+					case findmode && not found_finds of
+						True → do
+							printLogV 1 $ "Did not find solver_find, cutting off."
+							return False
+						False → do
+							incNumTracesM
+							printStatsM
+							printProgressM progress
+							printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
+		
+							opts <- gets optsCVS
+							when ("-exportPaths" `elem` opts) $ liftIO $ do
+								writeFile (analyzerPath </> "models" </> "path_" ++ show traceid <.> ".c") $ unlines $ concat $ for trace $ \case
+									Assignment lexpr assexpr → [ (render.pretty) lexpr ++ " = " ++ (render.pretty) assexpr ++ " ;" ]
+									NewDeclaration (ident,ty) → [ "(" ++ (render.pretty) ty ++ ") " ++ (render.pretty) ident ++ " ;" ]
+									Return expr → [ "return " ++ (render.pretty) expr ++ " ;" ]
+									_ → []
+		
+							trace_for_def_analysis <-
+								showtraceM showInitialTrace "Initial" return trace >>=
+								showtraceM showTraces "elimInds"                 elimInds
+							trace' <-
+								showtraceM showTraces "1. simplifyTraceM"        simplifyTraceM trace_for_def_analysis >>=
+								showtraceM showTraces "elimArrayAssignsM"        elimArrayAssignsM >>=
+								showtraceM showTraces "elimAssignmentsM"         elimAssignmentsM >>=
+								showtraceM showTraces "2. simplifyTraceM"        simplifyTraceM >>=
+								showtraceM showFinalTrace "createSymbolicVarsM"  createSymbolicVarsM
+		
+							solveTraceM mb_ret_type traceid trace' >>= \case
+								Left solvable → return solvable
+								Right resultdata@(model_string,mb_solution) → do
+									funname <- gets funNameCVS
+									let show_solution_msg = show_solution funname mb_solution ++ "\n"
+									printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n\n" ++ show_solution_msg
+									case mb_solution of
 										Nothing → do
-											when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
-
-									(tas,covered) <- gets analysisStateCVS
-									all_branches <- gets allCondPointsCVS
-									let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
-									let excess_branches = visible_trace \\ all_branches
-									when (not $ null excess_branches) $ do
-										printCondPoints all_branches
-										myError $ "Branches " ++ show excess_branches ++ " are covered but are not in all_branches!"
-									-- Are all the decision points are already covered? They can't, probably...?
-									-- If yes, this trace does not contribute to full coverage...
-									when (not $ null (visible_trace \\ covered)) $
-										modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],visible_trace `union` covered) }
-									return True
-
+											incNumNoSolutionM
+											return False
+										Just (_,_,[]) → myError $ "Empty solution: \n" ++ show_solution_msg
+										Just solution → do
+											incNumSolutionM
+											printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
+											printToSolutions show_solution_msg
+		
+											startends <- gets funStartEndCVS
+											printLogV 20 $ "startends = " ++ show startends
+											let visible_trace = nub $ concatMap to_branch res_line
+												where
+												is_visible_branch :: [(Location,Location)] → Location → Bool
+												is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
+												to_branch (Condition (Just branch) _) | is_visible_branch startends (branchLocation branch) = [ branch ]
+												to_branch _ = []
+		
+											let cov_branches = "\tCOVERED BRANCHES:\n" ++ unlines (map (("\t"++).showBranch) visible_trace)
+											printLogV 1 cov_branches
+											printToSolutions cov_branches
+		
+											checkVarsDefined mb_ret_type trace_for_def_analysis >>= \case
+												Just msg → do
+													printLogV 0 msg
+													printLogV 0 $ "Will not checkSolutions for " ++ show traceid
+												Nothing → do
+													when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
+		
+											(tas,covered) <- gets analysisStateCVS
+											all_branches <- gets allCondPointsCVS
+											let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
+											let excess_branches = visible_trace \\ all_branches
+											when (not $ null excess_branches) $ do
+												printCondPoints all_branches
+												myError $ "Branches " ++ show excess_branches ++ " are covered but are not in all_branches!"
+											-- Are all the decision points are already covered? They can't, probably...?
+											-- If yes, this trace does not contribute to full coverage...
+											when (not $ null (visible_trace \\ covered)) $
+												modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],visible_trace `union` covered) }
+											return True
+			
 		where
 
 		trace = reverse res_line
@@ -2801,9 +2808,10 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 					num_elems = div bv_size elem_size
 				bv <- case subexpr of
 					CVar ident _ -> return $ SLeaf $ makeFloatBVVarName ident
-					-- TODO: is this sufficient in all cases?
-					other -> expr2sexpr' subexpr
---							error $ "cast_fp2arr: subexpr = " ++ (render.pretty) subexpr ++ "\n at " ++ show (extractNodeInfo subexpr)
+					_ -> case elem_ty of
+						Z3_BitVector _ True ->
+							expr2sexpr' $ CCast (CDecl [] [] (undefNode,(Z3_Unit,intType))) subexpr (undefNode,(Z3_BitVector bv_size True,intType))
+						other -> lift $ myError $ "cast_fp2arr: elem_ty = " ++ show elem_ty ++ "\n at " ++ show (extractNodeInfo subexpr)
 
 				(arr,arr_decl) <- new_var "arr" arr_ty
 				(z3_inttype,_) <- lift $ _IntTypesM
