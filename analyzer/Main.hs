@@ -94,7 +94,7 @@ main = do
 	writeFile solutionsFile time_line
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [writeModelsOpt,noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -3149,6 +3149,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 		_ → do
 			let err_msg = "Execution of " ++ z3FilePath ++ " failed:\n" ++ output ++ "\n\n" ++ "Model is\n" ++ model_string_linenumbers
 			printLogV 0 err_msg
+			liftIO $ writeFile modelpathfile model_string
 			whenOptionSet noHaltOnVerificationErrorOpt False $ myError err_msg
 			return (model_string_linenumbers,Nothing)
 
