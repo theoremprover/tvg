@@ -46,6 +46,7 @@ import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
+import Data.Time
 import Data.Time.LocalTime
 import Data.Foldable
 import Data.List
@@ -89,9 +90,9 @@ main = do
 	-- when there is an error, we'd like to have *all* output till then
 	hSetBuffering stdout NoBuffering
 
-	time_line <- getZonedTime >>= return.(++"\n\n").show
-	writeFile logFileTxt time_line
-	writeFile solutionsFile time_line
+	starttime <- printDateTime
+	writeFile logFileTxt (show starttime ++ "\n\n")
+	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
@@ -219,7 +220,7 @@ main = do
 			let coveragekind = if branchCovOpt `elem` opts then Branch_Coverage else MCDC_Coverage
 			(every_branch_covered,s) <- runStateT covVectorsM $
 				CovVecState globdecls 1 allFileName Nothing funname [] gcc opts
-					Nothing ([],[]) [] intialStats Nothing Nothing deftable (-1) coveragekind 0 []
+					Nothing ([],[]) [] intialStats Nothing Nothing deftable (-1) coveragekind 0 [] starttime starttime
 
 			let
 				(testvectors,covered) = analysisStateCVS s
@@ -280,7 +281,6 @@ main = do
 			printLog 0 msg
 
 			when (htmlLogOpt `elem` opts) $ createHTMLLog
-
 
 outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
@@ -485,6 +485,24 @@ printLogM verbosity text = do
 printLogV :: Int → String → CovVecM ()
 printLogV verbosity text = printLogM verbosity text
 
+printDateTime :: IO LocalTime
+printDateTime = do
+	current_time <- getCurrentTime
+	time_zone <- getCurrentTimeZone
+	let local_time = utcToLocalTime time_zone current_time
+	printConsole 0 $ show local_time ++ "\n"
+	return local_time
+
+printDateTimeM :: Int -> CovVecM ()
+printDateTimeM verbosity = do
+	current_time <- liftIO printDateTime
+	last_time <- gets lastTimeCVS
+	timezone <- liftIO getCurrentTimeZone
+	let duration_s = formatTime defaultTimeLocale "%H:%M:%S" (diffLocalTime current_time last_time)
+	printLogV verbosity $ "Last Duration (hour:min:sec): " ++ duration_s
+	modify $ \ s -> s { lastTimeCVS = current_time }
+	return ()
+
 createHTMLLog :: IO ()
 createHTMLLog = do
 	log <- readFile logFileTxt
@@ -561,7 +579,9 @@ data CovVecState = CovVecState {
 	logIndentCVS     :: Int,
 	coverageKindCVS  :: CoverageKind,
 	verificationErrsCVS :: Int,
-	progressCVS      :: [(Int,Int)]
+	progressCVS      :: [(Int,Int)],
+	startTimeCVS     :: LocalTime,
+	lastTimeCVS      :: LocalTime
 	}
 
 data Stats = Stats {
@@ -738,6 +758,8 @@ showTrace trace = unlines $ concatMap show_te trace where
 
 covVectorsM :: CovVecM Bool
 covVectorsM = logWrapper [ren "covVectorsM"] $ do
+	printDateTimeM 0
+
 	sizes <- find_out_sizesM
 	modify $ \ s → s { machineSpecCVS = Just sizes }
 
@@ -850,6 +872,7 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 --unfoldTraces1M :: LabelEnv → Maybe Type → Bool → Int → Progress → [Env] → Trace → [([CBlockItem],Bool)] → CovVecM UnfoldTracesRet
 	Right every_branch_covered <- unfoldTracesM [] (Just ret_type') True 0 [] ((arraydecl_env++param_env):[glob_env]) decls [ (defs ++ [ CBlockStmt body ],False) ]
 	printStatsM 0
+	printDateTimeM 0
 	return every_branch_covered
 
 harnessAST incl argdecls funcall print_retval1 print_retval2 = [cunit|
@@ -1064,6 +1087,7 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 			return False
 		_ -> do
 			printStatsM 0
+			printDateTimeM 5
 			(traceanalysisresults,_) <- gets analysisStateCVS
 			case traceid `elem` (map (\(tid,_,_,_)->tid) traceanalysisresults) of
 				True -> do
