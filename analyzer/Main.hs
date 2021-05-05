@@ -575,8 +575,8 @@ incNumNoSolutionM = modify $ \ s → s { statsCVS = (statsCVS s) { numNoSolution
 incNumSolutionM = modify $ \ s → s { statsCVS = (statsCVS s) { numSolutionS = numSolutionS (statsCVS s) + 1 } }
 incNumTracesM :: CovVecM ()
 incNumTracesM = modify $ \ s → s { statsCVS = (statsCVS s) { numTracesS = numTracesS (statsCVS s) + 1 } }
-printStatsM :: CovVecM ()
-printStatsM = gets statsCVS >>= (printLogV 2) . show
+printStatsM :: Int -> CovVecM ()
+printStatsM verbosity = gets statsCVS >>= (printLogV verbosity) . show
 
 type CovVecM = StateT CovVecState IO
 
@@ -847,6 +847,7 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 
 --unfoldTraces1M :: LabelEnv → Maybe Type → Bool → Int → Progress → [Env] → Trace → [([CBlockItem],Bool)] → CovVecM UnfoldTracesRet
 	Right every_branch_covered <- unfoldTracesM [] (Just ret_type') True 0 [] ((arraydecl_env++param_env):[glob_env]) decls [ (defs ++ [ CBlockStmt body ],False) ]
+	printStatsM 0
 	return every_branch_covered
 
 harnessAST incl argdecls funcall print_retval1 print_retval2 = [cunit|
@@ -1060,6 +1061,7 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 			printConsole 1 $ "\r " ++ show traceid ++ " no prefix of " ++ show fixedtrace ++ "                   "
 			return False
 		_ -> do
+			printStatsM 0
 			(traceanalysisresults,_) <- gets analysisStateCVS
 			case traceid `elem` (map (\(tid,_,_,_)->tid) traceanalysisresults) of
 				True -> do
@@ -1080,7 +1082,6 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 							return False
 						False → do
 							incNumTracesM
-							printStatsM
 							printProgressM progress
 							printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
 		
@@ -1636,7 +1637,7 @@ unfoldTracesM labelϵ ret_type toplevel forks progress ϵs trace cbss = do
 					False → do
 						printLogV 1 $ "******** Cutting off !"
 						incCutoffsM
-						printStatsM
+						printStatsM 2
 						return $ case toplevel of
 							True  → Right False
 							False → Left []
@@ -3102,6 +3103,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
 		readProcessWithExitCode z3FilePath ["-smt2","-in","parallel.enable=true"] model_string
 	let
+		drop_prelude [] = []
 		drop_prelude (l:ls) = case l of
 			_ | l `elem` ["unsat","sat","unknown"] → l:ls
 			_ | "(error " `isPrefixOf` l → l:ls
@@ -3137,8 +3139,11 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 							other → error $ "case ty2Z3Type " ++ show other ++ " not implemented" )
 					_ → myError $ "Parsing z3 output: Could not find " ++ is
 			return (model_string_linenumbers,Just sol_params)
-		_ → myError $ "Execution of " ++ z3FilePath ++ " failed:\n" ++ output ++ "\n\n" ++
-			"Model is\n" ++ model_string_linenumbers
+		_ → do
+			let err_msg = "Execution of " ++ z3FilePath ++ " failed:\n" ++ output ++ "\n\n" ++ "Model is\n" ++ model_string_linenumbers
+			printLogV 0 err_msg
+			whenOptionSet noHaltOnVerificationErrorOpt False $ myError err_msg
+			return (model_string_linenumbers,Nothing)
 
 escapeDollars :: String → String
 escapeDollars s = concat $ for s $ \case
