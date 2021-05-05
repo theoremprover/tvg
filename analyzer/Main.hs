@@ -69,6 +69,8 @@ import Logging
 
 fastMode = True
 
+z3TimeoutSecs :: Maybe Int = Just $ 10*60
+
 reachFixedTrace :: Maybe [Int] = Nothing --Just [1,3,1,3,3,2,2,1,2,1,1,2]
 
 subfuncovOpt = "-subfuncov"
@@ -3100,8 +3102,13 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	whenOptionSet writeModelsOpt True $ liftIO $ writeFile modelpathfile model_string
 	whenOptionSet showModelsOpt True $ printLogM 0 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
 	printLogV 2 $ "Running model " ++ takeFileName modelpathfile ++ "..."
+	let z3timeout_opt = case z3TimeoutSecs of
+		Nothing -> []
+		Just timeout_secs -> [ "-T:" ++ show timeout_secs ]
 	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
-		readProcessWithExitCode z3FilePath ["-smt2","-in","parallel.enable=true"] model_string
+		readProcessWithExitCode z3FilePath
+			(z3timeout_opt ++ ["-smt2","-in","parallel.enable=true"])
+			model_string
 	let
 		drop_prelude [] = []
 		drop_prelude (l:ls) = case l of
