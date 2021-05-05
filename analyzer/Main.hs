@@ -3138,10 +3138,15 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 		drop_prelude (l:ls) = case l of
 			_ | l `elem` ["unsat","sat","unknown"] → l:ls
 			_ | "(error " `isPrefixOf` l → l:ls
+			_ | "timeout" `isPrefixOf` l → l:ls
 			_ → drop_prelude ls
 		dropped_output = drop_prelude $ lines output
 	printLogV 20 $ "\nZ3 says:\n" ++ unlines dropped_output
 	case dropped_output of
+		"timeout" : _ → do
+			printLogV 0 $ "Timeout for " ++ show traceid
+			liftIO $ writeFile modelpathfile model_string
+			return (model_string_linenumbers,Nothing)
 		"unsat"   : _ → return (model_string_linenumbers,Nothing)
 		"unknown" : _ → return (model_string_linenumbers,Nothing)
 		"sat" : rest → do
