@@ -1123,7 +1123,7 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 		
 											startends <- gets funStartEndCVS
 											printLogV 20 $ "startends = " ++ show startends
-											let visible_trace = nub $ concatMap to_branch res_line
+											let visible_trace = reverse $ nub $ concatMap to_branch res_line
 												where
 												is_visible_branch :: [(Location,Location)] → Location → Bool
 												is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
