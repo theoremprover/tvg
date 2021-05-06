@@ -498,7 +498,7 @@ printDateTimeM verbosity = do
 	current_time <- liftIO printDateTime
 	last_time <- gets lastTimeCVS
 	timezone <- liftIO getCurrentTimeZone
-	let duration_s = formatTime defaultTimeLocale "%H:%M:%S" (diffLocalTime current_time last_time)
+	let duration_s = formatTime defaultTimeLocale "%2H:%2M:%2S" (diffLocalTime current_time last_time)
 	printLogV verbosity $ "Last Duration (hour:min:sec): " ++ duration_s
 	modify $ \ s -> s { lastTimeCVS = current_time }
 	return ()
@@ -1088,7 +1088,7 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 			return False
 		_ -> do
 			printStatsM 0
-			printDateTimeM 5
+			printDateTimeM 0
 			(traceanalysisresults,_) <- gets analysisStateCVS
 			case traceid `elem` (map (\(tid,_,_,_)->tid) traceanalysisresults) of
 				True -> do
@@ -1854,6 +1854,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 
 			CWhile cond body False ni → do
 				(mb_unrolling_depths,msg) <- infer_loopingsM cond body
+				printLogV 1 $ msg
 				createBranches makeForWhileBranchName cond >>= unroll_loopM ( case mb_unrolling_depths of
 					Nothing → uNROLLING_STRATEGY
 					Just ns → ns )
@@ -1903,7 +1904,6 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 
 					translateExprM labelϵ ϵs toplevel real_cond (Just _BoolTypes) trace 0 [] >>= \case
 						[(_,_,_,cond,_)] → do
-							printLogV 0 $ "BBBBB"
 							let
 								-- get all variables used in the condition
 								cond_idents = fvar cond
