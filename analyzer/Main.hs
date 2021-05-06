@@ -138,7 +138,7 @@ main = do
 --		[] → "gcc" : "f" : (analyzerPath++"\\floattest.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\decltest.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\myfp-bit_mul.c") : []
-		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [htmlLogOpt] --"-writeAST","-writeGlobalDecls"]
+		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [htmlLogOpt,cutoffsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\fortest.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\iffuntest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : ["-writemodels"] --"-writeAST","-writeGlobalDecls"]
