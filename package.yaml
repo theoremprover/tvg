@@ -28,7 +28,7 @@ dependencies:
 - transformers
 - text
 - strict
-- time
+- time >= 1.9
 - html
 - containers
 - extra

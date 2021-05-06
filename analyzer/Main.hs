@@ -47,7 +47,7 @@ import Data.Generics
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
 import Data.Time
-import Data.Time.LocalTime
+import Data.Time.LocalTime (diffLocalTime)
 import Data.Foldable
 import Data.List
 import Data.Maybe
@@ -1930,7 +1930,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 										is_ass_to_ass_var _ = False
 									case filter is_ass_to_ass_var trace of
 										[] → return (Nothing,"infer_loopingsM: There is no assignment to the loop counter " ++ (render.pretty) counter_var ++ " prior to the loop")
-										ass@(Assignment _ i_0) : _ | null (fvar i_0)→ do
+										ass@(Assignment _ i_0) : _ | null (fvar i_0) → do
 											inttypes <- ty2Z3Type intType
 											printLogV 2 $ "last assignment to loop counter is " ++ show ass
 											let i_n :: CExprWithType → CovVecM CExprWithType = case ass_expr of
