@@ -1,4 +1,4 @@
-{-# LANGUAGE PackageImports,TypeOperators,FlexibleInstances,FlexibleContexts,ScopedTypeVariables #-}
+{-# LANGUAGE PackageImports,TypeOperators,FlexibleInstances,FlexibleContexts,ScopedTypeVariables,UndecidableInstances #-}
 {-# OPTIONS_GHC -fno-warn-tabs #-}
 
 module DataTree (genericToHTMLString,genericToString,dataTreeToHTMLString,DataTree(..)) where
