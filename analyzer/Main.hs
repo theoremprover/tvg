@@ -68,7 +68,7 @@ import Logging
 
 --------------
 
-fastMode = True
+fastMode = False
 
 z3TimeoutSecs :: Maybe Int = Just $ 10*60
 
@@ -95,7 +95,7 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -137,8 +137,8 @@ main = do
 --		[] → "gcc" : "f" : (analyzerPath++"\\conditionaltest.c") : ["-writemodels"] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\floattest.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\decltest.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [] --"-writeAST","-writeGlobalDecls"]
+--		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\myfp-bit_mul.c") : []
+		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [htmlLogOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\fortest.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\iffuntest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : ["-writemodels"] --"-writeAST","-writeGlobalDecls"]
@@ -936,8 +936,9 @@ createCHarness orig_rettype fun_args filename funname extdecls = do
 	ret_formatss <- mapM type_format_string $ map (snd.snd.fst) retenvexprs
 	let
 		ret_vals = for retenvexprs $ \ (_,cexprwithty) → ty2argwrapper cexprwithty
+		param_exprs = for param_env_exprs $ \ (_,cexprwithty) → (render.pretty) $ fmap fst cexprwithty
 		print_retval1 = "printf(\"" ++ funname ++ "(" ++ argvals ++ ") = \\n\"," ++
-			(if null argexprs then "" else (intercalate ", " $ map ((render.pretty).fst.fst) param_env_exprs)) ++ ");"
+			(if null argexprs then "" else (intercalate ", " param_exprs)) ++ ");"
 		print_retval2 = "printf(\"" ++
 			intercalate " " ret_formatss ++ "\\n\", " ++
 			intercalate ", " ret_vals ++ ");"
@@ -1622,13 +1623,12 @@ recognizeAnnotation cond trace = do
 	-- set the NodeInfo in real_cond to the original NodeInfo of the *whole* condition that includes the solver_annotation
 	-- otherwise, it will be reported as uncovered (have in mind: all branching points are determined before the analysis starts!)
 	return ( real_cond, case mb_args of
-		Nothing → Nothing
+		Nothing   → Nothing
 		Just args → Just (args,num_reached) )
 	where
-	this_conditions = filter is_this_cond trace where
-		is_this_cond (Condition _ c) = extractNodeInfo c == nodeInfo cond
-		is_this_cond _ = False
-	num_reached = length this_conditions
+	is_this_cond (Condition _ c) = extractNodeInfo c == nodeInfo cond
+	is_this_cond _ = False
+	num_reached = length $ filter is_this_cond trace
 
 createBranchesWithAnno :: CExpr → (CExpr → String) → Trace → CovVecM [(Branch,CExpr)]
 createBranchesWithAnno cond makebranchname trace = do
@@ -1686,8 +1686,8 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 			CSwitch condexpr0 (CCompound [] cbis _) switch_ni → do
 				(condexpr,mb_anno) <- recognizeAnnotation condexpr0 trace
 				ctrue <- ⅈ 1
-				c_1 <- ⅈ 1
-				c_2 <- ⅈ 2
+				_1 <- ⅈ 1
+				_2 <- ⅈ 2
 				let
 					cond_ni = nodeInfo condexpr
 					cond_var_ident = mkIdentWithCNodePos condexpr $ "cond_" ++ (locationToName $ lineColNodeInfo condexpr)
@@ -1740,7 +1740,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 								CBinary CLndOp (CCall (CVar (internalIdent "solver_pragma") undefNode) case_args undefNode)
 									pure_cond (nodeInfo pure_cond)
 								where
-								case_args = for (filter (>=branchnum) args) $ \ arg -> if arg==branchnum then c_1 else c_2
+								case_args = for (filter (>=branchnum) args) $ \ arg -> if arg==branchnum then _1 else _2
 							_ → pure_cond
 							where
 							pure_cond = CBinary CEqOp cond_var caseexpr case_ni
@@ -1902,7 +1902,8 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 	--				return (Just default_ns,"No annotation, trying " ++ show default_ns)
 
 					translateExprM labelϵ ϵs toplevel real_cond (Just _BoolTypes) trace 0 [] >>= \case
-						[(_,_,_,cond,[])] → do
+						[(_,_,_,cond,_)] → do
+							printLogV 0 $ "BBBBB"
 							let
 								-- get all variables used in the condition
 								cond_idents = fvar cond
@@ -1920,7 +1921,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 							let
 								body_assigns = foldl1 intersect (map (exists_once) body_traces_ass)
 								exists_once l = filter (\ e → length (filter (==e) l) == 1) l
-							printLogV 10 $ "body_assigns = \n" ++
+							printLogV 2 $ "body_assigns = \n" ++
 								intercalate " , " (map (\(a,b) → "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") body_assigns)
 
 							case body_assigns :: [(CExprWithType,CExprWithType)] of
@@ -1942,16 +1943,16 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 											let
 												n_name = "n$loopings"
 												n_ident = internalIdent n_name
-												n_var = CVar n_ident (undefNode,inttypes)
+												n = CVar n_ident (undefNode,inttypes)
 												modelpath = analyzerPath </> n_name ++ show (lineColNodeInfo $ extractNodeInfo cond) ++ ".smtlib2"
 											n_types <- case lookup ass_ident (envs2tyenv ϵs) of
 												Nothing → myError $ "infer_loopingsM: Could not find type of " ++ (render.pretty) counter_var
 												Just ty → ty2Z3Type ty
-											i_n_n_var <- i_n n_var
-											i_0 <- ⅈ 0
-											i_1 <- ⅈ 1
-											i_n_n_var_minus_1 <-  i_n $ n_var − i_1
-											i_n_0 <- i_n i_0
+											i_n_n_var <- i_n n
+											_0 <- ⅈ 0
+											_1 <- ⅈ 1
+											i_n_n_var_minus_1 <-  i_n $ n − _1
+											i_n_0 <- i_n _0
 											tyenv <- tyEnvFromTraceM trace
 											(model_string,mb_sol) <- makeAndSolveZ3ModelM
 												[]
@@ -1962,10 +1963,10 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 													cond_0       = (counter_var `substituteBy` i_n_0) cond
 													in
 													map (Condition Nothing) [
-														n_var ⩾ i_0,
-														not_ cond_0  ⋏  n_var ⩵ i_0
+														n ⩾ _0,
+														not_ cond_0  ⋏  n ⩵ _0
 															⋎
-															cond_nminus1 ⋏ n_var ⩾ i_1 ⋏ not_ cond_n
+															cond_nminus1 ⋏ n ⩾ _1 ⋏ not_ cond_n
 													])
 												[ SExpr [SLeaf "minimize",SLeaf n_name] ]
 												[n_ident]
@@ -1979,7 +1980,8 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 								other → return (Nothing,"body contains not exactly one assignment of a variable from the condition " ++ (render.pretty) cond ++ ":\n" ++
 									unlines (map (\(ass_var,_) → (render.pretty) ass_var) other))
 
-						_ → return (Nothing,"condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!")
+						_ → do
+							return (Nothing,"condition " ++ (render.pretty) cond0 ++ " at " ++ (showLocation.lineColNodeInfo) cond0 ++ " contains a function call!")
 
 		-- mb_ty is Nothing if the result type of expr is not known, i.e. no casting necessary.
 		transids :: CExpr → Maybe Types → Trace → Int → Progress → (Int → Progress → ([Env],CExprWithType,Trace) → CovVecM UnfoldTracesRet) → CovVecM UnfoldTracesRet

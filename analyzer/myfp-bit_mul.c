@@ -976,7 +976,7 @@ _fpdiv_parts (fp_number_type * a,
     /* ??? Does divide one bit at a time.  Optimize.  */
     while (bit)
       {
-            if (solver_pragma(2,2,2,2,2,2,2,2,2,2,1,2,1,2,2,2,2,2,1,2,2,2,2,2,12,1,1,12,12,12,12) && (numerator >= denominator))
+            if (solver_pragma(2,12,2,2,2,2,2,2,2,2,1,2,1,2,2,2,2,2,1,2,2,1,1,1,12,12,12,12,12,12,12) && (numerator >= denominator))
               {
                 quotient |= bit;
                 numerator -= denominator;
@@ -985,16 +985,16 @@ _fpdiv_parts (fp_number_type * a,
             numerator *= 2;
       }
 
-    if (solver_pragma(1) && !ROUND_TOWARDS_ZERO && (quotient & GARDMASK) == GARDMSB)
+    if (!ROUND_TOWARDS_ZERO && (quotient & GARDMASK) == GARDMSB)
       {
-	if (solver_pragma(2) && quotient & (1 << NGARDS))
+	if (quotient & (1 << NGARDS))
 	  {
 	    /* Because we're half way, we would round to even by adding
 	       GARDROUND + 1, except that's also done in the packing
 	       function, and rounding twice will lose precision and cause
 	       the result to be too far off.  */
 	  }
-	else if (solver_pragma(1) && numerator)
+	else if (numerator)
 	  {
 	    /* We're a further than half way by the small amount
 	       corresponding to the bits set in "numerator".  Knowing
