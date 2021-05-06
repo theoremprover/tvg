@@ -36,7 +36,7 @@ dependencies:
 - base-unicode-symbols
 - regex-tdfa
 - language-c-quote
-- containers-unicode-symbols
+#- containers-unicode-symbols == 0.3.1.2
 - mainland-pretty
 - array
 - FloatingHex
