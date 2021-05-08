@@ -1626,7 +1626,7 @@ recognizeAnnotation cond trace = do
 		Nothing   → Nothing
 		Just args → Just (args,num_reached) )
 	where
-	is_this_cond (Condition _ c) = extractNodeInfo c == nodeInfo cond
+	is_this_cond (Condition (Just _) c) = extractNodeInfo c == nodeInfo cond
 	is_this_cond _ = False
 	num_reached = length $ filter is_this_cond trace
 
