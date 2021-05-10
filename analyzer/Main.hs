@@ -70,7 +70,7 @@ import Logging
 
 fastMode = True
 
-z3TimeoutSecs :: Maybe Int = Just $ 10*60
+z3TimeoutSecs :: Maybe Int = Just $ 2*60
 
 reachFixedTrace :: Maybe [Int] = Nothing --Just [1,3,1,3,3,2,2,1,2,1,1,2]
 
@@ -1640,7 +1640,7 @@ createBranchesWithAnno cond makebranchname trace = do
 		-- 12 is a wildcard in the choice list
 		-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
 		Just (ns,num_reached) | length ns > num_reached && ns!!num_reached /= 12 → do
-			printLogV 1 $ "Recognized annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
+			printLogV 1 $ "\nRecognized annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
 				" (reached " ++ show num_reached ++ " times)"
 			return [all_branches !! (ns!!num_reached - 1)]
 		_ → return all_branches
@@ -1898,8 +1898,8 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 		infer_loopingsM cond0 body = logWrapper [ren "infer_loopingsM",ren cond0,'\n':ren body] $ do
 			recognizeAnnotation cond0 trace >>= \case
 				(real_cond,Just (ns,_)) → do
-					printLogV 20 $ "### Loop anno = " ++ show ns
-					return (Just ns,"Recognized LOOP annotation to " ++ (render.pretty) cond0)
+					printLogV 20 $ "\n### Loop anno = " ++ show ns
+					return (Just ns,"\nRecognized LOOP annotation to " ++ (render.pretty) cond0)
 				(real_cond,Nothing) → do
 	--				let default_ns = [0,1,2]
 	--				return (Just default_ns,"No annotation, trying " ++ show default_ns)
