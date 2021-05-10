@@ -1099,7 +1099,7 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 				False -> do
 					findmode <- isOptionSet findModeOpt
 					let
-						found_finds = any is_solverfind res_line
+						found_finds = any is_solverfind trace
 						is_solverfind :: TraceElem → Bool
 						is_solverfind SolverFind = True
 						is_solverfind _ = False
@@ -1148,14 +1148,14 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 		
 											startends <- gets funStartEndCVS
 											printLogV 20 $ "startends = " ++ show startends
-											let visible_trace = reverse $ nub $ concatMap to_branch res_line
+											let visible_trace = concatMap to_branch trace
 												where
 												is_visible_branch :: [(Location,Location)] → Location → Bool
 												is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
 												to_branch (Condition (Just branch) _) | is_visible_branch startends (branchLocation branch) = [ branch ]
 												to_branch _ = []
 		
-											let cov_branches = "\tCOVERED BRANCHES:\n" ++ unlines (map (("\t"++).showBranch) visible_trace)
+											let cov_branches = "\tREACHED DECISION POINTS:\n" ++ unlines (map (("\t"++).showBranch) visible_trace)
 											printLogV 1 cov_branches
 											printToSolutions cov_branches
 		
@@ -1168,15 +1168,17 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 		
 											(tas,covered) <- gets analysisStateCVS
 											all_branches <- gets allCondPointsCVS
-											let traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
-											let excess_branches = visible_trace \\ all_branches
+											let
+												traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
+												nub_visible_trace = nub visible_trace
+												excess_branches = nub_visible_trace \\ all_branches
 											when (not $ null excess_branches) $ do
 												printCondPoints all_branches
 												myError $ "Branches " ++ show excess_branches ++ " are covered but are not in all_branches!"
 											-- Are all the decision points are already covered? They can't, probably...?
 											-- If yes, this trace does not contribute to full coverage...
-											when (not $ null (visible_trace \\ covered)) $
-												modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],visible_trace `union` covered) }
+											when (not $ null (nub_visible_trace \\ covered)) $
+												modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],nub_visible_trace `union` covered) }
 											return True
 			
 		where

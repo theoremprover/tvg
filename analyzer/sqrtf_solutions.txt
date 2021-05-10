@@ -1,4 +1,4 @@
-2021-05-05 05:44:28.2649251 Mitteleurop�ische Sommerzeit
+2021-05-08 21:05:46.9938124
 
 Compiler: gcc
 Function: sqrtf
@@ -11,10 +11,10 @@ sqrtf ( x = Infinity = 0x7f800000 = Infinity )
     = return_val = Infinity = 0x7f800000 = Infinity
 
 	COVERED BRANCHES:
-	Then branch 1 "if(!(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000))" at line 232, col 7, len 59
-	Then branch 3 "case 1" at line 231, col 2, len 91
-	Else branch 3 "(F||F)" at line 114, col 14, len 70
 	Then branch 1 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
+	Else branch 3 "(F||F)" at line 114, col 14, len 70
+	Then branch 3 "case 1" at line 231, col 2, len 89
+	Then branch 1 "if(!(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000))" at line 232, col 7, len 59
 
 checkSolutionM [1,3,1,3,3,1] ok.
 
@@ -25,15 +25,15 @@ sqrtf ( x = -Infinity = 0xff800000 = -Infinity )
     = return_val = -0x0p+0 = 0x80000000 = -0.0
 
 	COVERED BRANCHES:
-	Then branch 1 "if((0x1 & 0x1) != 0)" at line 68, col 12, len 19
-	Else branch 2 "if((errh & 1) == 0)" at line 66, col 7, len 14
-	Else branch 2 "if((0x1 & (0x8 | 0x10)) != 0)" at line 61, col 8, len 28
-	Then branch 1 "if((errh & 2) != 0)" at line 59, col 7, len 14
-	Then branch 1 "if(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000)" at line 235, col 9, len 55
-	Else branch 2 "if(!(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000))" at line 232, col 7, len 59
-	Then branch 3 "case 1" at line 231, col 2, len 91
-	Else branch 3 "(F||F)" at line 114, col 14, len 70
 	Then branch 1 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
+	Else branch 3 "(F||F)" at line 114, col 14, len 70
+	Then branch 3 "case 1" at line 231, col 2, len 89
+	Else branch 2 "if(!(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000))" at line 232, col 7, len 59
+	Then branch 1 "if(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000)" at line 235, col 9, len 55
+	Then branch 1 "if((errh & 2) != 0)" at line 59, col 7, len 14
+	Else branch 2 "if((0x1 & (0x8 | 0x10)) != 0)" at line 61, col 8, len 28
+	Else branch 2 "if((errh & 1) == 0)" at line 66, col 7, len 14
+	Then branch 1 "if((0x1 & 0x1) != 0)" at line 68, col 12, len 19
 
 checkSolutionM ERROR for return_val : exec_val=NaN(0x400000) = 0x7fc00000 = NaN /= predicted_result=-0x0p+0 = 0x80000000 = -0.0
 
@@ -44,24 +44,24 @@ sqrtf ( x = 0x1.048208p-127 = 0x00412082 = 5.980969e-39 )
     = return_val = 0x1.8be0dep-4 = 0x3dc5f06f = 9.665e-2
 
 	COVERED BRANCHES:
-	Then branch 2 "(T&&T)" at line 153, col 6, len 27
-	Else branch 3 "(F||F)" at line 82, col 6, len 29
-	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 144, col 6, len 48
-	Else branch 2 "if((unsigned int) xexp & 1)" at line 240, col 7, len 22
-	Else branch 2 "if(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000)" at line 235, col 9, len 55
-	Then branch 4 "default" at line 234, col 2, len 134
-	Else branch 2 "if(0 >= xchar)" at line 123, col 10, len 8
-	Then branch 1 "(T||_)" at line 121, col 9, len 24
-	Else branch 2 "if(0 >= xchar)" at line 120, col 8, len 8
-	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
-	Then branch 1 "if(0 >= xchar)" at line 123, col 10, len 8
-	Then branch 2 "(F||T)" at line 121, col 9, len 24
-	Else branch 2 "for/while(1 << 7 + 1 <= ps->_Sh[1])" at line 92, col 9, len 50
-	Else branch 2 "for/while(ps->_Sh[1] < 1 << 7)" at line 86, col 9, len 43
-	Then branch 1 "for/while(ps->_Sh[1] < 1 << 7)" at line 86, col 9, len 43
-	Else branch 2 "if(ps->_Sh[1] == 0)" at line 84, col 7, len 15
-	Then branch 1 "(T||_)" at line 82, col 6, len 29
 	Then branch 1 "if(0 >= xchar)" at line 120, col 8, len 8
+	Then branch 1 "(T||_)" at line 82, col 6, len 29
+	Else branch 2 "if(ps->_Sh[1] == 0)" at line 84, col 7, len 15
+	Then branch 1 "for/while(ps->_Sh[1] < 1 << 7)" at line 86, col 9, len 43
+	Else branch 2 "for/while(ps->_Sh[1] < 1 << 7)" at line 86, col 9, len 43
+	Else branch 2 "for/while(1 << 7 + 1 <= ps->_Sh[1])" at line 92, col 9, len 50
+	Then branch 2 "(F||T)" at line 121, col 9, len 24
+	Then branch 1 "if(0 >= xchar)" at line 123, col 10, len 8
+	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
+	Else branch 2 "if(0 >= xchar)" at line 120, col 8, len 8
+	Then branch 1 "(T||_)" at line 121, col 9, len 24
+	Else branch 2 "if(0 >= xchar)" at line 123, col 10, len 8
+	Then branch 4 "default" at line 234, col 2, len 129
+	Else branch 2 "if(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000)" at line 235, col 9, len 55
+	Else branch 2 "if((unsigned int) xexp & 1)" at line 240, col 7, len 22
+	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 144, col 6, len 48
+	Else branch 3 "(F||F)" at line 82, col 6, len 29
+	Then branch 2 "(T&&T)" at line 153, col 6, len 27
 
 checkSolutionM ERROR for return_val : exec_val=0x0p+0 = 0x00000000 = 0.0 /= predicted_result=0x1.8be0dep-4 = 0x3dc5f06f = 9.665e-2
 
@@ -72,23 +72,23 @@ sqrtf ( x = 0x1.8p-142 = 0x000000c0 = 2.69e-43 )
     = return_val = 0x1.8be0dep-4 = 0x3dc5f06f = 9.665e-2
 
 	COVERED BRANCHES:
-	Then branch 2 "(T&&T)" at line 153, col 6, len 27
-	Else branch 3 "(F||F)" at line 82, col 6, len 29
-	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 144, col 6, len 48
-	Else branch 2 "if((unsigned int) xexp & 1)" at line 240, col 7, len 22
-	Else branch 2 "if(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000)" at line 235, col 9, len 55
-	Then branch 4 "default" at line 234, col 2, len 134
-	Else branch 2 "if(0 >= xchar)" at line 123, col 10, len 8
-	Then branch 1 "(T||_)" at line 121, col 9, len 24
-	Else branch 2 "if(0 >= xchar)" at line 120, col 8, len 8
-	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
-	Then branch 1 "if(0 >= xchar)" at line 123, col 10, len 8
-	Then branch 2 "(F||T)" at line 121, col 9, len 24
-	Else branch 2 "for/while(1 << 7 + 1 <= ps->_Sh[1])" at line 92, col 9, len 50
-	Else branch 2 "for/while(ps->_Sh[1] < 1 << 7)" at line 86, col 9, len 43
-	Then branch 1 "if(ps->_Sh[1] == 0)" at line 84, col 7, len 15
-	Then branch 2 "(F||T)" at line 82, col 6, len 29
 	Then branch 1 "if(0 >= xchar)" at line 120, col 8, len 8
+	Then branch 2 "(F||T)" at line 82, col 6, len 29
+	Then branch 1 "if(ps->_Sh[1] == 0)" at line 84, col 7, len 15
+	Else branch 2 "for/while(ps->_Sh[1] < 1 << 7)" at line 86, col 9, len 43
+	Else branch 2 "for/while(1 << 7 + 1 <= ps->_Sh[1])" at line 92, col 9, len 50
+	Then branch 2 "(F||T)" at line 121, col 9, len 24
+	Then branch 1 "if(0 >= xchar)" at line 123, col 10, len 8
+	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
+	Else branch 2 "if(0 >= xchar)" at line 120, col 8, len 8
+	Then branch 1 "(T||_)" at line 121, col 9, len 24
+	Else branch 2 "if(0 >= xchar)" at line 123, col 10, len 8
+	Then branch 4 "default" at line 234, col 2, len 129
+	Else branch 2 "if(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000)" at line 235, col 9, len 55
+	Else branch 2 "if((unsigned int) xexp & 1)" at line 240, col 7, len 22
+	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 144, col 6, len 48
+	Else branch 3 "(F||F)" at line 82, col 6, len 29
+	Then branch 2 "(T&&T)" at line 153, col 6, len 27
 
 checkSolutionM ERROR for return_val : exec_val=0x0p+0 = 0x00000000 = 0.0 /= predicted_result=0x1.8be0dep-4 = 0x3dc5f06f = 9.665e-2
 
@@ -99,24 +99,24 @@ sqrtf ( x = 0x1.07p-141 = 0x00000107 = 3.69e-43 )
     = return_val = 0x1.8be0dep-4 = 0x3dc5f06f = 9.665e-2
 
 	COVERED BRANCHES:
-	Then branch 2 "(T&&T)" at line 153, col 6, len 27
-	Else branch 3 "(F||F)" at line 82, col 6, len 29
-	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 144, col 6, len 48
-	Else branch 2 "if((unsigned int) xexp & 1)" at line 240, col 7, len 22
-	Else branch 2 "if(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000)" at line 235, col 9, len 55
-	Then branch 4 "default" at line 234, col 2, len 134
-	Else branch 2 "if(0 >= xchar)" at line 123, col 10, len 8
-	Then branch 1 "(T||_)" at line 121, col 9, len 24
-	Else branch 2 "if(0 >= xchar)" at line 120, col 8, len 8
-	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
-	Then branch 1 "if(0 >= xchar)" at line 123, col 10, len 8
-	Then branch 2 "(F||T)" at line 121, col 9, len 24
-	Else branch 2 "for/while(1 << 7 + 1 <= ps->_Sh[1])" at line 92, col 9, len 50
-	Then branch 1 "for/while(1 << 7 + 1 <= ps->_Sh[1])" at line 92, col 9, len 50
-	Else branch 2 "for/while(ps->_Sh[1] < 1 << 7)" at line 86, col 9, len 43
-	Then branch 1 "if(ps->_Sh[1] == 0)" at line 84, col 7, len 15
-	Then branch 2 "(F||T)" at line 82, col 6, len 29
 	Then branch 1 "if(0 >= xchar)" at line 120, col 8, len 8
+	Then branch 2 "(F||T)" at line 82, col 6, len 29
+	Then branch 1 "if(ps->_Sh[1] == 0)" at line 84, col 7, len 15
+	Else branch 2 "for/while(ps->_Sh[1] < 1 << 7)" at line 86, col 9, len 43
+	Then branch 1 "for/while(1 << 7 + 1 <= ps->_Sh[1])" at line 92, col 9, len 50
+	Else branch 2 "for/while(1 << 7 + 1 <= ps->_Sh[1])" at line 92, col 9, len 50
+	Then branch 2 "(F||T)" at line 121, col 9, len 24
+	Then branch 1 "if(0 >= xchar)" at line 123, col 10, len 8
+	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
+	Else branch 2 "if(0 >= xchar)" at line 120, col 8, len 8
+	Then branch 1 "(T||_)" at line 121, col 9, len 24
+	Else branch 2 "if(0 >= xchar)" at line 123, col 10, len 8
+	Then branch 4 "default" at line 234, col 2, len 129
+	Else branch 2 "if(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000)" at line 235, col 9, len 55
+	Else branch 2 "if((unsigned int) xexp & 1)" at line 240, col 7, len 22
+	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 144, col 6, len 48
+	Else branch 3 "(F||F)" at line 82, col 6, len 29
+	Then branch 2 "(T&&T)" at line 153, col 6, len 27
 
 checkSolutionM ERROR for return_val : exec_val=0x0p+0 = 0x00000000 = 0.0 /= predicted_result=0x1.8be0dep-4 = 0x3dc5f06f = 9.665e-2
 
@@ -127,24 +127,24 @@ sqrtf ( x = 0x1.34p-143 = 0x0000004d = 1.08e-43 )
     = return_val = 0x1.8be0dep-4 = 0x3dc5f06f = 9.665e-2
 
 	COVERED BRANCHES:
-	Then branch 2 "(T&&T)" at line 153, col 6, len 27
-	Else branch 3 "(F||F)" at line 82, col 6, len 29
-	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 144, col 6, len 48
-	Else branch 2 "if((unsigned int) xexp & 1)" at line 240, col 7, len 22
-	Else branch 2 "if(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000)" at line 235, col 9, len 55
-	Then branch 4 "default" at line 234, col 2, len 134
-	Else branch 2 "if(0 >= xchar)" at line 123, col 10, len 8
-	Then branch 1 "(T||_)" at line 121, col 9, len 24
-	Else branch 2 "if(0 >= xchar)" at line 120, col 8, len 8
-	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
-	Then branch 1 "if(0 >= xchar)" at line 123, col 10, len 8
-	Then branch 2 "(F||T)" at line 121, col 9, len 24
-	Else branch 2 "for/while(1 << 7 + 1 <= ps->_Sh[1])" at line 92, col 9, len 50
-	Else branch 2 "for/while(ps->_Sh[1] < 1 << 7)" at line 86, col 9, len 43
-	Then branch 1 "for/while(ps->_Sh[1] < 1 << 7)" at line 86, col 9, len 43
-	Then branch 1 "if(ps->_Sh[1] == 0)" at line 84, col 7, len 15
-	Then branch 2 "(F||T)" at line 82, col 6, len 29
 	Then branch 1 "if(0 >= xchar)" at line 120, col 8, len 8
+	Then branch 2 "(F||T)" at line 82, col 6, len 29
+	Then branch 1 "if(ps->_Sh[1] == 0)" at line 84, col 7, len 15
+	Then branch 1 "for/while(ps->_Sh[1] < 1 << 7)" at line 86, col 9, len 43
+	Else branch 2 "for/while(ps->_Sh[1] < 1 << 7)" at line 86, col 9, len 43
+	Else branch 2 "for/while(1 << 7 + 1 <= ps->_Sh[1])" at line 92, col 9, len 50
+	Then branch 2 "(F||T)" at line 121, col 9, len 24
+	Then branch 1 "if(0 >= xchar)" at line 123, col 10, len 8
+	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
+	Else branch 2 "if(0 >= xchar)" at line 120, col 8, len 8
+	Then branch 1 "(T||_)" at line 121, col 9, len 24
+	Else branch 2 "if(0 >= xchar)" at line 123, col 10, len 8
+	Then branch 4 "default" at line 234, col 2, len 129
+	Else branch 2 "if(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000)" at line 235, col 9, len 55
+	Else branch 2 "if((unsigned int) xexp & 1)" at line 240, col 7, len 22
+	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 144, col 6, len 48
+	Else branch 3 "(F||F)" at line 82, col 6, len 29
+	Then branch 2 "(T&&T)" at line 153, col 6, len 27
 
 checkSolutionM ERROR for return_val : exec_val=0x0p+0 = 0x00000000 = 0.0 /= predicted_result=0x1.8be0dep-4 = 0x3dc5f06f = 9.665e-2
 
@@ -155,11 +155,11 @@ sqrtf ( x = 0x0p+0 = 0x00000000 = 0.0 )
     = return_val = -0x0p+0 = 0x80000000 = -0.0
 
 	COVERED BRANCHES:
-	Then branch 2 "case 0" at line 229, col 2, len 22
-	Else branch 3 "(F||F)" at line 121, col 9, len 24
-	Else branch 3 "(F||F)" at line 82, col 6, len 29
-	Then branch 1 "if(0 >= xchar)" at line 120, col 8, len 8
 	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
+	Then branch 1 "if(0 >= xchar)" at line 120, col 8, len 8
+	Else branch 3 "(F||F)" at line 82, col 6, len 29
+	Else branch 3 "(F||F)" at line 121, col 9, len 24
+	Then branch 2 "case 0" at line 229, col 2, len 21
 
 checkSolutionM [2,1,3,3,2,1,3,3,2] ok.
 
@@ -170,22 +170,22 @@ sqrtf ( x = -0x1p-1 = 0xbf000000 = -0.5 )
     = return_val = -0x0p+0 = 0x80000000 = -0.0
 
 	COVERED BRANCHES:
-	Then branch 1 "if((0x1 & 0x1) != 0)" at line 68, col 12, len 19
-	Else branch 2 "if((errh & 1) == 0)" at line 66, col 7, len 14
-	Else branch 2 "if((0x1 & (0x8 | 0x10)) != 0)" at line 61, col 8, len 28
-	Then branch 1 "if((errh & 2) != 0)" at line 59, col 7, len 14
-	Then branch 1 "if(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000)" at line 235, col 9, len 55
-	Then branch 4 "default" at line 234, col 2, len 134
-	Else branch 2 "if(0 >= xchar)" at line 123, col 10, len 8
-	Then branch 1 "(T||_)" at line 121, col 9, len 24
-	Else branch 2 "if(0 >= xchar)" at line 120, col 8, len 8
 	Else branch 2 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
+	Else branch 2 "if(0 >= xchar)" at line 120, col 8, len 8
+	Then branch 1 "(T||_)" at line 121, col 9, len 24
+	Else branch 2 "if(0 >= xchar)" at line 123, col 10, len 8
+	Then branch 4 "default" at line 234, col 2, len 129
+	Then branch 1 "if(((_Fval *) (char *) &x)->_Sh[1] & (unsigned short) 0x8000)" at line 235, col 9, len 55
+	Then branch 1 "if((errh & 2) != 0)" at line 59, col 7, len 14
+	Else branch 2 "if((0x1 & (0x8 | 0x10)) != 0)" at line 61, col 8, len 28
+	Else branch 2 "if((errh & 1) == 0)" at line 66, col 7, len 14
+	Then branch 1 "if((0x1 & 0x1) != 0)" at line 68, col 12, len 19
 
 checkSolutionM ERROR for return_val : exec_val=NaN(0x400000) = 0x7fc00000 = NaN /= predicted_result=-0x0p+0 = 0x80000000 = -0.0
 
 --------------------------
 
-DEAD Then branch 1 "case 2" at line 228, col 2, len 32
+DEAD Then branch 1 "case 2" at line 228, col 2, len 30
 
 --------------------------
 
@@ -225,19 +225,19 @@ DEAD Else branch 3 "(F||F)" at line 174, col 7, len 33
 
 --------------------------
 
-DEAD Then branch 1 "(T||(_&&_))" at line 201, col 8, len 64
+DEAD Then branch 1 "(T||(_&&_))" at line 201, col 8, len 63
 
 --------------------------
 
-DEAD Else branch 2 "(F||(F&&_))" at line 201, col 8, len 64
+DEAD Else branch 2 "(F||(F&&_))" at line 201, col 8, len 63
 
 --------------------------
 
-DEAD Then branch 3 "(F||(T&&T))" at line 201, col 8, len 64
+DEAD Then branch 3 "(F||(T&&T))" at line 201, col 8, len 63
 
 --------------------------
 
-DEAD Else branch 4 "(F||(T&&F))" at line 201, col 8, len 64
+DEAD Else branch 4 "(F||(T&&F))" at line 201, col 8, len 63
 
 --------------------------
 
@@ -407,10 +407,14 @@ DEAD Then branch 2 "(F||T)" at line 114, col 14, len 70
 
 VERIFICATION ERRORS: 6
 
-Stats {cutoffTriesS = 29000, cutoffsS = 28785, numTracesS = 29191, numSolutionS = 8, numNoSolutionS = 183}
 
+---------------
 
-======
-
-Timeout:
-[2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,4,2,2,2,2,1,2]
+Last Duration (hour:min:sec): 00:10:01
+Timeout for [2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,4,2,2,2,2,1,2]
+Stats {cutoffTriesS = 28850, cutoffsS = 28634, numTracesS = 29036, numSolutionS = 8, numNoSolutionS = 179}
+Last Duration (hour:min:sec): 00:10:01
+Timeout for [2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,4,2,2,2,2,1,2]
+Stats {cutoffTriesS = 28851, cutoffsS = 28635, numTracesS = 29037, numSolutionS = 8, numNoSolutionS = 179}
+Last Duration (hour:min:sec): 00:10:01
+Timeout for [2,2,1,2,2,2,1,2,2,2,1,2,2,2,1,2,4,2,2,2,2,1,1,2]
