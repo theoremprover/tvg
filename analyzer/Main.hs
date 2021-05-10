@@ -351,7 +351,7 @@ ptrType to_ty = PtrType to_ty noTypeQuals noAttributes
 floatType = DirectType (TyFloating TyFloat) noTypeQuals noAttributes
 doubleType = DirectType (TyFloating TyDouble) noTypeQuals noAttributes
 
-z3FilePath = "C:\\z3-4.8.8-x64-win\\bin\\z3.exe"
+z3FilePath = "C:\\z3\\bin\\z3.exe"
 
 analyzerPath = "analyzer"
 logFile = analyzerPath </> "log"
