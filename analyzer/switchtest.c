@@ -27,7 +27,7 @@ int f(int x,int y)
             }
             else
             {
-                for(int i=0;i<4;i++)
+                for(int i=0;i<3;i++)
                 //          ^^^
                 //          Dead Else because of if(i>=2) break;
                 {
