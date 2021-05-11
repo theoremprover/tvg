@@ -68,7 +68,7 @@ import Logging
 
 --------------
 
-fastMode = True
+fastMode = False
 
 z3TimeoutSecs :: Maybe Int = Just $ 2*60
 
@@ -95,7 +95,7 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,htmlLogOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -141,7 +141,7 @@ main = do
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [htmlLogOpt,cutoffsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\fortest.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\iffuntest.c") : [] --["-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : ["-writemodels"] --"-writeAST","-writeGlobalDecls"]
+		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : [htmlLogOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\whiletest2.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\branchtest.c") : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\iftest.c") : [] --["-writeAST","-writeGlobalDecls"]
@@ -1155,7 +1155,7 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 												to_branch (Condition (Just branch) _) | is_visible_branch startends (branchLocation branch) = [ branch ]
 												to_branch _ = []
 		
-											let cov_branches = "\tREACHED DECISION POINTS:\n" ++ unlines (map (("\t"++).showBranch) visible_trace)
+											let cov_branches = "\tDECISION POINTS (ORDER IN CONTROL FLOW):\n" ++ unlines (map (("\t"++).showBranch) visible_trace)
 											printLogV 1 cov_branches
 											printToSolutions cov_branches
 		
@@ -2028,9 +2028,12 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs@(_:restenvs) trac
 		unfoldTracesM labelϵ mb_ret_type toplevel forks progress restenvs trace rest2
 
 unfoldTraces1M _ mb_ret_type True _ progress _ trace [] = analyzeTraceM mb_ret_type progress trace >>= return.Right
+-- This case only appears during loop length inference with breaks in the path
+unfoldTraces1M _ mb_ret_type False forks progress ϵs trace [] = return $ Left [(forks,progress,ϵs,trace)]
 
-unfoldTraces1M _ _ _ _ _ _ _ ((cbi:_,_):_) = myError $ "unfoldTracesM " ++ (render.pretty) cbi ++ " not implemented yet."
-
+unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss =
+	logWrapper [ren "unfoldTraces1M",ren "<labelenv>",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 ϵs,ren trace,'\n':ren bstss] $ do
+		myError $ "unfoldTraces1M not fully implemented (see above)"
 
 unionEqConstraintsM :: CExprWithType -> Type -> CovVecM [TraceElem]
 unionEqConstraintsM expr ty = do
