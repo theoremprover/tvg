@@ -68,11 +68,11 @@ import Logging
 
 --------------
 
-fastMode = True
+fastMode = False
 
 z3TimeoutSecs :: Maybe Int = Just $ 2*60
 
-reachFixedTrace :: Maybe [Int] = Nothing --Just [1,3,1,3,3,2,2,1,2,1,1,2]
+reachFixedTrace :: Maybe [Int] = Nothing
 
 subfuncovOpt = "-subfuncov"
 noHaltOnVerificationErrorOpt = "-nohalt"
@@ -96,9 +96,12 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
+		[] → "gcc" : "f" : (analyzerPath++"\\test2.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,htmlLogOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
+
 --		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
-		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,subfuncovOpt,cutoffsOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [subfuncovOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : [writeModelsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : [writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
@@ -139,7 +142,6 @@ main = do
 --		[] → "gcc" : "f" : (analyzerPath++"\\floattest.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\decltest.c") : [] --,"-exportPaths" "-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\myfp-bit_mul.c") : []
---		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [htmlLogOpt,cutoffsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\fortest.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\iffuntest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : [htmlLogOpt,writeModelsOpt,showModelsOpt,noLoopInferenceOpt] --"-writeAST","-writeGlobalDecls"]
@@ -281,7 +283,14 @@ main = do
 			printToSolutions msg
 			printLog 0 msg
 
-			when (htmlLogOpt `elem` opts) $ createHTMLLog
+			(_,total_time_s) <- diffToCurrentTime starttime
+			printLog 0 $ "\nTotal run time: " ++ total_time_s
+
+			when (htmlLogOpt `elem` opts) $ do
+				printConsole 0 "Creating HTML Log..."
+				createHTMLLog
+
+			printConsole 0 $ "\nEnd."
 
 outputVerbosity = if fastMode then 1 else 2
 logFileVerbosity = if fastMode then 0 else 10
@@ -494,12 +503,16 @@ printDateTime = do
 	printConsole 0 $ show local_time ++ "\n"
 	return local_time
 
+diffToCurrentTime :: LocalTime -> IO (LocalTime,String)
+diffToCurrentTime last_time = do
+	current_time <- printDateTime
+	timezone <- getCurrentTimeZone
+	return (current_time, formatTime defaultTimeLocale "%2H:%2M:%2S" (diffLocalTime current_time last_time))
+
 printDateTimeM :: Int -> CovVecM ()
 printDateTimeM verbosity = do
-	current_time <- liftIO printDateTime
 	last_time <- gets lastTimeCVS
-	timezone <- liftIO getCurrentTimeZone
-	let duration_s = formatTime defaultTimeLocale "%2H:%2M:%2S" (diffLocalTime current_time last_time)
+	(current_time,duration_s) <- liftIO $ diffToCurrentTime last_time
 	printLogV verbosity $ "Last Duration (hour:min:sec): " ++ duration_s
 	modify $ \ s -> s { lastTimeCVS = current_time }
 	return ()
@@ -682,8 +695,8 @@ createBranches name_creator cond = do
 	let (real_cond,_) = extractAnnotation cond
  	gets coverageKindCVS >>= \case
  		Branch_Coverage → return [
- 			(Branch (lineColNodeInfo cond) 1 False "", set_ni cond),
- 			(Branch (lineColNodeInfo cond) 2 True "", set_ni $ not_ cond) ]
+ 			(Branch (lineColNodeInfo cond) 1 False "", set_ni real_cond),
+ 			(Branch (lineColNodeInfo cond) 2 True "", set_ni $ not_ real_cond) ]
 		MCDC_Coverage   → return $ case createMCDCTables real_cond of
 			[ MCDC_Branch name1 result1 bcond1, MCDC_Branch name2 result2 bcond2 ] → [
 				(Branch (lineColNodeInfo cond) 1 (not result1) (name_creator real_cond),set_ni bcond1),
@@ -834,6 +847,7 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 			return expr
 
 		allpoints_in_body :: Ident → CovVecM [Branch]
+		allpoints_in_body (Ident fun_ident _ _) | any (`isPrefixOf` fun_ident) ["solver_debug","solver_find","solver_pragma"] = return []
 		allpoints_in_body funident = do
 			fundef@(FunDef (VarDecl _ _ (FunctionType (FunType _ _ _) _)) body fundef_ni) <- lookupFunM funident
 			modify $ \ s → s { funStartEndCVS = (fun_lc fundef,next_lc fundef) : funStartEndCVS s }
@@ -870,7 +884,6 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 			"-o",chkexefilename,mainFileName] srcabsfilename charness
 		modify $ \ s → s { checkExeNameCVS = Just chkexefilename }
 
---unfoldTraces1M :: LabelEnv → Maybe Type → Bool → Int → Progress → [Env] → Trace → [([CBlockItem],Bool)] → CovVecM UnfoldTracesRet
 	Right every_branch_covered <- unfoldTracesM [] (Just ret_type') True 0 [] ((arraydecl_env++param_env):[glob_env]) decls [ (defs ++ [ CBlockStmt body ],False) ]
 	printStatsM 0
 	printDateTimeM 0
@@ -880,19 +893,29 @@ harnessAST incl argdecls funcall print_retval1 print_retval2 = [cunit|
 int __attribute__((__cdecl__)) printf(const char *,...);
 int __attribute__((__cdecl__)) sscanf(const char *,const char *,...) ;
 
-int solver_pragma(int x,...) { return 1; }
-void solver_debug(unsigned short x) { printf("DEBUG_VAL=%x\n",x); }
-
-void solver_find() { printf($esc:solverfindstr); }
-
-$esc:incl
-
 $esc:uns_float
 $esc:uns_double
 float u2f(unsigned long int u) { float_conv.uint_val = u; return (float_conv.float_val); }
 double u2d(unsigned long long int u) { double_conv.ulong_val = u; return (double_conv.double_val); }
 unsigned long f2u(float f) { float_conv.float_val = f; return (float_conv.uint_val); }
 unsigned long long int d2u(double f) { double_conv.double_val = f; return (double_conv.ulong_val); }
+
+int solver_pragma(int x,...) { return 1; }
+void solver_debug_Float(char* s,float x) { printf("DEBUG_VAL Float %s = %g = 0x%lx\n",s,x,f2u(x)); }
+void solver_debug_Double(char* s,double x) { printf("DEBUG_VAL Double %s = %g = 0x%llx\n",s,x,d2u(x)); }
+void solver_debug_UByte(char* s,unsigned char x) { printf("DEBUG_VAL UByte %s = %hhi = 0x%hhx\n",s,x,x); }
+void solver_debug_Short(char* s,short x) { printf("DEBUG_VAL Short %s = %hi = 0x%x\n",s,x,x); }
+void solver_debug_UShort(char* s,unsigned short x) { printf("DEBUG_VAL UShort %s = %hu = 0x%hx\n",s,x,x); }
+void solver_debug_UInt(char* s,unsigned int x) { printf("DEBUG_VAL UInt %s = %u = 0x%x\n",s,x,x); }
+void solver_debug_Int(char* s,int x) { printf("DEBUG_VAL_Int %s = %i = 0x%lx\n",s,x,x); }
+void solver_debug_ULong(char* s,unsigned long x) { printf("DEBUG_VAL ULong %s = %lu = 0x%lx\n",s,x,x); }
+void solver_debug_Long(char* s,long x) { printf("DEBUG_VAL Long %s = %li = 0x%lx\n",s,x,x); }
+void solver_debug_ULongLong(char* s,unsigned long long x) { printf("DEBUG_VAL ULongLong %s = %llu = 0x%llx\n",s,x,x); }
+void solver_debug_LongLong(char* s,long long x) { printf("DEBUG_VAL LongLong %s = %lli = 0x%llx\n",s,x,x); }
+
+void solver_find() { printf($esc:solverfindstr); }
+
+$esc:incl
 
 int main(int argc, char* argv[])
 {
@@ -1121,66 +1144,59 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 									Return expr → [ "return " ++ (render.pretty) expr ++ " ;" ]
 									_ → []
 		
-							trace_for_def_analysis <-
-								showtraceM showInitialTrace "Initial" return trace >>=
-								showtraceM showTraces "elimInds"                 elimInds
-							trace' <-
-								showtraceM showTraces "1. simplifyTraceM"        simplifyTraceM trace_for_def_analysis >>=
+							showtraceM showInitialTrace "Initial" return trace >>=
+								showtraceM showTraces "elimInds"                 elimInds >>=
+								showtraceM showTraces "1. simplifyTraceM"        simplifyTraceM >>=
 								showtraceM showTraces "elimArrayAssignsM"        elimArrayAssignsM >>=
 								showtraceM showTraces "elimAssignmentsM"         elimAssignmentsM >>=
 								showtraceM showTraces "2. simplifyTraceM"        simplifyTraceM >>=
-								showtraceM showFinalTrace "createSymbolicVarsM"  createSymbolicVarsM
-		
-							solveTraceM mb_ret_type traceid trace' >>= \case
-								Left solvable → return solvable
-								Right resultdata@(model_string,mb_solution) → do
-									funname <- gets funNameCVS
-									let show_solution_msg = show_solution funname mb_solution ++ "\n"
-									printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n\n" ++ show_solution_msg
-									case mb_solution of
-										Nothing → do
-											incNumNoSolutionM
-											return False
-										Just (_,_,[]) → myError $ "Empty solution: \n" ++ show_solution_msg
-										Just solution → do
-											incNumSolutionM
-											printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
-											printToSolutions show_solution_msg
-		
-											startends <- gets funStartEndCVS
-											printLogV 20 $ "startends = " ++ show startends
-											let visible_trace = concatMap to_branch trace
-												where
-												is_visible_branch :: [(Location,Location)] → Location → Bool
-												is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
-												to_branch (Condition (Just branch) _) | is_visible_branch startends (branchLocation branch) = [ branch ]
-												to_branch _ = []
-		
-											let cov_branches = "\tDECISION POINTS (ORDER IN CONTROL FLOW):\n" ++ unlines (map (("\t"++).showBranch) visible_trace)
-											printLogV 1 cov_branches
-											printToSolutions cov_branches
-		
-											checkVarsDefined mb_ret_type trace_for_def_analysis >>= \case
-												Just msg → do
-													printLogV 0 msg
-													printLogV 0 $ "Will not checkSolutions for " ++ show traceid
-												Nothing → do
-													when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
-		
-											(tas,covered) <- gets analysisStateCVS
-											all_branches <- gets allCondPointsCVS
-											let
-												traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
-												nub_visible_trace = nub visible_trace
-												excess_branches = nub_visible_trace \\ all_branches
-											when (not $ null excess_branches) $ do
-												printCondPoints all_branches
-												myError $ "Branches " ++ show excess_branches ++ " are covered but are not in all_branches!"
-											-- Are all the decision points are already covered? They can't, probably...?
-											-- If yes, this trace does not contribute to full coverage...
-											when (not $ null (nub_visible_trace \\ covered)) $
-												modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],nub_visible_trace `union` covered) }
-											return True
+								showtraceM showFinalTrace "createSymbolicVarsM"  createSymbolicVarsM >>=
+								solveTraceM mb_ret_type traceid >>= \case
+	
+									Left solvable → return solvable
+									Right resultdata@(model_string,mb_solution) → do
+										funname <- gets funNameCVS
+										let show_solution_msg = show_solution funname mb_solution ++ "\n"
+										printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n\n" ++ show_solution_msg
+										case mb_solution of
+											Nothing → do
+												incNumNoSolutionM
+												return False
+											Just (_,_,[]) → myError $ "Empty solution: \n" ++ show_solution_msg
+											Just solution → do
+												incNumSolutionM
+												printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
+												printToSolutions show_solution_msg
+			
+												startends <- gets funStartEndCVS
+												printLogV 20 $ "startends = " ++ show startends
+												let visible_trace = concatMap to_branch trace
+													where
+													is_visible_branch :: [(Location,Location)] → Location → Bool
+													is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
+													to_branch (Condition (Just branch) _) | is_visible_branch startends (branchLocation branch) = [ branch ]
+													to_branch _ = []
+			
+												let cov_branches = "\tDECISION POINTS (IN CONTROL FLOW ORDER):\n" ++ unlines (map (("\t"++).showBranch) visible_trace)
+												printLogV 1 cov_branches
+												printToSolutions cov_branches
+												
+												when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
+			
+												(tas,covered) <- gets analysisStateCVS
+												all_branches <- gets allCondPointsCVS
+												let
+													traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
+													nub_visible_trace = nub visible_trace
+													excess_branches = nub_visible_trace \\ all_branches
+												when (not $ null excess_branches) $ do
+													printCondPoints all_branches
+													myError $ "Branches " ++ show excess_branches ++ " are covered but are not in all_branches!"
+												-- Are all the decision points are already covered? They can't, probably...?
+												-- If yes, this trace does not contribute to full coverage...
+												when (not $ null (nub_visible_trace \\ covered)) $
+													modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],nub_visible_trace `union` covered) }
+												return True
 			
 		where
 
@@ -1653,7 +1669,7 @@ unfoldTracesM labelϵ ret_type toplevel forks progress ϵs trace cbss = do
 --	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren ϵs,ren trace,'\n':ren cbss] $ do
 		printLogV 0 $ show (trace2traceid trace)
 		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
-			printConsole 1 $ "\rUnfolding " ++ show (trace2traceid trace) ++ "                     "
+			printConsole 20 $ "\rUnfolding " ++ show (trace2traceid trace) ++ "                     "
 			unfoldTraces1M labelϵ ret_type toplevel forks progress ϵs trace cbss
 		where
 		maybe_cutoff :: CovVecM UnfoldTracesRet → CovVecM UnfoldTracesRet
@@ -1808,11 +1824,10 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 							analyzeTraceM mb_ret_type progress' (Return ret_expr' : (ret_trace ++ trace'))
 								>>= return.Right
 
-			CExpr (Just (CCall (CVar (Ident "solver_debug" _ _) _) args ni)) _ → do
-				dbgouts <- forM args $ \ arg → do
-					expr' <- transcribeExprM ϵs Nothing arg
-					return $ DebugOutput ("solver_debug_" ++ lValueToVarName expr') expr'
-				unfoldTracesM labelϵ mb_ret_type toplevel forks progress ϵs (reverse dbgouts ++ trace) ((rest,breakable):rest2)
+			CExpr (Just (CCall (CVar (Ident is _ _) _) [_,expr] ni)) _ | "solver_debug" `isPrefixOf` is → do
+				expr' <- transcribeExprM ϵs Nothing expr
+				let dbgout = DebugOutput ("solver_debug_" ++ lValueToVarName expr') expr'
+				unfoldTracesM labelϵ mb_ret_type toplevel forks progress ϵs (dbgout : trace) ((rest,breakable):rest2)
 
 			CExpr (Just (CCall (CVar (Ident "solver_find" _ _) _) _ _)) _ → do
 				unfoldTracesM labelϵ mb_ret_type toplevel forks progress ϵs (SolverFind:trace) ((rest,breakable):rest2)
@@ -2315,7 +2330,7 @@ scanExprM ϵs expr0 mb_target_ty trace = logWrapper ["scanExprM",ren ϵs,ren exp
 				var = CVar var_ident ni
 			ccond' <- lift $ transcribeExprM ϵs Nothing ccond
 
-			(branches_to_follow) <- lift $ createBranchesWithAnno cond makeCondBranchName trace
+			branches_to_follow <- lift $ createBranchesWithAnno cond makeCondBranchName trace
 			let
 				decl = CBlockDecl $ type2Decl var_ident ni ty Nothing
 				(_,ty) = extractTypes ccond'
@@ -3152,7 +3167,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			_ | "timeout" `isPrefixOf` l → l:ls
 			_ → drop_prelude ls
 		dropped_output = drop_prelude $ lines output
-	printLogV 20 $ "\nZ3 says:\n" ++ unlines dropped_output
+	printLogV 0 $ "\nZ3 says:\n" ++ unlines dropped_output
 	case dropped_output of
 		"timeout" : _ → do
 			printLogV 0 $ "Timeout for " ++ show traceid
@@ -3251,6 +3266,7 @@ solveTraceM mb_ret_type traceid trace = do
 		traceitem2constr (Return _) = []
 		traceitem2constr SolverFind = []
 		traceitem2constr (NewDeclaration _) = []
+		traceitem2constr (DebugOutput _ _) = []
 		traceitem2constr traceelem = error $ "traceitem2constr: There is a strange TraceElem left in the final trace: " ++ show traceelem
 		debug_outputs = concatMap is_debug_output trace where
 			is_debug_output (DebugOutput name expr) = [(name,expr)]
