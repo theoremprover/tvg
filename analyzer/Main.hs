@@ -2844,6 +2844,9 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 					where
 					fp_to = SLeaf $ if is_unsigned then "fp.to_ubv" else "fp.to_sbv"
 
+				( Z3_Float, Z3_Double ) →
+					return $ SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "8", SLeaf "24" ], SLeaf roundingMode, sexpr ]
+
 				( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_fp2arr sexpr Z3_Float arr_ty
 
 				( Z3_Double, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_fp2arr sexpr Z3_Double arr_ty
@@ -3364,6 +3367,8 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 						TyDouble → let [(w,"")] = readHex s in DoubleVal (w,wordToDouble w)
 					DirectType (TyEnum _) _ _           → IntVal $ read s
 					_ → error $ "checkSolutionM: parsing type " ++ (render.pretty) ty ++ " of " ++ ident_s ++ " not implemented!"
+--				printLogV 0 $ "exec_result      = " ++ show exec_result
+--				printLogV 0 $ "predicted_result = " ++ show predicted_result
 				let check_OK = exec_result == predicted_result
 				when (not check_OK) $ do
 					let txt = "\ncheckSolutionM ERROR for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result ++ "\n"
