@@ -96,17 +96,19 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "f" : (analyzerPath++"\\test2.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [htmlLogOpt,showModelsOpt,writeModelsOpt]
+--		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : [htmlLogOpt,writeModelsOpt,showModelsOpt,noLoopInferenceOpt] --"-writeAST","-writeGlobalDecls"]
+		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,htmlLogOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 
+--		[] → "gcc" : "f" : (analyzerPath++"\\test2.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
---		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [subfuncovOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : [writeModelsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (analyzerPath++"\\test.c") : [writeModelsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDnorm" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_sqrtf.c"]) ++ ["-writemodels"]
---		[] → "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.i") : [] --"-writeAST","-writeGlobalDecls"]
+--		[] → "gcc" : "_Sinx" : (analyzerPath++"\\OscarsChallenge\\sin\\oscar.i") : [cutoffsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\nesttest.c") : [writeModelsOpt,"-writeAST"] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\loopmcdctest.c") : ["-writemodels"] --["-writeAST","-writeGlobalDecls"]
@@ -115,7 +117,6 @@ main = do
 --		[] → "gcc" : "__udiv6432" : (analyzerPath++"\\knorr\\libgcc\\tvg_udiv6432.c") : ["-writemodels"]
 
 --		[] → "gcc" : "_FDint" : (analyzerPath++"\\knorr\\dinkum\\tvg_xfdint.c") : [showModelsOpt,writeModelsOpt]
---		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ ["-writemodels",noIndentLogOpt]
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [writeModelsOpt,subfuncovOpt,noIndentLogOpt]
 --		[] → "gcc" : "fabsf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ ["-writemodels",noIndentLogOpt]
 
@@ -144,7 +145,6 @@ main = do
 --		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\myfp-bit_mul.c") : []
 --		[] → "gcc" : "f" : (analyzerPath++"\\fortest.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\iffuntest.c") : [] --["-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : [htmlLogOpt,writeModelsOpt,showModelsOpt,noLoopInferenceOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\whiletest2.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\branchtest.c") : ["-writeTree"] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\iftest.c") : [] --["-writeAST","-writeGlobalDecls"]
@@ -2659,7 +2659,6 @@ infix 4 ＝
 (＝) :: SExpr → SExpr → SExpr
 sexpr1 ＝ sexpr2 = SExpr [ SLeaf "=", sexpr1, sexpr2 ]
 
--- 𝒶𝒷𝒸𝒹𝑒𝒻𝑔𝒽𝒾𝒿𝓀𝓁𝓂𝓃𝑜𝓅𝓆𝓇𝓈𝓉𝓊𝓋𝓌𝓍𝓎𝓏
 
 𝓈𝓉𝑜𝓇𝑒 :: SExpr → SExpr → SExpr → SExpr
 𝓈𝓉𝑜𝓇𝑒 arr ix val = SExpr [ SLeaf "store", arr, ix, val ]
@@ -2873,10 +2872,10 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 				(z3_inttype,_) <- lift $ _IntTypesM
 				is <- forM [0..(num_elems-1)] $ make_intconstant z3_inttype
 				Just MachineSpec{endianness} <- lift $ gets machineSpecCVS
-				let addresses = for (
+				let addresses = map (\ (h,l) → 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 h l bv) $
 					(case endianness of Little → id; Big → reverse)
-						[ ( (i+1)*elem_size-1 , i*elem_size ) | i <- [0..(num_elems-1)] ] ) $
-							\ (h,l) → 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 h l bv
+						[ ( (i+1)*elem_size-1 , i*elem_size ) | i <- [0..(num_elems-1)] ]
+
 				modify ( (
 					arr_decl :
 					map (\(i,address) → 𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i address) (zip is addresses)) ++ )
