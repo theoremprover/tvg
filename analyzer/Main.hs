@@ -96,12 +96,13 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [htmlLogOpt,showModelsOpt,writeModelsOpt]
+		[] → "gcc" : "f" : (analyzerPath++"\\test2.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
+
+--		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [htmlLogOpt,showModelsOpt,writeModelsOpt]
 --		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : [htmlLogOpt,writeModelsOpt,showModelsOpt,noLoopInferenceOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,htmlLogOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 
---		[] → "gcc" : "f" : (analyzerPath++"\\test2.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
@@ -624,26 +625,30 @@ instance Pretty AssignmentKind where
 
 data TraceElem =
 	Assignment AssignmentKind CExprWithType |
-	Condition (Maybe Branch) CExprWithType |
+	-- Left is Identity, Right is C-Equality
+	Condition (Either (CExprWithType,CExprWithType) (Branch,CExprWithType)) |
 	NewDeclaration (Ident,Type) |
 	Return CExprWithType |
 	DebugOutput String CExprWithType |
 	SolverFind
 	deriving Data
 
-data Branch = Branch { branchLocation::Location, numBranch::Int, isElseBranch::Bool, nameBranch::String }
+data Branch = NoBranch | Branch { branchLocation::Location, numBranch::Int, isElseBranch::Bool, nameBranch::String }
 	deriving (Data,Show,Read)
 -- Order decision points first by location, then by number, and last by the direction (Then/Else)
 
 -- For equality for Branches, the branch's name should be irrelevant (it is only given for documentation purposes)
 instance Eq Branch where
 	(Branch loc1 num1 iselse1 _) == (Branch loc2 num2 iselse2 _) = loc1==loc2 && num1==num2 && iselse1==iselse2
+	NoBranch == NoBranch = True
+	_ == _ = False
 -- Ord instance is needed for Set.Set difference
 instance Ord Branch where
 	(Branch loc1 num1 iselse1 _) <= (Branch loc2 num2 iselse2 _) =
 		loc1<loc2 || ((loc1==loc2) && (num1<num2 || ((num1==num2) && (iselse1<=iselse2))))
-
+	NoBranch <= _ = True
 showBranch (Branch loc num is_else name) = (if is_else then "Else" else "Then") ++ " branch " ++ show num ++ " " ++ show name ++ " at " ++ showLocation loc
+showBranch NoBranch = "NoBranch"
 
 makeCondBranchName cond = (render.pretty) cond ++ " ? _ : _"
 makeIfBranchName cond = "if(" ++ (render.pretty) cond ++ ")"
@@ -711,7 +716,8 @@ instance CNode TraceElem where
 	nodeInfo (Assignment kind _)        = case kind of
 		Normal lexpr                     → extractNodeInfo lexpr
 		ArrayUpdate (Ident _ _ ni) _ _ _ → ni
-	nodeInfo (Condition _ expr)         = extractNodeInfo expr
+	nodeInfo (Condition (Left (_,expr))) = extractNodeInfo expr
+	nodeInfo (Condition (Right (_,expr))) = extractNodeInfo expr
 	nodeInfo (NewDeclaration (ident,_)) = nodeInfo ident
 	nodeInfo (Return expr)              = extractNodeInfo expr
 	nodeInfo (DebugOutput _ _)          = undefNode
@@ -758,7 +764,8 @@ instance (Pretty a) => Pretty [a] where
 instance Show TraceElem where
 	show te = ( case te of
 		Assignment lexpr expr    → "ASSN " ++ (render.pretty) lexpr ++ " = " ++ (render.pretty) expr
-		Condition mb_b expr      → "COND " ++ (case mb_b of Nothing → "Nothing"; Just b → showBranch b) ++ " " ++ (render.pretty) expr
+		Condition (Left (varexpr,expr)) → "COND " ++ (render.pretty) varexpr ++ " === " ++ (render.pretty) expr
+		Condition (Right (branch,expr)) → "COND " ++ showBranch branch ++ " " ++ (render.pretty) expr
 		NewDeclaration (lval,ty) → "DECL " ++ (render.pretty) lval ++ " :: " ++ (render.pretty) ty
 		Return exprs             → "RET  " ++ (render.pretty) exprs
 		DebugOutput varname expr → "DBGOUT " ++ varname ++ " " ++ (render.pretty) expr
@@ -1174,7 +1181,7 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 													where
 													is_visible_branch :: [(Location,Location)] → Location → Bool
 													is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
-													to_branch (Condition (Just branch) _) | is_visible_branch startends (branchLocation branch) = [ branch ]
+													to_branch (Condition (Right (branch,_))) | is_visible_branch startends (branchLocation branch) = [ branch ]
 													to_branch _ = []
 			
 												let cov_branches = "\tDECISION POINTS (IN CONTROL FLOW ORDER):\n" ++ unlines (map (("\t"++).showBranch) visible_trace)
@@ -1251,7 +1258,7 @@ checkVarsDefined mb_ret_type trace = do
 		collect_undef_vars should_be_defined_vars resttrace
 
 trace2traceid trace = concatMap extract_conds trace where
-	extract_conds (Condition (Just branch) _) = [ numBranch branch ]
+	extract_conds (Condition (Right (branch,_))) = [ numBranch branch ]
 	extract_conds _ = []
 
 lineColNodeInfo :: (CNode a) => a → Location
@@ -1577,7 +1584,7 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 					ni = extractNodeInfo expr
 					arrayelemexpr = CIndex expr (CConst $ CIntConst (cInteger i) (undefNode,intty)) (ni,elem_ty2)
 					arrayelem_var = CVar (internalIdent $ lValueToVarName arrayelemexpr) (ni,elem_ty2)
-					eqcond = Condition Nothing $ CBinary CEqOp arrayelem_var arrayelemexpr (ni,_BoolTypes)
+					eqcond = Condition $ Left (arrayelem_var,arrayelemexpr)
 				modify $ \ (envitems,traceitems) → ( envitems,traceitems ++ [eqcond] )
 				createInterfaceFromExpr_WithEnvItemsM arrayelemexpr elem_ty'
 			return $ concat ress
@@ -1597,12 +1604,16 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 makeCompound :: [CBlockItem] → CStat
 makeCompound cstats = CCompound [] cstats undefNode
 
-wrapGoto :: (Maybe Branch,CExpr) → CBlockItem
-wrapGoto (mb_branch,cond) = CBlockStmt $ CGotoPtr (CBinary CEqOp cond (CConst $ CStrConst (CString (show mb_branch) True) undefNode) undefNode) undefNode
-unwrapGoto :: CExpr → (Maybe Branch,CExpr)
-unwrapGoto (CBinary CEqOp cond (CConst (CStrConst (CString s _) _)) _) = (mb_branch :: Maybe Branch,cond) where
-	mb_branch = case reads s of
-		[(mb_branch,"")] → mb_branch
+wrapGoto :: Either (CExpr,CExpr) (Branch,CExpr) → CBlockItem
+--wrapGoto (mb_branch,cond) = CBlockStmt $ CGotoPtr (CBinary CEqOp cond (CConst $ CStrConst (CString (show mb_branch) True) undefNode) undefNode) undefNode
+wrapGoto (Right (branch,cond)) = CBlockStmt $ CGotoPtr (CBinary CEqOp cond (CConst $ CStrConst (CString (show branch) True) undefNode) undefNode) undefNode
+wrapGoto (Left (varexpr,cond)) = CBlockStmt $ CGotoPtr (CBinary CNeqOp varexpr cond undefNode) undefNode
+unwrapGoto :: CExpr → ((CExprWithType → TraceElem),CExpr)
+unwrapGoto (CBinary CEqOp cond (CConst (CStrConst (CString s _) _)) _) = (make_cond,cond)
+	where
+	make_cond cond' = Condition (Right (branch,cond'))
+	branch = case reads s of
+		[(branch,"")] → branch
 		[] → error $ "unwrapGoto: reads error for " ++ s
 
 unwrapGoto x = error $ "unwrapGoto " ++ show x
@@ -1645,7 +1656,7 @@ recognizeAnnotation cond trace = do
 		Nothing   → Nothing
 		Just args → Just (args,num_reached) )
 	where
-	is_this_cond (Condition (Just _) c) = extractNodeInfo c == nodeInfo cond
+	is_this_cond (Condition (Right (_,c))) = extractNodeInfo c == nodeInfo cond
 	is_this_cond _ = False
 	num_reached = length $ filter is_this_cond trace
 
@@ -1721,7 +1732,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 
 					collect_stmts branchnum notconds (CBlockStmt cdefault@(CDefault def_stmt default_ni) : rest) =
 						-- This is to explicitly cover the "default" branch (located at the "default" keyword).
-						wrapGoto (Just $ Branch (lineColNodeInfo cdefault) branchnum False makeDefaultBranchName,notconds) :
+						wrapGoto (Right (Branch (lineColNodeInfo cdefault) branchnum False makeDefaultBranchName,notconds)) :
 							CBlockStmt def_stmt :
 							( for rest $ \case
 								CBlockStmt (CCase _ stmt _)  → default_not_last_err
@@ -1740,7 +1751,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 					collect_stmts branchnum notconds (CBlockStmt ccase@(CCase caseexpr stmt case_ni) : rest) = [
 						CBlockStmt $ CIf if_cond_mb_with_anno
 							(makeCompound $
-								wrapGoto (Just $ Branch (lineColNodeInfo ccase) branchnum False ("case " ++ (render.pretty) caseexpr),cond) :
+								wrapGoto (Right (Branch (lineColNodeInfo ccase) branchnum False ("case " ++ (render.pretty) caseexpr),cond)) :
 								CBlockStmt stmt :
 								filtercases rest)
 							(Just $ makeCompound $ collect_stmts (branchnum+1) notconds' rest)
@@ -1792,7 +1803,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 					printLogV 20 $ "### " ++ show branch ++ " , branch_cond = " ++ (render.pretty) branch_cond
 					let
 						-- Only insert a condition if the CIf was not generated by TVG (for translation of while, e.g.)
-						branchcbi = if ni==undefNode then [] else [wrapGoto (Just branch,branch_cond)]
+						branchcbi = if ni==undefNode then [] else [wrapGoto $ Right (branch,branch_cond)]
 						cbstmts = branchcbi ++ case isElseBranch branch of
 							False → [CBlockStmt then_stmt]
 							True  → case mb_else_stmt of
@@ -1816,11 +1827,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 							ret_trace <- concatForM (zip ret_var_expr ret_env_expr) $
 								\ ( ((_,(ret_var_ident,ret_var_ty)),_) , (_,ret_member_expr)) → do
 									z3_ret_var_ty <- ty2Z3Type ret_var_ty
-									let ret_val_cond = CBinary CEqOp
-										(CVar ret_var_ident (nodeInfo ret_var_ident,z3_ret_var_ty))
-										ret_member_expr
-										(undefNode,_BoolTypes)
-									return [ Condition Nothing ret_val_cond, NewDeclaration (ret_var_ident,ret_var_ty) ]
+									return [ Condition (Left ((CVar ret_var_ident (nodeInfo ret_var_ident,z3_ret_var_ty)),ret_member_expr)), NewDeclaration (ret_var_ident,ret_var_ty) ]
 							analyzeTraceM mb_ret_type progress' (Return ret_expr' : (ret_trace ++ trace'))
 								>>= return.Right
 
@@ -1866,9 +1873,9 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 
 			-- That's cheating: Insert condition into trace (for loop unrolling and switch) via GOTO
 			CGotoPtr wrapped ni → do
-				let (mb_branch,cond) :: (Maybe Branch,CExpr) = unwrapGoto wrapped
+				let (make_cond,cond) = unwrapGoto wrapped
 				transids cond (Just _BoolTypes) trace forks progress $ \ forks' progress' (ϵs',cond',trace') → do
-					unfoldTracesM labelϵ mb_ret_type toplevel forks' progress' ϵs' (Condition mb_branch cond' : trace') ( (rest,breakable) : rest2 )
+					unfoldTracesM labelϵ mb_ret_type toplevel forks' progress' ϵs' (make_cond cond' : trace') ( (rest,breakable) : rest2 )
 
 			CWhile cond body False ni → do
 				(mb_unrolling_depths,msg) <- infer_loopingsM cond body
@@ -1890,9 +1897,9 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 					(else_branches,then_branches) = partition (isElseBranch.fst) branch_exprs
 
 					unroll :: Int → [[CBlockItem]]
-					unroll 0 = for else_branches $ \ (branch,cond) →[ wrapGoto (Just branch,cond) ]
+					unroll 0 = for else_branches $ \ (branch,cond) →[ wrapGoto $ Right (branch,cond) ]
 					unroll n = for then_branches $ \ (branch,cond) →
-						concatMap (\ l → wrapGoto (Just branch,cond) : CBlockStmt body : l) $ unroll (n-1)
+						concatMap (\ l → wrapGoto (Right (branch,cond)) : CBlockStmt body : l) $ unroll (n-1)
 
 			-- Express the for loop as a bisimular while loop
 			CFor precond mb_cond mb_inc_expr stmt ni → do
@@ -1983,7 +1990,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 														cond_nminus1 = (counter_var `substituteBy` i_n_n_var_minus_1) cond
 														cond_0       = (counter_var `substituteBy` i_n_0) cond
 														in
-														map (Condition Nothing) [
+														map (\ cond -> Condition $ Right (NoBranch,cond) ) [
 															n ⩾ _0,
 															not_ cond_0  ⋏  n ⩵ _0
 																⋎
@@ -2062,11 +2069,11 @@ unionEqConstraintsM expr ty = do
 			ident_0_ty <- ty2Z3Type member_ty_0
 			forM ident_types $ \ (ident_i,member_ty_i) -> do
 				ident_i_ty <- ty2Z3Type member_ty_i
-				return $ Condition Nothing $
-					CMember expr ident_0 True (undefNode,ident_0_ty) ⩵
+				return $ Condition $ Left
+					(CMember expr ident_0 True (undefNode,ident_0_ty),
 					CCast (CDecl [] [] (undefNode,ident_0_ty))
 						( CMember expr ident_i True (undefNode,ident_i_ty) )
-						(undefNode,ident_0_ty)
+						(undefNode,ident_0_ty))
 {-
 		DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _ → do
 			create_eq_constraints expr sueref
@@ -2335,7 +2342,7 @@ scanExprM ϵs expr0 mb_target_ty trace = logWrapper ["scanExprM",ren ϵs,ren exp
 				decl = CBlockDecl $ type2Decl var_ident ni ty Nothing
 				(_,ty) = extractTypes ccond'
 				cbiss = for branches_to_follow $ \ (branch,branch_cond) →
-					decl : wrapGoto (Just branch,branch_cond) : case isElseBranch branch of
+					decl : wrapGoto (Right (branch,branch_cond)) : case isElseBranch branch of
 						False → [ CBlockStmt $ var ≔ true_expr  ]
 						True  → [ CBlockStmt $ var ≔ false_expr ]
 			modify ( Right cbiss : )
@@ -2547,7 +2554,7 @@ elimArrayAssignsM trace = evalStateT elimarrassns Map.empty
 					Assignment (ArrayUpdate store_arr_ident new_arr_ident arr_types index_expr) ass_expr ] ++
 					-- Only insert the following condition when the new array is introduced (i.e. i==1)
 					-- in order to logically connect the array with the argument
-					( if i==1 then [ Condition Nothing $ arr_expr ⩵ new_arr ] else [] ) ++
+					( if i==1 then [ Condition (Left (arr_expr,new_arr)) ] else [] ) ++
 					[ Assignment (Normal arr_expr) new_arr ]
 			other → return [other]
 
@@ -2731,7 +2738,11 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 	ident2sexpr ident = SLeaf $ (render.pretty) ident
 
 	expr2sexpr :: Constraint → SECovVecM SExpr
-	expr2sexpr (Condition _ cexpr) = expr2sexpr' cexpr
+	expr2sexpr (Condition (Left (varcexpr,cexpr))) = do
+		varsexpr <- expr2sexpr' varcexpr
+		sexpr <- expr2sexpr' cexpr
+		return $ SExpr [ SLeaf "=", varsexpr, sexpr ]
+	expr2sexpr (Condition (Right (_,cexpr))) = expr2sexpr' cexpr
 
 	-- Assignment to an array member
 	expr2sexpr (Assignment (ArrayUpdate store_arr_ident var_arr_ident _ index_expr) ass_expr) = do
@@ -3085,7 +3096,8 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	-- collect all variables that appear in the constraints and assignments
 	let
 		constraints_vars = nub $ concat $ for constraints $ \case
-			Condition _ expr → fvar expr
+			Condition (Left (varexpr,expr)) → fvar varexpr ++ fvar expr
+			Condition (Right (_,expr)) → fvar expr
 			Assignment (Normal lexpr@(CIndex _ _ _)) ass_expr → fvar lexpr ++ fvar ass_expr
 			Assignment (ArrayUpdate ident1 ident2 _ index) ass_expr → [ident1,ident2] ++ fvar index ++ fvar ass_expr
 
@@ -3114,7 +3126,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			Nothing → return []
 			Just rest_varname  → do
 				bv_size <- sizeofZ3Ty ty
-				return [ 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, (SLeaf $ identToString ident) ] ＝ SLeaf rest_varname ]
+				return [ 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ SLeaf "=", SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, (SLeaf $ identToString ident) ], SLeaf rest_varname ] ]
 		return $ map (SExprLine . SOnOneLine) (decl:bv_decls)
 
 	-- create Z3 constraints
@@ -3263,7 +3275,7 @@ solveTraceM mb_ret_type traceid trace = do
 	let
 		tracename = show traceid
 		constraints = concatMap traceitem2constr trace where
-		traceitem2constr constraint@(Condition _ _) = [constraint]
+		traceitem2constr constraint@(Condition _) = [constraint]
 		traceitem2constr constraint@(Assignment (ArrayUpdate _ _ _ _) _) = [constraint]
 		traceitem2constr (Return _) = []
 		traceitem2constr SolverFind = []
@@ -3275,7 +3287,7 @@ solveTraceM mb_ret_type traceid trace = do
 			is_debug_output _ = []
 		(debug_idents,debug_constraints,debug_tyenv) = unzip3 $ for (zip [1..] debug_outputs) $ \ (i,(name,expr)) →
 			let name_id = internalIdent (name ++ "_" ++ show i) in
-			(name_id,Condition Nothing $ CBinary CEqOp (CVar name_id (annotation expr)) expr (annotation expr),(name_id,extractZ3Type expr))
+			(name_id,Condition $ Left (CVar name_id (annotation expr),expr),(name_id,extractZ3Type expr))
 
 	tyenv1 <- tyEnvFromTraceM trace
 	minimize <- isOptionSet minimizeOpt
