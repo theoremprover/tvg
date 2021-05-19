@@ -68,7 +68,7 @@ import Logging
 
 --------------
 
-fastMode = False
+fastMode = True
 
 z3TimeoutSecs :: Maybe Int = Just $ 2*60
 
