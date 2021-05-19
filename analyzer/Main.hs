@@ -679,13 +679,18 @@ createMCDCTables expr = case expr of
 			MCDC_Branch name1 result1 cond1 <- t1, result1 == shortcut,
 			MCDC_Branch name2 _ _ <- take 1 t2 ] ++
 		[ MCDC_Branch ("(" ++ name1 ++ (render.pretty) binop ++ name2 ++ ")") result2 (cond1 ⋏ cond2) |
-			MCDC_Branch name1 result1 cond1 <- t1, result1 == not shortcut,
-			MCDC_Branch name2 result2 cond2 <- t2 ]
+			MCDC_Branch name1 result1 cond1 <- take 1 t1_not_shortcut,
+			MCDC_Branch name2 result2 cond2 <- t2 ] ++
+		[ MCDC_Branch ("(" ++ name1 ++ (render.pretty) binop ++ name2 ++ ")") result2 (cond1 ⋏ cond2) |
+			MCDC_Branch name1 result1 cond1 <- drop 1 t1_not_shortcut,
+			MCDC_Branch name2 result2 cond2 <- take 1 t2_not_shortcut ]
 		where
 		shortcut = case binop of
 			CLorOp -> True
 			CLndOp -> False
 		(t1,t2) = (createMCDCTables expr1,createMCDCTables expr2)
+		t1_not_shortcut = filter ((== (not shortcut)).resultMCDCB) t1
+		t2_not_shortcut = filter ((== (not shortcut)).resultMCDCB) t2
 		to_dontcare s = for s $ \case
 			'F'   -> '_'
 			'T'   -> '_'
