@@ -83,13 +83,13 @@ short _FDnorm(_Fval *ps)
   {
   if (ps->_Sh[1] == 0)
     ps->_Sh[1] = ps->_Sh[0], ps->_Sh[0] = 0, xchar -= 16;
-  for (;solver_pragma(0,1) && (ps->_Sh[1] < 1 << 7); --xchar)
+  for (;solver_pragma(0,1,2,3) && (ps->_Sh[1] < 1 << 7); --xchar)
    {
    ps->_Sh[1] = (unsigned short)(ps->_Sh[1] << 1
     | ps->_Sh[0] >> 15);
    ps->_Sh[0] <<= 1;
    }
-  for (;solver_pragma(0,1) && (1 << (7 + 1) <= ps->_Sh[1]); ++xchar)
+  for (;solver_pragma(0,1,2,3) && (1 << (7 + 1) <= ps->_Sh[1]); ++xchar)
    {
    ps->_Sh[0] = (unsigned short)(ps->_Sh[0] >> 1
     | ps->_Sh[1] << 15);
@@ -108,10 +108,10 @@ short _FDunscale(short *pex, float *px)
  _Fval *ps = (_Fval *)(char *)px;
  short xchar = (ps->_Sh[1] & ((unsigned short)(0x7fff & ~((unsigned short)((1 << 7) - 1))))) >> 7;
 
- if (solver_pragma(2) && (xchar == ((unsigned short)((1 << (15 - 7)) - 1)))) //Then branch 1 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
+ if (xchar == ((unsigned short)((1 << (15 - 7)) - 1))) //Then branch 1 "if(xchar == (unsigned short) ((1 << 15 - 7) - 1))" at line 111, col 6, len 48
   {
   *pex = 0;
-  return ((solver_pragma(2) && ((ps->_Sh[1] & ((unsigned short)((1 << 7) - 1))) != 0 || ps->_Sh[0] != 0 ))
+  return ((ps->_Sh[1] & ((unsigned short)((1 << 7) - 1))) != 0 || ps->_Sh[0] != 0 )
    ? 2 : 1); //Else branch 3 "(F||F)" at line 114, col 12, len 70
   }
  else
