@@ -307,7 +307,7 @@ returnval_var_name = "return_val"
 floatTolerance = 1e-7 :: Float
 doubleTolerance = 1e-10 :: Double
 showBuiltins = False
-logToFile = True
+logToFile = not fastMode
 mainFileName = "main.c"
 printTypes = False
 printLocations = False
@@ -1683,7 +1683,7 @@ type LabelEnv = [(Ident,Trace → Int → CovVecM UnfoldTracesRet)]
 unfoldTracesM :: LabelEnv → Maybe Type → Bool → Int → Progress → [Env] → Trace → [([CBlockItem],Bool)] → CovVecM UnfoldTracesRet
 unfoldTracesM labelϵ ret_type toplevel forks progress ϵs trace cbss = do
 --	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren ϵs,ren trace,'\n':ren cbss] $ do
-		printLogV 0 $ show (trace2traceid trace)
+		printLogV 20 $ show (trace2traceid trace)
 		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
 			printConsole 20 $ "\rUnfolding " ++ show (trace2traceid trace) ++ "                     "
 			unfoldTraces1M labelϵ ret_type toplevel forks progress ϵs trace cbss
