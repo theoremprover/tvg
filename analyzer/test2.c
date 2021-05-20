@@ -12,7 +12,7 @@ short _FDscale(float *px, long lexp)
  short xchar = (short)((ps->_Sh[1] & 0x7f80) >> 7);
  solver_debug_UShort("ps->_Sh[1]",ps->_Sh[1]);
  solver_debug_Short("xchar",xchar);
- if (solver_pragma(2) && xchar == 0x00ff) return 1; else return 2;
+ if (xchar == 0x00ff) return 1; else return 2;
 }
 
 short f(float x)

@@ -215,6 +215,8 @@ short _FDscale(float *px, long lexp)
  }
 
 
+// Verification Error:
+// [2,1,1,2,1,2,2,2,1,2,2,1,2,2,2,1,2,2,2,1,2,4,2,2,2,1,3,2]
 
 float (sqrtf)(float x)
  {

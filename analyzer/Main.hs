@@ -96,14 +96,14 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [cutoffsOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [cutoffsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\test2.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [htmlLogOpt,showModelsOpt,writeModelsOpt]
 --		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : [htmlLogOpt,writeModelsOpt,showModelsOpt,noLoopInferenceOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,htmlLogOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : [writeModelsOpt] --["-writeGlobalDecls"]
@@ -2860,7 +2860,7 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 					fp_to = SLeaf $ if is_unsigned then "fp.to_ubv" else "fp.to_sbv"
 
 				( Z3_Float, Z3_Double ) →
-					return $ SExpr [ SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "8", SLeaf "24" ], SLeaf roundingMode, sexpr ]
+					return $ SExpr [ _𝓉𝑜_𝒻𝓅 32, SLeaf roundingMode, sexpr ]
 
 				( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_fp2arr sexpr Z3_Float arr_ty
 
@@ -2880,8 +2880,12 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 				bv <- case subexpr of
 					CVar ident _ -> return $ SLeaf $ makeFloatBVVarName ident
 					_ -> case elem_ty of
-						Z3_BitVector _ True ->
-							expr2sexpr' $ CCast (CDecl [] [] (undefNode,(Z3_Unit,intType))) subexpr (undefNode,(Z3_BitVector bv_size True,intType))
+						Z3_BitVector _ True -> do
+							(bv_cast,bv_cast_decl) <- new_var "fp2arr_cast_bv" (Z3_BitVector bv_size True)
+							subsexpr <- expr2sexpr' subexpr
+							let bv_cast_eq = 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ SLeaf "=", subsexpr, SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, bv_cast ] ]
+							modify ( ++ [bv_cast_decl,bv_cast_eq] )
+							return bv_cast
 						other -> lift $ myError $ "cast_fp2arr: elem_ty = " ++ show elem_ty ++ "\n at " ++ show (extractNodeInfo subexpr)
 
 				(arr,arr_decl) <- new_var "arr" arr_ty
@@ -2892,9 +2896,9 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 					(case endianness of Little → id; Big → reverse)
 						[ ( (i+1)*elem_size-1 , i*elem_size ) | i <- [0..(num_elems-1)] ]
 
-				modify ( (
+				modify ( ++ (
 					arr_decl :
-					map (\(i,address) → 𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i address) (zip is addresses)) ++ )
+					map (\(i,address) → 𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i address) (zip is addresses)) )
 
 				return arr
 
