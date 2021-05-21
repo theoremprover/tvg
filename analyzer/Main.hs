@@ -1671,6 +1671,8 @@ recognizeAnnotation cond trace = do
 createBranchesWithAnno :: CExpr → (CExpr → String) → Trace → CovVecM [(Branch,CExpr)]
 createBranchesWithAnno cond makebranchname trace = do
 	(real_cond,mb_annotation) <- recognizeAnnotation cond trace
+	printLogV 0 $ showTrace trace
+	printLogV 0 $ "XXX mb_annotation=" ++ show mb_annotation
 	all_branches <- createBranches makebranchname real_cond
 	branches_to_choose <- case mb_annotation of
 		-- 12 is a wildcard in the choice list
@@ -1768,7 +1770,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 							(Just $ makeCompound $ collect_stmts (branchnum+1) notconds' rest)
 							undefNode ]
 						where
-						cond = condexpr ⩵ caseexpr
+						cond = cond_var ⩵ caseexpr
 						notconds' = notconds ⋏ not_ cond
 						-- Eliminate the case/default "wrappers" from a statement list.
 						filtercases :: [CBlockItem] → [CBlockItem]
