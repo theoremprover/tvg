@@ -68,7 +68,7 @@ import Logging
 
 --------------
 
-fastMode = True
+fastMode = False
 
 z3TimeoutSecs :: Maybe Int = Just $ 2*60
 
@@ -97,13 +97,13 @@ main = do
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [cutoffsOpt] --["-writeGlobalDecls"]
---		[] → "gcc" : "f" : (analyzerPath++"\\test2.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "f" : (analyzerPath++"\\test2.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [htmlLogOpt,showModelsOpt,writeModelsOpt]
 --		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : [htmlLogOpt,writeModelsOpt,showModelsOpt,noLoopInferenceOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,htmlLogOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : [writeModelsOpt] --["-writeGlobalDecls"]
@@ -311,6 +311,7 @@ logToFile = not fastMode
 mainFileName = "main.c"
 printTypes = False
 printLocations = False
+errorModelPath = analyzerPath </> "models"
 
 mAX_UNROLLS = 3
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
@@ -1150,7 +1151,7 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 		
 							opts <- gets optsCVS
 							when ("-exportPaths" `elem` opts) $ liftIO $ do
-								writeFile (analyzerPath </> "models" </> "path_" ++ show traceid <.> ".c") $ unlines $ concat $ for trace $ \case
+								writeFile (errorModelPath </> "path_" ++ show traceid <.> ".c") $ unlines $ concat $ for trace $ \case
 									Assignment lexpr assexpr → [ (render.pretty) lexpr ++ " = " ++ (render.pretty) assexpr ++ " ;" ]
 									NewDeclaration (ident,ty) → [ "(" ++ (render.pretty) ty ++ ") " ++ (render.pretty) ident ++ " ;" ]
 									Return expr → [ "return " ++ (render.pretty) expr ++ " ;" ]
@@ -3193,8 +3194,10 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	printLogV 0 $ "\nZ3 says:\n" ++ unlines dropped_output
 	case dropped_output of
 		"timeout" : _ → do
-			printLogV 0 $ "Timeout for " ++ show traceid
-			liftIO $ writeFile modelpathfile model_string
+			let timeout_txt = "Timeout for " ++ show traceid
+			printLogV 0 timeout_txt
+			liftIO $ printToSolutions timeout_txt
+			liftIO $ writeFile (errorModelPath </> "TIMEOUT_" ++ show traceid ++ ".smtlib2") model_string
 			return (model_string_linenumbers,Nothing)
 		"unsat"   : _ → return (model_string_linenumbers,Nothing)
 		"unknown" : _ → return (model_string_linenumbers,Nothing)
@@ -3333,7 +3336,7 @@ checkSolutionM traceid resultdata@(_,Nothing) = do
 checkSolutionM traceid resultdata@(_,Just (_,_,[])) = do
 	printLogM 2 $ "Empty solution cannot be checked for " ++ show traceid
 	return resultdata
-checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
+checkSolutionM traceid resultdata@(model_string,Just (param_env0,ret_env0,solution)) = do
 	let
 		param_env = filter envItemNotPtrType param_env0
 		ret_env = filter envItemNotPtrType ret_env0
@@ -3394,6 +3397,7 @@ checkSolutionM traceid resultdata@(_,Just (param_env0,ret_env0,solution)) = do
 					let txt = "\ncheckSolutionM ERROR for " ++ ident_s ++ " : exec_val=" ++ show exec_result ++ " /= predicted_result=" ++ show predicted_result ++ "\n"
 					printToSolutions txt
 					printLogV 0 txt
+					liftIO $ writeFile (errorModelPath </> "ERROR_" ++ show traceid <.> ".smtlib2") model_string
 					modify $ \ s → s { verificationErrsCVS = verificationErrsCVS s + 1 }
 					whenOptionSet noHaltOnVerificationErrorOpt False $ myError "Halting on verification errors."
 				return check_OK
