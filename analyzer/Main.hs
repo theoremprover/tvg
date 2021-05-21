@@ -68,7 +68,7 @@ import Logging
 
 --------------
 
-fastMode = True
+fastMode = False
 
 z3TimeoutSecs :: Maybe Int = Just $ 2*60
 
@@ -96,14 +96,14 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
+--		[] → "gcc" : "f" : (analyzerPath++"\\test.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [cutoffsOpt] --["-writeGlobalDecls"]
---		[] → "gcc" : "f" : (analyzerPath++"\\test2.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [htmlLogOpt,showModelsOpt,writeModelsOpt]
 --		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : [htmlLogOpt,writeModelsOpt,showModelsOpt,noLoopInferenceOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,htmlLogOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\sqrtf.c") : [subfuncovOpt,writeModelsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : [writeModelsOpt] --["-writeGlobalDecls"]
@@ -853,14 +853,14 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 			add_branches <- case expr of
 				CCond cond _ _ _ → liftandfst $ createBranches makeCondBranchName cond
 				-- Recurse on allpoints_in_body if called functions should be covered as well
-				CCall (CVar funident _) _ _ | subfuncov && not ( (identToString funident) `elem` ["solver_pragma","solver_find"] ) → do
+				CCall (CVar funident _) _ _ | subfuncov && not ( (identToString funident) `elem` ["solver_pragma","solver_error","solver_find"] ) → do
 					lift $ allpoints_in_body funident
 				_ → return []
 			modify (add_branches++)
 			return expr
 
 		allpoints_in_body :: Ident → CovVecM [Branch]
-		allpoints_in_body (Ident fun_ident _ _) | any (`isPrefixOf` fun_ident) ["solver_debug","solver_find","solver_pragma"] = return []
+		allpoints_in_body (Ident fun_ident _ _) | any (`isPrefixOf` fun_ident) ["solver_debug","solver_error","solver_find","solver_pragma"] = return []
 		allpoints_in_body funident = do
 			fundef@(FunDef (VarDecl _ _ (FunctionType (FunType _ _ _) _)) body fundef_ni) <- lookupFunM funident
 			modify $ \ s → s { funStartEndCVS = (fun_lc fundef,next_lc fundef) : funStartEndCVS s }
@@ -927,6 +927,7 @@ void solver_debug_ULongLong(char* s,unsigned long long x) { printf("DEBUG_VAL UL
 void solver_debug_LongLong(char* s,long long x) { printf("DEBUG_VAL LongLong %s = %lli = 0x%llx\n",s,x,x); }
 
 void solver_find() { printf($esc:solverfindstr); }
+void solver_error() {}
 
 $esc:incl
 
@@ -1626,7 +1627,7 @@ unwrapGoto x = error $ "unwrapGoto " ++ show x
 
 forkUnfoldTraces :: Int → Progress → Bool → [a] → (Int → Progress → a → CovVecM UnfoldTracesRet) → CovVecM UnfoldTracesRet
 forkUnfoldTraces forks progress toplevel l m = do
-	forM (zip [0..] l) (\ (i,a) -> m forks' (progress'f i) a) >>= \ results → case partitionEithers results of
+	forM (zip [0..] l) cont >>= \ results → case partitionEithers results of
 		(left_results,[]) → return $ Left $ concat left_results
 		([],successes) → do
 			subfuncov <- isOptionSet subfuncovOpt
@@ -1636,6 +1637,7 @@ forkUnfoldTraces forks progress toplevel l m = do
 				-- We should cover in subfunctions, or on toplevel
 				True  -> and successes
 	where
+	cont (i,a) = m forks' (progress'f i) a
 	alternatives = length l
 	(forks',progress'f) = case alternatives > 1 of
 		False -> (forks,const progress)
@@ -1670,23 +1672,25 @@ createBranchesWithAnno :: CExpr → (CExpr → String) → Trace → CovVecM [(B
 createBranchesWithAnno cond makebranchname trace = do
 	(real_cond,mb_annotation) <- recognizeAnnotation cond trace
 	all_branches <- createBranches makebranchname real_cond
-	case mb_annotation of
+	branches_to_choose <- case mb_annotation of
 		-- 12 is a wildcard in the choice list
 		-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
 		Just (ns,num_reached) | length ns > num_reached && ns!!num_reached /= 12 → do
 			printLogV 1 $ "\nRecognized annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
 				" (reached " ++ show num_reached ++ " times)"
-			return [all_branches !! (ns!!num_reached - 1)]
+			return [ all_branches !! (ns!!num_reached - 1) ]
 		_ → return all_branches
+	printLogV 0 $ "XXX cond=" ++ (render.pretty) cond ++ " at " ++ showLocation (lineColNodeInfo cond)
+	printLogV 0 $ "XXX tochoose=" ++ show (map (numBranch.fst) branches_to_choose)
+	return branches_to_choose
 
 type LabelEnv = [(Ident,Trace → Int → CovVecM UnfoldTracesRet)]
 
 unfoldTracesM :: LabelEnv → Maybe Type → Bool → Int → Progress → [Env] → Trace → [([CBlockItem],Bool)] → CovVecM UnfoldTracesRet
 unfoldTracesM labelϵ ret_type toplevel forks progress ϵs trace cbss = do
 --	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren ϵs,ren trace,'\n':ren cbss] $ do
-		printLogV 20 $ show (trace2traceid trace)
 		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
-			printConsole 20 $ "\rUnfolding " ++ show (trace2traceid trace) ++ "                     "
+			printLogV 0 $ "### " ++ show (trace2traceid $ reverse trace) ++ " ###################################"
 			unfoldTraces1M labelϵ ret_type toplevel forks progress ϵs trace cbss
 		where
 		maybe_cutoff :: CovVecM UnfoldTracesRet → CovVecM UnfoldTracesRet
@@ -1779,6 +1783,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 								case_args = for (filter (>=branchnum) args) $ \ arg -> if arg==branchnum then _1 else _2
 							_ → pure_cond
 							where
+							-- undefNode
 							pure_cond = CBinary CEqOp cond_var caseexpr case_ni
 
 					-- if it was neither a "case" or "default", skip it.
@@ -1805,8 +1810,8 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 
 			CIf cond then_stmt mb_else_stmt ni → do
 				branches_to_follow <- createBranchesWithAnno cond makeIfBranchName trace
+				printLogV 0 $ "XXX "
 				forkUnfoldTraces forks progress toplevel branches_to_follow $ \ forks' progress' (branch,branch_cond) → do
-					printLogV 20 $ "### " ++ show branch ++ " , branch_cond = " ++ (render.pretty) branch_cond
 					let
 						-- Only insert a condition if the CIf was not generated by TVG (for translation of while, e.g.)
 						branchcbi = if ni==undefNode then [] else [wrapGoto $ Right (branch,branch_cond)]
@@ -1844,6 +1849,9 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 
 			CExpr (Just (CCall (CVar (Ident "solver_find" _ _) _) _ _)) _ → do
 				unfoldTracesM labelϵ mb_ret_type toplevel forks progress ϵs (SolverFind:trace) ((rest,breakable):rest2)
+
+			CExpr (Just (CCall cvar@(CVar (Ident "solver_error" _ _) _) _ _)) _ → do
+				myError $ "solver_error() reached at " ++ showLocation (lineColNodeInfo cvar)
 
 			CExpr (Just cass@(CAssign _ lexpr _ ni)) _ → do
 				lexpr' <- transcribeExprM ϵs Nothing lexpr
@@ -2324,7 +2332,8 @@ scanExprM ϵs expr0 mb_target_ty trace = logWrapper ["scanExprM",ren ϵs,ren exp
 			CVar (Ident "__builtin_expect" _ _) _ → return $ head args
 			CVar (Ident "__builtin_clz" _ _) _ → return ccall
 			CVar (Ident "solver_find" _ _) _ → lift $ ⅈ 1
-			CVar (Ident "solver_pragma" _ _) _ → lift $ ⅈ 1
+			-- Keep the solver_pragmas in as they are (bottom-up search!), so they can be found in CCond's, e.g.
+			CVar (Ident "solver_pragma" _ _) _ → return ccall
 			CVar funident _ → do
 				modify ( Left (funident,args,ni) : )
 				return ccall
@@ -2341,16 +2350,14 @@ scanExprM ϵs expr0 mb_target_ty trace = logWrapper ["scanExprM",ren ϵs,ren exp
 			let
 				var_ident = internalIdent $ "condexpr$" ++ locationToName (lineColNodeInfo ccond)
 				var = CVar var_ident ni
-			ccond' <- lift $ transcribeExprM ϵs Nothing ccond
 
 			branches_to_follow <- lift $ createBranchesWithAnno cond makeCondBranchName trace
 			let
-				decl = CBlockDecl $ type2Decl var_ident ni ty Nothing
-				(_,ty) = extractTypes ccond'
-				cbiss = for branches_to_follow $ \ (branch,branch_cond) →
-					decl : wrapGoto (Right (branch,branch_cond)) : case isElseBranch branch of
-						False → [ CBlockStmt $ var ≔ true_expr  ]
-						True  → [ CBlockStmt $ var ≔ false_expr ]
+				decl = CBlockDecl $ type2Decl var_ident ni intType Nothing
+			cbiss <- forM branches_to_follow $ \ (branch,branch_cond) → do
+				return $ decl : wrapGoto (Right (branch,branch_cond)) : case isElseBranch branch of
+					False → [ CBlockStmt $ var ≔ true_expr  ]
+					True  → [ CBlockStmt $ var ≔ false_expr ]
 			modify ( Right cbiss : )
 			-- Replace the ccond by the new variable "var"
 			return var
