@@ -68,7 +68,7 @@ import Logging
 
 --------------
 
-fastMode = False
+fastMode = True
 
 z3TimeoutSecs :: Maybe Int = Just $ 2*60
 
@@ -97,13 +97,13 @@ main = do
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [cutoffsOpt] --["-writeGlobalDecls"]
-		[] → "gcc" : "f" : (analyzerPath++"\\test2.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "f" : (analyzerPath++"\\test2.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [htmlLogOpt,showModelsOpt,writeModelsOpt]
 --		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : [htmlLogOpt,writeModelsOpt,showModelsOpt,noLoopInferenceOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,htmlLogOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 
---		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : [writeModelsOpt] --["-writeGlobalDecls"]
