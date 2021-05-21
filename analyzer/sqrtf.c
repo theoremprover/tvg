@@ -226,6 +226,13 @@ float (sqrtf)(float x)
  short xexp;
  float y;
 
+/*
+    switch(solver_pragma(2,3,1) && ...
+    case 1: <-> if(solver_pragma(2,2,1))
+    case 2: <-> if(solver_pragma(1,2)
+    default: <->
+*/
+
  switch (solver_pragma(3) && _FDunscale(&xexp, &x))
   {
  case 2:
