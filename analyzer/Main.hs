@@ -96,14 +96,14 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] → "gcc" : "f" : (analyzerPath++"\\test.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [cutoffsOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [htmlLogOpt,showModelsOpt,writeModelsOpt]
 --		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : [htmlLogOpt,writeModelsOpt,showModelsOpt,noLoopInferenceOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,htmlLogOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\sqrtf.c") : [subfuncovOpt,writeModelsOpt] --["-writeGlobalDecls"]
+--		[] → "gcc" : "sqrtf" : (analyzerPath++"\\sqrtf.c") : [subfuncovOpt,writeModelsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "f" : (analyzerPath++"\\sideffectstest.c") : [writeModelsOpt] --["-writeGlobalDecls"]
@@ -1688,7 +1688,6 @@ unfoldTracesM :: LabelEnv → Maybe Type → Bool → Int → Progress → [Env]
 unfoldTracesM labelϵ ret_type toplevel forks progress ϵs trace cbss = do
 --	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren ϵs,ren trace,'\n':ren cbss] $ do
 		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
-			printLogV 0 $ "### " ++ show (trace2traceid $ reverse trace) ++ " ###################################"
 			unfoldTraces1M labelϵ ret_type toplevel forks progress ϵs trace cbss
 		where
 		maybe_cutoff :: CovVecM UnfoldTracesRet → CovVecM UnfoldTracesRet
