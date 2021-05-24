@@ -3130,7 +3130,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	-- appear in the constraints and assignments, or
 	-- are a_output_idents, or
 	-- ?
-	let create_decl (ident,_) = ident `elem` (a_constraints_vars ++ a_output_idents) -- ++ output_idents0)
+	let create_decl (ident,_) = ident `elem` (a_constraints_vars ++ a_output_idents ++ output_idents0)
 	varsZ3 :: [SCompound] <- concatForM (filter create_decl a_z3tyenv) $ \ (ident,ty) → do
 		let varname = identToString ident
 		decl <- declConst2SExpr varname ty
@@ -3307,6 +3307,8 @@ solveTraceM mb_ret_type traceid trace = do
 	tyenv1 <- tyEnvFromTraceM trace
 	minimize <- isOptionSet minimizeOpt
 
+--makeAndSolveZ3ModelM :: [Int] → [(Ident,Z3_Type)] → [Constraint] → [SExpr] → [Ident] → String → CovVecM (String,Maybe Solution)
+--makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_idents0 modelpathfile = do
 	(model_string,mb_sol) <- makeAndSolveZ3ModelM
 		traceid
 		(tyenv1 ++ debug_tyenv)
