@@ -2046,7 +2046,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs@(ϵ:restϵs) trac
 				tys <- ty2Z3Type ty
 				let
 					Just (ident',_) = lookup ident newenvitems
-				union_eq_constraints <- unionEqConstraintsM (CVar ident' (undefNode,tys)) ty
+				union_eq_constraints <- eqConstraintsM (CVar ident' (undefNode,tys)) ty
 --				printLogV 0 $ "XXX union_eq_constraints=\n" ++ showTrace union_eq_constraints
 				initializers <- case mb_init of
 					Nothing → return []
@@ -2073,14 +2073,26 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss =
 	logWrapper [ren "unfoldTraces1M",ren "<labelenv>",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 ϵs,ren trace,'\n':ren bstss] $ do
 		myError $ "unfoldTraces1M not fully implemented (see above)"
 
-unionEqConstraintsM :: CExprWithType -> Type -> CovVecM [TraceElem]
-unionEqConstraintsM expr ty = do
+eqConstraintsM :: CExprWithType -> Type -> CovVecM [TraceElem]
+eqConstraintsM expr ty = do
 	ty' <- elimTypeDefsM ty
 	case ty' of
 		PtrType (DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _) _ _ → union_eq_constraints sueref True
 		DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _ → union_eq_constraints sueref False
+		DirectType (TyFloating floattype) _ _ → do
+			bv_size <- sizeofZ3Ty ty'
+			let bv_ident = internalIdent $ makeFloatBVName (lValueToVarName expr)
+			return [
+				Condition $ Left (CVar bv_ident undefNode , expr ) ,
+				NewDeclaration (bv_ident,z3Ty)
+				𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ SLeaf "=", SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, (SLeaf $ identToString ident) ], SLeaf rest_varname ],
+			]
 		_ -> return []
 	where
+	float_eq_constraints :: Type -> FloatType -> CovVecM [TraceElem]
+	float_eq_constraints ty' floattype = do
+		-- if a variable is floating point, also declare its bitvector representation and the corresponding equality
+	
 	union_eq_constraints :: SUERef -> Bool -> CovVecM [TraceElem]
 	union_eq_constraints sueref is_ptr = do
 		((ident_0,member_ty_0) : ident_types) <- getMembersM sueref
@@ -2887,7 +2899,7 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 				let
 					num_elems = div bv_size elem_size
 				bv <- case subexpr of
-					CVar ident _ -> return $ SLeaf $ makeFloatBVVarName ident
+					CVar ident _ -> return $ SLeaf $ makeFloatBVVarName (identToString ident)
 					_ -> case elem_ty of
 						Z3_BitVector _ True -> do
 							(bv_cast,bv_cast_decl) <- new_var "fp2arr_cast_bv" (Z3_BitVector bv_size True)
@@ -2956,8 +2968,8 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 
 
 bvPrefix = "bv$"
-makeFloatBVVarName :: Ident → String
-makeFloatBVVarName ident = bvPrefix ++ identToString (prefix_a ident)
+makeFloatBVVarName :: String → String
+makeFloatBVVarName name = bvPrefix ++ name
 
 data Z3_Type =
 	Z3_Unit |   -- The proper type-theoretical name for C's void is "1" (i.e. "unit", "()" in Haskell )
@@ -3119,7 +3131,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 		-- if ty is floating point, add bv$fp :: Z3_BitVector size to tyenv and
 		-- add bv$fp to output_idents
 		Just ty | ty `elem` [Z3_Float,Z3_Double,Z3_LDouble] → do
-			let bv_name = makeFloatBVVarName oid
+			let bv_name = makeFloatBVVarName (identToString oid)
 			lift $ printLogV 0 $ "XXX " ++ bv_name
 			bv_size <- lift $ sizeofZ3Ty ty
 			let bvid = internalIdent bv_name
@@ -3149,13 +3161,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	varsZ3 :: [SCompound] <- concatForM (filter create_decl a_z3tyenv) $ \ (ident,ty) → do
 		let varname = identToString ident
 		decl <- declConst2SExpr varname ty
-		-- if a variable is a bitvector stemming from a floating point argument, also declare its bitvector representation and the corresponding equality
-		bv_decls <- case stripPrefix bvPrefix (identToString ident) of
-			Nothing → return []
-			Just rest_varname  → do
-				bv_size <- sizeofZ3Ty ty
-				return [ 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ SLeaf "=", SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, (SLeaf $ identToString ident) ], SLeaf rest_varname ] ]
-		return $ map (SExprLine . SOnOneLine) (decl:bv_decls)
+		return $ SExprLine (SOnOneLine decl)
 
 	-- create Z3 constraints
 	constraintsZ3 :: [SCompound] <- concatForM a_constraints $ \ constraint → do
@@ -3329,9 +3335,9 @@ solveTraceM mb_ret_type traceid trace = do
 		(tyenv1 ++ debug_tyenv)
 		(constraints ++ debug_constraints)
 		(if minimize then (concat $ for param_env_exprs $ \ ((_,(name,_)),expr) → case extractZ3Type expr of
-			Z3_Float → fPMinimizer "#x00000001" name
-			Z3_Double → fPMinimizer "#x0000000000000001" name
-			Z3_LDouble → fPMinimizer "#x00000000000000000000000000000001" name
+			Z3_Float → fPMinimizer "#x00000001" (identToString name)
+			Z3_Double → fPMinimizer "#x0000000000000001" (identToString name)
+			Z3_LDouble → fPMinimizer "#x00000000000000000000000000000001" (identToString name)
 			_ → [ SExpr [SLeaf "minimize",SLeaf (identToString name)] ]) else [])
 		(param_names ++ ret_names ++ debug_idents)
 		(analyzerPath </> "models" </> "model_" ++ tracename ++ ".smtlib2")
