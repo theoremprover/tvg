@@ -96,7 +96,7 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [subfuncovOpt,showModelsOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [subfuncovOpt,writeModelsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [cutoffsOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [htmlLogOpt,showModelsOpt,writeModelsOpt]
@@ -2047,12 +2047,14 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs@(ϵ:restϵs) trac
 				let
 					Just (ident',_) = lookup ident newenvitems
 				union_eq_constraints <- unionEqConstraintsM (CVar ident' (undefNode,tys)) ty
+--				printLogV 0 $ "XXX union_eq_constraints=\n" ++ showTrace union_eq_constraints
 				initializers <- case mb_init of
 					Nothing → return []
 					Just initializer → cinitializer2blockitems (CVar ident ni) ty initializer
 				return (newenvitems,union_eq_constraints++newdecls,initializers)
 			triple → myError $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 		let (newϵs,newitems,initializerss) = unzip3 $ reverse new_env_items
+--		printLogV 0 $ "XXX unfoldTraces1M CBlockDecl newenvitems=\n" ++ showTrace (concat newitems)
 		unfoldTracesM labelϵ mb_ret_type toplevel forks progress ((concat newϵs ++ ϵ) : restϵs) (concat newitems ++ trace) ((concat initializerss ++ rest,breakable):rest2)
 
 unfoldTraces1M labelϵ mb_ret_type toplevel@False forks progress ϵs trace cbss@[([],_)] =
@@ -2073,22 +2075,23 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss =
 
 unionEqConstraintsM :: CExprWithType -> Type -> CovVecM [TraceElem]
 unionEqConstraintsM expr ty = do
-	case ty of
-		PtrType (DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _) _ _ → do
-			((ident_0,member_ty_0) : ident_types) <- getMembersM sueref
-			ident_0_ty <- ty2Z3Type member_ty_0
-			forM ident_types $ \ (ident_i,member_ty_i) -> do
-				ident_i_ty <- ty2Z3Type member_ty_i
-				return $ Condition $ Left
-					(CMember expr ident_0 True (undefNode,ident_0_ty),
-					CCast (CDecl [] [] (undefNode,ident_0_ty))
-						( CMember expr ident_i True (undefNode,ident_i_ty) )
-						(undefNode,ident_0_ty))
-{-
-		DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _ → do
-			create_eq_constraints expr sueref
--}
+	ty' <- elimTypeDefsM ty
+	case ty' of
+		PtrType (DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _) _ _ → union_eq_constraints sueref True
+		DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _ → union_eq_constraints sueref False
 		_ -> return []
+	where
+	union_eq_constraints :: SUERef -> Bool -> CovVecM [TraceElem]
+	union_eq_constraints sueref is_ptr = do
+		((ident_0,member_ty_0) : ident_types) <- getMembersM sueref
+		ident_0_ty <- ty2Z3Type member_ty_0
+		forM ident_types $ \ (ident_i,member_ty_i) -> do
+			ident_i_ty <- ty2Z3Type member_ty_i
+			return $ Condition $ Left
+				(CMember expr ident_0 is_ptr (undefNode,ident_0_ty),
+				CCast (CDecl [] [] (undefNode,ident_0_ty))
+					( CMember expr ident_i is_ptr (undefNode,ident_i_ty) )
+					(undefNode,ident_0_ty))
 
 infix 4 ⩵
 (⩵) :: CExpression a → CExpression a → CExpression a
@@ -2870,6 +2873,8 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 
 				( Z3_Double, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_fp2arr sexpr Z3_Double arr_ty
 
+				( Z3_LDouble, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_fp2arr sexpr Z3_LDouble arr_ty
+
 				(from_ty,to_ty) → lift $ myError $ "expr2sexpr cast: " ++ show from_ty ++ " => " ++ show to_ty ++ " in " ++
 					(render.pretty) castexpr ++ " " ++ " not implemented!"
 
@@ -2949,13 +2954,13 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 			_ → bv
 --			_ → error $ "bitVectorTy for " ++ show operator_ty ++ " not implemented!"
 
+
 bvPrefix = "bv$"
 makeFloatBVVarName :: Ident → String
-makeFloatBVVarName ident = bvPrefix ++ identToString ident
-
+makeFloatBVVarName ident = bvPrefix ++ identToString (prefix_a ident)
 
 data Z3_Type =
-	Z3_Unit |   -- The proper type-theoretical name for C's void is "1" (i.e. "unit")
+	Z3_Unit |   -- The proper type-theoretical name for C's void is "1" (i.e. "unit", "()" in Haskell )
 	Z3_Bool |
 -- Z3_BitVector Int (is*Un*signed::Bool), hence
 -- the derived ordering intentionally coincides with the type cast hierarchy :-)
@@ -3033,9 +3038,10 @@ sizeofTy ty@(DirectType tyname _ attrs) = do
 			(TyULLong,[])   → longLongSize
 			other           → error $ "sizeofZ3Ty " ++ show other ++ " not implemented!"
 		TyFloating floatty → case floatty of
-			TyFloat  → 32
-			TyDouble → 64
-			other    → error $ "sizeofTy " ++ show other ++ " not implemented!"
+			TyFloat   → 32
+			TyDouble  → 64
+			TyLDouble → 128
+			other     → error $ "sizeofTy " ++ show other ++ " not implemented!"
 		other → error $ "sizeofTy: " ++ (render.pretty) ty ++ " is not implemented!"
 	where
 	to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = [mode]
@@ -3045,8 +3051,9 @@ sizeofTy ty@(DirectType tyname _ attrs) = do
 sizeofZ3Ty :: Z3_Type → CovVecM Int
 sizeofZ3Ty z3ty = case z3ty of
 	Z3_BitVector size _ → return size
-	Z3_Float  → sizeofTy $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
-	Z3_Double → sizeofTy $ DirectType (TyFloating TyDouble) noTypeQuals noAttributes
+	Z3_Float   → sizeofTy $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
+	Z3_Double  → sizeofTy $ DirectType (TyFloating TyDouble) noTypeQuals noAttributes
+	Z3_LDouble → sizeofTy $ DirectType (TyFloating TyLDouble) noTypeQuals noAttributes
 
 z3Ty2SExpr :: Z3_Type → CovVecM SExpr
 z3Ty2SExpr ty = case ty of
@@ -3092,20 +3099,12 @@ declConst2SExpr id_name ty = do
 	ty_sexpr <- z3Ty2SExpr ty
 	return $ SExpr [ SLeaf "declare-const", SLeaf id_name, ty_sexpr ]
 
+prefix_a :: Ident → Ident
+prefix_a (Ident s@('_':_) i ni) = Ident (safeZ3IdentifierPrefix:s) i ni
+prefix_a ident = ident
+
 makeAndSolveZ3ModelM :: [Int] → [(Ident,Z3_Type)] → [Constraint] → [SExpr] → [Ident] → String → CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_idents0 modelpathfile = do
-	-- For all floats, replace the float-Varname by the bitvector_Varname "bv$<floatvar>"
-	(output_idents,z3tyenv) <- runStateT (forM output_idents0 $ \ oid → case lookup oid z3tyenv0 of
-		-- if ty is floating point, add bv$fp :: Z3_BitVector size to tyenv and
-		-- add bv$fp to output_idents
-		Just ty | ty `elem` [Z3_Float,Z3_Double] → do
-			let bv_name = makeFloatBVVarName oid
-			bv_size <- lift $ sizeofZ3Ty ty
-			let bvid = internalIdent bv_name
-			modify $ \ tyenv → tyenv ++ [(bvid,Z3_BitVector bv_size True)]
-			return bvid
-		_ → return oid ) z3tyenv0
-
 	-- collect all variables that appear in the constraints and assignments
 	let
 		constraints_vars = nub $ concat $ for constraints $ \case
@@ -3114,13 +3113,29 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			Assignment (Normal lexpr@(CIndex _ _ _)) ass_expr → fvar lexpr ++ fvar ass_expr
 			Assignment (ArrayUpdate ident1 ident2 _ index) ass_expr → [ident1,ident2] ++ fvar index ++ fvar ass_expr
 
+	printLogV 0 $ "XXX output_idents0 = " ++ show (map (render.pretty) output_idents0)
+	-- For all floats, replace the float-Varname by the bitvector_Varname "bv$<floatvar>"
+	(output_idents,z3tyenv) <- runStateT (forM (nub $ output_idents0++constraints_vars) $ \ oid → case lookup oid z3tyenv0 of
+		-- if ty is floating point, add bv$fp :: Z3_BitVector size to tyenv and
+		-- add bv$fp to output_idents
+		Just ty | ty `elem` [Z3_Float,Z3_Double,Z3_LDouble] → do
+			let bv_name = makeFloatBVVarName oid
+			lift $ printLogV 0 $ "XXX " ++ bv_name
+			bv_size <- lift $ sizeofZ3Ty ty
+			let bvid = internalIdent bv_name
+			modify $ \ tyenv → tyenv ++ [(bvid,Z3_BitVector bv_size True)]
+			-- only replace the identifier by bv$.. if it is in output_idents0
+			case oid `elem` output_idents0 of
+				True  → do
+					lift $ printLogV 0 $ "XXX replacing " ++ (render.pretty) oid ++ " by " ++ (render.pretty) bvid
+					return bvid
+				False → return oid
+		_ → return oid ) z3tyenv0
+
 	-- prefix a "a_" for identifiers starting with underscore (Z3 does not like leading underscores...)
 	-- in constraints and output_idents
 	let
 		(a_constraints_vars,a_constraints,a_output_idents,a_z3tyenv) = everywhere (mkT prefix_a) (constraints_vars,constraints,output_idents,z3tyenv) where
-			prefix_a :: Ident → Ident
-			prefix_a (Ident s@('_':_) i ni) = Ident (safeZ3IdentifierPrefix:s) i ni
-			prefix_a ident = ident
 
 --	forM_ a_z3tyenv $ \ (ident,z3ty) -> printLogV 0 $ "### " ++ (render.pretty) ident ++ " :: " ++ show z3ty
 
