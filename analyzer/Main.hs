@@ -363,6 +363,18 @@ ptrType to_ty = PtrType to_ty noTypeQuals noAttributes
 floatType = DirectType (TyFloating TyFloat) noTypeQuals noAttributes
 doubleType = DirectType (TyFloating TyDouble) noTypeQuals noAttributes
 
+sizeToIntTypeM :: Int -> CovVecM Type
+sizeToIntTypeM size = do
+	Just MachineSpec{..} <- gets machineSpecCVS 
+	case size of
+		8                     → return $ integral TyUChar
+		16                    → return $ integral TyUShort
+		32 | intSize==32      → return $ integral TyUInt
+		64 | intSize==64      → return $ integral TyUInt
+		64 | longSize==64     → return $ integral TyULong
+		64 | longLongSize==64 → return $ integral TyULLong
+		other                 → myError $ "sizeToIntTypeM " ++ show other ++ " : No integral type available for this size!"
+
 z3FilePath = "C:\\z3\\bin\\z3.exe"
 
 analyzerPath = "analyzer"
@@ -1033,14 +1045,12 @@ createDeclsM formal_params = do
 
 		-- case: deref_ty = <direct-type> where <direct-type> is no struct/union.
 		DirectType tyname _ _ → do
-			let
-				mb_fixed_floating_ty = case ty of
-					DirectType (TyFloating TyFloat) _ _ → uLongType
-					DirectType (TyFloating TyDouble) _ _ → uLongLongType
-					_ → ty
-				decl = case all_declared of
-					False → [ (render.pretty) mb_fixed_floating_ty ++ " " ++ (render.pretty) expr ++ ";" ]
-					True → []
+			mb_fixed_floating_ty <- case ty of
+				DirectType (TyFloating _) _ _ → sizeofTy ty >>= sizeToIntTypeM
+				_ → return ty
+			let decl = case all_declared of
+				False → [ (render.pretty) mb_fixed_floating_ty ++ " " ++ (render.pretty) expr ++ ";" ]
+				True → []
 			tyfs <- type_format_string ty
 			return $ decls ++ decl ++
 				[ "if(sscanf(argv[i++],\"" ++ tyfs ++ "\",&(" ++ (render.pretty) expr ++ "))!=1) return 1;" ]
@@ -1553,7 +1563,7 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 
 		-- STRUCT/UNION* p
 		PtrType (DirectType (TyComp (CompTypeRef sueref kind _)) _ _) _ _ → prepend_plainvar ty' $ do
-			union_constraints <- lift $ unionEqConstraintsM expr ty'
+			union_constraints <- lift $ eqConstraintsM expr ty'
 			modify $ \ (envitems,traceitems) -> (envitems,union_constraints++traceitems)
 			member_ty_s <- lift $ getMembersM sueref
 			ress <- forM ((if kind==UnionTag then take 1 else id) member_ty_s) $ \ (m_ident,m_ty) → do
@@ -1569,7 +1579,7 @@ createInterfaceFromExpr_WithEnvItemsM expr ty = do
 
 		-- STRUCT/UNION expr
 		DirectType (TyComp (CompTypeRef sueref kind _)) _ _ → do
-			union_constraints <- lift $ unionEqConstraintsM expr ty'
+			union_constraints <- lift $ eqConstraintsM expr ty'
 			modify $ \ (envitems,traceitems) -> (envitems,union_constraints++traceitems)
 			member_ty_s <- lift $ getMembersM sueref
 			-- if it is a union, only take the first element
@@ -2046,12 +2056,12 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs@(ϵ:restϵs) trac
 				tys <- ty2Z3Type ty
 				let
 					Just (ident',_) = lookup ident newenvitems
-				union_eq_constraints <- eqConstraintsM (CVar ident' (undefNode,tys)) ty
---				printLogV 0 $ "XXX union_eq_constraints=\n" ++ showTrace union_eq_constraints
+				eq_constraints <- eqConstraintsM (CVar ident' (undefNode,tys)) ty
+--				printLogV 0 $ "XXX eq_constraints=\n" ++ showTrace eq_constraints
 				initializers <- case mb_init of
 					Nothing → return []
 					Just initializer → cinitializer2blockitems (CVar ident ni) ty initializer
-				return (newenvitems,union_eq_constraints++newdecls,initializers)
+				return (newenvitems,eq_constraints++newdecls,initializers)
 			triple → myError $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 		let (newϵs,newitems,initializerss) = unzip3 $ reverse new_env_items
 --		printLogV 0 $ "XXX unfoldTraces1M CBlockDecl newenvitems=\n" ++ showTrace (concat newitems)
@@ -2080,18 +2090,15 @@ eqConstraintsM expr ty = do
 		PtrType (DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _) _ _ → union_eq_constraints sueref True
 		DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _ → union_eq_constraints sueref False
 		DirectType (TyFloating floattype) _ _ → do
-			bv_size <- sizeofZ3Ty ty'
-			let bv_ident = internalIdent $ makeFloatBVName (lValueToVarName expr)
+			bv_ty <- sizeofTy ty' >>= sizeToIntTypeM
+			bv_z3ty <- ty2Z3Type bv_ty
+			let bv_ident = internalIdent $ makeFloatBVVarName (lValueToVarName expr)
 			return [
-				Condition $ Left (CVar bv_ident undefNode , expr ) ,
-				NewDeclaration (bv_ident,z3Ty)
-				𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ SLeaf "=", SExpr [ _𝓉𝑜_𝒻𝓅 bv_size, (SLeaf $ identToString ident) ], SLeaf rest_varname ],
-			]
+				Condition $ Left (CVar bv_ident (undefNode,bv_z3ty) , expr ) ,
+				NewDeclaration (bv_ident,bv_ty)
+				]
 		_ -> return []
 	where
-	float_eq_constraints :: Type -> FloatType -> CovVecM [TraceElem]
-	float_eq_constraints ty' floattype = do
-		-- if a variable is floating point, also declare its bitvector representation and the corresponding equality
 	
 	union_eq_constraints :: SUERef -> Bool -> CovVecM [TraceElem]
 	union_eq_constraints sueref is_ptr = do
@@ -3116,7 +3123,7 @@ prefix_a (Ident s@('_':_) i ni) = Ident (safeZ3IdentifierPrefix:s) i ni
 prefix_a ident = ident
 
 makeAndSolveZ3ModelM :: [Int] → [(Ident,Z3_Type)] → [Constraint] → [SExpr] → [Ident] → String → CovVecM (String,Maybe Solution)
-makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_idents0 modelpathfile = do
+makeAndSolveZ3ModelM traceid z3tyenv constraints additional_sexprs output_idents0 modelpathfile = do
 	-- collect all variables that appear in the constraints and assignments
 	let
 		constraints_vars = nub $ concat $ for constraints $ \case
@@ -3127,22 +3134,22 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 
 	printLogV 0 $ "XXX output_idents0 = " ++ show (map (render.pretty) output_idents0)
 	-- For all floats, replace the float-Varname by the bitvector_Varname "bv$<floatvar>"
-	(output_idents,z3tyenv) <- runStateT (forM (nub $ output_idents0++constraints_vars) $ \ oid → case lookup oid z3tyenv0 of
-		-- if ty is floating point, add bv$fp :: Z3_BitVector size to tyenv and
-		-- add bv$fp to output_idents
+	output_idents <- forM (nub $ output_idents0++constraints_vars) $ \ oid → case lookup oid z3tyenv of
+		-- if ty is floating point, add bv$fp :: Z3_BitVector size to tyenv and replace fp by bv$fp in output_idents
 		Just ty | ty `elem` [Z3_Float,Z3_Double,Z3_LDouble] → do
-			let bv_name = makeFloatBVVarName (identToString oid)
+{-
 			lift $ printLogV 0 $ "XXX " ++ bv_name
 			bv_size <- lift $ sizeofZ3Ty ty
-			let bvid = internalIdent bv_name
 			modify $ \ tyenv → tyenv ++ [(bvid,Z3_BitVector bv_size True)]
 			-- only replace the identifier by bv$.. if it is in output_idents0
+-}
 			case oid `elem` output_idents0 of
 				True  → do
-					lift $ printLogV 0 $ "XXX replacing " ++ (render.pretty) oid ++ " by " ++ (render.pretty) bvid
+					let bvid = internalIdent $ makeFloatBVVarName (identToString oid)
+					printLogV 0 $ "XXX replacing " ++ (render.pretty) oid ++ " by " ++ (render.pretty) bvid
 					return bvid
 				False → return oid
-		_ → return oid ) z3tyenv0
+		_ → return oid
 
 	-- prefix a "a_" for identifiers starting with underscore (Z3 does not like leading underscores...)
 	-- in constraints and output_idents
@@ -3161,7 +3168,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	varsZ3 :: [SCompound] <- concatForM (filter create_decl a_z3tyenv) $ \ (ident,ty) → do
 		let varname = identToString ident
 		decl <- declConst2SExpr varname ty
-		return $ SExprLine (SOnOneLine decl)
+		return [ SExprLine (SOnOneLine decl) ]
 
 	-- create Z3 constraints
 	constraintsZ3 :: [SCompound] <- concatForM a_constraints $ \ constraint → do
