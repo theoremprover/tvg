@@ -2712,6 +2712,7 @@ sexpr1 ＝ sexpr2 = SExpr [ SLeaf "=", sexpr1, sexpr2 ]
 
 _𝓉𝑜_𝒻𝓅 32 = SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "8" , SLeaf "24" ]
 _𝓉𝑜_𝒻𝓅 64 = SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "11", SLeaf "53" ]
+_𝓉𝑜_𝒻𝓅 128 = SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "15", SLeaf "113" ]
 
 𝒶𝓈𝓈𝑒𝓇𝓉 sexpr = SExpr [ SLeaf "assert", sexpr ]
 
@@ -3173,19 +3174,25 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	-- ?
 	let all_idents = nub $ a_constraints_vars ++ a_output_idents ++ output_idents0
 
-	bvs :: [((Ident,Z3_Type),SCompound)] <- concatForM all_idents $ \ bvident → do
-		case stripBVPrefix bvident of
-			Nothing → return []
-			Just ident → do
+	bvs :: [((Ident,Z3_Type),SCompound)] <- concatForM all_idents $ \ ident → do
+		case stripBVPrefix ident of
+			-- Ignore it if ident = bv$..
+			Just _ -> return []
+			-- Create declaration and equality constraint for bv$<ident>
+			Nothing -> do
 				let Just ty = lookup ident a_z3tyenv
-				bv_size <- sizeofZ3Ty ty
-				let eq_constraint = createAssertEq (SLeaf $ identToString ident) bv_size (SLeaf $ identToString bvident)
-				return [((bvident,Z3_BitVector bv_size True),SExprLine $ SOnOneLine eq_constraint)]
+				case ty of
+					ty | ty `elem` [Z3_Float,Z3_Double,Z3_LDouble] -> do
+						let bvident = internalIdent $ makeFloatBVVarName $ identToString ident
+						bv_size <- sizeofZ3Ty ty
+						let eq_constraint = createAssertEq (SLeaf $ identToString ident) bv_size (SLeaf $ identToString bvident)
+						return [((bvident,Z3_BitVector bv_size True),SExprLine $ SOnOneLine eq_constraint)]
+					_ -> return []
 	let
 		(bvtyenv,eqconstraintsZ3) = unzip bvs
 		z3tyenv = bvtyenv ++ a_z3tyenv
 
-	let	create_decl (ident,_) = ident `elem` all_idents
+	let	create_decl (ident,_) = ident `elem` (all_idents ++ map fst bvtyenv)
 	varsZ3 :: [SCompound] <- concatForM (filter create_decl z3tyenv) $ \ (ident,ty) → do
 		printLogV 0 $ "XXX ident = " ++ (render.pretty) ident
 		let varname = identToString ident
