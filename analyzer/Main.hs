@@ -96,7 +96,7 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [subfuncovOpt,writeModelsOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [subfuncovOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [cutoffsOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [htmlLogOpt,showModelsOpt,writeModelsOpt]
@@ -2057,14 +2057,13 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs@(ϵ:restϵs) trac
 				let
 					Just (ident',_) = lookup ident newenvitems
 				eq_constraints <- eqConstraintsM (CVar ident' (undefNode,tys)) ty
-				printLogV 0 $ "XXX eq_constraints=\n" ++ showTrace eq_constraints
+				printLogV 20 $ "XXX eq_constraints=\n" ++ showTrace eq_constraints
 				initializers <- case mb_init of
 					Nothing → return []
 					Just initializer → cinitializer2blockitems (CVar ident ni) ty initializer
 				return (newenvitems,eq_constraints++newdecls,initializers)
 			triple → myError $ "unfoldTracesM: triple " ++ show triple ++ " not implemented!"
 		let (newϵs,newitems,initializerss) = unzip3 $ reverse new_env_items
---		printLogV 0 $ "XXX unfoldTraces1M CBlockDecl newenvitems=\n" ++ showTrace (concat newitems)
 		unfoldTracesM labelϵ mb_ret_type toplevel forks progress ((concat newϵs ++ ϵ) : restϵs) (concat newitems ++ trace) ((concat initializerss ++ rest,breakable):rest2)
 
 unfoldTraces1M labelϵ mb_ret_type toplevel@False forks progress ϵs trace cbss@[([],_)] =
@@ -2109,6 +2108,12 @@ eqConstraintsM expr ty = do
 		ident_0_ty <- ty2Z3Type member_ty_0
 		forM ident_types $ \ (ident_i,member_ty_i) -> do
 			ident_i_ty <- ty2Z3Type member_ty_i
+{-
+			return $ Assignment (Normal $ CMember expr ident_0 is_ptr (undefNode,ident_0_ty)) $
+				CCast (CDecl [] [] (undefNode,ident_0_ty))
+					( CMember expr ident_i is_ptr (undefNode,ident_i_ty) )
+					(undefNode,ident_0_ty)
+-}
 			return $ Condition $ Left
 				(CMember expr ident_0 is_ptr (undefNode,ident_0_ty),
 				CCast (CDecl [] [] (undefNode,ident_0_ty))
@@ -3144,7 +3149,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			Assignment (Normal lexpr@(CIndex _ _ _)) ass_expr → fvar lexpr ++ fvar ass_expr
 			Assignment (ArrayUpdate ident1 ident2 _ index) ass_expr → [ident1,ident2] ++ fvar index ++ fvar ass_expr
 
-	printLogV 0 $ "XXX output_idents0 = " ++ show (map (render.pretty) output_idents0)
+	printLogV 20 $ "XXX output_idents0 = " ++ show (map (render.pretty) output_idents0)
 	-- For all floats, replace the float-Varname by the bitvector_Varname "bv$<floatvar>"
 	output_idents <- forM output_idents0 $ \ oid → case lookup oid z3tyenv0 of
 		-- if ty is floating point, add bv$fp :: Z3_BitVector size to tyenv and replace fp by bv$fp in output_idents
@@ -3153,7 +3158,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			case oid `elem` output_idents0 of
 				True  → do
 					let bvid = internalIdent $ makeFloatBVVarName (identToString oid)
-					printLogV 0 $ "XXX replacing " ++ (render.pretty) oid ++ " by " ++ (render.pretty) bvid
+					printLogV 20 $ "XXX replacing " ++ (render.pretty) oid ++ " by " ++ (render.pretty) bvid
 					return bvid
 				False → return oid
 		_ → return oid
@@ -3194,7 +3199,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 
 	let	create_decl (ident,_) = ident `elem` (all_idents ++ map fst bvtyenv)
 	varsZ3 :: [SCompound] <- concatForM (filter create_decl z3tyenv) $ \ (ident,ty) → do
-		printLogV 0 $ "XXX ident = " ++ (render.pretty) ident
+		printLogV 20 $ "XXX ident = " ++ (render.pretty) ident
 		let varname = identToString ident
 		decl <- declConst2SExpr varname ty
 		return [ SExprLine (SOnOneLine decl) ]
