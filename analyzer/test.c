@@ -3,8 +3,6 @@ typedef union
  {
  unsigned short _Word[8];
  float _Float;
- double _Double;
- long double _Long_double;
  } __attribute__ ((__may_alias__)) _Dconst;
 
 

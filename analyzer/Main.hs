@@ -129,9 +129,6 @@ main = do
 --		[] → "gcc" : "f" : (analyzerPath++"\\checkvarsdefinedtest.c") : ["-writemodels"] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\commatest.c") : []
 
-		-- loops:
---		[] → "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ []
-
 --		[] → "gcc" : "f" : (analyzerPath++"\\arraytest.c") : ["-writemodels"] --"-writeAST","-writeGlobalDecls"]
 
 --		[] → "gcc" : "_Dtest" : (analyzerPath++"\\knorr\\dinkum\\xdtest.i") : ["-writemodels",noHaltOnVerificationErrorOpt]
@@ -1171,7 +1168,8 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 							showtraceM showInitialTrace "Initial" return trace >>=
 								showtraceM showTraces "elimInds"                 elimInds >>=
 								showtraceM showTraces "1. simplifyTraceM"        simplifyTraceM >>=
-								showtraceM showTraces "elimArrayAssignsM"        elimArrayAssignsM >>=
+--								showtraceM showTraces "elimArrayAssignsM"        elimArrayAssignsM >>=
+								showtraceM showTraces "sequenceArraysM"          sequenceArraysM >>=
 								showtraceM showTraces "elimAssignmentsM"         elimAssignmentsM >>=
 								showtraceM showTraces "2. simplifyTraceM"        simplifyTraceM >>=
 								showtraceM showFinalTrace "createSymbolicVarsM"  createSymbolicVarsM >>=
@@ -2108,17 +2106,17 @@ eqConstraintsM expr ty = do
 		ident_0_ty <- ty2Z3Type member_ty_0
 		forM ident_types $ \ (ident_i,member_ty_i) -> do
 			ident_i_ty <- ty2Z3Type member_ty_i
-{-
 			return $ Assignment (Normal $ CMember expr ident_0 is_ptr (undefNode,ident_0_ty)) $
 				CCast (CDecl [] [] (undefNode,ident_0_ty))
 					( CMember expr ident_i is_ptr (undefNode,ident_i_ty) )
 					(undefNode,ident_0_ty)
--}
+{-
 			return $ Condition $ Left
 				(CMember expr ident_0 is_ptr (undefNode,ident_0_ty),
 				CCast (CDecl [] [] (undefNode,ident_0_ty))
 					( CMember expr ident_i is_ptr (undefNode,ident_i_ty) )
 					(undefNode,ident_0_ty))
+-}
 
 infix 4 ⩵
 (⩵) :: CExpression a → CExpression a → CExpression a
@@ -2556,14 +2554,26 @@ elimAssignmentsM trace = foldtraceM [] $ reverse trace
 		foldtraceM (substituteBy lvalue expr result) rest
 	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
 
+{-
+-- Eliminate assignments of arrays
+elimArrayAssignsM :: Trace -> CovVecM Trace
+elimArrayAssignsM trace = foldtraceM [] $ reverse trace
+	where
+	foldtraceM :: Trace → Trace → CovVecM Trace
+	foldtraceM result [] = return result
+	foldtraceM result (ass@(Assignment (Normal lvalue) expr) : rest) | Z3_Array _ _ <- extractZ3Type lvalue = do
+		foldtraceM (substituteBy lvalue expr result) rest
+	foldtraceM result (traceitem : rest) = foldtraceM (traceitem:result) rest
+-}
+
 -- eliminate assignments to arrays, replacing them by a new array declaration
 -- and a condition that a_n+1 = store a_n ... ...
 {-
 ... f ( int a[3], ...)  =>  ... f ( int a_INDEX_0, int a_INDEX_1, int a_INDEX_2, ... )
 -}
 -- trace is in the right order.
-elimArrayAssignsM :: Trace → CovVecM Trace
-elimArrayAssignsM trace = evalStateT elimarrassns Map.empty
+sequenceArraysM :: Trace → CovVecM Trace
+sequenceArraysM trace = evalStateT elimarrassns Map.empty
 	where
 	elimarrassns :: StateT (Map.Map String Int) CovVecM Trace
 	elimarrassns = do
