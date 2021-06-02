@@ -68,7 +68,7 @@ import Logging
 
 --------------
 
-fastMode = False
+fastMode = True
 
 z3TimeoutSecs :: Maybe Int = Just $ 2*60
 
@@ -96,7 +96,11 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [subfuncovOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
+		[] → "gcc" : "roundf" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
+--		[] → "gcc" : "roundf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
+--		[] → "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
+--		[] → "gcc" : "fmin" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ [subfuncovOpt]
+--		[] → "gcc" : "sqrtf" : (analyzerPath++"\\test.c") : [subfuncovOpt,writeModelsOpt,noIndentLogOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDscale" : (analyzerPath++"\\test.c") : [cutoffsOpt] --["-writeGlobalDecls"]
 
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [htmlLogOpt,showModelsOpt,writeModelsOpt]
@@ -877,7 +881,7 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 			exprcondpoints <- execStateT (everywhereM (mkM searchexprcondpoint) body) []
 			return $ condpoints ++ exprcondpoints
 	allpoints <- allpoints_in_body (builtinIdent funname)
-	modify $ \ s → s { allCondPointsCVS = allpoints }
+	modify $ \ s → s { allCondPointsCVS = nub allpoints }
 
 	let
 		formal_params = for (map getVarDecl funparamdecls) $ \ (VarDecl (VarName srcident _) _ ty) → (srcident,ty)
@@ -2083,7 +2087,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss =
 eqConstraintsM :: CExprWithType -> Type -> CovVecM [TraceElem]
 eqConstraintsM expr ty = do
 	ty' <- elimTypeDefsM ty
-	printLogV 0 $ "eqConstraintsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty'
+	printLogV 20 $ "eqConstraintsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty'
 	case ty' of
 		PtrType (DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _) _ _ → union_eq_constraints sueref True
 		DirectType (TyComp (CompTypeRef sueref UnionTag _)) _ _ → union_eq_constraints sueref False
@@ -2376,8 +2380,11 @@ scanExprM ϵs expr0 mb_target_ty trace = logWrapper ["scanExprM",ren ϵs,ren exp
 				var = CVar var_ident ni
 
 			branches_to_follow <- lift $ createBranchesWithAnno cond makeCondBranchName trace
+
+--			transcribeExprM :: [Env] → Maybe Types → CExpr → CovVecM CExprWithType
+			true_expr_wt <- lift $ transcribeExprM ϵs Nothing true_expr
 			let
-				decl = CBlockDecl $ type2Decl var_ident ni intType Nothing
+				decl = CBlockDecl $ type2Decl var_ident ni (extractType true_expr_wt) Nothing
 			cbiss <- forM branches_to_follow $ \ (branch,branch_cond) → do
 				return $ decl : wrapGoto (Right (branch,branch_cond)) : case isElseBranch branch of
 					False → [ CBlockStmt $ var ≔ true_expr  ]
@@ -2917,7 +2924,7 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 				( Z3_LDouble, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_fp2arr sexpr Z3_LDouble arr_ty
 
 				(from_ty,to_ty) → lift $ myError $ "expr2sexpr cast: " ++ show from_ty ++ " => " ++ show to_ty ++ " in " ++
-					(render.pretty) castexpr ++ " " ++ " not implemented!"
+					(render.pretty) castexpr ++ " " ++ " at " ++ show (lineColNodeInfo $ extractNodeInfo castexpr) ++ " not implemented!"
 
 			where
 
