@@ -72,7 +72,7 @@ fastMode = True
 
 z3TimeoutSecs :: Maybe Int = Just $ 2*60
 
-reachFixedTrace :: Maybe [Int] = Nothing
+reachFixedTrace :: Maybe [Int] = Nothing --Just [2,1,2,2,1,1,3,2,1,2,2,1,2,1]
 
 subfuncovOpt = "-subfuncov"
 noHaltOnVerificationErrorOpt = "-nohalt"
@@ -96,7 +96,7 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "roundf" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
+		[] → "gcc" : "roundf_test" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "roundf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "fmin" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ [subfuncovOpt]
@@ -726,7 +726,7 @@ createBranches name_creator cond = do
 				(Branch (lineColNodeInfo cond) 1 (not result1) (name_creator real_cond),set_ni bcond1),
 				(Branch (lineColNodeInfo cond) 2 (not result2) (name_creator real_cond),set_ni bcond2) ]
 			mcdctable → for (zip [1..] mcdctable) $ \ (i,MCDC_Branch name result bcond) →
-				(Branch (lineColNodeInfo cond) i (not result) name,set_ni bcond)
+				(Branch (lineColNodeInfo cond) i (not result) (name ++ " in " ++ name_creator real_cond),set_ni bcond)
 	where
 	-- set the condition's NodeInfo to
 	set_ni = setNodeInfo (nodeInfo cond)
@@ -1117,7 +1117,7 @@ type Progress = [(Int,Int)]
 
 printProgressM :: Progress → CovVecM ()
 printProgressM progress = do
-	printLogV 1 $ printf "Current progress = %s" (show progress)
+	printLogV 20 $ printf "Current progress = %s" (show progress)
 	printLogV 1 $ printf "Current depth = %i" (length progress)
 	printLogV 1 $ printf "Current estimated total number of traces: %i" (product $ map snd progress) 
 	printLogV 1 $ printf "Progress: %.1f %%" (100.0 * (pct $ reverse progress))
@@ -1130,99 +1130,101 @@ printProgressM progress = do
 analyzeTraceM :: Maybe Type → Progress → [TraceElem] → CovVecM Bool
 analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",ren mb_ret_type,ren res_line,ren "traceid=",ren traceid] $ do
 	printLogV 1 $ "\n"
-	-- check if the trace was already analyzed (this can happen because of unfolding loops containing a return).
+{-
 	case reachFixedTrace of
 		Just fixedtrace | not (traceid `isPrefixOf` fixedtrace) -> do
 			printConsole 1 $ "\r " ++ show traceid ++ " no prefix of " ++ show fixedtrace ++ "                   "
 			return False
 		_ -> do
-			printStatsM 0
-			printDateTimeM 0
-			(traceanalysisresults,_) <- gets analysisStateCVS
-			case traceid `elem` (map (\(tid,_,_,_)->tid) traceanalysisresults) of
-				True -> do
-					myError $ "Trace " ++ show traceid ++ " already analyzed!"
-					-- Since the trace is in analysisStateCVS, it must have been solvable (see below,
-					-- otherwise it wouldn't have been added to analysisStateCVS)
-					return True
-				False -> do
-					findmode <- isOptionSet findModeOpt
-					let
-						found_finds = any is_solverfind trace
-						is_solverfind :: TraceElem → Bool
-						is_solverfind SolverFind = True
-						is_solverfind _ = False
-					case findmode && not found_finds of
-						True → do
-							printLogV 1 $ "Did not find solver_find, cutting off."
-							return False
-						False → do
-							incNumTracesM
-							printProgressM progress
-							printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
-		
-							opts <- gets optsCVS
-							when ("-exportPaths" `elem` opts) $ liftIO $ do
-								writeFile (errorModelPath </> "path_" ++ show traceid <.> ".c") $ unlines $ concat $ for trace $ \case
-									Assignment lexpr assexpr → [ (render.pretty) lexpr ++ " = " ++ (render.pretty) assexpr ++ " ;" ]
-									NewDeclaration (ident,ty) → [ "(" ++ (render.pretty) ty ++ ") " ++ (render.pretty) ident ++ " ;" ]
-									Return expr → [ "return " ++ (render.pretty) expr ++ " ;" ]
-									_ → []
-		
-							showtraceM showInitialTrace "Initial" return trace >>=
-								showtraceM showTraces "elimInds"                 elimInds >>=
-								showtraceM showTraces "1. simplifyTraceM"        simplifyTraceM >>=
+-}
+	printStatsM 0
+	printDateTimeM 0
+	(traceanalysisresults,_) <- gets analysisStateCVS
+	-- check if the trace was already analyzed (this can happen because of unfolding loops containing a return).
+	case traceid `elem` (map (\(tid,_,_,_)->tid) traceanalysisresults) of
+		True -> do
+			myError $ "Trace " ++ show traceid ++ " already analyzed!"
+			-- Since the trace is in analysisStateCVS, it must have been solvable (see below,
+			-- otherwise it wouldn't have been added to analysisStateCVS)
+			return True
+		False -> do
+			findmode <- isOptionSet findModeOpt
+			let
+				found_finds = any is_solverfind trace
+				is_solverfind :: TraceElem → Bool
+				is_solverfind SolverFind = True
+				is_solverfind _ = False
+			case findmode && not found_finds of
+				True → do
+					printLogV 1 $ "Did not find solver_find, cutting off."
+					return False
+				False → do
+					incNumTracesM
+					printProgressM progress
+					printLogV 1 $ "===== ANALYZING TRACE " ++ show traceid ++ " ================================="
+
+					opts <- gets optsCVS
+					when ("-exportPaths" `elem` opts) $ liftIO $ do
+						writeFile (errorModelPath </> "path_" ++ show traceid <.> ".c") $ unlines $ concat $ for trace $ \case
+							Assignment lexpr assexpr → [ (render.pretty) lexpr ++ " = " ++ (render.pretty) assexpr ++ " ;" ]
+							NewDeclaration (ident,ty) → [ "(" ++ (render.pretty) ty ++ ") " ++ (render.pretty) ident ++ " ;" ]
+							Return expr → [ "return " ++ (render.pretty) expr ++ " ;" ]
+							_ → []
+
+					showtraceM showInitialTrace "Initial" return trace >>=
+						showtraceM showTraces "elimInds"                 elimInds >>=
+						showtraceM showTraces "1. simplifyTraceM"        simplifyTraceM >>=
 --								showtraceM showTraces "elimArrayAssignsM"        elimArrayAssignsM >>=
-								showtraceM showTraces "sequenceArraysM"          sequenceArraysM >>=
-								showtraceM showTraces "elimAssignmentsM"         elimAssignmentsM >>=
-								showtraceM showTraces "2. simplifyTraceM"        simplifyTraceM >>=
-								showtraceM showFinalTrace "createSymbolicVarsM"  createSymbolicVarsM >>=
-								solveTraceM mb_ret_type traceid >>= \case
-	
-									Left solvable → return solvable
-									Right resultdata@(model_string,mb_solution) → do
-										funname <- gets funNameCVS
-										let show_solution_msg = show_solution funname mb_solution ++ "\n"
-										printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n\n" ++ show_solution_msg
-										case mb_solution of
-											Nothing → do
-												incNumNoSolutionM
-												return False
-											Just (_,_,[]) → myError $ "Empty solution: \n" ++ show_solution_msg
-											Just solution → do
-												incNumSolutionM
-												printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
-												printToSolutions show_solution_msg
-			
-												startends <- gets funStartEndCVS
-												printLogV 20 $ "startends = " ++ show startends
-												let visible_trace = concatMap to_branch trace
-													where
-													is_visible_branch :: [(Location,Location)] → Location → Bool
-													is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
-													to_branch (Condition (Right (branch,_))) | is_visible_branch startends (branchLocation branch) = [ branch ]
-													to_branch _ = []
-			
-												let cov_branches = "\tDECISION POINTS (IN CONTROL FLOW ORDER):\n" ++ unlines (map (("\t"++).showBranch) visible_trace)
-												printLogV 1 cov_branches
-												printToSolutions cov_branches
-												
-												when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
-			
-												(tas,covered) <- gets analysisStateCVS
-												all_branches <- gets allCondPointsCVS
-												let
-													traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
-													nub_visible_trace = nub visible_trace
-													excess_branches = nub_visible_trace \\ all_branches
-												when (not $ null excess_branches) $ do
-													printCondPoints all_branches
-													myError $ "Branches " ++ show excess_branches ++ " are covered but are not in all_branches!"
-												-- Are all the decision points are already covered? They can't, probably...?
-												-- If yes, this trace does not contribute to full coverage...
-												when (not $ null (nub_visible_trace \\ covered)) $
-													modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],nub_visible_trace `union` covered) }
-												return True
+						showtraceM showTraces "sequenceArraysM"          sequenceArraysM >>=
+						showtraceM showTraces "elimAssignmentsM"         elimAssignmentsM >>=
+						showtraceM showTraces "2. simplifyTraceM"        simplifyTraceM >>=
+						showtraceM showFinalTrace "createSymbolicVarsM"  createSymbolicVarsM >>=
+						solveTraceM mb_ret_type traceid >>= \case
+
+							Left solvable → return solvable
+							Right resultdata@(model_string,mb_solution) → do
+								funname <- gets funNameCVS
+								let show_solution_msg = show_solution funname mb_solution ++ "\n"
+								printLogV 1 $ "--- Result of TRACE " ++ show traceid ++ " ----------------------\n\n" ++ show_solution_msg
+								case mb_solution of
+									Nothing → do
+										incNumNoSolutionM
+										return False
+									Just (_,_,[]) → myError $ "Empty solution: \n" ++ show_solution_msg
+									Just solution → do
+										incNumSolutionM
+										printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
+										printToSolutions show_solution_msg
+
+										startends <- gets funStartEndCVS
+										printLogV 20 $ "startends = " ++ show startends
+										let visible_trace = concatMap to_branch trace
+											where
+											is_visible_branch :: [(Location,Location)] → Location → Bool
+											is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
+											to_branch (Condition (Right (branch,_))) | is_visible_branch startends (branchLocation branch) = [ branch ]
+											to_branch _ = []
+
+										let cov_branches = "\tDECISION POINTS (IN CONTROL FLOW ORDER):\n" ++ unlines (map (("\t"++).showBranch) visible_trace)
+										printLogV 1 cov_branches
+										printToSolutions cov_branches
+
+										when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
+
+										(tas,covered) <- gets analysisStateCVS
+										all_branches <- gets allCondPointsCVS
+										let
+											traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
+											nub_visible_trace = nub visible_trace
+											excess_branches = nub_visible_trace \\ all_branches
+										when (not $ null excess_branches) $ do
+											printCondPoints all_branches
+											myError $ "Branches " ++ show excess_branches ++ " are covered but are not in all_branches!"
+										-- Are all the decision points are already covered? They can't, probably...?
+										-- If yes, this trace does not contribute to full coverage...
+										when (not $ null (nub_visible_trace \\ covered)) $
+											modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],nub_visible_trace `union` covered) }
+										return True
 			
 		where
 
@@ -1639,6 +1641,16 @@ unwrapGoto x = error $ "unwrapGoto " ++ show x
 
 forkUnfoldTraces :: Int → Progress → Bool → [a] → (Int → Progress → a → CovVecM UnfoldTracesRet) → CovVecM UnfoldTracesRet
 forkUnfoldTraces forks progress toplevel l m = do
+{-
+	l' <- case reachFixedTrace of
+		Nothing -> return l
+		Just fixedtrace | length l == 1 -> return l
+		Just fixedtrace -> do
+			printLogV 0 $ "### fixedtrace = " ++ show fixedtrace
+			printLogV 0 $ "### forks = " ++ show forks
+			printLogV 0 $ "### length l = " ++ show (length l)
+			return [ l !! ((fixedtrace!!forks)-1) ]
+-}
 	forM (zip [0..] l) cont >>= \ results → case partitionEithers results of
 		(left_results,[]) → return $ Left $ concat left_results
 		([],successes) → do
