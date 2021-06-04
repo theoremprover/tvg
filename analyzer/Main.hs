@@ -96,7 +96,7 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "roundf_test" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt]
+		[] → "gcc" : "f" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "roundf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "fmin" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ [subfuncovOpt]
