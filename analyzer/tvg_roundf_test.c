@@ -52,6 +52,30 @@ short _FDint(float *px, short xexp)
 
 
 
+
+
+float (roundf)(float x)
+ {
+ switch (_FDint(&x, 1))
+  {
+ case 2:
+ case 1:
+  solver_debug_Float("0",x);
+  break;
+
+ default:
+ solver_debug_Float("1",x);
+  if (solver_pragma(1) && _FDint(&x, 0) == 0)
+   ;
+  else if ((((_Fval *)(char *)&(x))->_Sh[1] & ((unsigned short)0x8000)))
+   x -= 1.0F;
+  else
+   x += 1.0F;
+  break;
+  }
+ return (x);
+ }
+
 short _FDint_test(float *px, short xexp)
  {
  _Fval *ps = (_Fval *)(char *)px;
@@ -89,38 +113,17 @@ short _FDint_test(float *px, short xexp)
   ps->_Sh[sub[xchar]] ^= frac;
   if (0 < xchar)
    frac |= ps->_Sh[0], ps->_Sh[0] = 0;
+  solver_debug_UShort("frac0",frac);
 
   return ((frac != 0) ? (-1) : 0);
   }
  }
 
-
-
-float (roundf)(float x)
- {
- switch (_FDint(&x, 1))
-  {
- case 2:
- case 1:
-  solver_debug_Float("0",x);
-  break;
-
- default:
- solver_debug_Float("1",x);
-  if (solver_pragma(1) && _FDint(&x, 0) == 0)
-   ;
-  else if ((((_Fval *)(char *)&(x))->_Sh[1] & ((unsigned short)0x8000)))
-   x -= 1.0F;
-  else
-   x += 1.0F;
-  break;
-  }
- return (x);
- }
-
 float (roundf_test)(float x)
  {
- switch (_FDint_test(&x, 1))
+ short fdint = _FDint_test(&x, 1);
+ solver_debug_Short("fdint",fdint);
+ switch (fdint)
   {
  case 2:
  case 1:
@@ -129,12 +132,6 @@ float (roundf_test)(float x)
 
  default:
  solver_debug_Float("1",x);
-  if (_FDint_test(&x, 0) == 0)
-   ;
-  else if ((((_Fval *)(char *)&(x))->_Sh[1] & ((unsigned short)0x8000)))
-   x -= 1.0F;
-  else
-   x += 1.0F;
   break;
   }
  return (x);

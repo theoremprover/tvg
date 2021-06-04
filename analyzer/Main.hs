@@ -68,7 +68,7 @@ import Logging
 
 --------------
 
-fastMode = True
+fastMode = False
 
 z3TimeoutSecs :: Maybe Int = Just $ 2*60
 
@@ -96,7 +96,7 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "roundf_test" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
+		[] → "gcc" : "roundf_test" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "roundf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "fmin" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ [subfuncovOpt]
@@ -930,7 +930,7 @@ int solver_pragma(int x,...) { return 1; }
 void solver_debug_Float(char* s,float x) { printf("DEBUG_VAL Float %s = %g = 0x%lx\n",s,x,f2u(x)); }
 void solver_debug_Double(char* s,double x) { printf("DEBUG_VAL Double %s = %g = 0x%llx\n",s,x,d2u(x)); }
 void solver_debug_UByte(char* s,unsigned char x) { printf("DEBUG_VAL UByte %s = %hhi = 0x%hhx\n",s,x,x); }
-void solver_debug_Short(char* s,short x) { printf("DEBUG_VAL Short %s = %hi = 0x%x\n",s,x,x); }
+void solver_debug_Short(char* s,short x) { printf("DEBUG_VAL Short %s = %hi = 0x%hx\n",s,x,x); }
 void solver_debug_UShort(char* s,unsigned short x) { printf("DEBUG_VAL UShort %s = %hu = 0x%hx\n",s,x,x); }
 void solver_debug_UInt(char* s,unsigned int x) { printf("DEBUG_VAL UInt %s = %u = 0x%x\n",s,x,x); }
 void solver_debug_Int(char* s,int x) { printf("DEBUG_VAL_Int %s = %i = 0x%lx\n",s,x,x); }
@@ -1862,9 +1862,9 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 							analyzeTraceM mb_ret_type progress' (Return ret_expr' : (ret_trace ++ trace'))
 								>>= return.Right
 
-			CExpr (Just (CCall (CVar (Ident is _ _) _) [_,expr] ni)) _ | "solver_debug" `isPrefixOf` is → do
+			CExpr (Just (CCall (CVar (Ident is _ _) _) [CConst (CStrConst name _),expr] ni)) _ | "solver_debug" `isPrefixOf` is → do
 				expr' <- transcribeExprM ϵs Nothing expr
-				let dbgout = DebugOutput ("solver_debug_" ++ lValueToVarName expr') expr'
+				let dbgout = DebugOutput ("solver_debug_" ++ lValueToVarName expr' ++ "_" ++ getCString name) expr'
 				unfoldTracesM labelϵ mb_ret_type toplevel forks progress ϵs (dbgout : trace) ((rest,breakable):rest2)
 
 			CExpr (Just (CCall (CVar (Ident "solver_find" _ _) _) _ _)) _ → do
@@ -3391,11 +3391,11 @@ solveTraceM mb_ret_type traceid trace = do
 		traceitem2constr (DebugOutput _ _) = []
 		traceitem2constr traceelem = error $ "traceitem2constr: There is a strange TraceElem left in the final trace: " ++ show traceelem
 		debug_outputs = concatMap is_debug_output trace where
-			is_debug_output (DebugOutput name expr) = [(name,expr)]
+			is_debug_output (DebugOutput varname expr) = [(varname,expr)]
 			is_debug_output _ = []
-		(debug_idents,debug_constraints,debug_tyenv) = unzip3 $ for (zip [1..] debug_outputs) $ \ (i,(name,expr)) →
-			let name_id = internalIdent (name ++ "_" ++ show i) in
-			(name_id,Condition $ Left (CVar name_id (annotation expr),expr),(name_id,extractZ3Type expr))
+		(debug_idents,debug_constraints,debug_tyenv) = unzip3 $ for (zip [1..] debug_outputs) $ \ (i,(varname,expr)) →
+			let varname_id = internalIdent (varname ++ "_" ++ show i) in
+			(varname_id,Condition $ Left (CVar varname_id (annotation expr),expr),(varname_id,extractZ3Type expr))
 
 	tyenv1 <- tyEnvFromTraceM trace
 	minimize <- isOptionSet minimizeOpt
