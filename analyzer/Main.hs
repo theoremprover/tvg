@@ -96,7 +96,7 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "f" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt]
+		[] → "gcc" : "f" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noIndentLogOpt,writeModelsOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "roundf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "fmin" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ [subfuncovOpt]
@@ -1333,8 +1333,13 @@ lValueToVarName (CBinary binop expr1 expr2 _) =
 		(CShlOp,"shl"),(CShrOp,"shr"),(CAndOp,"and"),(CXorOp,"xor"),(COrOp,"or") ] of
 			Nothing → error $ "binop2str " ++ (render.pretty) binop ++ " not implemented"
 			Just s → s
-lValueToVarName (CConst (CIntConst cint _)) = (if i<0 then "m" else "") ++ show (abs i) where
+lValueToVarName (CConst (CIntConst cint _)) = (if i<0 then "minus" else "plus") ++ show (abs i) where
 	i = getCInteger cint
+lValueToVarName (CConst (CFloatConst (CFloat s) _)) = "floatconst_" ++ concatMap filter_chrs s
+	where
+	filter_chrs c = case lookup c [('.',"DOT"),(',',"COMMA"),('+',"PLUS"),('-',"MINUS")] of
+		Just srep -> srep
+		Nothing -> [c]
 lValueToVarName (CIndex arr index _) = lValueToVarName arr ++ "_INDEX_" ++ lValueToVarName index
 -- HACK: Abusing lValueToVarName for turning an expression into a String represenation (used with new array names)
 lValueToVarName (CCast _ expr _) = lValueToVarName expr
