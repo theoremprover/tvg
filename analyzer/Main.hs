@@ -2934,33 +2934,37 @@ expr2SExpr expr = runStateT (expr2sexpr expr) []
 				( Z3_Float, Z3_Double ) →
 					return $ SExpr [ _𝓉𝑜_𝒻𝓅 32, SLeaf roundingMode, sexpr ]
 
-				( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_fp2arr sexpr Z3_Float arr_ty
+				( from_ty@(Z3_BitVector size_from is_unsigned), arr_ty@(Z3_Array (Z3_BitVector size_to True) _ ) ) →
+					cast_2arr sexpr from_ty arr_ty
 
-				( Z3_Double, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_fp2arr sexpr Z3_Double arr_ty
+				( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_2arr sexpr Z3_Float arr_ty
 
-				( Z3_LDouble, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_fp2arr sexpr Z3_LDouble arr_ty
+				( Z3_Double, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_2arr sexpr Z3_Double arr_ty
+
+				( Z3_LDouble, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_2arr sexpr Z3_LDouble arr_ty
 
 				(from_ty,to_ty) → lift $ myError $ "expr2sexpr cast: " ++ show from_ty ++ " => " ++ show to_ty ++ " in " ++
 					(render.pretty) castexpr ++ " " ++ " at " ++ show (lineColNodeInfo $ extractNodeInfo castexpr) ++ " not implemented!"
 
 			where
 
-			cast_fp2arr :: SExpr → Z3_Type → Z3_Type → StateT [SExpr] CovVecM SExpr
-			cast_fp2arr sexpr fp_ty arr_ty@(Z3_Array elem_ty _) = do
+			cast_2arr :: SExpr → Z3_Type → Z3_Type → StateT [SExpr] CovVecM SExpr
+			cast_2arr sexpr from_ty arr_ty@(Z3_Array elem_ty _) = do
 				elem_size <- lift $ sizeofZ3Ty elem_ty
-				bv_size <- lift $ sizeofZ3Ty fp_ty
-				let
-					num_elems = div bv_size elem_size
-				bv <- case subexpr of
-					CVar ident _ -> return $ SLeaf $ makeFloatBVVarName (identToString ident)
-					_ -> case elem_ty of
-						Z3_BitVector _ True -> do
-							(bv_cast,bv_cast_decl) <- new_var "fp2arr_cast_bv" (Z3_BitVector bv_size True)
-							subsexpr <- expr2sexpr' subexpr
-							let bv_cast_eq = createAssertEq subsexpr bv_size bv_cast
-							modify ( ++ [bv_cast_decl,bv_cast_eq] )
-							return bv_cast
-						other -> lift $ myError $ "cast_fp2arr: elem_ty = " ++ show elem_ty ++ "\n at " ++ show (extractNodeInfo subexpr)
+				from_size <- lift $ sizeofZ3Ty from_ty
+				let num_elems = div from_size elem_size
+				bv <- case from_ty of
+					_ | from_ty `elem` [Z3_Float,Z3_Double,Z3_LDouble] -> case subexpr of
+						CVar ident _ -> return $ SLeaf $ makeFloatBVVarName (identToString ident)
+						_ -> case elem_ty of
+							Z3_BitVector _ True -> do
+								(bv_cast,bv_cast_decl) <- new_var "fp2arr_cast_bv" (Z3_BitVector from_size True)
+								subsexpr <- expr2sexpr' subexpr
+								let bv_cast_eq = createAssertEq subsexpr from_size bv_cast
+								modify ( ++ [bv_cast_decl,bv_cast_eq] )
+								return bv_cast
+							other -> lift $ myError $ "cast_fp2arr: elem_ty = " ++ show elem_ty ++ "\n at " ++ show (extractNodeInfo subexpr)
+					Z3_BitVector _ _ -> return sexpr
 
 				(arr,arr_decl) <- new_var "arr" arr_ty
 				(z3_inttype,_) <- lift $ _IntTypesM

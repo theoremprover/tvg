@@ -137,6 +137,7 @@ float (roundf_test)(float x)
  return (x);
  }
 
+/*
 typedef union
 {
     unsigned short FU_arr[2];
@@ -145,7 +146,7 @@ typedef union
 
 void g(float* px)
 {
-   FU * Fu = (FU *)(char*)px;
+   FU* Fu = (FU *)(char*)px;
    Fu->FU_arr[0] = 10;
 }
 
@@ -157,5 +158,29 @@ float h(float x)
 
 float f(float x)
 {
-    return(h(1.0F));
+    float t = h(1.0F);
+    return(t);
+}
+*/
+typedef union
+{
+    unsigned short FU_arr[2];
+    int FU_val;
+} FU;
+
+void g(int* px)
+{
+   FU* Fu = (FU *)(char*)px;
+   Fu->FU_arr[0] = 10;
+}
+
+int h(int x)
+{
+    g(&x);
+    return x;
+}
+
+int f(int x)
+{
+    return(h(1));
 }
