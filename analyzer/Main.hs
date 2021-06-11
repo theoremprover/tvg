@@ -644,7 +644,8 @@ data TraceElem =
 	NewDeclaration (Ident,Type) |
 	Return CExprWithType |
 	DebugOutput String CExprWithType |
-	SolverFind
+	SolverFind |
+	Comment String
 	deriving Data
 
 data Branch = NoBranch | Branch { branchLocation::Location, numBranch::Int, isElseBranch::Bool, nameBranch::String }
@@ -789,6 +790,7 @@ instance Show TraceElem where
 		Return exprs             → "RET  " ++ (render.pretty) exprs
 		DebugOutput varname expr → "DBGOUT " ++ varname ++ " " ++ (render.pretty) expr
 		SolverFind               → "SOLVER_FIND"
+		Comment comment          → "COMMENT ----- " ++ comment ++ " -----"
 		) ++ if printLocations then "  (" ++ (showLocation.lineColNodeInfo) te ++ ")" else ""
 
 showTrace :: Trace → String
@@ -910,7 +912,8 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 			"-o",chkexefilename,mainFileName] srcabsfilename charness
 		modify $ \ s → s { checkExeNameCVS = Just chkexefilename }
 
-	Right every_branch_covered <- unfoldTracesM [] (Just ret_type') True 0 [] ((arraydecl_env++param_env):[glob_env]) decls [ (defs ++ [ CBlockStmt body ],False) ]
+	Right every_branch_covered <- unfoldTracesM [] (Just ret_type') True 0 []
+		((arraydecl_env++param_env):[glob_env]) (makeEnterComment funname_ident : decls) [ (defs ++ [ CBlockStmt body ],False) ]
 	printStatsM 0
 	printDateTimeM 0
 	return every_branch_covered
@@ -1744,6 +1747,9 @@ unfoldTracesM labelϵ ret_type toplevel forks progress ϵs trace cbss = do
 unfoldTraces1M :: LabelEnv → Maybe Type → Bool → Int → Progress → [Env] → Trace → [([CBlockItem],Bool)] → CovVecM UnfoldTracesRet
 unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBlockStmt stmt : rest,breakable) : rest2) =
 	logWrapper [ren "unfoldTraces1M",ren "<labelenv>",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 ϵs,ren trace,'\n':ren bstss] $ do
+		funname <- gets funNameCVS
+		let exitcomment = makeExitComment $ internalIdent funname
+
 --		printLogV 0 $ showTrace trace
 		case stmt of
 
@@ -1853,7 +1859,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 
 			CReturn Nothing _ → case toplevel of
 				False -> return $ Left [(forks,progress,ϵs,trace)]
-				True  -> analyzeTraceM mb_ret_type progress trace >>= return.Right
+				True  -> analyzeTraceM mb_ret_type progress (exitcomment:trace) >>= return.Right
 
 			CReturn (Just ret_expr) _ | Just ret_type <- mb_ret_type → do
 				z3_ret_type <- ty2Z3Type ret_type
@@ -1868,7 +1874,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 								\ ( ((_,(ret_var_ident,ret_var_ty)),_) , (_,ret_member_expr)) → do
 									z3_ret_var_ty <- ty2Z3Type ret_var_ty
 									return [ Condition (Left ((CVar ret_var_ident (nodeInfo ret_var_ident,z3_ret_var_ty)),ret_member_expr)), NewDeclaration (ret_var_ident,ret_var_ty) ]
-							analyzeTraceM mb_ret_type progress' (Return ret_expr' : (ret_trace ++ trace'))
+							analyzeTraceM mb_ret_type progress' (Return ret_expr' : (exitcomment : ret_trace ++ trace'))
 								>>= return.Right
 
 			CExpr (Just (CCall (CVar (Ident is _ _) _) [CConst (CStrConst name _),expr] ni)) _ | "solver_debug" `isPrefixOf` is → do
@@ -2097,7 +2103,11 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs@(_:restenvs) trac
 	logWrapper [ren "unfoldTraces1M LEAVE_SCOPE",ren mb_ret_type,ren toplevel,ren forks,ren $ take 2 ϵs,ren trace,'\n':ren cbss] $ do
 		unfoldTracesM labelϵ mb_ret_type toplevel forks progress restenvs trace rest2
 
-unfoldTraces1M _ mb_ret_type True _ progress _ trace [] = analyzeTraceM mb_ret_type progress trace >>= return.Right
+-- This is only called when there is no return in the toplevel function
+unfoldTraces1M _ mb_ret_type True _ progress _ trace [] = do
+	funname <- gets funNameCVS
+	analyzeTraceM mb_ret_type progress (makeExitComment (internalIdent funname) : trace) >>= return.Right
+
 -- This case only appears during loop length inference with breaks in the path
 unfoldTraces1M _ mb_ret_type False forks progress ϵs trace [] = return $ Left [(forks,progress,ϵs,trace)]
 
@@ -2430,6 +2440,9 @@ scanExprM ϵs expr0 mb_target_ty trace = logWrapper ["scanExprM",ren ϵs,ren exp
 	-- important: everywhereM works bottom-up, which is crucial for the sequence of side effects in an expression!
 	runStateT (everywhereM (mkM to_call_or_ternaryifs) expr0) []
 
+makeEnterComment ident = Comment $ "Entering function " ++ (render.pretty) ident
+makeExitComment ident = Comment $ "Leaving function " ++ (render.pretty) ident
+
 createCombinationsM :: LabelEnv → [Env] → Bool → (CExpr,CallOrTernaryIfs) → Maybe Types → Trace → Int → Progress → CovVecM [(Int,Progress,[Env],CExprWithType,Trace)]
 createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty trace forks progress = do
 	-- reverse the list of side effect code, since it was constructed bottom-up using the cons operator ":"
@@ -2459,24 +2472,20 @@ createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 	-- "trace" is the whole trace up to here, not just the function body's trace!
 	create_combinations ϵs expr trace subs forks progress (Left (funident,args,call_ni) : rest) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
-
 		new_params <- newParamsM paramdecls args
+		let new_decls = reverse new_params
 		-- β-reduction does not work in the presence of side effects on the argument (like pointers, e.g.)
-		let
---			body' = replace_param_with_arg (map fst new_params) body
-			new_decls = reverse new_params
-
-		Left ϵs_funtraces <- unfoldTracesM labelϵ (Just ret_ty) False 0 progress ϵs trace [ ( new_decls++[CBlockStmt body],False) ]
+		Left ϵs_funtraces <- unfoldTracesM labelϵ (Just ret_ty) False 0 progress ϵs (makeEnterComment funident : trace) [ ( new_decls ++ [CBlockStmt body],False) ]
+		let exitcomment = makeExitComment funident
 		funtraces_rets :: [(Int,Progress,[Env],CExprWithType,Trace)] <- forM ϵs_funtraces $ \case
-			(forks',progress',envs',(Return retexpr : tr)) → return (forks',progress',envs',retexpr,tr)
+			(forks',progress',envs',(Return retexpr : tr)) → return (forks',progress',envs',retexpr,exitcomment:tr)
 			-- if we have a "trace of no return", we assume return(99);
 			-- (not return (0) just to cause trouble in case of undefined behaviour, since 0 is taken randomly as default sometimes...)
-			(forks',progress',envs',tr) → ⅈ 99 >>= return.(forks',progress',envs',,tr)
+			(forks',progress',envs',tr) → ⅈ 99 >>= return.(forks',progress',envs',,exitcomment:tr)
 		concatForM funtraces_rets $ \ (forks',progress',_,retexpr,funtrace_trace) → do
 			create_combinations ϵs expr funtrace_trace ((call_ni,retexpr):subs) forks' progress' rest
 
 		where
-
 {-
 		-- β-reduction
 		replace_param_with_arg :: [(Ident,CExpr)] → CStat → CStat
@@ -3404,6 +3413,7 @@ solveTraceM mb_ret_type traceid trace = do
 		traceitem2constr constraint@(Assignment (ArrayUpdate _ _ _ _) _) = [constraint]
 		traceitem2constr (Return _) = []
 		traceitem2constr SolverFind = []
+		traceitem2constr (Comment _) = []
 		traceitem2constr (NewDeclaration _) = []
 		traceitem2constr (DebugOutput _ _) = []
 		traceitem2constr traceelem = error $ "traceitem2constr: There is a strange TraceElem left in the final trace: " ++ show traceelem
