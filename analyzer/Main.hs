@@ -1511,21 +1511,25 @@ newNameM = do
 	modify $ \ s → s { newNameIndexCVS = newNameIndexCVS s + 1 }
 	return new_var_num
 
+newIdentM :: Ident -> CovVecM Ident
+newIdentM ident = do
+	new_var_num <- newNameM
+	let
+		-- a dollar sign is not allowed in a C identifier, but Z3 allows for it.
+		-- By inserting one in new names we avoid unlucky name collisions with already existing names in the source file
+		newident_name = identToString ident ++ "$" ++ show new_var_num
+	return $ Ident newident_name new_var_num undefNode
+
 -- Takes an identifier and a type, and creates envitem(s) from that.
 
 identTy2EnvItemM :: Ident → Type → CovVecM [EnvItem]
 identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 	ty' <- elimTypeDefsM ty
-	new_var_num <- newNameM
-	let
-		name_prefix = identToString srcident
-		-- a dollar sign is not allowed in a C identifier, but Z3 allows for it.
-		-- By inserting one in new names we avoid unlucky name collisions with already existing names in the source file
-		newident_name = name_prefix ++ "$" ++ show new_var_num
-		newident = Ident newident_name i ni
+	new_ident <- newIdentM srcident
 
 	-- also create envitems for structure/union members (recursively)
 	-- (without giving new names)
+	let
 		recurse_over_members new_ident new_ty = case new_ty of
 			DirectType (TyComp (CompTypeRef sueref _ _)) _ _ → do
 				members_tys <- getMembersM sueref
@@ -1537,9 +1541,9 @@ identTy2EnvItemM srcident@(Ident _ i ni) ty = do
 					recs <- recurse_over_members newident member_ty'
 					return $ (newident,(newident,member_ty')) : recs
 			_ → return []
-	newenvitems <- recurse_over_members newident ty'
+	newenvitems <- recurse_over_members new_ident ty'
 
-	return $ newenvitems ++ [ (srcident,(newident,ty')) ]
+	return $ newenvitems ++ [ (srcident,(new_ident,ty')) ]
 
 type CIFE = StateT ([EnvItem],[TraceElem]) CovVecM [(EnvItem,CExprWithType)]
 
@@ -2433,11 +2437,6 @@ createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 
 	where
 
-	-- β-reduction
-	replace_param_with_arg :: [(Ident,CExpr)] → CStat → CStat
-	replace_param_with_arg iexprs stmt = foldl (\ stmt' (ident,cexpr) →
-		substituteBy (CVar ident undefNode) cexpr stmt') stmt iexprs
-
 	-- construct all possible traces ending in the called (sub-)functions and return them together with the returned expression,
 	-- concatenating all possibilities.
 	-- also substitutes ternary ifs
@@ -2460,11 +2459,14 @@ createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 	-- "trace" is the whole trace up to here, not just the function body's trace!
 	create_combinations ϵs expr trace subs forks progress (Left (funident,args,call_ni) : rest) = do
 		FunDef (VarDecl _ _ (FunctionType (FunType ret_ty paramdecls False) _)) body _ <- lookupFunM funident
-		expanded_params_args <- expand_params_argsM paramdecls args
-		-- β-reduction of the arguments:
+
+		new_params <- newParamsM paramdecls args
+		-- β-reduction does not work in the presence of side effects on the argument (like pointers, e.g.)
 		let
-			body' = replace_param_with_arg expanded_params_args body
-		Left ϵs_funtraces <- unfoldTracesM labelϵ (Just ret_ty) False 0 progress ϵs trace [ ([ CBlockStmt body' ],False) ]
+--			body' = replace_param_with_arg (map fst new_params) body
+			new_decls = reverse new_params
+
+		Left ϵs_funtraces <- unfoldTracesM labelϵ (Just ret_ty) False 0 progress ϵs trace [ ( new_decls++[CBlockStmt body],False) ]
 		funtraces_rets :: [(Int,Progress,[Env],CExprWithType,Trace)] <- forM ϵs_funtraces $ \case
 			(forks',progress',envs',(Return retexpr : tr)) → return (forks',progress',envs',retexpr,tr)
 			-- if we have a "trace of no return", we assume return(99);
@@ -2475,13 +2477,19 @@ createCombinationsM labelϵ ϵs toplevel (expr,call_or_ternaryifs) mb_target_ty 
 
 		where
 
-		-- From the list of ParamDecls, extract the identifiers from the declarations and pair them with the argument
-		expand_params_argsM ::  [ParamDecl] → [CExpr] → CovVecM [(Ident,CExpr)]
-		expand_params_argsM paramdecls args = concatForM (zip paramdecls args) expandparam where
-			expandparam :: (ParamDecl,CExpr) → CovVecM [(Ident,CExpr)]
+{-
+		-- β-reduction
+		replace_param_with_arg :: [(Ident,CExpr)] → CStat → CStat
+		replace_param_with_arg iexprs stmt = foldl (\ stmt' (ident,cexpr) →
+			substituteBy (CVar ident undefNode) cexpr stmt') stmt iexprs
+-}
+		-- From the list of ParamDecls and arguments, introduce new parameter names and their create declarations
+		newParamsM ::  [ParamDecl] → [CExpr] → CovVecM [CBlockItem]
+		newParamsM paramdecls args = forM (zip paramdecls args) expandparam where
+			expandparam :: (ParamDecl,CExpr) → CovVecM CBlockItem
 			expandparam (paramdecl,arg) = do
-				let VarDecl (VarName srcident _) _ arg_ty = getVarDecl paramdecl
-				return [(srcident,arg)]
+				let VarDecl (VarName formal_param_ident _) _ arg_ty = getVarDecl paramdecl
+				return $ CBlockDecl $ type2Decl formal_param_ident undefNode arg_ty (Just arg)
 
 	-- Handle additional CBlockItems stemming from
 	-- comma operator, assignments in expressions, or conditional expressions
