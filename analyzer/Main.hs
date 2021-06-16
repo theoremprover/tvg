@@ -70,6 +70,8 @@ import Logging
 
 fastMode = False
 
+dontShowDeclsInTrace = True
+
 z3TimeoutSecs :: Maybe Int = Just $ 2*60
 
 reachFixedTrace :: Maybe [Int] = Nothing --Just [2,1,2,2,1,1,3,2,1,2,2,1,2,1]
@@ -1299,7 +1301,7 @@ lookupFunM ident = do
 		Just other → myError $ "lookupFunM " ++ (render.pretty) ident ++ " yielded " ++ (render.pretty) other
 		Nothing → myError $ "Function " ++ (show ident) ++ " not found"
 
-isnotbuiltinIdent ident = not $ any (`isPrefixOf` (identToString ident)) ["__","a__"]
+isnotbuiltinIdent ident = not dontShowDeclsInTrace && (not $ any (`isPrefixOf` (identToString ident)) ["__","a__"])
 
 isnotbuiltin (NewDeclaration (ident,_)) = isnotbuiltinIdent ident
 isnotbuiltin _ = True
@@ -2543,6 +2545,7 @@ substituteBy x y d = everywhere (mkT (substexpr x y)) d
 	mem = *p;
 	p = &y;
 	*p = 4;
+	return mem;
 -}
 
 {-
@@ -2832,23 +2835,23 @@ expr2SCompounds traceelem = case traceelem of
 			[ SComment "----------------------------------------------" ] ++
 			map SExprLine add_sexprs ++
 			[ SExprLine $ 𝒶𝓈𝓈𝑒𝓇𝓉 assert_sexpr]
-	
+
 		where
-	
+
 		make_intconstant :: Z3_Type → Int → SECovVecM SExpr
 		make_intconstant (Z3_BitVector size _) const | size `mod` 4 == 0 =
 			return $ SLeaf (printf "#x%*.*x" (size `div` 4) (size `div` 4) const)
 		make_intconstant z3type const = lift $ myError $ "make_intconstant " ++ show z3type ++ " " ++ show const
-	
+
 		ident2sexpr ident = SLeaf $ (render.pretty) ident
-	
+
 		expr2sexpr :: Constraint → SECovVecM SExpr
 		expr2sexpr (Condition (Left (varcexpr,cexpr))) = do
 			varsexpr <- expr2sexpr' varcexpr
 			sexpr <- expr2sexpr' cexpr
 			return $ SExpr [ SLeaf "=", varsexpr, sexpr ]
 		expr2sexpr (Condition (Right (_,cexpr))) = expr2sexpr' cexpr
-	
+
 		-- Assignment to an array member
 		expr2sexpr (Assignment (ArrayUpdate store_arr_ident var_arr_ident _ index_expr) ass_expr) = do
 			let var_arr_s = ident2sexpr var_arr_ident
@@ -2856,14 +2859,14 @@ expr2SCompounds traceelem = case traceelem of
 			ass_s <- expr2sexpr' ass_expr
 			let store_arr_s = ident2sexpr store_arr_ident
 			return $ var_arr_s ＝ 𝓈𝓉𝑜𝓇𝑒 store_arr_s index_s ass_s
-	
+
 		-- Turns a CExprWithType into an SExpr
 		expr2sexpr' :: CExprWithType → StateT [SExpr] CovVecM SExpr
-	
+
 		expr2sexpr' expr = case expr of
-	
+
 			CIndex arr_expr index_expr _ → 𝓈𝑒𝓁𝑒𝒸𝓉 <$> expr2sexpr' arr_expr <*> expr2sexpr' index_expr
-	
+
 			-- CNeqOp was resolved while annotateTypes
 			CBinary binop expr1 expr2 _ →
 				SExpr <$> sequence [ pure $ SLeaf op_sexpr, expr2sexpr' expr1, expr2sexpr' expr2 ]
@@ -2888,7 +2891,7 @@ expr2SCompounds traceelem = case traceelem of
 						CGeqOp → bitVectorTy op_ty (unSignedTy op_ty "bvuge" "bvsge") "fp.geq"
 						CEqOp  → bitVectorTy op_ty "=" "fp.eq"
 						other  → error $ "op_sexpr " ++ (render.pretty) binop ++ " not implemented!"
-	
+
 			cconst@(CConst ctconst) → case ctconst of
 				CIntConst intconst (_,(ty,_))   → make_intconstant ty (fromIntegral $ getCInteger intconst)
 				CCharConst cchar _              → return $ SLeaf $ (render.pretty) cconst
@@ -2905,11 +2908,11 @@ expr2SCompounds traceelem = case traceelem of
 						Z3_Double → (take 1 val,take 11 $ drop 1 val,take 52 $ drop 12 val) where
 							val = show_bin 64 (doubleToWord $ readfloat f_s)
 						Z3_LDouble → error "long double is not supported"
-	
+
 				CStrConst cstr _                → return $ SLeaf $ (render.pretty) cconst
-	
+
 			CVar ident _ → return $ ident2sexpr ident
-	
+
 			CUnary CPlusOp subexpr _ → expr2sexpr' subexpr
 			CUnary op subexpr _ → SExpr <$> sequence
 				[ pure $ SLeaf op_str, expr2sexpr' subexpr ]
@@ -2919,63 +2922,63 @@ expr2SCompounds traceelem = case traceelem of
 					CCompOp → "bvnot"
 					CNegOp  → "not"
 					_ → error $ "expr2sexpr " ++ (render.pretty) op ++ " should not occur!"
-	
+
 			castexpr@(CCast _ subexpr (_,to_ty)) → do
 				sexpr <- expr2sexpr' subexpr
 				let from_ty = extractTypes subexpr
 				case (fst from_ty,fst to_ty) of
-	
+
 					-- Identity cast
 					( ty1, ty2 ) | ty1==ty2 → return sexpr
-	
+
 					-- Casting signed to unsigned or vice versa with same size: No cast needed (Z3 interprets it)
 					( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from==size_to → return sexpr
-	
+
 					-- Casting from Bool
 					( Z3_Bool, toty@(Z3_BitVector size_from _ )) → do
 						ic1 <- make_intconstant toty 1
 						ic0 <- make_intconstant toty 0
 						return $ SExpr [ SLeaf "ite", sexpr, ic1, ic0 ]
-	
+
 					-- Casting to Bool
 					( frty@(Z3_BitVector size_from _) , Z3_Bool ) → do
 						ic <- make_intconstant frty 0
 						return $ SExpr [ SLeaf "not", sexpr ＝ ic ]
-	
+
 					-- DOWNCAST: extract bits (modulo)
 					( Z3_BitVector size_from _, Z3_BitVector size_to _ ) | size_from > size_to →
 						return $ 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 (size_to - 1) 0 sexpr
-	
+
 					-- UPCAST signed (to signed or unsigned): extend sign bit
 					( Z3_BitVector size_from False, Z3_BitVector size_to _ ) | size_from < size_to →
 						return $ SExpr [ SExpr [ SLeaf "_", SLeaf "sign_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
-	
+
 					-- UPCAST unsigned (to signed or unsigned): extend with zeros
 					( Z3_BitVector size_from True, Z3_BitVector size_to _ ) | size_from < size_to →
 						return $ SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
-	
+
 					( Z3_Float, Z3_BitVector size_to is_unsigned ) → do
 						return $ SExpr [ SExpr [ SLeaf "_", fp_to, SLeaf (show size_to) ], SLeaf roundingMode, sexpr ]
 						where
 						fp_to = SLeaf $ if is_unsigned then "fp.to_ubv" else "fp.to_sbv"
-	
+
 					( Z3_Float, Z3_Double ) →
 						return $ SExpr [ _𝓉𝑜_𝒻𝓅 32, SLeaf roundingMode, sexpr ]
-	
+
 					( from_ty@(Z3_BitVector size_from is_unsigned), arr_ty@(Z3_Array (Z3_BitVector size_to True) _ ) ) →
 						cast_2arr sexpr from_ty arr_ty
-	
+
 					( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_2arr sexpr Z3_Float arr_ty
-	
+
 					( Z3_Double, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_2arr sexpr Z3_Double arr_ty
-	
+
 					( Z3_LDouble, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_2arr sexpr Z3_LDouble arr_ty
-	
+
 					(from_ty,to_ty) → lift $ myError $ "expr2sexpr cast: " ++ show from_ty ++ " => " ++ show to_ty ++ " in " ++
 						(render.pretty) castexpr ++ " " ++ " at " ++ show (lineColNodeInfo $ extractNodeInfo castexpr) ++ " not implemented!"
-	
+
 				where
-	
+
 				cast_2arr :: SExpr → Z3_Type → Z3_Type → StateT [SExpr] CovVecM SExpr
 				cast_2arr sexpr from_ty arr_ty@(Z3_Array elem_ty _) = do
 					elem_size <- lift $ sizeofZ3Ty elem_ty
@@ -2993,7 +2996,7 @@ expr2SCompounds traceelem = case traceelem of
 									return bv_cast
 								other -> lift $ myError $ "cast_fp2arr: elem_ty = " ++ show elem_ty ++ "\n at " ++ show (extractNodeInfo subexpr)
 						Z3_BitVector _ _ -> return sexpr
-	
+
 					(arr,arr_decl) <- new_var "arr" arr_ty
 					(z3_inttype,_) <- lift $ _IntTypesM
 					is <- forM [0..(num_elems-1)] $ make_intconstant z3_inttype
@@ -3001,18 +3004,18 @@ expr2SCompounds traceelem = case traceelem of
 					let addresses = map (\ (h,l) → 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 h l bv) $
 						(case endianness of Little → id; Big → reverse)
 							[ ( (i+1)*elem_size-1 , i*elem_size ) | i <- [0..(num_elems-1)] ]
-	
+
 					modify ( ++ (
 						arr_decl :
 						map (\(i,address) → 𝒶𝓈𝓈𝑒𝓇𝓉 $ arr ＝ 𝓈𝓉𝑜𝓇𝑒 arr i address) (zip is addresses)) )
-	
+
 					return arr
-	
+
 			ccond@(CCond cond (Just then_expr) else_expr _) → do
 				lift $ myError $ "expr2sexpr CCond should not appear: " ++ (render.pretty) ccond
-	
+
 			cmember@(CMember _ _ _ _) → lift $ myError $ "expr2sexpr of member " ++ (render.pretty) cmember ++ " should not occur!"
-	
+
 			CCall (CVar (Ident (_:"__builtin_clz") _ _) _) [arg] _ → do
 				inttypes@(z3_inttype,_) <- lift $ _IntTypesM
 				(n,n_decl) <- new_var "n_clz" z3_inttype
@@ -3026,13 +3029,13 @@ expr2SCompounds traceelem = case traceelem of
 					SExpr [ SLeaf "bvugt", SExpr [SLeaf "bvlshr", arg_sexpr, SExpr [SLeaf "bvsub",sintsize_minus_1,n]], i_0 ] ]
 				modify (++[n_decl,n_cond])
 				return n
-	
+
 			ccall@(CCall _ _ _) → lift $ myError $ "expr2sexpr of call " ++ (render.pretty) ccall ++ " should not occur!"
-	
+
 			other → lift $ myError $ "expr2SExpr " ++ (render.pretty) other ++ " not implemented"
-	
+
 			where
-	
+
 			new_var :: String → Z3_Type → SECovVecM (SExpr,SExpr)
 			new_var name z3ty = do
 				n <- lift $ newNameM
@@ -3040,7 +3043,7 @@ expr2SCompounds traceelem = case traceelem of
 				let new_name = name ++ "$$" ++ show n
 				decl <- lift $ declConst2SExpr new_name z3ty
 				return (SLeaf new_name,decl)
-	
+
 			unSignedTy ty unsigned signed = case ty of
 				Z3_BitVector _ is_unsigned → if is_unsigned then unsigned else signed
 				Z3_Bool → unsigned
