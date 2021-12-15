@@ -98,7 +98,8 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "f" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noIndentLogOpt,writeModelsOpt,cutoffsOpt,subfuncovOpt]
+		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [cutoffsOpt,subfuncovOpt]
+--		[] → "gcc" : "f" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noIndentLogOpt,writeModelsOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "roundf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "fmin" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fmax.c"]) ++ [subfuncovOpt]
@@ -877,7 +878,8 @@ covVectorsM = logWrapper [ren "covVectorsM"] $ do
 			return expr
 
 		allpoints_in_body :: Ident → CovVecM [Branch]
-		allpoints_in_body (Ident fun_ident _ _) | any (`isPrefixOf` fun_ident) ["solver_debug","solver_error","solver_find","solver_pragma"] = return []
+		allpoints_in_body (Ident fun_ident _ _) | any (`isPrefixOf` fun_ident)
+			["solver_debug","solver_error","solver_find","solver_pragma","__builtin_expect"] = return []
 		allpoints_in_body funident = do
 			fundef@(FunDef (VarDecl _ _ (FunctionType (FunType _ _ _) _)) body fundef_ni) <- lookupFunM funident
 			modify $ \ s → s { funStartEndCVS = (fun_lc fundef,next_lc fundef) : funStartEndCVS s }
@@ -1481,8 +1483,10 @@ getMemberTypeM ty member = do
 getMembersM :: SUERef → CovVecM [(Ident,Type)]
 getMembersM sueref = do
 	CompDef (CompType _ _ memberdecls _ _) <- lookupTagM sueref
-	forM memberdecls $ \ (MemberDecl (VarDecl (VarName ident _) _ ty) Nothing _) → do
-		return (ident,ty)
+	forM memberdecls $ \case
+		-- TODO: Implement mb_bitfieldsize!
+		(MemberDecl (VarDecl (VarName ident _) _ ty) mb_bitfieldsize _) → return (ident,ty)
+		other -> error $ "getMembersM " ++ show sueref ++ " : " ++ show other
 
 elimTypeDefsM :: Type → CovVecM Type
 elimTypeDefsM directtype@(DirectType _ _ _) = pure directtype
@@ -2767,8 +2771,8 @@ sexpr1 ＝ sexpr2 = SExpr [ SLeaf "=", sexpr1, sexpr2 ]
 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 :: Int → Int → SExpr → SExpr
 𝑒𝓍𝓉𝓇𝒶𝒸𝓉 l r sexpr = SExpr [ SExpr [SLeaf "_", SLeaf "extract", SLeaf (show l), SLeaf (show r)], sexpr ]
 
-_𝓉𝑜_𝒻𝓅 32 = SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "8" , SLeaf "24" ]
-_𝓉𝑜_𝒻𝓅 64 = SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "11", SLeaf "53" ]
+_𝓉𝑜_𝒻𝓅  32 = SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf  "8", SLeaf  "24" ]
+_𝓉𝑜_𝒻𝓅  64 = SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "11", SLeaf  "53" ]
 _𝓉𝑜_𝒻𝓅 128 = SExpr [ SLeaf "_", SLeaf "to_fp", SLeaf "15", SLeaf "113" ]
 
 𝒶𝓈𝓈𝑒𝓇𝓉 sexpr = SExpr [ SLeaf "assert", sexpr ]
