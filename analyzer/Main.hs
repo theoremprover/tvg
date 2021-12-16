@@ -68,7 +68,7 @@ import Logging
 
 --------------
 
-fastMode = False
+fastMode = True
 
 dontShowDeclsInTrace = True
 
