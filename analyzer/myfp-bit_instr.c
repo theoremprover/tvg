@@ -6,8 +6,18 @@
 #undef NO_DI_MODE
 #undef TFLOAT
 
+#ifdef CALC
+#include <stdio.h>
+#include <stdlib.h>
+
+int solver_pragma(int x,...)
+{
+    return 1;
+}
+#endif
+
 /* This is a software floating point library which can be used
-   for targets without hardware floating point. 
+   for targets without hardware floating point.
    Copyright (C) 1994, 1995, 1996, 1997, 1998, 2000, 2001, 2002, 2003,
    2004, 2005 Free Software Foundation, Inc.
 
@@ -153,7 +163,7 @@ nan (void)
   /* Discard the const qualifier...  */
 #ifdef TFLOAT
   return (fp_number_type *) (& __thenan_tf);
-#elif defined FLOAT  
+#elif defined FLOAT
   return (fp_number_type *) (& __thenan_sf);
 #else
   return (fp_number_type *) (& __thenan_df);
@@ -184,7 +194,7 @@ iszero ( fp_number_type *  x)
   return x->class == CLASS_ZERO;
 }
 
-INLINE 
+INLINE
 static void
 flip_sign ( fp_number_type *  x)
 {
@@ -477,7 +487,7 @@ unpack_d (FLO_union_type * src, fp_number_type * dst)
 #endif
   src = &swapped;
 #endif
-  
+
 #ifdef FLOAT_BIT_ORDER_MISMATCH
   fraction = src->bits.fraction;
   exp = src->bits.exp;
@@ -486,7 +496,7 @@ unpack_d (FLO_union_type * src, fp_number_type * dst)
 # if defined TFLOAT && defined HALFFRACBITS
  {
    halffractype high, low;
-   
+
    high = src->value_raw >> HALFSHIFT;
    low = src->value_raw & (((fractype)1 << HALFSHIFT) - 1);
 
@@ -914,6 +924,8 @@ multiply (FLO_type arg_a, FLO_type arg_b)
 }
 #endif /* L_mul_sf || L_mul_df || L_mul_tf */
 
+int found = 0;
+
 #if defined(L_div_sf) || defined(L_div_df) || defined(L_div_tf)
 static inline __attribute__ ((__always_inline__)) fp_number_type *
 _fpdiv_parts (fp_number_type * a,
@@ -976,16 +988,21 @@ _fpdiv_parts (fp_number_type * a,
     /* ??? Does divide one bit at a time.  Optimize.  */
     while (bit)
       {
-//                           (1,1,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,2,2,2,2,2)
-            if (solver_pragma(1,12,12,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,2,12,12,12,12) && (numerator >= denominator))
+            if (solver_pragma(1,1,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,1,2,2,2,2,2,2) && (numerator >= denominator))
               {
+#ifdef CALC
+                printf("1,");
+#endif
                 quotient |= bit;
                 numerator -= denominator;
               }
+              else printf("2,");
             bit >>= 1;
             numerator *= 2;
       }
-
+#ifdef CALC
+	printf ("\n");
+#endif
     if (!ROUND_TOWARDS_ZERO && (quotient & GARDMASK) == GARDMSB)
       {
 	if (quotient & (1 << NGARDS))
@@ -997,7 +1014,7 @@ _fpdiv_parts (fp_number_type * a,
 	  }
 	else if (numerator)
 	  {
-	    //solver_find();
+	    found=1;
 	    /* We're a further than half way by the small amount
 	       corresponding to the bits set in "numerator".  Knowing
 	       that, we round here and not in pack_d, because there we
@@ -1304,7 +1321,7 @@ si_to_float (SItype arg_a)
       USItype uarg;
       int shift;
       in.normal_exp = FRACBITS + NGARDS;
-      if (in.sign) 
+      if (in.sign)
 	{
 	  /* Special case for minint, since there is no +ve integer
 	     representation for it */
@@ -1454,7 +1471,7 @@ negate (FLO_type arg_a)
 SFtype
 __make_fp(fp_class_type class,
 	     unsigned int sign,
-	     int exp, 
+	     int exp,
 	     USItype frac)
 {
   fp_number_type in;
@@ -1568,7 +1585,7 @@ df_to_tf (DFtype arg_a)
 TFtype
 __make_tp(fp_class_type class,
 	     unsigned int sign,
-	     int exp, 
+	     int exp,
 	     UTItype frac)
 {
   fp_number_type in;
@@ -1651,3 +1668,43 @@ Test Vector covering [1] :
     = return_val = 0 , return_val_ARROW_class = 0 , return_val_ARROW_sign = 0 , return_val_ARROW_normal_exp = 0 , return_val_ARROW_fraction_DOT_ll = 0
 
 */
+
+#ifdef CALC
+int main(int argc, char* argv[])
+{
+    int n=0;
+
+    printf("FRACBITS=%i, NGARDS=%i\n",FRACBITS,NGARDS);
+    printf("ROUND_TOWARDS_ZERO=%i, GARDMASK=%i, GARDMSB=%i, IMPLICIT_1=%x, IMPLICIT2=%x\n",
+        ROUND_TOWARDS_ZERO,GARDMASK,GARDMSB,IMPLICIT_1,IMPLICIT_2);
+    printf("sizeof(int)=%i, sizeof(fractype)=%i, sizeof(UDItype)=%i\n",
+        sizeof(int),sizeof(fractype),sizeof(UDItype));
+
+    int i = 1 ;
+
+/*
+    _fpdiv_parts ( a = 0 , a_ARROW_class = 3 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_ll = 30758235 , b = 0 , b_ARROW_class = 3 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_ll = 16777219 )
+    = return_val = 0 , return_val_ARROW_class = 3 , return_val_ARROW_sign = 0 , return_val_ARROW_normal_exp = 0 , return_val_ARROW_fraction_DOT_ll = 1968526687
+Test Vector covering [2,2,2,2,2,1,1,1,2,2,2,2,2,1,2,2] :
+    _fpdiv_parts ( a = 0 , a_ARROW_class = 3 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_ll = 30758229 , b = 0 , b_ARROW_class = 3 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_ll = 33554432 )
+Test Vector covering [2,2,2,2,2,1,1,1,2,2,2,2,2,1,2,1] :
+    _fpdiv_parts ( a = 0 , a_ARROW_class = 3 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_ll = 7689560 , b = 0 , b_ARROW_class = 3 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_ll = 8388611 )
+Test Vector covering [2,1] :
+    _fpdiv_parts ( a = 0 , a_ARROW_class = 2 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_ll = 0 , b = 0 , b_ARROW_class = 0 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_ll = 0 )
+Test Vector covering [1] :
+    _fpdiv_parts ( a = 0 , a_ARROW_class = 0 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_ll = 0 , b = 0 , b_ARROW_class = 0 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_ll = 0 )
+*/
+    unsigned int ll1=7689560;
+    unsigned int ll2=8388611;
+
+    fp_number_type a = { 3, 0, 0, { ll1 } };
+    fp_number_type b = { 3, 0, 0, { ll2 } };
+
+	found=0;
+    _fpdiv_parts(&a,&b);
+
+	if(found>0) printf("FOUND!\n");
+
+    return 0;
+}
+#endif

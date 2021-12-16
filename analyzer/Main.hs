@@ -98,7 +98,7 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [cutoffsOpt,subfuncovOpt]
+--		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "f" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noIndentLogOpt,writeModelsOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "roundf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
@@ -108,7 +108,7 @@ main = do
 
 --		[] → "gcc" : "_FDtest" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_fabsf.c"]) ++ [htmlLogOpt,showModelsOpt,writeModelsOpt]
 --		[] → "gcc" : "f" : (analyzerPath++"\\switchtest.c") : [htmlLogOpt,writeModelsOpt,showModelsOpt,noLoopInferenceOpt] --"-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,htmlLogOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
+		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 
 --		[] → "gcc" : "sqrtf" : (analyzerPath++"\\sqrtf.c") : [subfuncovOpt,writeModelsOpt] --["-writeGlobalDecls"]
 --		[] → "gcc" : "_FDunscale" : (analyzerPath++"\\test.c") : [noHaltOnVerificationErrorOpt,showModelsOpt,writeModelsOpt,subfuncovOpt,noIndentLogOpt,cutoffsOpt] --["-writeGlobalDecls"]
@@ -1718,7 +1718,7 @@ createBranchesWithAnno cond makebranchname trace = do
 		-- 12 is a wildcard in the choice list
 		-- if the condition has been reached more often than the pragma list specifies, it is a wildcard
 		Just (ns,num_reached) | length ns > num_reached && ns!!num_reached /= 12 → do
-			printLogV 1 $ "\nRecognized annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
+			printLogV 10 $ "\nRecognized annotation " ++ show (ns!!num_reached) ++ " to " ++ (render.pretty) real_cond ++
 				" (reached " ++ show num_reached ++ " times)"
 			return [ all_branches !! (ns!!num_reached - 1) ]
 		_ → return all_branches
