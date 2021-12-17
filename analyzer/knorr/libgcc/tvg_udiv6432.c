@@ -176,9 +176,3 @@ again2:
 
     return q1*b + q0;
 }
-
-void main()
-{
-    unsigned long long n = 4156505199709158912;
-
-}

@@ -114,7 +114,7 @@ binaryOp cbinary@(CBinary _ _ _ _) = [cbinary]
 binaryOp _ = []
 
 incOrDecOp :: CFilter CExpr CExpr
-incOrDecOp cunary@(CUnary unaryop _ _) = if unaryop `elem` [CPostIncOp,CPostDecOp,CPreIncOp,CPreDecOp] then [cunary] else []
+incOrDecOp cunary@(CUnary unaryop _ _) | unaryop `elem` [CPostIncOp,CPostDecOp,CPreIncOp,CPreDecOp] = [cunary]
 incOrDecOp _ = []
 
 showPretty :: (Pretty a,CNode a) => CFilter a String
