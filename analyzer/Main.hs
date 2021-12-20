@@ -18,15 +18,12 @@ import System.Exit
 import "language-c" Language.C
 import Language.C.Data.Ident
 import Language.C.Data.Node
-import Language.C.Data.Position
 import Language.C.Analysis.AstAnalysis
 import Language.C.Analysis.DeclAnalysis
 import Language.C.Analysis.DefTable
 import Language.C.Analysis.TypeUtils
-import Language.C.Analysis.TypeConversions
 import Language.C.Analysis.TravMonad
 import Language.C.Analysis.SemRep
-import Language.C.Analysis.Export
 import Language.C.Syntax.Ops
 import Language.C.System.GCC
 import "language-c-quote" Language.C.Quote.GCC
@@ -38,21 +35,19 @@ import Control.Monad.Trans.State.Lazy
 import Prelude.Unicode ((∧),(∨))
 import Text.Printf
 import Text.Regex.TDFA
-import Text.Regex.TDFA.String
-import Numeric (readHex,readInt)
+import Numeric (readHex)
 import Data.Either
-import Data.Ord (comparing)
+--import Data.Ord (comparing)
 import Control.Monad.IO.Class (liftIO,MonadIO)
 import Data.Generics
 import qualified Data.Map.Strict as Map
 import Text.PrettyPrint
 import Data.Time
-import Data.Time.LocalTime (diffLocalTime)
-import Data.Foldable
+--import Data.Time.LocalTime (diffLocalTime)
+--import Data.Foldable
 import Data.List
 import Data.Maybe
 import System.IO
-import Data.Char
 import Data.Numbers.FloatingHex (showHFloat)
 
 -- This is for conversion of Z3 floats to Haskell Floating Point
@@ -68,9 +63,9 @@ import Logging
 
 --------------
 
-fastMode = False
+fastMode :: Bool = False
 
-dontShowDeclsInTrace = True
+dontShowDeclsInTrace :: Bool = True
 
 z3TimeoutSecs :: Maybe Int = Just $ 2*60
 
@@ -99,7 +94,7 @@ main = do
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
---		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [cutoffsOpt,subfuncovOpt]
+		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
 --		[] → "gcc" : "f" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noIndentLogOpt,writeModelsOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "roundf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
@@ -153,7 +148,7 @@ main = do
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\whiletest2.c") : [] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\branchtest.c") : [] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\iftest.c") : [] --["-writeAST","-writeGlobalDecls"]
-		[] → "gcc" : "f" : (analyzerPath++"\\deadtest.c") : ["-writemodels"] --[]
+--		[] → "gcc" : "f" : (analyzerPath++"\\deadtest.c") : ["-writemodels"] --[]
 --		[] → "gcc" : "f" : (analyzerPath++"\\whiletest.c") : ["-writemodels"] --["-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\ptrtest_flat.c") : ["-writeAST"]
 --		[] → "gcc" : "f" : (analyzerPath++"\\ptrtest.c") : [] --["-writeAST"]
@@ -2569,22 +2564,31 @@ elimInds :: Trace → CovVecM Trace
 elimInds trace = elim_indsM [] $ reverse trace
 	where
 	elim_indsM :: Trace → Trace → CovVecM Trace
+
 	elim_indsM res_trace [] = return res_trace
-	elim_indsM res_trace (ti@(Assignment (Normal ptr@(CVar ptr_ident _)) expr) : rest) = do
-		case extractType ptr of
-			-- For assignments to a pointer ptr = expr, substitute ptr for expr  downwards in the trace,
-			-- and cancel out */& operators in the resulting expressions
-			PtrType _ _ _ → elim_indsM (cancel_ind_adrs $ substituteBy ptr expr res_trace) rest
-			_ → elim_indsM (ti : res_trace) rest
+
+	-- For assignments to a pointer ptr = expr, substitute ptr for expr  downwards in the trace,
+	-- and cancel out */& operators in the resulting expressions
+	elim_indsM res_trace ((Assignment (Normal ptr@(CVar ptr_ident (_,(Z3_Ptr target_ty,_)))) expr) : rest) = do
+{-
+		liftIO $ do
+			printLog 0 $ "XXX "
+			printLog 0 $ "ptr = " ++ (render.pretty) ptr
+			printLog 0 $ "expr = " ++ (render.pretty) expr
+			printLog 0 $ "target_ty = " ++ (render.pretty) target_ty
+-}
+		elim_indsM (cancel_ind_adrs $ substituteBy ptr expr res_trace) rest
+		where
+		cancel_ind_adrs :: Trace → Trace
+		cancel_ind_adrs trace = everywhere (mkT cancel_ind_adr) trace
+			where
+			cancel_ind_adr :: CExprWithType → CExprWithType
+			cancel_ind_adr (CUnary CIndOp (CUnary CAdrOp expr _) _) = expr
+			cancel_ind_adr (CMember (CUnary CAdrOp obj _) member True ni) = CMember obj member False ni
+			cancel_ind_adr expr = expr
+
 	elim_indsM res_trace (ti : rest) = elim_indsM (ti : res_trace) rest
 
-	cancel_ind_adrs :: Trace → Trace
-	cancel_ind_adrs trace = everywhere (mkT cancel_ind_adr) trace
-		where
-		cancel_ind_adr :: CExprWithType → CExprWithType
-		cancel_ind_adr (CUnary CIndOp (CUnary CAdrOp expr _) _) = expr
-		cancel_ind_adr (CMember (CUnary CAdrOp obj _) member True ni) = CMember obj member False ni
-		cancel_ind_adr expr = expr
 
 
 -- FOLD TRACE BY SUBSTITUTING ASSIGNMENTS BACKWARDS
@@ -2671,6 +2675,12 @@ simplifyTraceM trace = everywhereM (mkM simplify) trace where
 
 	-- Eliminate two consecutive pointer casts:  (A*)(B*)ptr ~> (A*)ptr
 	simplify (CCast t1 (CCast _ expr (_,tys@(Z3_Ptr _,_))) ni@(_,(Z3_Ptr _,_))) = return $ CCast t1 expr ni
+
+	-- Simplify ((struct X *)(&x)) -> member  where x::struct X   ~>    x.member
+	simplify (CMember (ccast@(CCast _ (CUnary CAdrOp var@(CVar _ (_,(Z3_Ptr var_ty,_))) _) (_,(Z3_Ptr cast_target_ty,_)))) member True ni)
+		| cast_target_ty == var_ty = do
+			liftIO $ printLog 0 $ "simplify " ++ (render.pretty) ccast ++ "\nvar_ty = " ++ show var_ty ++ "\ncast_target_ty = " ++ show cast_target_ty
+			return $ CMember var member False ni
 
 	-- Convert cast of ptr to union with member
 	simplify (CMember (CCast dummy px (_,tys@(Z3_Ptr (Z3_Compound sueref UnionTag),_))) member_id True mem_ni) = do
