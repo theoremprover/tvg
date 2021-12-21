@@ -418,10 +418,6 @@ __pack_d (const fp_number_type *src)
  }
     }
 
-
-
-
-
   dst.bits = fraction | (exp<<52) | (sign<<63);
   return dst.value;
 }
