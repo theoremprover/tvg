@@ -316,12 +316,6 @@ __pack_d (const fp_number_type *src)
       if (src->class == CLASS_QNAN || 1)
  {
 
-
-
-
-
-
-
    fraction |= 0x8000000000000LL;
 
  }
@@ -418,7 +412,7 @@ __pack_d (const fp_number_type *src)
  }
     }
 
-  dst.bits = fraction | (exp<<52) | (sign<<63);
+  dst.bits = fraction | (exp<<52L) | (sign<<63L);
   return dst.value;
 }
 

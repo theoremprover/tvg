@@ -95,7 +95,7 @@ main = do
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
-		[] → "gcc" : "__pack_d" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df_double.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
+		[] → "gcc" : "__pack_d" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df_double.i"]) ++ [cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
 --		[] → "gcc" : "f" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noIndentLogOpt,writeModelsOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "roundf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
@@ -3163,10 +3163,12 @@ sizeofTy ty@(DirectType tyname _ attrs) = do
 			(TyLLong,[])    → longLongSize
 			(TyULLong,[])   → longLongSize
 			other           → error $ "sizeofZ3Ty " ++ show other ++ " not implemented!"
-		TyFloating floatty → case floatty of
-			TyFloat   → 32
-			TyDouble  → 64
-			TyLDouble → 128
+		TyFloating floatty → case (floatty,concatMap to_mode attrs) of
+			(TyFloat,[])       → 32
+			(TyFloat,["SF"])   → 32
+			(TyFloat,["DF"])   → 64
+			(TyDouble,[])      → 64
+			(TyLDouble,[])     → 128
 			other     → error $ "sizeofTy " ++ show other ++ " not implemented!"
 		other → error $ "sizeofTy: " ++ (render.pretty) ty ++ " is not implemented!"
 	where
