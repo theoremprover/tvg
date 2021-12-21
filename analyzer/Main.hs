@@ -94,7 +94,8 @@ main = do
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
-		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
+--		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
+		[] → "gcc" : "__unpack_d" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df_double.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
 --		[] → "gcc" : "f" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noIndentLogOpt,writeModelsOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "roundf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
@@ -978,7 +979,9 @@ createCHarness orig_rettype fun_args filename funname extdecls = do
 		argexprs = for param_env_exprs $ \ (_,cexprwithty) → funcallargwrapper cexprwithty
 		incl_srcfilename = "#include \"" ++ filename ++ "\""
 
-		funcall = (render.pretty) orig_rettype ++ " " ++ returnval_var_name ++ " = " ++
+		funcall = (case orig_rettype of
+			DirectType TyVoid _ _ -> ""
+			_       -> (render.pretty) orig_rettype ++ " " ++ returnval_var_name ++ " = ") ++
 			funname ++ "(" ++ intercalate "," fun_args ++ ");"
 
 	argformats <- mapM type_format_string $ map (snd.snd.fst) param_env_exprs
@@ -2979,8 +2982,12 @@ expr2SCompounds traceelem = case traceelem of
 					( Z3_Float, Z3_Double ) →
 						return $ SExpr [ _𝓉𝑜_𝒻𝓅 32, SLeaf roundingMode, sexpr ]
 
-					( from_ty@(Z3_BitVector size_from is_unsigned), arr_ty@(Z3_Array (Z3_BitVector size_to True) _ ) ) →
+					( from_ty@(Z3_BitVector _ _), arr_ty@(Z3_Array (Z3_BitVector _ True) _ ) ) →
 						cast_2arr sexpr from_ty arr_ty
+
+					( arr_ty@(Z3_Array (Z3_BitVector _ True) _) , to_ty@(Z3_BitVector _ _) ) →
+						-- casting has no direction for Z3, so we can re-use cast_2arr with switched arguments here
+						cast_2arr sexpr to_ty arr_ty
 
 					( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_2arr sexpr Z3_Float arr_ty
 
@@ -3268,9 +3275,9 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			-- Ignore it if ident = bv$..
 			Just _ -> return []
 			-- Create declaration and equality constraint for bv$<ident>
-			Nothing -> do
-				let Just ty = lookup ident a_z3tyenv
-				case ty of
+			Nothing -> case lookup ident a_z3tyenv of
+				Nothing -> return [] --myError $ "makeAndSolveZ3ModelM: lookup " ++ (render.pretty) ident ++ " not found"
+				Just ty -> case ty of
 					ty | ty `elem` [Z3_Float,Z3_Double,Z3_LDouble] -> do
 						let bvident = internalIdent $ makeFloatBVVarName $ identToString ident
 						bv_size <- sizeofZ3Ty ty

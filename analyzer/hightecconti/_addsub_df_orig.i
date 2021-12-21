@@ -150,9 +150,10 @@ typedef struct
   int normal_exp;
 
 
-  struct
+  union
     {
       fractype ll;
+      halffractype l[2];
     } fraction;
 } fp_number_type;
 
@@ -227,7 +228,7 @@ flip_sign ( fp_number_type * x)
 }
 
 
-fractype
+void
 __unpack_d (FLO_union_type * src, fp_number_type * dst)
 {
 

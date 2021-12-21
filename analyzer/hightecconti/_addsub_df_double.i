@@ -161,24 +161,7 @@ const fp_number_type __thenan_df = { CLASS_SNAN, 0, 0, {(fractype) 0} };
 typedef union
 {
   FLO_type value;
-  fractype value_raw;
-
-
-
-
-
-  halffractype words[2];
-
-
-
-
-  struct
-    {
-      fractype fraction:52 __attribute__ ((packed));
-      unsigned int exp:11 __attribute__ ((packed));
-      unsigned int sign:1 __attribute__ ((packed));
-    }
-  bits;
+  fractype bits;
 }
 FLO_union_type;
 
@@ -226,19 +209,15 @@ flip_sign ( fp_number_type * x)
   x->sign = !x->sign;
 }
 
-
 fractype
 __unpack_d (FLO_union_type * src, fp_number_type * dst)
 {
-
-
-
   fractype fraction;
   int exp;
   int sign;
-  fraction = src->bits.fraction;
-  exp = src->bits.exp;
-  sign = src->bits.sign;
+  fraction =  (fractype) (src->bits    & ((1ULL<<52) - 1));
+  exp  = (int)((src->bits >> 52) & ((1ULL<<11) - 1));
+  sign = (int)((src->bits >> 63) & 1ULL);
   dst->sign = sign;
   if (exp == 0)
     {
@@ -443,9 +422,7 @@ __pack_d (const fp_number_type *src)
 
 
 
-  dst.bits.fraction = fraction;
-  dst.bits.exp = exp;
-  dst.bits.sign = sign;
+  dst.bits = fraction | (exp<<52) | (sign<<63);
   return dst.value;
 }
 
