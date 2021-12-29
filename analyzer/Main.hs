@@ -2268,6 +2268,7 @@ transcribeExprM ϵs mb_target_ty expr = do
 	annotateTypesAndCastM :: [Env] → CExpr → Maybe Types → CovVecM CExprWithType
 	annotateTypesAndCastM ϵs cexpr mb_target_ty = logWrapper ["annotateTypesAndCastM",ren $ take 1 ϵs,ren cexpr,ren mb_target_ty] $ do
 		cexpr' <- annotate_types cexpr
+		liftIO $ printLog 0 $ "X annotateTypesAndCastM " ++ (render.pretty) cexpr ++ " :: " ++ show (extractTypes cexpr')
 		return $ case mb_target_ty of
 			Just target_ty → mb_cast target_ty cexpr'
 			_ → cexpr'
@@ -2349,7 +2350,9 @@ transcribeExprM ϵs mb_target_ty expr = do
 		annotate_types (CMember pexpr member_ident False ni) = do
 			pexpr' <- annotate_types pexpr
 			mem_ty <- getMemberTypeM (extractType pexpr') member_ident
+			liftIO $ printLog 0 $ "Y mem_ty = " ++ show mem_ty
 			z3_mem_ty <- ty2Z3Type mem_ty
+			liftIO $ printLog 0 $ "Y z3_mem_ty = " ++ show z3_mem_ty
 			return $ CMember pexpr' member_ident False (ni,z3_mem_ty)
 
 		-- dummy, used when inferring types when constructing CStmt's
@@ -2995,8 +2998,16 @@ expr2SCompounds traceelem = case traceelem of
 
 					( Z3_LDouble, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_2arr sexpr Z3_LDouble arr_ty
 
-					(from_ty,to_ty) → lift $ myError $ "expr2sexpr cast: " ++ show from_ty ++ " => " ++ show to_ty ++ " in " ++
-						(render.pretty) castexpr ++ " " ++ " at " ++ show (lineColNodeInfo $ extractNodeInfo castexpr) ++ " not implemented!"
+					(from_ty,to_ty) → lift $ do
+						sfrom <- sizeofZ3Ty from_ty
+						sto <- sizeofZ3Ty to_ty
+						myError $ "expr2sexpr cast: " ++ show from_ty ++ " => " ++ show to_ty ++ " in " ++
+							(render.pretty) castexpr ++ " " ++ " at " ++ show (lineColNodeInfo $ extractNodeInfo castexpr) ++ " not implemented!" ++
+							"\nsizeof(from_ty)=" ++ show sfrom ++ "\n" ++
+							"from_ty = " ++ show from_ty ++ "\n" ++
+							"sizeof(to_ty)=" ++ show sto ++ "\n" ++
+							"to_ty = " ++ show to_ty ++ "\n" ++
+							"castexpr = " ++ show castexpr ++ "\n"
 
 				where
 
@@ -3118,10 +3129,12 @@ ty2Z3Type ty = do
 			TyIntegral intty    → do
 				sizeofintty <- sizeofTy ty
 				return $ Z3_BitVector sizeofintty $ intty `elem` [TyChar,TyUChar,TyUShort,TyUInt,TyULong,TyULLong]
-			TyFloating floatingty → return $ case floatingty of
-				TyFloat   → Z3_Float
-				TyDouble  → Z3_Double
-				TyLDouble → Z3_LDouble
+			TyFloating floatingty → do
+				sizeoffloatty <- sizeofTy ty
+				return $ case sizeoffloatty of
+					32  → Z3_Float
+					64  → Z3_Double
+					128 → Z3_LDouble
 			TyEnum _            → return $ Z3_BitVector intSize True
 			TyComp (CompTypeRef sueref comptykind _) → return $ Z3_Compound sueref comptykind
 			TyBuiltin TyVaList  → return $ Z3_VaList
