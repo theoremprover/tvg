@@ -458,7 +458,7 @@ __subdf3(FLO_type arg_a, FLO_type arg_b)
 }
 
 int __attribute__((__cdecl__)) printf(const char *,...);
-void mainc(void)
+void main(void)
 {
   printf("sizeof(FLO_type)=%i\n",sizeof(FLO_type));
   printf("sizeof(fractype)=%i\n",sizeof(fractype));

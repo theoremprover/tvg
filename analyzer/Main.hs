@@ -63,7 +63,7 @@ import Logging
 
 --------------
 
-fastMode :: Bool = False
+fastMode :: Bool = True
 
 dontShowDeclsInTrace :: Bool = True
 
@@ -93,9 +93,9 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
+		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
-		[] → "gcc" : "__pack_d" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df_double.i"]) ++ [cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
+--		[] → "gcc" : "__pack_d" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df_double.i"]) ++ [cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
 --		[] → "gcc" : "f" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noIndentLogOpt,writeModelsOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "roundf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_roundf.c"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
 --		[] → "gcc" : "ceilf" : (map ((analyzerPath++"\\knorr\\dinkum\\")++) ["tvg_ceilf.i"]) ++ [noHaltOnVerificationErrorOpt,cutoffsOpt,subfuncovOpt]
@@ -1145,14 +1145,23 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 	printStatsM 0
 	printDateTimeM 0
 	(traceanalysisresults,_) <- gets analysisStateCVS
-	-- check if the trace was already analyzed (this can happen because of unfolding loops containing a return).
-	case traceid `elem` (map (\(tid,_,_,_)->tid) traceanalysisresults) of
-		True -> do
-			myError $ "Trace " ++ show traceid ++ " already analyzed!"
-			-- Since the trace is in analysisStateCVS, it must have been solvable (see below,
-			-- otherwise it wouldn't have been added to analysisStateCVS)
-			return True
+	startends <- gets funStartEndCVS
+	printLogV 20 $ "startends = " ++ show startends
+
+	let
+		visible_trace = concatMap to_branch trace where
+			is_visible_branch :: [(Location,Location)] → Location → Bool
+			is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
+			to_branch (Condition (Right (branch,_))) | is_visible_branch startends (branchLocation branch) = [ branch ]
+			to_branch _ = []
+		nub_visible_trace = nub visible_trace
+	-- check if all decisions have already been covered by previous solutions
+	(tas,covered) <- gets analysisStateCVS
+	case not $ null (nub_visible_trace \\ covered) of
 		False -> do
+			printLogV 1 $ "All conditions in this trace (" ++ show traceid ++ ") are covered already."
+			return True
+		True -> do
 			findmode <- isOptionSet findModeOpt
 			let
 				found_finds = any is_solverfind trace
@@ -1201,34 +1210,20 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 										printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
 										printToSolutions show_solution_msg
 
-										startends <- gets funStartEndCVS
-										printLogV 20 $ "startends = " ++ show startends
-										let visible_trace = concatMap to_branch trace
-											where
-											is_visible_branch :: [(Location,Location)] → Location → Bool
-											is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
-											to_branch (Condition (Right (branch,_))) | is_visible_branch startends (branchLocation branch) = [ branch ]
-											to_branch _ = []
-
 										let cov_branches = "\tDECISION POINTS (IN CONTROL FLOW ORDER):\n" ++ unlines (map (("\t"++).showBranch) visible_trace)
 										printLogV 1 cov_branches
 										printToSolutions cov_branches
 
 										when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
 
-										(tas,covered) <- gets analysisStateCVS
 										all_branches <- gets allCondPointsCVS
 										let
 											traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
-											nub_visible_trace = nub visible_trace
 											excess_branches = nub_visible_trace \\ all_branches
 										when (not $ null excess_branches) $ do
 											printCondPoints all_branches
 											myError $ "Branches " ++ show excess_branches ++ " are covered but are not in all_branches!"
-										-- Are all the decision points are already covered? They can't, probably...?
-										-- If yes, this trace does not contribute to full coverage...
-										when (not $ null (nub_visible_trace \\ covered)) $
-											modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],nub_visible_trace `union` covered) }
+										modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],nub_visible_trace `union` covered) }
 										return True
 			
 		where
