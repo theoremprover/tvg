@@ -93,7 +93,8 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
+		[] → "gcc" : "__muldf3" : (analyzerPath++"\\hightecconti\\tvg_mul_df.c") : [{-cutoffsOpt,-}htmlLogOpt,writeModelsOpt,findModeOpt]
+--		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
 --		[] → "gcc" : "__pack_d" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df_double.i"]) ++ [cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
 --		[] → "gcc" : "f" : (map ((analyzerPath++"\\")++) ["tvg_roundf_test.c"]) ++ [noIndentLogOpt,writeModelsOpt,cutoffsOpt,subfuncovOpt]
@@ -313,7 +314,7 @@ printTypes = False
 printLocations = False
 errorModelPath = analyzerPath </> "models"
 
-mAX_UNROLLS = 3
+mAX_UNROLLS = 1
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
 
 sizeConditionChunks = 4
@@ -1145,23 +1146,14 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 	printStatsM 0
 	printDateTimeM 0
 	(traceanalysisresults,_) <- gets analysisStateCVS
-	startends <- gets funStartEndCVS
-	printLogV 20 $ "startends = " ++ show startends
-
-	let
-		visible_trace = concatMap to_branch trace where
-			is_visible_branch :: [(Location,Location)] → Location → Bool
-			is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
-			to_branch (Condition (Right (branch,_))) | is_visible_branch startends (branchLocation branch) = [ branch ]
-			to_branch _ = []
-		nub_visible_trace = nub visible_trace
-	-- check if all decisions have already been covered by previous solutions
-	(tas,covered) <- gets analysisStateCVS
-	case not $ null (nub_visible_trace \\ covered) of
-		False -> do
-			printLogV 1 $ "All conditions in this trace (" ++ show traceid ++ ") are covered already."
-			return True
+	-- check if the trace was already analyzed (this can happen because of unfolding loops containing a return).
+	case traceid `elem` (map (\(tid,_,_,_)->tid) traceanalysisresults) of
 		True -> do
+			myError $ "Trace " ++ show traceid ++ " already analyzed!"
+			-- Since the trace is in analysisStateCVS, it must have been solvable (see below,
+			-- otherwise it wouldn't have been added to analysisStateCVS)
+			return True
+		False -> do
 			findmode <- isOptionSet findModeOpt
 			let
 				found_finds = any is_solverfind trace
@@ -1210,20 +1202,34 @@ analyzeTraceM mb_ret_type progress res_line = logWrapper [ren "analyzeTraceM",re
 										printToSolutions $ "\n\n---- Trace " ++ show traceid ++ " -----------------------------------\n\n"
 										printToSolutions show_solution_msg
 
+										startends <- gets funStartEndCVS
+										printLogV 20 $ "startends = " ++ show startends
+										let visible_trace = concatMap to_branch trace
+											where
+											is_visible_branch :: [(Location,Location)] → Location → Bool
+											is_visible_branch locs lc = any (\(start,end) → start <= lc && lc < end) locs
+											to_branch (Condition (Right (branch,_))) | is_visible_branch startends (branchLocation branch) = [ branch ]
+											to_branch _ = []
+
 										let cov_branches = "\tDECISION POINTS (IN CONTROL FLOW ORDER):\n" ++ unlines (map (("\t"++).showBranch) visible_trace)
 										printLogV 1 cov_branches
 										printToSolutions cov_branches
 
 										when (checkSolutions && isJust mb_ret_type) $ checkSolutionM traceid resultdata >> return ()
 
+										(tas,covered) <- gets analysisStateCVS
 										all_branches <- gets allCondPointsCVS
 										let
 											traceanalysisresult :: TraceAnalysisResult = (traceid,res_line,visible_trace,resultdata)
+											nub_visible_trace = nub visible_trace
 											excess_branches = nub_visible_trace \\ all_branches
 										when (not $ null excess_branches) $ do
 											printCondPoints all_branches
 											myError $ "Branches " ++ show excess_branches ++ " are covered but are not in all_branches!"
-										modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],nub_visible_trace `union` covered) }
+										-- Are all the decision points are already covered? They can't, probably...?
+										-- If yes, this trace does not contribute to full coverage...
+										when (not $ null (nub_visible_trace \\ covered)) $
+											modify $ \ s → s { analysisStateCVS = (tas++[traceanalysisresult],nub_visible_trace `union` covered) }
 										return True
 			
 		where
@@ -2263,7 +2269,7 @@ transcribeExprM ϵs mb_target_ty expr = do
 	annotateTypesAndCastM :: [Env] → CExpr → Maybe Types → CovVecM CExprWithType
 	annotateTypesAndCastM ϵs cexpr mb_target_ty = logWrapper ["annotateTypesAndCastM",ren $ take 1 ϵs,ren cexpr,ren mb_target_ty] $ do
 		cexpr' <- annotate_types cexpr
-		liftIO $ printLog 0 $ "X annotateTypesAndCastM " ++ (render.pretty) cexpr ++ " :: " ++ show (extractTypes cexpr')
+		liftIO $ printLog 20 $ "X annotateTypesAndCastM " ++ (render.pretty) cexpr ++ " :: " ++ show (extractTypes cexpr')
 		return $ case mb_target_ty of
 			Just target_ty → mb_cast target_ty cexpr'
 			_ → cexpr'
@@ -2345,9 +2351,9 @@ transcribeExprM ϵs mb_target_ty expr = do
 		annotate_types (CMember pexpr member_ident False ni) = do
 			pexpr' <- annotate_types pexpr
 			mem_ty <- getMemberTypeM (extractType pexpr') member_ident
-			liftIO $ printLog 0 $ "Y mem_ty = " ++ show mem_ty
+			liftIO $ printLog 20 $ "Y mem_ty = " ++ show mem_ty
 			z3_mem_ty <- ty2Z3Type mem_ty
-			liftIO $ printLog 0 $ "Y z3_mem_ty = " ++ show z3_mem_ty
+			liftIO $ printLog 20 $ "Y z3_mem_ty = " ++ show z3_mem_ty
 			return $ CMember pexpr' member_ident False (ni,z3_mem_ty)
 
 		-- dummy, used when inferring types when constructing CStmt's
@@ -2680,7 +2686,7 @@ simplifyTraceM trace = everywhereM (mkM simplify) trace where
 	-- Simplify ((struct X *)(&x)) -> member  where x::struct X   ~>    x.member
 	simplify (CMember (ccast@(CCast _ (CUnary CAdrOp var@(CVar _ (_,(Z3_Ptr var_ty,_))) _) (_,(Z3_Ptr cast_target_ty,_)))) member True ni)
 		| cast_target_ty == var_ty = do
-			liftIO $ printLog 0 $ "simplify " ++ (render.pretty) ccast ++ "\nvar_ty = " ++ show var_ty ++ "\ncast_target_ty = " ++ show cast_target_ty
+			liftIO $ printLog 20 $ "simplify " ++ (render.pretty) ccast ++ "\nvar_ty = " ++ show var_ty ++ "\ncast_target_ty = " ++ show cast_target_ty
 			return $ CMember var member False ni
 
 	-- Convert cast of ptr to union with member
