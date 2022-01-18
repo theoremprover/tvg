@@ -93,7 +93,7 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "__muldf3" : (analyzerPath++"\\hightecconti\\tvg_mul_df.c") : [{-cutoffsOpt,-}htmlLogOpt,writeModelsOpt,findModeOpt]
+		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\tvg_mul_df.c") : [{-cutoffsOpt,findModeOpt-}htmlLogOpt,writeModelsOpt]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
 --		[] → "gcc" : "__pack_d" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df_double.i"]) ++ [cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
@@ -314,7 +314,7 @@ printTypes = False
 printLocations = False
 errorModelPath = analyzerPath </> "models"
 
-mAX_UNROLLS = 1
+mAX_UNROLLS = 3
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
 
 sizeConditionChunks = 4
@@ -1576,9 +1576,9 @@ createInterfaceFromExprM expr ty = evalStateT (createInterfaceFromExpr_WithEnvIt
 
 createInterfaceFromExpr_WithEnvItemsM :: CExprWithType → Type → CIFE
 createInterfaceFromExpr_WithEnvItemsM expr ty = do
-	lift $ printLogV 20 $ "### createInterfaceFromExpr_WithEnvItemsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty
+	lift $ printLogV 0 $ "### createInterfaceFromExpr_WithEnvItemsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty
 	z3_ty <- lift $ ty2Z3Type ty
-	lift $ printLogV 20 $ "###                                z3type = " ++ show z3_ty
+	lift $ printLogV 0 $ "###                                z3type = " ++ show z3_ty
 	ty' <- lift $ elimTypeDefsM ty
 	case ty' of
 
@@ -1934,7 +1934,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 				printLogV 1 $ msg
 				createBranches makeForWhileBranchName cond >>= unroll_loopM ( case mb_unrolling_depths of
 					Nothing → uNROLLING_STRATEGY
-					Just ns → ns )
+					Just ns → map fromIntegral ns )
 
 				where
 
@@ -2052,9 +2052,9 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 													[n_ident]
 													modelpath
 												return $ case mb_sol of
-													Nothing                 → (Nothing,"Found no solution for " ++ modelpath)
-													Just sol@[(_,IntVal n)] → (Just [n], "Found looping solution n = " ++ show sol)
-													_                       → (Nothing,"n_looping: Strange mb_sol=" ++ show mb_sol)
+													Nothing                     → (Nothing,"Found no solution for " ++ modelpath)
+													Just sol@[(_,IntegerVal n)] → (Just [fromIntegral n], "Found looping solution n = " ++ show sol)
+													_                           → (Nothing,"n_looping: Strange mb_sol=" ++ show mb_sol)
 											ass → return (Nothing,"infer_loopingsM: " ++ show ass ++ " is not assigning a constant.")
 	
 									other → return (Nothing,"body contains not exactly one assignment of a variable from the condition " ++ (render.pretty) cond ++ ":\n" ++
@@ -3146,7 +3146,21 @@ ty2Z3Type ty = do
 			Z3_Array <$> ty2Z3TypeOnly elem_ty <*> pure ( case arraysize of
 				ArraySize _ (CConst (CIntConst cint _)) → Just $ getCInteger cint
 				_                                       → Nothing )
-		TypeDefType (TypeDefRef _ ty _) _ _ → ty2Z3TypeOnly ty
+
+		-- In the typedef, there might be machine modes...!
+		TypeDefType (TypeDefRef _ innerty _) _ attribs → do
+			let cas = collect_attribs innerty attribs
+			z3ty <- ty2Z3TypeOnly cas
+			printLogV 0 $ "##### cas = " ++ show cas
+			return z3ty
+			where
+		  	collect_attribs (DirectType tyname quals attribs1) attribs2 =
+				DirectType tyname quals (nubAttributes $ mergeAttributes attribs1 attribs2)
+		  	collect_attribs (TypeDefType (TypeDefRef _ ty _) _ attribs1) attribs2 =
+		  		collect_attribs ty (nubAttributes $ mergeAttributes attribs1 attribs2)
+		  	collect_attribs ty attribs = error $ "collect_attribs: no DirectType or TypeDefType"
+			nubAttributes attribs = nubBy (\ a1 a2 -> to_mode a1 == to_mode a2) attribs
+
 		FunctionType (FunTypeIncomplete ret_type) _ → Z3_FunIncomplete <$> ty2Z3TypeOnly ret_type
 		FunctionType (FunType ret_type funparamdecls is_variadic) _ → do
 			let arg_types = for (map getVarDecl funparamdecls) $ \ (VarDecl _ _ ty) → ty
@@ -3185,10 +3199,10 @@ sizeofTy ty@(DirectType tyname _ attrs) = do
 			(TyLDouble,[])     → 128
 			other     → error $ "sizeofTy " ++ show other ++ " not implemented!"
 		other → error $ "sizeofTy: " ++ (render.pretty) ty ++ " is not implemented!"
-	where
-	to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = [mode]
-	to_mode (Attr (Ident "fardata" _ _) _ _) = []
-	to_mode attr = error $ "attrs2modes: unknown attr " ++ (render.pretty) attr
+
+to_mode (Attr (Ident "mode" _ _) [CVar (Ident mode _ _) _] _) = [mode]
+to_mode (Attr (Ident "fardata" _ _) _ _) = []
+to_mode attr = error $ "attrs2modes: unknown attr " ++ (render.pretty) attr
 
 sizeofZ3Ty :: Z3_Type → CovVecM Int
 sizeofZ3Ty z3ty = case z3ty of
@@ -3196,6 +3210,7 @@ sizeofZ3Ty z3ty = case z3ty of
 	Z3_Float   → sizeofTy $ DirectType (TyFloating TyFloat) noTypeQuals noAttributes
 	Z3_Double  → sizeofTy $ DirectType (TyFloating TyDouble) noTypeQuals noAttributes
 	Z3_LDouble → sizeofTy $ DirectType (TyFloating TyLDouble) noTypeQuals noAttributes
+	other      → myError $ "sizeofZ3Ty " ++ show z3ty
 
 z3Ty2SExpr :: Z3_Type → CovVecM SExpr
 z3Ty2SExpr ty = case ty of
@@ -3214,17 +3229,17 @@ z3Ty2SExpr ty = case ty of
 
 type Solution = [(String,SolutionVal)]
 
-data SolutionVal = IntVal Int | FloatVal (Word32,Float) | DoubleVal (Word64,Double) | PtrVal
+data SolutionVal = IntegerVal Integer | FloatVal (Word32,Float) | DoubleVal (Word64,Double) | PtrVal
 instance Show SolutionVal where
-	show (IntVal i) = show i
+	show (IntegerVal i) = show i
 	show (FloatVal (w,f)) | isNaN f = printf "NaN(0x%06x) = 0x%08x = %g" (w .&. (fromIntegral 0x7fffff)) w f
 	show (FloatVal (w,f)) = printf "%s = 0x%08x = %g" (showHFloat f "") w f
 	show (DoubleVal (w,d)) | isNaN d = printf "NaN(0x%013x) = 0x%016x = %g" (w .&. (fromIntegral 0xfffffffffffff)) w d
 	show (DoubleVal (w,d)) = printf "%s = 0x%016x = %g" (showHFloat d "") w d
 	show PtrVal = "<SOME_PTR>"
 instance Eq SolutionVal where
-	IntVal i1    == IntVal i2    = i1==i2
-	PtrVal       == PtrVal       = True
+	IntegerVal i1    == IntegerVal i2    = i1==i2
+	PtrVal           == PtrVal       = True
 	FloatVal (_,f1)  == FloatVal (_,f2) | isNaN f1 && isNaN f2 = True
 	FloatVal (_,f1)  == FloatVal (_,f2) | isInfinite f1 && isInfinite f2 = True
 	FloatVal (_,f1)  == FloatVal (_,f2) = abs (f2-f1) <= floatTolerance
@@ -3384,7 +3399,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 								'#':'x':hexdigits = val_string
 								[(i :: Integer,"")] = readHex hexdigits
 								in
-								IntVal $ case unsigned of
+								IntegerVal $ case unsigned of
 									True  → fromIntegral i
 									False → fromIntegral $ if i < 2^(size-1) then i else i - 2^size
 							Z3_Float → parseFloat val_string
@@ -3550,11 +3565,11 @@ checkSolutionM traceid resultdata@(model_string,Just (param_env0,ret_env0,soluti
 			DirectType (TyComp _) _ _ → return True
 			_ → do
 				let exec_result = case ty of
-					DirectType (TyIntegral _) _ _       → IntVal $ read s
+					DirectType (TyIntegral _) _ _       → IntegerVal $ read s
 					DirectType (TyFloating floatty) _ _ → case floatty of
 						TyFloat  → let [(w,"")] = readHex s in FloatVal (w,wordToFloat w)
 						TyDouble → let [(w,"")] = readHex s in DoubleVal (w,wordToDouble w)
-					DirectType (TyEnum _) _ _           → IntVal $ read s
+					DirectType (TyEnum _) _ _           → IntegerVal $ read s
 					_ → error $ "checkSolutionM: parsing type " ++ (render.pretty) ty ++ " of " ++ ident_s ++ " not implemented!"
 				let check_OK = exec_result == predicted_result
 				when (not check_OK) $ do

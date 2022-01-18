@@ -162,8 +162,7 @@ typedef struct
 
   union
     {
-      fractype ll;
-      halffractype l[2];
+      fractype lla;
     } fraction;
 } fp_number_type;
 
@@ -305,10 +304,10 @@ _fpmul_parts ( fp_number_type * a,
 
   {
     {
-      USItype nl = a->fraction.ll;
-      USItype nh = a->fraction.ll >> (4 * (8));
-      USItype ml = b->fraction.ll;
-      USItype mh = b->fraction.ll >> (4 * (8));
+      USItype nl = a->fraction.lla;
+      USItype nh = a->fraction.lla >> (4 * (8));
+      USItype ml = b->fraction.lla;
+      USItype mh = b->fraction.lla >> (4 * (8));
       UDItype pp_ll = (UDItype) ml * nl;
       UDItype pp_hl = (UDItype) mh * nl;
       UDItype pp_lh = (UDItype) ml * nh;
@@ -378,7 +377,7 @@ _fpmul_parts ( fp_number_type * a,
    high &= ~(fractype) 0xff;
  }
     }
-  tmp->fraction.ll = high;
+  tmp->fraction.lla = high;
   tmp->class = CLASS_NUMBER;
   return tmp;
 }
@@ -455,8 +454,8 @@ const fp_number_type *
 
 			a_normal_exp = a->normal_exp;
 			b_normal_exp = b->normal_exp;
-			a_fraction = a->fraction.ll;
-			b_fraction = b->fraction.ll;
+			a_fraction = a->fraction.lla;
+			b_fraction = b->fraction.lla;
 
 			diff = a_normal_exp - b_normal_exp;
 			sdiff = diff;
@@ -510,18 +509,18 @@ const fp_number_type *
 			{
 				tmp->sign = 0;
 				tmp->normal_exp = a_normal_exp;
-				tmp->fraction.ll = tfraction;
+				tmp->fraction.lla = tfraction;
 			}
 			else
 			{
 				tmp->sign = 1;
 				tmp->normal_exp = a_normal_exp;
-				tmp->fraction.ll = -tfraction;
+				tmp->fraction.lla = -tfraction;
 			}
 
-			while (tmp->fraction.ll < ((fractype) 1 << (52 + 8L)) && tmp->fraction.ll)
+			while (tmp->fraction.lla < ((fractype) 1 << (52 + 8L)) && tmp->fraction.lla)
 			{
-				tmp->fraction.ll <<= 1;
+				tmp->fraction.lla <<= 1;
 				tmp->normal_exp--;
 			}
 		}
@@ -529,13 +528,13 @@ const fp_number_type *
 		{
 			tmp->sign = a->sign;
 			tmp->normal_exp = a_normal_exp;
-			tmp->fraction.ll = a_fraction + b_fraction;
+			tmp->fraction.lla = a_fraction + b_fraction;
 		}
 		tmp->class = CLASS_NUMBER;
 
-		if (tmp->fraction.ll >= ((fractype) 1 << (52 + 1 + 8L)))
+		if (tmp->fraction.lla >= ((fractype) 1 << (52 + 1 + 8L)))
 		{
-		{ 	tmp->fraction.ll = (tmp->fraction.ll >> 1) | !!(tmp->fraction.ll &(((fractype) 1 << 1) - 1));
+		{ 	tmp->fraction.lla = (tmp->fraction.lla >> 1) | !!(tmp->fraction.lla &(((fractype) 1 << 1) - 1));
 			};
 			tmp->normal_exp++;
 		}
@@ -583,7 +582,7 @@ __unpack_d (FLO_union_type * src, fp_number_type * dst)
        dst->normal_exp--;
      }
 
-   dst->fraction.ll = fraction;
+   dst->fraction.lla = fraction;
  }
     }
   else if (!0
@@ -613,7 +612,7 @@ __unpack_d (FLO_union_type * src, fp_number_type * dst)
 
 
    fraction &= ~0x8000000000000LL;
-   dst->fraction.ll = fraction << 8L;
+   dst->fraction.lla = fraction << 8L;
  }
     }
   else
@@ -621,7 +620,7 @@ __unpack_d (FLO_union_type * src, fp_number_type * dst)
 
       dst->normal_exp = exp - 1023;
       dst->class = CLASS_NUMBER;
-      dst->fraction.ll = (fraction << 8L) | ((fractype)1<<(52 +8L));
+      dst->fraction.lla = (fraction << 8L) | ((fractype)1<<(52 +8L));
     }
 }
 
@@ -629,7 +628,7 @@ FLO_type
 __pack_d (const fp_number_type *src)
 {
   FLO_union_type dst;
-  fractype fraction = src->fraction.ll;
+  fractype fraction = src->fraction.lla;
   int sign = src->sign;
   int exp = 0;
 
