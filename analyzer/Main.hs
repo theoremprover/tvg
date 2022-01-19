@@ -82,6 +82,8 @@ showModelsOpt = "-showmodels"
 writeModelsOpt = "-writemodels"
 cutoffsOpt = "-cutoffs"
 noLoopInferenceOpt = "-noloopinference"
+writeASTOpt = "-writeAST"
+writeGlobalDeclsOpt = "-writeGlobalDecls"
 
 main :: IO ()
 main = do
@@ -93,7 +95,8 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\tvg_mul_df.c") : [{-cutoffsOpt,findModeOpt-}htmlLogOpt,writeModelsOpt]
+		[] → "gcc" : "__muldf3" : (analyzerPath++"\\hightecconti\\tvg_mul_df.c") : [{-cutoffsOpt-}findModeOpt,subfuncovOpt]
+--		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\tvg_mul_df.c") : [{-cutoffsOpt-}findModeOpt]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
 --		[] → "gcc" : "__pack_d" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df_double.i"]) ++ [cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
@@ -179,7 +182,7 @@ main = do
 						case ast of
 							Left err → myErrorIO $ show err
 							Right translunit@(CTranslUnit extdecls _) → do
-								when ("-writeAST" `elem` opts) $
+								when (writeASTOpt `elem` opts) $
 									writeFile (filename <.> "ast.html") $ genericToHTMLString translunit
 								return extdecls
 
@@ -219,7 +222,7 @@ main = do
 			myErrorIO $ errs_msg
 		Right ((globdecls,deftable),soft_errors) → do
 			when (not $ null soft_errors) $ putStrLn "Soft errors:" >> forM_ soft_errors print
-			when ("-writeGlobalDecls" `elem` opts) $
+			when (writeGlobalDeclsOpt `elem` opts) $
 				writeFile "globdecls.html" $ globdeclsToHTMLString globdecls
 
 			let coveragekind = if branchCovOpt `elem` opts then Branch_Coverage else MCDC_Coverage
@@ -1489,7 +1492,12 @@ getMembersM sueref = do
 
 elimTypeDefsM :: Type → CovVecM Type
 elimTypeDefsM directtype@(DirectType _ _ _) = pure directtype
-elimTypeDefsM (TypeDefType (TypeDefRef ident _ _) tyquals attrs) = lookupTypeDefM ident >>= elimTypeDefsM
+elimTypeDefsM typedef1@(TypeDefType (TypeDefRef ident _ _) _ attrs) = do
+	lookupTypeDefM ident >>= \case
+		typedef2@(TypeDefType tydefref quals attrs2) -> do
+		  	printLogV 20 $ "XXXX elimTypeDefsM " ++ ren typedef1 ++ "\n    -> " ++ ren typedef2
+			elimTypeDefsM (TypeDefType tydefref quals (mergeAttributes attrs attrs2))
+		ty' -> elimTypeDefsM ty'
 elimTypeDefsM (PtrType ty tyquals attrs) = PtrType <$> elimTypeDefsM ty <*> pure tyquals <*> pure attrs
 elimTypeDefsM (ArrayType ty size tyquals attrs) = ArrayType <$> elimTypeDefsM ty <*> pure size <*> pure tyquals <*> pure attrs
 elimTypeDefsM (FunctionType (FunType funty paramdecls bool) attrs) = FunctionType <$> (
@@ -1576,9 +1584,9 @@ createInterfaceFromExprM expr ty = evalStateT (createInterfaceFromExpr_WithEnvIt
 
 createInterfaceFromExpr_WithEnvItemsM :: CExprWithType → Type → CIFE
 createInterfaceFromExpr_WithEnvItemsM expr ty = do
-	lift $ printLogV 0 $ "### createInterfaceFromExpr_WithEnvItemsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty
+	lift $ printLogV 20 $ "### createInterfaceFromExpr_WithEnvItemsM " ++ (render.pretty) expr ++ " " ++ (render.pretty) ty
 	z3_ty <- lift $ ty2Z3Type ty
-	lift $ printLogV 0 $ "###                                z3type = " ++ show z3_ty
+	lift $ printLogV 20 $ "###                                z3type = " ++ show z3_ty
 	ty' <- lift $ elimTypeDefsM ty
 	case ty' of
 
@@ -3151,7 +3159,7 @@ ty2Z3Type ty = do
 		TypeDefType (TypeDefRef _ innerty _) _ attribs → do
 			let cas = collect_attribs innerty attribs
 			z3ty <- ty2Z3TypeOnly cas
-			printLogV 0 $ "##### cas = " ++ show cas
+			printLogV 20 $ "##### cas = " ++ show cas
 			return z3ty
 			where
 		  	collect_attribs (DirectType tyname quals attribs1) attribs2 =

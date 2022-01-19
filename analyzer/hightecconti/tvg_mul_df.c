@@ -3,9 +3,12 @@
 
 
 
-
-
-
+#ifdef MAN
+void solver_find()
+{
+printf("solver_find() encountered!\n");
+}
+#endif
 
 
 
@@ -134,7 +137,8 @@ typedef int CMPtype __attribute__ ((mode (__libgcc_cmp_return__)));
 
 typedef unsigned int UHItype __attribute__ ((mode (HI)));
 typedef unsigned int USItype __attribute__ ((mode (SI)));
-typedef unsigned int UDItype __attribute__ ((mode (DI)));
+//typedef unsigned long int UDItype __attribute__ ((mode (DI)));
+typedef unsigned long long int UDItype;
  typedef UDItype fractype;
  typedef USItype halffractype;
  typedef DFtype FLO_type;
@@ -323,7 +327,9 @@ _fpmul_parts ( fp_number_type * a,
       pp_hl = (UDItype)(USItype)ps_hh__ << (4 * (8));
       res0 = pp_ll + pp_hl;
       if (res0 < pp_ll)
- res2++;
+        {
+         res2++;
+        }
       res2 += (ps_hh__ >> (4 * (8))) + pp_hh;
       high = res2;
       low = res0;
@@ -336,9 +342,11 @@ _fpmul_parts ( fp_number_type * a,
   tmp->sign = a->sign != b->sign;
   while (high >= ((fractype)1<<(52 +1+8L)))
     {
+      solver_find();
       tmp->normal_exp++;
       if (high & 1)
          {
+           solver_find();
            low >>= 1;
            low |= 0x8000000000000000LL;
          }
@@ -356,6 +364,8 @@ _fpmul_parts ( fp_number_type * a,
 
   if (!0 && (high & 0xff) == 0x80)
     {
+      if((high & 0xff) == 0x80) solver_find();
+
       if (high & (1 << 8L))
  {
 
@@ -381,19 +391,6 @@ _fpmul_parts ( fp_number_type * a,
   tmp->class = CLASS_NUMBER;
   return tmp;
 }
-
-typedef float SFtype __attribute__((mode(SF)));
-typedef float DFtype __attribute__((mode(DF)));
-
-typedef int SItype __attribute__((mode(SI)));
-typedef int DItype __attribute__((mode(DI)));
-
-typedef unsigned int USItype __attribute__((mode(SI)));
-typedef unsigned int UDItype __attribute__((mode(DI)));
-typedef UDItype fractype;
-typedef USItype halffractype;
-typedef DFtype FLO_type;
-typedef DItype intfrac;
 
 const fp_number_type __thenan_df = { CLASS_SNAN, 0, 0,
 	{
@@ -761,6 +758,7 @@ __pack_d (const fp_number_type *src)
   return dst.value;
 }
 
+/*
 FLO_type
 __muldf3 (FLO_type arg_a, FLO_type arg_b)
 {
@@ -780,3 +778,126 @@ __muldf3 (FLO_type arg_a, FLO_type arg_b)
 
   return __pack_d (res);
 }
+*/
+
+fractype
+__muldf3 (FLO_type arg_a, FLO_type arg_b)
+{
+  fp_number_type a;
+  fp_number_type b;
+  fp_number_type tmp;
+  const fp_number_type *res;
+  FLO_union_type au, bu;
+
+  au.value = arg_a;
+  bu.value = arg_b;
+
+  __unpack_d (&au, &a);
+  __unpack_d (&bu, &b);
+
+  _fpmul_parts (&a, &b, &tmp);
+
+  return tmp.fraction.lla;
+}
+
+#ifdef MAN
+
+__attribute__((__cdecl__)) int printf(const char *, ...);
+__attribute__((__cdecl__)) int sscanf(const char *, const char *, ...);
+union { float float_val; unsigned long int uint_val; } float_conv;
+union { double double_val; unsigned long long int ulong_val; } double_conv;
+float u2f(unsigned long u)
+{
+float_conv.uint_val = u;
+return float_conv.float_val;
+}
+double u2d(unsigned long long u)
+{
+double_conv.ulong_val = u;
+return double_conv.double_val;
+}
+unsigned long f2u(float f)
+{
+float_conv.float_val = f;
+return float_conv.uint_val;
+}
+unsigned long long d2u(double f)
+{
+double_conv.double_val = f;
+return double_conv.ulong_val;
+}
+int solver_pragma(int x, ...)
+{
+return 1;
+}
+void solver_debug_Float(char *s, float x)
+{
+printf("DEBUG_VAL Float %s = %g = 0x%lx\n", s, x, f2u(x));
+}
+void solver_debug_Double(char *s, double x)
+{
+printf("DEBUG_VAL Double %s = %g = 0x%llx\n", s, x, d2u(x));
+}
+void solver_debug_UByte(char *s, unsigned char x)
+{
+printf("DEBUG_VAL UByte %s = %hhi = 0x%hhx\n", s, x, x);
+}
+void solver_debug_Short(char *s, short x)
+{
+printf("DEBUG_VAL Short %s = %hi = 0x%hx\n", s, x, x);
+}
+void solver_debug_UShort(char *s, unsigned short x)
+{
+printf("DEBUG_VAL UShort %s = %hu = 0x%hx\n", s, x, x);
+}
+void solver_debug_UInt(char *s, unsigned int x)
+{
+printf("DEBUG_VAL UInt %s = %u = 0x%x\n", s, x, x);
+}
+void solver_debug_Int(char *s, int x)
+{
+printf("DEBUG_VAL_Int %s = %i = 0x%lx\n", s, x, x);
+}
+void solver_debug_ULong(char *s, unsigned long x)
+{
+printf("DEBUG_VAL ULong %s = %lu = 0x%lx\n", s, x, x);
+}
+void solver_debug_Long(char *s, long x)
+{
+printf("DEBUG_VAL Long %s = %li = 0x%lx\n", s, x, x);
+}
+void solver_debug_ULongLong(char *s, unsigned long long x)
+{
+printf("DEBUG_VAL ULongLong %s = %llu = 0x%llx\n", s, x, x);
+}
+void solver_debug_LongLong(char *s, long long x)
+{
+printf("DEBUG_VAL LongLong %s = %lli = 0x%llx\n", s, x, x);
+}
+
+/*
+  fp_class_type class;
+  unsigned int sign;
+  int normal_exp;
+
+
+  union
+    {
+      fractype lla;
+    } fraction;
+*/
+void main(void)
+{
+    fp_number_type a = { 3,0,0,{ 4006005331805730806ULL } };
+    fp_number_type b = { 3,0,0,{ 17586381064309348604ULL } };
+    fp_number_type tmp;
+/*
+    double ad = __pack_d (&a);
+    double bd = __pack_d (&b);
+    solver_debug_Double("ad",ad);
+    solver_debug_Double("bd",bd);
+    __muldf3(ad,bd);
+*/
+    _fpmul_parts(&a,&b,&tmp);
+}
+#endif
