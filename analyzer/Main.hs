@@ -3293,7 +3293,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 					printLogV 20 $ "XXX replacing " ++ (render.pretty) oid ++ " by " ++ (render.pretty) bvid
 					return (bvid,ty)
 				False → return (oid,ty)
-		Just ty → return (oid,ty) 
+		Just ty → return (oid,ty)
 		_ → myError $ "output_idents: oid " ++ show oid ++ " not found in z3tyenv0" --return oid
 
 	-- prefix a "a_" for identifiers starting with underscore (Z3 does not like leading underscores...)
@@ -3309,7 +3309,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	-- appear in the constraints and assignments, or
 	-- are a_output_idents, or
 	-- ?
-	
+
 	let output_idents0ty = for output_idents0 $ \ ident -> (ident,fromJust $ lookup ident z3tyenv0)
 
 	let all_idents = nubBy (\ (a,_) (b,_) -> a==b) $ a_constraints_vars ++ a_output_idents ++ output_idents0ty
@@ -3328,15 +3328,22 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 					return [((bvident,Z3_BitVector bv_size True),SExprLine $ SOnOneLine eq_constraint)]
 				_ -> return []
 	let
-		(bvtyenv,eqconstraintsZ3) = unzip bvs
-		z3tyenv = bvtyenv ++ a_z3tyenv
+		(bvsenv,eqconstraintsZ3) = unzip bvs
+		z3tyenv = bvsenv ++ a_z3tyenv
 
+{-
 	let	create_decl (ident,_) = ident `elem` (map fst $ all_idents ++ bvtyenv)
 	varsZ3 :: [SCompound] <- concatForM (filter create_decl z3tyenv) $ \ (ident,ty) → do
 		printLogV 0 $ "XXX ident = " ++ (render.pretty) ident ++ "\n"
 		let varname = identToString ident
 		decl <- declConst2SExpr varname ty
 		return [ SExprLine (SOnOneLine decl) ]
+-}
+	varsZ3 :: [SCompound] <- forM (all_idents ++ bvsenv) $ \ (ident,ty) → do
+		printLogV 0 $ "XXX ident = " ++ (render.pretty) ident ++ "\n"
+		let varname = identToString ident
+		decl <- declConst2SExpr varname ty
+		return $ SExprLine (SOnOneLine decl)
 
 	-- create Z3 constraints
 	constraintsZ3 :: [SCompound] <- concatForM a_constraints expr2SCompounds
