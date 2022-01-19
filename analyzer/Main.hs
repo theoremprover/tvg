@@ -63,7 +63,7 @@ import Logging
 
 --------------
 
-fastMode :: Bool = True
+fastMode :: Bool = False
 
 dontShowDeclsInTrace :: Bool = True
 
@@ -95,7 +95,8 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "__muldf3" : (analyzerPath++"\\hightecconti\\tvg_mul_df.c") : [{-cutoffsOpt-}findModeOpt,subfuncovOpt]
+		[] → "gcc" : "__muldf3" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,findModeOpt,subfuncovOpt]
+--		[] → "gcc" : "__muldf3" : (analyzerPath++"\\hightecconti\\tvg_mul_df.c") : [{-cutoffsOpt-}findModeOpt,subfuncovOpt]
 --		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\tvg_mul_df.c") : [{-cutoffsOpt-}findModeOpt]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
@@ -1939,7 +1940,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 
 			CWhile cond body False ni → do
 				(mb_unrolling_depths,msg) <- infer_loopingsM cond body
-				printLogV 1 $ msg
+				printLogV 20 $ msg
 				createBranches makeForWhileBranchName cond >>= unroll_loopM ( case mb_unrolling_depths of
 					Nothing → uNROLLING_STRATEGY
 					Just ns → map fromIntegral ns )
@@ -2009,7 +2010,7 @@ unfoldTraces1M labelϵ mb_ret_type toplevel forks progress ϵs trace bstss@((CBl
 								let
 									body_assigns = foldl1 intersect (map (exists_once) body_traces_ass)
 									exists_once l = filter (\ e → length (filter (==e) l) == 1) l
-								printLogV 2 $ "body_assigns = \n" ++
+								printLogV 20 $ "body_assigns = \n" ++
 									intercalate " , " (map (\(a,b) → "(" ++ (render.pretty) a ++ " = " ++ (render.pretty) b ++ ")") body_assigns)
 	
 								case body_assigns :: [(CExprWithType,CExprWithType)] of
@@ -3279,7 +3280,6 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			Assignment (ArrayUpdate ident1 ident2 _ index) ass_expr → [ident1,ident2] ++ fvar index ++ fvar ass_expr
 			Comment _ → []
 
-	printLogV 20 $ "XXX output_idents0 = " ++ show (map (render.pretty) output_idents0)
 	-- For all floats, replace the float-Varname by the bitvector_Varname "bv$<floatvar>"
 	output_idents <- forM output_idents0 $ \ oid → case lookup oid z3tyenv0 of
 		-- if ty is floating point, add bv$fp :: Z3_BitVector size to tyenv and replace fp by bv$fp in output_idents
@@ -3299,8 +3299,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 		(a_constraints_vars,a_constraints,a_output_idents,a_z3tyenv) =
 			everywhere (mkT prefix_a) (constraints_vars,constraints,output_idents,z3tyenv0)
 
---	forM_ a_z3tyenv $ \ (ident,z3ty) -> printLogV 0 $ "### " ++ (render.pretty) ident ++ " :: " ++ show z3ty
-
+	forM_ a_z3tyenv $ \ (ident,z3ty) -> printLogV 0 $ "### " ++ (render.pretty) ident ++ " :: " ++ show z3ty ++ "\n"
 --	forM_ a_constraints_vars $ \ v -> printLogV 0 $ "*** " ++ (render.pretty) v
 
 	-- create declarations in the Z3 model for all variables from the z3tyenv that
@@ -3308,6 +3307,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	-- are a_output_idents, or
 	-- ?
 	let all_idents = nub $ a_constraints_vars ++ a_output_idents ++ output_idents0
+--	forM_ all_idents $ \ v -> printLogV 0 $ "*** " ++ (render.pretty) v ++ "\n"
 
 	bvs :: [((Ident,Z3_Type),SCompound)] <- concatForM all_idents $ \ ident → do
 		case stripBVPrefix ident of
@@ -3329,7 +3329,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 
 	let	create_decl (ident,_) = ident `elem` (all_idents ++ map fst bvtyenv)
 	varsZ3 :: [SCompound] <- concatForM (filter create_decl z3tyenv) $ \ (ident,ty) → do
-		printLogV 20 $ "XXX ident = " ++ (render.pretty) ident
+		printLogV 0 $ "XXX ident = " ++ (render.pretty) ident
 		let varname = identToString ident
 		decl <- declConst2SExpr varname ty
 		return [ SExprLine (SOnOneLine decl) ]
