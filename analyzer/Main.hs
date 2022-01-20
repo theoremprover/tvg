@@ -63,7 +63,7 @@ import Logging
 
 --------------
 
-fastMode :: Bool = False
+fastMode :: Bool = True
 
 dontShowDeclsInTrace :: Bool = True
 
@@ -3271,7 +3271,8 @@ prefix_a ident = ident
 
 makeAndSolveZ3ModelM :: [Int] → [(Ident,Z3_Type)] → [Constraint] → [SExpr] → [Ident] → String → CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_idents0 modelpathfile = do
-	forM_ z3tyenv0 $ \ (ident,z3ty) -> printLogV 0 $ "### " ++ (render.pretty) ident ++ " :: " ++ show z3ty ++ "\n"
+	printLogV 20 $ "### makeAndSolveZ3ModelM ########################\n"
+	forM_ z3tyenv0 $ \ (ident,z3ty) -> printLogV 20 $ "z3tyenv0: " ++ (render.pretty) ident ++ " :: " ++ show z3ty ++ "\n"
 
 	-- collect all variables that appear in the constraints and assignments
 	let
@@ -3281,6 +3282,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			Assignment (Normal lexpr@(CIndex _ _ _)) ass_expr → fvar lexpr ++ fvar ass_expr
 			Assignment (ArrayUpdate ident1 ident2 (arrty,_) index) ass_expr → [(ident1,arrty),(ident2,arrty)] ++ fvar index ++ fvar ass_expr
 			Comment _ → []
+	forM_ constraints_vars $ \ (v,vty) -> printLogV 0 $ "constraints_vars: " ++ (render.pretty) v ++ " :: " ++ (render.pretty) vty ++ "\n"
 
 	-- For all floats, replace the float-Varname by the bitvector_Varname "bv$<floatvar>"
 	output_idents <- forM output_idents0 $ \ oid → case lookup oid z3tyenv0 of
@@ -3295,6 +3297,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 				False → return (oid,ty)
 		Just ty → return (oid,ty)
 		_ → myError $ "output_idents: oid " ++ show oid ++ " not found in z3tyenv0" --return oid
+	forM_ output_idents $ \ (v,vty) -> printLogV 20 $ "output_idents: " ++ (render.pretty) v ++ " :: " ++ (render.pretty) vty ++ "\n"
 
 	-- prefix a "a_" for identifiers starting with underscore (Z3 does not like leading underscores...)
 	-- in constraints and output_idents
@@ -3312,8 +3315,9 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 
 	let output_idents0ty = for output_idents0 $ \ ident -> (ident,fromJust $ lookup ident z3tyenv0)
 
-	let all_idents = nubBy (\ (a,_) (b,_) -> a==b) $ a_constraints_vars ++ a_output_idents ++ output_idents0ty
-	forM_ all_idents $ \ v -> printLogV 0 $ "*** " ++ ren v ++ "\n"
+	let all_idents = filter (isNothing.stripBVPrefix.fst) $
+		nubBy (\ (a,_) (b,_) -> a==b) $ a_constraints_vars ++ a_output_idents ++ output_idents0ty
+	forM_ all_idents $ \ v -> printLogV 20 $ "all_idents: " ++ ren v ++ "\n"
 
 	bvs :: [((Ident,Z3_Type),SCompound)] <- concatForM all_idents $ \ (ident,ty) → do
 		case stripBVPrefix ident of
@@ -3330,17 +3334,10 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	let
 		(bvsenv,eqconstraintsZ3) = unzip bvs
 		z3tyenv = bvsenv ++ a_z3tyenv
+	forM_ bvs $ \ v -> printLogV 20 $ "bvs: " ++ ren v ++ "\n"
 
-{-
-	let	create_decl (ident,_) = ident `elem` (map fst $ all_idents ++ bvtyenv)
-	varsZ3 :: [SCompound] <- concatForM (filter create_decl z3tyenv) $ \ (ident,ty) → do
-		printLogV 0 $ "XXX ident = " ++ (render.pretty) ident ++ "\n"
-		let varname = identToString ident
-		decl <- declConst2SExpr varname ty
-		return [ SExprLine (SOnOneLine decl) ]
--}
 	varsZ3 :: [SCompound] <- forM (all_idents ++ bvsenv) $ \ (ident,ty) → do
-		printLogV 0 $ "XXX ident = " ++ (render.pretty) ident ++ "\n"
+		printLogV 20 $ "varsZ3: " ++ (render.pretty) ident
 		let varname = identToString ident
 		decl <- declConst2SExpr varname ty
 		return $ SExprLine (SOnOneLine decl)
@@ -3504,14 +3501,6 @@ solveTraceM mb_ret_type traceid trace = do
 	tyenv1 <- tyEnvFromTraceM trace
 	minimize <- isOptionSet minimizeOpt
 
-{-
-type TyEnvItem = (Ident,Type)
-instance Pretty TyEnvItem where
-	pretty (idnew,ty) = pretty idnew <+> text " :: " <+> pretty ty
-type EnvItem = (Ident,TyEnvItem)
-
-	retEnvCVS        :: Maybe [(EnvItem,CExprWithType)],
--}
 	(model_string,mb_sol) <- makeAndSolveZ3ModelM
 		traceid
 		(tyenv1 ++ debug_tyenv)
