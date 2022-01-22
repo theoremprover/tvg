@@ -12,112 +12,9 @@ printf("solver_find() encountered!\n");
 
 
 
-enum machine_mode
-{
-  VOIDmode,
-  BLKmode,
-  CCmode,
-  BImode,
-  QImode,
-  HImode,
-  SImode,
-  DImode,
-  TImode,
-  PDImode,
-  QQmode,
-  HQmode,
-  SQmode,
-  DQmode,
-  TQmode,
-  UQQmode,
-  UHQmode,
-  USQmode,
-  UDQmode,
-  UTQmode,
-  HAmode,
-  SAmode,
-  DAmode,
-  TAmode,
-  UHAmode,
-  USAmode,
-  UDAmode,
-  UTAmode,
-  HFmode,
-  SFmode,
-  DFmode,
-  SDmode,
-  DDmode,
-  TDmode,
-  CQImode,
-  CHImode,
-  CSImode,
-  CDImode,
-  CTImode,
-  HCmode,
-  SCmode,
-  DCmode,
-  MAX_MACHINE_MODE,
 
-  MIN_MODE_RANDOM = VOIDmode,
-  MAX_MODE_RANDOM = BLKmode,
-
-  MIN_MODE_CC = CCmode,
-  MAX_MODE_CC = CCmode,
-
-  MIN_MODE_INT = QImode,
-  MAX_MODE_INT = TImode,
-
-  MIN_MODE_PARTIAL_INT = PDImode,
-  MAX_MODE_PARTIAL_INT = PDImode,
-
-  MIN_MODE_FRACT = QQmode,
-  MAX_MODE_FRACT = TQmode,
-
-  MIN_MODE_UFRACT = UQQmode,
-  MAX_MODE_UFRACT = UTQmode,
-
-  MIN_MODE_ACCUM = HAmode,
-  MAX_MODE_ACCUM = TAmode,
-
-  MIN_MODE_UACCUM = UHAmode,
-  MAX_MODE_UACCUM = UTAmode,
-
-  MIN_MODE_FLOAT = HFmode,
-  MAX_MODE_FLOAT = DFmode,
-
-  MIN_MODE_DECIMAL_FLOAT = SDmode,
-  MAX_MODE_DECIMAL_FLOAT = TDmode,
-
-  MIN_MODE_COMPLEX_INT = CQImode,
-  MAX_MODE_COMPLEX_INT = CTImode,
-
-  MIN_MODE_COMPLEX_FLOAT = HCmode,
-  MAX_MODE_COMPLEX_FLOAT = DCmode,
-
-  MIN_MODE_VECTOR_INT = VOIDmode,
-  MAX_MODE_VECTOR_INT = VOIDmode,
-
-  MIN_MODE_VECTOR_FRACT = VOIDmode,
-  MAX_MODE_VECTOR_FRACT = VOIDmode,
-
-  MIN_MODE_VECTOR_UFRACT = VOIDmode,
-  MAX_MODE_VECTOR_UFRACT = VOIDmode,
-
-  MIN_MODE_VECTOR_ACCUM = VOIDmode,
-  MAX_MODE_VECTOR_ACCUM = VOIDmode,
-
-  MIN_MODE_VECTOR_UACCUM = VOIDmode,
-  MAX_MODE_VECTOR_UACCUM = VOIDmode,
-
-  MIN_MODE_VECTOR_FLOAT = VOIDmode,
-  MAX_MODE_VECTOR_FLOAT = VOIDmode,
-
-  NUM_MACHINE_MODES = MAX_MACHINE_MODE
-};
-
-       
 typedef float SFtype __attribute__ ((mode (SF)));
-typedef float DFtype __attribute__ ((mode (DF)));
+typedef double DFtype;
 
 
 
@@ -173,16 +70,6 @@ typedef struct
 typedef union
 {
   FLO_type value;
-  fractype value_raw;
-
-
-
-
-
-  halffractype words[2];
-
-
-
 
   struct
     {
@@ -191,6 +78,8 @@ typedef union
       unsigned int sign:1 __attribute__ ((packed));
     }
   bits;
+
+  unsigned long long int raw_value;
 }
 FLO_union_type;
 
@@ -542,14 +431,15 @@ void
 __unpack_d (FLO_union_type * src, fp_number_type * dst)
 {
 
-
-
   fractype fraction;
   int exp;
   int sign;
   fraction = src->bits.fraction;
   exp = src->bits.exp;
   sign = src->bits.sign;
+
+printf("__unpack_d: raw=%llx, fraction=%llx, exp=%llx, sign=%llx\n",src->raw_value,fraction,exp,sign);
+
   dst->sign = sign;
   if (exp == 0)
     {
@@ -620,6 +510,111 @@ __unpack_d (FLO_union_type * src, fp_number_type * dst)
       dst->fraction.lla = (fraction << 8L) | ((fractype)1<<(52 +8L));
     }
 }
+
+fractype
+__unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
+{
+
+  fractype fraction;
+  int exp;
+  int sign;
+  fraction = (src->raw_value) & ((1ULL<<52ULL)-1ULL) ;
+  exp = ((src->raw_value) >> 52) & ((1ULL<<11ULL)-1ULL);
+  sign = (src->raw_value) >> 63 ;
+
+/*
+  struct
+    {
+      fractype fraction:52 __attribute__ ((packed));
+      unsigned int exp:11 __attribute__ ((packed));
+      unsigned int sign:1 __attribute__ ((packed));
+    }
+  bits;
+*/
+printf("__unpack_d_drill: raw=%llx, fraction=%llx, exp=%i, sign=%i\n",src->raw_value,fraction,exp,sign);
+
+  dst->sign = sign;
+  if (exp == 0)
+    {
+
+      if (fraction == 0
+
+
+
+   )
+ {
+
+   dst->class = CLASS_ZERO;
+ }
+      else
+ {
+
+
+
+   dst->normal_exp = exp - 1023 + 1;
+   fraction <<= 8L;
+
+   dst->class = CLASS_NUMBER;
+
+   while (fraction < ((fractype)1<<(52 +8L)))
+     {
+       fraction <<= 1;
+       dst->normal_exp--;
+     }
+
+   dst->fraction.lla = fraction;
+ }
+    }
+  else if (!0
+    && __builtin_expect (exp == (0x7ff), 0))
+    {
+
+      if (fraction == 0)
+ {
+
+   dst->class = CLASS_INFINITY;
+ }
+      else
+ {
+
+
+
+
+   if (fraction & 0x8000000000000LL)
+
+     {
+       dst->class = CLASS_QNAN;
+     }
+   else
+     {
+       dst->class = CLASS_SNAN;
+     }
+
+
+   fraction &= ~0x8000000000000LL;
+   dst->fraction.lla = fraction << 8L;
+ }
+    }
+  else
+    {
+
+      dst->normal_exp = exp - 1023;
+      dst->class = CLASS_NUMBER;
+      dst->fraction.lla = (fraction << 8L) | ((fractype)1<<(52 +8L));
+    }
+
+    return(dst->fraction.lla);
+}
+
+/*
+  struct
+    {
+      fractype fraction:52 __attribute__ ((packed));
+      unsigned int exp:11 __attribute__ ((packed));
+      unsigned int sign:1 __attribute__ ((packed));
+    }
+  bits;
+*/
 
 FLO_type
 __pack_d (const fp_number_type *src)
@@ -752,9 +747,10 @@ __pack_d (const fp_number_type *src)
 
 
 
-  dst.bits.fraction = fraction;
-  dst.bits.exp = exp;
-  dst.bits.sign = sign;
+//  dst.bits.fraction = fraction;
+//  dst.bits.exp = exp;
+//  dst.bits.sign = sign;
+  dst.raw_value = fraction | (((fractype)exp)<<52) | ((fractype)sign<<63);
   return dst.value;
 }
 
@@ -891,6 +887,17 @@ void main(void)
     fp_number_type a = { 3,0,0,{ 4006005331805730806ULL } };
     fp_number_type b = { 3,0,0,{ 17586381064309348604ULL } };
     fp_number_type tmp;
+
+    FLO_union_type d; d.value = 3.141592e-3;
+    fp_number_type e1,e2;
+
+    __unpack_d_drill (&d, &e1);
+    printf("__unpack_d_drill(src->value = %llx, dst->class = %u, dst->sign = %u, dst->normal_exp = %i, dst->fraction.lla = %llu) = \n",d.raw_value, e1.class, e1.sign, e1.normal_exp, e1.fraction.lla);
+
+    __unpack_d (&d, &e2);
+    printf("__unpack_d(src->value = %llx, dst->class = %u, dst->sign = %u, dst->normal_exp = %i, dst->fraction.lla = %llu) = \n",d.raw_value, e2.class, e2.sign, e2.normal_exp, e2.fraction.lla);
+
+
 /*
     double ad = __pack_d (&a);
     double bd = __pack_d (&b);
@@ -898,6 +905,6 @@ void main(void)
     solver_debug_Double("bd",bd);
     __muldf3(ad,bd);
 */
-    _fpmul_parts(&a,&b,&tmp);
+//    _fpmul_parts(&a,&b,&tmp);
 }
 #endif

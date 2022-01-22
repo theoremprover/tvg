@@ -95,7 +95,7 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "__muldf3" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,findModeOpt,subfuncovOpt]
+		[] → "gcc" : "__unpack_d" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,{-findModeOpt,-}subfuncovOpt]
 --		[] → "gcc" : "__muldf3" : (analyzerPath++"\\hightecconti\\tvg_mul_df.c") : [{-cutoffsOpt-}findModeOpt,subfuncovOpt]
 --		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\tvg_mul_df.c") : [{-cutoffsOpt-}findModeOpt]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
@@ -3282,7 +3282,7 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			Assignment (Normal lexpr@(CIndex _ _ _)) ass_expr → fvar lexpr ++ fvar ass_expr
 			Assignment (ArrayUpdate ident1 ident2 (arrty,_) index) ass_expr → [(ident1,arrty),(ident2,arrty)] ++ fvar index ++ fvar ass_expr
 			Comment _ → []
-	forM_ constraints_vars $ \ (v,vty) -> printLogV 0 $ "constraints_vars: " ++ (render.pretty) v ++ " :: " ++ (render.pretty) vty ++ "\n"
+	forM_ constraints_vars $ \ (v,vty) -> printLogV 20 $ "constraints_vars: " ++ (render.pretty) v ++ " :: " ++ (render.pretty) vty ++ "\n"
 
 	-- For all floats, replace the float-Varname by the bitvector_Varname "bv$<floatvar>"
 	output_idents <- forM output_idents0 $ \ oid → case lookup oid z3tyenv0 of
