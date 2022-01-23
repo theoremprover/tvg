@@ -1,0 +1,50 @@
+---- Trace [2,2,2,2,2,2,1,1,1,1,2,2,2,2,1] -----------------------------------
+
+_fpmul_parts ( a = <SOME_PTR> , a_ARROW_class = 134742016 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_lla = 4006005331805730806 , b = <SOME_PTR> , b_ARROW_class = 671088640 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_lla = 17586381064309348604 , tmp = <SOME_PTR> , tmp_ARROW_class = 0 , tmp_ARROW_sign = 0 , tmp_ARROW_normal_exp = 0 , tmp_ARROW_fraction_DOT_lla = 0 )
+    = return_val = <SOME_PTR> , return_val_ARROW_class = 3 , return_val_ARROW_sign = 0 , return_val_ARROW_normal_exp = 5 , return_val_ARROW_fraction_DOT_lla = 1909581876055789312
+
+	DECISION POINTS (IN CONTROL FLOW ORDER):
+	Else branch 2 "if(isnan(a))" at line 267, col 7, len 9
+	Else branch 2 "if(isnan(b))" at line 272, col 7, len 9
+	Else branch 2 "if(isinf(a))" at line 277, col 7, len 9
+	Else branch 2 "if(isinf(b))" at line 284, col 7, len 9
+	Else branch 2 "if(iszero(a))" at line 293, col 7, len 10
+	Else branch 2 "if(iszero(b))" at line 298, col 7, len 10
+	Then branch 1 "if(ps_hh__ < pp_hl)" at line 319, col 11, len 15
+	Then branch 1 "if(res0 < pp_ll)" at line 326, col 11, len 12
+	Then branch 1 "for/while(high >= (fractype) 1 << 52 + 1 + 8L)" at line 338, col 10, len 33
+	Then branch 1 "if(high & 1)" at line 341, col 11, len 8
+	Else branch 2 "for/while(high >= (fractype) 1 << 52 + 1 + 8L)" at line 338, col 10, len 33
+	Else branch 2 "for/while(high < (fractype) 1 << 52 + 8L)" at line 348, col 10, len 30
+	Then branch 2 "(T&&T) in if(!0 && (high & 0xff) == 0x80)" at line 358, col 7, len 27
+	Else branch 2 "if(high & 1 << 8L)" at line 360, col 11, len 16
+	Then branch 1 "if(low)" at line 369, col 16, len 3
+
+checkSolutionM [2,2,2,2,2,2,1,1,1,1,2,2,2,2,1] ok.
+
+
+---- Trace [2,2,2,2,2,2,1,1,1,2,2,2,2,2,1] -----------------------------------
+
+_fpmul_parts ( a = <SOME_PTR> , a_ARROW_class = 262400 , a_ARROW_sign = 0 , a_ARROW_normal_exp = 0 , a_ARROW_fraction_DOT_lla = 4576285128444490292 , b = <SOME_PTR> , b_ARROW_class = 603979776 , b_ARROW_sign = 0 , b_ARROW_normal_exp = 0 , b_ARROW_fraction_DOT_lla = 14195082387203470111 , tmp = <SOME_PTR> , tmp_ARROW_class = 0 , tmp_ARROW_sign = 0 , tmp_ARROW_normal_exp = 0 , tmp_ARROW_fraction_DOT_lla = 0 )
+    = return_val = <SOME_PTR> , return_val_ARROW_class = 3 , return_val_ARROW_sign = 0 , return_val_ARROW_normal_exp = 5 , return_val_ARROW_fraction_DOT_lla = 1760764505812875008
+
+	DECISION POINTS (IN CONTROL FLOW ORDER):
+	Else branch 2 "if(isnan(a))" at line 267, col 7, len 9
+	Else branch 2 "if(isnan(b))" at line 272, col 7, len 9
+	Else branch 2 "if(isinf(a))" at line 277, col 7, len 9
+	Else branch 2 "if(isinf(b))" at line 284, col 7, len 9
+	Else branch 2 "if(iszero(a))" at line 293, col 7, len 10
+	Else branch 2 "if(iszero(b))" at line 298, col 7, len 10
+	Then branch 1 "if(ps_hh__ < pp_hl)" at line 319, col 11, len 15
+	Then branch 1 "if(res0 < pp_ll)" at line 326, col 11, len 12
+	Then branch 1 "for/while(high >= (fractype) 1 << 52 + 1 + 8L)" at line 338, col 10, len 33
+	Else branch 2 "if(high & 1)" at line 341, col 11, len 8
+	Else branch 2 "for/while(high >= (fractype) 1 << 52 + 1 + 8L)" at line 338, col 10, len 33
+	Else branch 2 "for/while(high < (fractype) 1 << 52 + 8L)" at line 348, col 10, len 30
+	Then branch 2 "(T&&T) in if(!0 && (high & 0xff) == 0x80)" at line 358, col 7, len 27
+	Else branch 2 "if(high & 1 << 8L)" at line 360, col 11, len 16
+	Then branch 1 "if(low)" at line 369, col 16, len 3
+
+checkSolutionM [2,2,2,2,2,2,1,1,1,2,2,2,2,2,1] ok.
+
+
