@@ -95,8 +95,8 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "__unpack_d" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,{-findModeOpt,-}subfuncovOpt]
---		[] → "gcc" : "__muldf3" : (analyzerPath++"\\hightecconti\\tvg_mul_df.c") : [{-cutoffsOpt-}findModeOpt,subfuncovOpt]
+		[] → "gcc" : "__unpack_d_drill" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,subfuncovOpt]
+--		[] → "gcc" : "__mymuldf3" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,findModeOpt,subfuncovOpt]
 --		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\tvg_mul_df.c") : [{-cutoffsOpt-}findModeOpt]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
@@ -2987,7 +2987,14 @@ expr2SCompounds traceelem = case traceelem of
 					( Z3_BitVector size_from True, Z3_BitVector size_to _ ) | size_from < size_to →
 						return $ SExpr [ SExpr [ SLeaf "_", SLeaf "zero_extend", SLeaf $ show (size_to-size_from) ], sexpr ]
 
-					( Z3_Float, Z3_BitVector size_to is_unsigned ) → do
+					( Z3_Float, Z3_BitVector 32 True ) | CVar ident _ <- subexpr → do
+						return $ SLeaf $ makeFloatBVVarName (identToString ident)
+					( Z3_Double, Z3_BitVector 64 True ) | CVar ident _ <- subexpr → do
+						return $ SLeaf $ makeFloatBVVarName (identToString ident)
+					( Z3_BitVector 32 True, Z3_Float )  → return $ SExpr [ _𝓉𝑜_𝒻𝓅 64, sexpr ]
+					( Z3_BitVector 64 True, Z3_Double ) → return $ SExpr [ _𝓉𝑜_𝒻𝓅 64, sexpr ]
+
+					( floatty, Z3_BitVector size_to is_unsigned ) | floatty `elem` [Z3_Float,Z3_Double] → do
 						return $ SExpr [ SExpr [ SLeaf "_", fp_to, SLeaf (show size_to) ], SLeaf roundingMode, sexpr ]
 						where
 						fp_to = SLeaf $ if is_unsigned then "fp.to_ubv" else "fp.to_sbv"
@@ -3002,11 +3009,8 @@ expr2SCompounds traceelem = case traceelem of
 						-- casting has no direction for Z3, so we can re-use cast_2arr with switched arguments here
 						cast_2arr sexpr to_ty arr_ty
 
-					( Z3_Float, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_2arr sexpr Z3_Float arr_ty
-
-					( Z3_Double, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_2arr sexpr Z3_Double arr_ty
-
-					( Z3_LDouble, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) → cast_2arr sexpr Z3_LDouble arr_ty
+					( floatty, arr_ty@(Z3_Array (Z3_BitVector 16 True) _ )) | floatty `elem` [Z3_Float,Z3_Double,Z3_LDouble] →
+						cast_2arr sexpr floatty arr_ty
 
 					(from_ty,to_ty) → lift $ do
 						sfrom <- sizeofZ3Ty from_ty

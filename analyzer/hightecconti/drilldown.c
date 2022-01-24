@@ -4,6 +4,79 @@
 
 
 #ifdef MAN
+__attribute__((__cdecl__)) int printf(const char *, ...);
+__attribute__((__cdecl__)) int sscanf(const char *, const char *, ...);
+union { float float_val; unsigned long int uint_val; } float_conv;
+union { double double_val; unsigned long long int ulong_val; } double_conv;
+float u2f(unsigned long u)
+{
+float_conv.uint_val = u;
+return float_conv.float_val;
+}
+double u2d(unsigned long long u)
+{
+double_conv.ulong_val = u;
+return double_conv.double_val;
+}
+unsigned long f2u(float f)
+{
+float_conv.float_val = f;
+return float_conv.uint_val;
+}
+unsigned long long d2u(double f)
+{
+double_conv.double_val = f;
+return double_conv.ulong_val;
+}
+int solver_pragma(int x, ...)
+{
+return 1;
+}
+void solver_debug_Float(char *s, float x)
+{
+printf("DEBUG_VAL Float %s = %g = 0x%lx\n", s, x, f2u(x));
+}
+void solver_debug_Double(char *s, double x)
+{
+printf("DEBUG_VAL Double %s = %g = 0x%llx\n", s, x, d2u(x));
+}
+void solver_debug_UByte(char *s, unsigned char x)
+{
+printf("DEBUG_VAL UByte %s = %hhi = 0x%hhx\n", s, x, x);
+}
+void solver_debug_Short(char *s, short x)
+{
+printf("DEBUG_VAL Short %s = %hi = 0x%hx\n", s, x, x);
+}
+void solver_debug_UShort(char *s, unsigned short x)
+{
+printf("DEBUG_VAL UShort %s = %hu = 0x%hx\n", s, x, x);
+}
+void solver_debug_UInt(char *s, unsigned int x)
+{
+printf("DEBUG_VAL UInt %s = %u = 0x%x\n", s, x, x);
+}
+void solver_debug_Int(char *s, int x)
+{
+printf("DEBUG_VAL_Int %s = %i = 0x%lx\n", s, x, x);
+}
+void solver_debug_ULong(char *s, unsigned long x)
+{
+printf("DEBUG_VAL ULong %s = %lu = 0x%lx\n", s, x, x);
+}
+void solver_debug_Long(char *s, long x)
+{
+printf("DEBUG_VAL Long %s = %li = 0x%lx\n", s, x, x);
+}
+void solver_debug_ULongLong(char *s, unsigned long long x)
+{
+printf("DEBUG_VAL ULongLong %s = %llu = 0x%llx\n", s, x, x);
+}
+void solver_debug_LongLong(char *s, long long x)
+{
+printf("DEBUG_VAL LongLong %s = %lli = 0x%llx\n", s, x, x);
+}
+
 void solver_find()
 {
 printf("solver_find() encountered!\n");
@@ -14,6 +87,7 @@ printf("solver_find() encountered!\n");
 
 
 typedef float SFtype __attribute__ ((mode (SF)));
+//typedef float DFtype __attribute__ ((mode (DF)));
 typedef double DFtype;
 
 
@@ -69,8 +143,10 @@ typedef struct
 
 typedef union
 {
+  unsigned long long int raw_value;
   FLO_type value;
 
+/*
   struct
     {
       fractype fraction:52 __attribute__ ((packed));
@@ -78,8 +154,7 @@ typedef union
       unsigned int sign:1 __attribute__ ((packed));
     }
   bits;
-
-  unsigned long long int raw_value;
+*/
 }
 FLO_union_type;
 
@@ -427,6 +502,7 @@ const fp_number_type *
 		return tmp;
 	}
 
+/*
 void
 __unpack_d (FLO_union_type * src, fp_number_type * dst)
 {
@@ -510,16 +586,18 @@ printf("__unpack_d: raw=%llx, fraction=%llx, exp=%llx, sign=%llx\n",src->raw_val
       dst->fraction.lla = (fraction << 8L) | ((fractype)1<<(52 +8L));
     }
 }
+*/
 
 fractype
 __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
 {
 
+    solver_debug_ULongLong("src->raw_value",src->raw_value);
   fractype fraction;
   int exp;
   int sign;
-  fraction = (src->raw_value) & ((1ULL<<52ULL)-1ULL) ;
-  exp = ((src->raw_value) >> 52) & ((1ULL<<11ULL)-1ULL);
+  fraction = (src->raw_value) & (0x000fffffffffffffULL) ;
+  exp = ((src->raw_value) >> 52) & (0x7ffULL);
   sign = (src->raw_value) >> 63 ;
 
 /*
@@ -531,69 +609,65 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
     }
   bits;
 */
-printf("__unpack_d_drill: raw=%llx, fraction=%llx, exp=%i, sign=%i\n",src->raw_value,fraction,exp,sign);
 
   dst->sign = sign;
   if (exp == 0)
     {
 
-      if (fraction == 0
+         if (fraction == 0
+           )
+         {
 
-
-
-   )
- {
-
-   dst->class = CLASS_ZERO;
- }
+           dst->class = CLASS_ZERO;
+         }
       else
- {
+         {
 
 
 
-   dst->normal_exp = exp - 1023 + 1;
-   fraction <<= 8L;
+           dst->normal_exp = exp - 1023 + 1;
+           fraction <<= 8L;
 
-   dst->class = CLASS_NUMBER;
+           dst->class = CLASS_NUMBER;
 
-   while (fraction < ((fractype)1<<(52 +8L)))
-     {
-       fraction <<= 1;
-       dst->normal_exp--;
-     }
+           while (fraction < ((fractype)1<<(52 +8L)))
+             {
+               fraction <<= 1;
+               dst->normal_exp--;
+             }
 
-   dst->fraction.lla = fraction;
- }
+           dst->fraction.lla = fraction;
+         }
     }
   else if (!0
     && __builtin_expect (exp == (0x7ff), 0))
     {
 
       if (fraction == 0)
- {
+     {
 
-   dst->class = CLASS_INFINITY;
- }
+       dst->class = CLASS_INFINITY;
+     }
       else
- {
-
-
-
-
-   if (fraction & 0x8000000000000LL)
-
      {
-       dst->class = CLASS_QNAN;
-     }
-   else
-     {
-       dst->class = CLASS_SNAN;
-     }
 
 
-   fraction &= ~0x8000000000000LL;
-   dst->fraction.lla = fraction << 8L;
- }
+
+
+       if (fraction & 0x8000000000000LL)
+
+         {
+           dst->class = CLASS_QNAN;
+         }
+       else
+         {
+           dst->class = CLASS_SNAN;
+         }
+
+
+       fraction &= ~0x8000000000000LL;
+       dst->fraction.lla = fraction << 8L;
+     }
     }
   else
     {
@@ -616,6 +690,7 @@ printf("__unpack_d_drill: raw=%llx, fraction=%llx, exp=%i, sign=%i\n",src->raw_v
   bits;
 */
 
+/*
 FLO_type
 __pack_d (const fp_number_type *src)
 {
@@ -747,6 +822,153 @@ __pack_d (const fp_number_type *src)
 
 
 
+  dst.bits.fraction = fraction;
+  dst.bits.exp = exp;
+  dst.bits.sign = sign;
+  return dst.value;
+}
+*/
+
+FLO_type
+__pack_d_drill (const fp_number_type *src)
+{
+  FLO_union_type dst;
+  fractype fraction = src->fraction.lla;
+  int sign = src->sign;
+  int exp = 0;
+
+  if (0 && (isnan (src) || isinf (src)))
+    {
+
+
+
+      exp = (0x7ff);
+      fraction = ((fractype) 1 << 52) - 1;
+    }
+  else if (isnan (src))
+    {
+      exp = (0x7ff);
+
+      fraction >>= 8L;
+      fraction &= 0x8000000000000LL - 1;
+      if (src->class == CLASS_QNAN || 1)
+ {
+
+
+
+
+
+
+
+   fraction |= 0x8000000000000LL;
+
+ }
+    }
+  else if (isinf (src))
+    {
+      exp = (0x7ff);
+      fraction = 0;
+    }
+  else if (iszero (src))
+    {
+      exp = 0;
+      fraction = 0;
+    }
+  else if (fraction == 0)
+    {
+        solver_find();
+      exp = 0;
+    }
+  else
+    {
+      if (__builtin_expect (src->normal_exp < (-(1023)+1), 0))
+ {
+   int shift = (-(1023)+1) - src->normal_exp;
+
+   exp = 0;
+
+   if (shift > 64 - 8L)
+     {
+
+       fraction = 0;
+     }
+   else
+     {
+       int lowbit = (fraction & (((fractype)1 << shift) - 1)) ? 1 : 0;
+       fraction = (fraction >> shift) | lowbit;
+     }
+   if ((fraction & 0xff) == 0x80)
+     {
+       if ((fraction & (1 << 8L)))
+       {
+            solver_find();
+            fraction += 0x7f + 1;
+        }
+     }
+   else
+     {
+
+       fraction += 0x7f;
+     }
+
+
+   if (fraction >= ((fractype)1<<(52 +8L)))
+     {
+        solver_find();
+       exp += 1;
+     }
+   fraction >>= 8L;
+
+ }
+      else if (!0
+        && __builtin_expect (src->normal_exp > 1023, 0))
+ {
+   exp = (0x7ff);
+   fraction = 0;
+ }
+      else
+ {
+   exp = src->normal_exp + 1023;
+   if (!0)
+     {
+
+
+
+       if ((fraction & 0xff) == 0x80)
+      {
+        if (fraction & (1 << 8L))
+        {
+            solver_find();
+          fraction += 0x7f + 1;
+        }
+      }
+       else
+      {
+
+        fraction += 0x7f;
+      }
+       if (fraction >= ((fractype)1<<(52 +1+8L)))
+  {
+    solver_find();
+    fraction >>= 1;
+    exp += 1;
+  }
+     }
+   fraction >>= 8L;
+
+   if (0 && exp > (0x7ff))
+     {
+
+       exp = (0x7ff);
+       fraction = ((fractype) 1 << 52) - 1;
+     }
+ }
+    }
+
+
+
+
+
 //  dst.bits.fraction = fraction;
 //  dst.bits.exp = exp;
 //  dst.bits.sign = sign;
@@ -776,100 +998,8 @@ __muldf3 (FLO_type arg_a, FLO_type arg_b)
 }
 */
 
-fractype
-__muldf3 (FLO_type arg_a, FLO_type arg_b)
-{
-  fp_number_type a;
-  fp_number_type b;
-  fp_number_type tmp;
-  const fp_number_type *res;
-  FLO_union_type au, bu;
-
-  au.value = arg_a;
-  bu.value = arg_b;
-
-  __unpack_d (&au, &a);
-  __unpack_d (&bu, &b);
-
-  _fpmul_parts (&a, &b, &tmp);
-
-  return tmp.fraction.lla;
-}
-
 #ifdef MAN
 
-__attribute__((__cdecl__)) int printf(const char *, ...);
-__attribute__((__cdecl__)) int sscanf(const char *, const char *, ...);
-union { float float_val; unsigned long int uint_val; } float_conv;
-union { double double_val; unsigned long long int ulong_val; } double_conv;
-float u2f(unsigned long u)
-{
-float_conv.uint_val = u;
-return float_conv.float_val;
-}
-double u2d(unsigned long long u)
-{
-double_conv.ulong_val = u;
-return double_conv.double_val;
-}
-unsigned long f2u(float f)
-{
-float_conv.float_val = f;
-return float_conv.uint_val;
-}
-unsigned long long d2u(double f)
-{
-double_conv.double_val = f;
-return double_conv.ulong_val;
-}
-int solver_pragma(int x, ...)
-{
-return 1;
-}
-void solver_debug_Float(char *s, float x)
-{
-printf("DEBUG_VAL Float %s = %g = 0x%lx\n", s, x, f2u(x));
-}
-void solver_debug_Double(char *s, double x)
-{
-printf("DEBUG_VAL Double %s = %g = 0x%llx\n", s, x, d2u(x));
-}
-void solver_debug_UByte(char *s, unsigned char x)
-{
-printf("DEBUG_VAL UByte %s = %hhi = 0x%hhx\n", s, x, x);
-}
-void solver_debug_Short(char *s, short x)
-{
-printf("DEBUG_VAL Short %s = %hi = 0x%hx\n", s, x, x);
-}
-void solver_debug_UShort(char *s, unsigned short x)
-{
-printf("DEBUG_VAL UShort %s = %hu = 0x%hx\n", s, x, x);
-}
-void solver_debug_UInt(char *s, unsigned int x)
-{
-printf("DEBUG_VAL UInt %s = %u = 0x%x\n", s, x, x);
-}
-void solver_debug_Int(char *s, int x)
-{
-printf("DEBUG_VAL_Int %s = %i = 0x%lx\n", s, x, x);
-}
-void solver_debug_ULong(char *s, unsigned long x)
-{
-printf("DEBUG_VAL ULong %s = %lu = 0x%lx\n", s, x, x);
-}
-void solver_debug_Long(char *s, long x)
-{
-printf("DEBUG_VAL Long %s = %li = 0x%lx\n", s, x, x);
-}
-void solver_debug_ULongLong(char *s, unsigned long long x)
-{
-printf("DEBUG_VAL ULongLong %s = %llu = 0x%llx\n", s, x, x);
-}
-void solver_debug_LongLong(char *s, long long x)
-{
-printf("DEBUG_VAL LongLong %s = %lli = 0x%llx\n", s, x, x);
-}
 
 /*
   fp_class_type class;
@@ -884,27 +1014,42 @@ printf("DEBUG_VAL LongLong %s = %lli = 0x%llx\n", s, x, x);
 */
 void main(void)
 {
+/*
     fp_number_type a = { 3,0,0,{ 4006005331805730806ULL } };
     fp_number_type b = { 3,0,0,{ 17586381064309348604ULL } };
     fp_number_type tmp;
+*/
 
     FLO_union_type d; d.value = 3.141592e-3;
+    printf("d.value=%f\n",d.value);
+
     fp_number_type e1,e2;
 
     __unpack_d_drill (&d, &e1);
-    printf("__unpack_d_drill(src->value = %llx, dst->class = %u, dst->sign = %u, dst->normal_exp = %i, dst->fraction.lla = %llu) = \n",d.raw_value, e1.class, e1.sign, e1.normal_exp, e1.fraction.lla);
+    printf("__unpack_d_drill(d.raw_value = %llx, dst->class = %u, dst->sign = %u, dst->normal_exp = %i,\n  dst->fraction.lla = %llx = %llu) = \n",d.raw_value, e1.class, e1.sign, e1.normal_exp, e1.fraction.lla,e1.fraction.lla);
 
-    __unpack_d (&d, &e2);
-    printf("__unpack_d(src->value = %llx, dst->class = %u, dst->sign = %u, dst->normal_exp = %i, dst->fraction.lla = %llu) = \n",d.raw_value, e2.class, e2.sign, e2.normal_exp, e2.fraction.lla);
-
-
-/*
-    double ad = __pack_d (&a);
-    double bd = __pack_d (&b);
-    solver_debug_Double("ad",ad);
-    solver_debug_Double("bd",bd);
-    __muldf3(ad,bd);
-*/
-//    _fpmul_parts(&a,&b,&tmp);
+    double ad = __pack_d_drill (&e1);
+    printf("__pack_d_drill(e1) = %f\n",ad);
 }
 #endif
+
+fractype
+__mymuldf3 (FLO_type arg_a, FLO_type arg_b)
+{
+  fp_number_type a;
+  fp_number_type b;
+  fp_number_type tmp;
+  const fp_number_type *res;
+  FLO_union_type au, bu;
+
+  au.value = arg_a;
+  bu.value = arg_b;
+
+  __unpack_d_drill (&au, &a);
+  __unpack_d_drill (&bu, &b);
+
+  res = _fpmul_parts (&a, &b, &tmp);
+
+  return (a.fraction.lla); //__pack_d_drill(res);
+}
+
