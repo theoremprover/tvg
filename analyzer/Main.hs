@@ -3400,9 +3400,9 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			printLogV 0 timeout_txt
 			liftIO $ printToSolutions timeout_txt
 			liftIO $ writeFile (errorModelPath </> "TIMEOUT_" ++ show traceid ++ ".smtlib2") model_string
-			return (model_string_linenumbers,Nothing)
-		"unsat"   : _ → return (model_string_linenumbers,Nothing)
-		"unknown" : _ → return (model_string_linenumbers,Nothing)
+			return (model_string,Nothing)
+		"unsat"   : _ → return (model_string,Nothing)
+		"unknown" : _ → return (model_string,Nothing)
 		"sat" : rest → do
 			sol_params <- forM (zip a_output_idents rest) $ \ ((ident0,ty0),line) → do
 				let
@@ -3428,13 +3428,13 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 							Z3_Ptr _ → PtrVal
 							other → error $ "case ty2Z3Type " ++ show other ++ " not implemented" )
 					_ → myError $ "Parsing z3 output: Could not find " ++ is
-			return (model_string_linenumbers,Just sol_params)
+			return (model_string,Just sol_params)
 		_ → do
 			let err_msg = "Execution of " ++ z3FilePath ++ " failed:\n" ++ output ++ "\n\n" ++ "Model is\n" ++ model_string_linenumbers
 			printLogV 0 err_msg
 			liftIO $ writeFile modelpathfile model_string
 			whenOptionSet noHaltOnVerificationErrorOpt False $ myError err_msg
-			return (model_string_linenumbers,Nothing)
+			return (model_string,Nothing)
 
 escapeDollars :: String → String
 escapeDollars s = concat $ for s $ \case '$' → "\\$"; c → [c]
