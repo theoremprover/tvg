@@ -526,14 +526,6 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
       dst->class = CLASS_NUMBER;
       dst->fraction.lla = (fraction << 8L) | ((fractype)1<<(52 +8L));
     }
-
-	if(dst->fraction.lla == 18057938842667572570ULL &&
-		dst->normal_exp == 0 &&
-		dst->sign == 0 &&
-		dst->class == CLASS_NUMBER)
-	{
-		solver_find(5);
-	}
 /*
 typedef struct
 {
