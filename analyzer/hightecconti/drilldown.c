@@ -77,18 +77,9 @@ void solver_debug_LongLong(char *s, long long x)
 printf("DEBUG_VAL LongLong %s = %lli = 0x%llx\n", s, x, x);
 }
 
-int found_new = -1;
-
-int founds[20] = { 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0 };
-
-void solver_find(int i)
+void solver_find()
 {
-if(founds[i]==0)
-{
-	printf("solver_find(%i)\n",i);
-	found_new = i;
-	founds[i]++;
-}
+printf("solver_find() encountered! \n");
 }
 #endif
 
@@ -96,7 +87,8 @@ if(founds[i]==0)
 
 
 typedef float SFtype __attribute__ ((mode (SF)));
-typedef float DFtype __attribute__ ((mode (DF)));
+//typedef float DFtype __attribute__ ((mode (DF)));
+typedef double DFtype;
 
 
 
@@ -116,7 +108,8 @@ typedef int CMPtype __attribute__ ((mode (__libgcc_cmp_return__)));
 
 typedef unsigned int UHItype __attribute__ ((mode (HI)));
 typedef unsigned int USItype __attribute__ ((mode (SI)));
-typedef unsigned long int UDItype __attribute__ ((mode (DI)));
+//typedef unsigned long int UDItype __attribute__ ((mode (DI)));
+typedef unsigned long long int UDItype;
  typedef UDItype fractype;
  typedef USItype halffractype;
  typedef DFtype FLO_type;
@@ -150,10 +143,10 @@ typedef struct
 
 typedef union
 {
+  unsigned long long int raw_value;
   FLO_type value;
 
-  unsigned long long int raw_value;
-
+/*
   struct
     {
       fractype fraction:52 __attribute__ ((packed));
@@ -161,6 +154,7 @@ typedef union
       unsigned int sign:1 __attribute__ ((packed));
     }
   bits;
+*/
 }
 FLO_union_type;
 
@@ -292,7 +286,7 @@ _fpmul_parts ( fp_number_type * a,
       if (ps_hh__ < pp_hl)
          {
             res2 += (UDItype)1 << (4 * (8));
-            solver_find(0);
+            solver_find();
          }
       pp_hl = (UDItype)(USItype)ps_hh__ << (4 * (8));
       res0 = pp_ll + pp_hl;
@@ -312,15 +306,17 @@ _fpmul_parts ( fp_number_type * a,
   tmp->sign = a->sign != b->sign;
   while (high >= ((fractype)1<<(52 +1+8L)))
     {
-      solver_find(1);
       tmp->normal_exp++;
       if (high & 1)
          {
-           solver_find(2);
+           solver_find();
            low >>= 1;
            low |= 0x8000000000000000LL;
          }
-         else solver_find(3);
+         else
+         {
+            solver_find();
+		}
       high >>= 1;
     }
   while (high < ((fractype)1<<(52 +8L)))
@@ -335,7 +331,7 @@ _fpmul_parts ( fp_number_type * a,
 
   if (!0 && (high & 0xff) == 0x80)
     {
-      if((high & 0xff) == 0x80) solver_find(4);
+      if((high & 0xff) == 0x80) solver_find();
 
       if (high & (1 << 8L))
  {
@@ -370,147 +366,6 @@ const fp_number_type __thenan_df = { CLASS_SNAN, 0, 0,
 };
 
 /*
-static
-const fp_number_type *
-	_fpadd_parts(fp_number_type *a,
-		fp_number_type *b,
-		fp_number_type *tmp)
-	{
-		intfrac tfraction;
-
-		int a_normal_exp;
-		int b_normal_exp;
-		fractype a_fraction;
-		fractype b_fraction;
-
-		if (isnan(a))
-		{
-			return a;
-		}
-		if (isnan(b))
-		{
-			return b;
-		}
-		if (isinf(a))
-		{
-
-			if (isinf(b) && a->sign != b->sign)
-				return makenan();
-			return a;
-		}
-		if (isinf(b))
-		{
-			return b;
-		}
-		if (iszero(b))
-		{
-			if (iszero(a))
-			{ 	*tmp = *a;
-				tmp->sign = a->sign &b->sign;
-				return tmp;
-			}
-			return a;
-		}
-		if (iszero(a))
-		{
-			return b;
-		}
-
-		{
-
-			int diff;
-			int sdiff;
-
-			a_normal_exp = a->normal_exp;
-			b_normal_exp = b->normal_exp;
-			a_fraction = a->fraction.lla;
-			b_fraction = b->fraction.lla;
-
-			diff = a_normal_exp - b_normal_exp;
-			sdiff = diff;
-
-			if (diff < 0)
-				diff = -diff;
-			if (diff < 64)
-			{
-				if (sdiff > 0)
-				{
-					b_normal_exp += diff;
-					{
-						b_fraction = (b_fraction >> diff) | !!(b_fraction &(((fractype) 1 << diff) - 1));
-					};
-				}
-				else if (sdiff < 0)
-				{
-					a_normal_exp += diff;
-					{
-						a_fraction = (a_fraction >> diff) | !!(a_fraction &(((fractype) 1 << diff) - 1));
-					};
-				}
-			}
-			else
-			{
-
-				if (a_normal_exp > b_normal_exp)
-				{
-					b_normal_exp = a_normal_exp;
-					b_fraction = 0;
-				}
-				else
-				{
-					a_normal_exp = b_normal_exp;
-					a_fraction = 0;
-				}
-			}
-		}
-
-		if (a->sign != b->sign)
-		{
-			if (a->sign)
-			{
-				tfraction = -a_fraction + b_fraction;
-			}
-			else
-			{
-				tfraction = a_fraction - b_fraction;
-			}
-			if (tfraction >= 0)
-			{
-				tmp->sign = 0;
-				tmp->normal_exp = a_normal_exp;
-				tmp->fraction.lla = tfraction;
-			}
-			else
-			{
-				tmp->sign = 1;
-				tmp->normal_exp = a_normal_exp;
-				tmp->fraction.lla = -tfraction;
-			}
-
-			while (tmp->fraction.lla < ((fractype) 1 << (52 + 8L)) && tmp->fraction.lla)
-			{
-				tmp->fraction.lla <<= 1;
-				tmp->normal_exp--;
-			}
-		}
-		else
-		{
-			tmp->sign = a->sign;
-			tmp->normal_exp = a_normal_exp;
-			tmp->fraction.lla = a_fraction + b_fraction;
-		}
-		tmp->class = CLASS_NUMBER;
-
-		if (tmp->fraction.lla >= ((fractype) 1 << (52 + 1 + 8L)))
-		{
-		{ 	tmp->fraction.lla = (tmp->fraction.lla >> 1) | !!(tmp->fraction.lla &(((fractype) 1 << 1) - 1));
-			};
-			tmp->normal_exp++;
-		}
-		return tmp;
-	}
-*/
-
 void
 __unpack_d (FLO_union_type * src, fp_number_type * dst)
 {
@@ -522,7 +377,7 @@ __unpack_d (FLO_union_type * src, fp_number_type * dst)
   exp = src->bits.exp;
   sign = src->bits.sign;
 
-//printf("__unpack_d: raw=%llx, fraction=%llx, exp=%llx, sign=%llx\n",src->raw_value,fraction,exp,sign);
+printf("__unpack_d: raw=%llx, fraction=%llx, exp=%llx, sign=%llx\n",src->raw_value,fraction,exp,sign);
 
   dst->sign = sign;
   if (exp == 0)
@@ -594,19 +449,29 @@ __unpack_d (FLO_union_type * src, fp_number_type * dst)
       dst->fraction.lla = (fraction << 8L) | ((fractype)1<<(52 +8L));
     }
 }
+*/
 
-/*
 fractype
 __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
 {
 
-//    solver_debug_ULongLong("src->raw_value[0]",src->raw_value[0]);
+    solver_debug_ULongLong("src->raw_value",src->raw_value);
   fractype fraction;
   int exp;
   int sign;
-  fraction = (src->raw_value[0]) & (0x000fffffffffffffULL) ;
-  exp = ((src->raw_value[0]) >> 52) & (0x7ffULL);
-  sign = (src->raw_value[0]) >> 63 ;
+  fraction = (src->raw_value) & (0x000fffffffffffffULL) ;
+  exp = ((src->raw_value) >> 52) & (0x7ffULL);
+  sign = (src->raw_value) >> 63 ;
+
+/*
+  struct
+    {
+      fractype fraction:52 __attribute__ ((packed));
+      unsigned int exp:11 __attribute__ ((packed));
+      unsigned int sign:1 __attribute__ ((packed));
+    }
+  bits;
+*/
 
   dst->sign = sign;
   if (exp == 0)
@@ -677,7 +542,6 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
 
     return(dst->fraction.lla);
 }
-*/
 
 /*
   struct
@@ -689,6 +553,7 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
   bits;
 */
 
+/*
 FLO_type
 __pack_d (const fp_number_type *src)
 {
@@ -737,7 +602,6 @@ __pack_d (const fp_number_type *src)
   else if (fraction == 0)
     {
       exp = 0;
-      solver_find(5);
     }
   else
     {
@@ -760,11 +624,7 @@ __pack_d (const fp_number_type *src)
    if ((fraction & 0xff) == 0x80)
      {
        if ((fraction & (1 << 8L)))
-       {
-       solver_find(6);
-        fraction += 0x7f + 1;
-        }
-        else solver_find(7);
+  fraction += 0x7f + 1;
      }
    else
      {
@@ -775,7 +635,6 @@ __pack_d (const fp_number_type *src)
 
    if (fraction >= ((fractype)1<<(52 +8L)))
      {
-     solver_find(8);
        exp += 1;
      }
    fraction >>= 8L;
@@ -798,10 +657,7 @@ __pack_d (const fp_number_type *src)
        if ((fraction & 0xff) == 0x80)
   {
     if (fraction & (1 << 8L))
-      { fraction += 0x7f + 1;
-      solver_find(9);
-      }
-      else solver_find(10);
+      fraction += 0x7f + 1;
   }
        else
   {
@@ -810,7 +666,6 @@ __pack_d (const fp_number_type *src)
   }
        if (fraction >= ((fractype)1<<(52 +1+8L)))
   {
-  solver_find(11);
     fraction >>= 1;
     exp += 1;
   }
@@ -835,8 +690,8 @@ __pack_d (const fp_number_type *src)
   dst.bits.sign = sign;
   return dst.value;
 }
+*/
 
-/*
 FLO_type
 __pack_d_drill (const fp_number_type *src)
 {
@@ -884,7 +739,7 @@ __pack_d_drill (const fp_number_type *src)
     }
   else if (fraction == 0)
     {
-        solver_find(4);
+        solver_find();
       exp = 0;
     }
   else
@@ -909,8 +764,12 @@ __pack_d_drill (const fp_number_type *src)
      {
        if ((fraction & (1 << 8L)))
        {
-            solver_find(5);
+            solver_find();
             fraction += 0x7f + 1;
+        }
+        else
+        {
+            solver_find();
         }
      }
    else
@@ -922,7 +781,7 @@ __pack_d_drill (const fp_number_type *src)
 
    if (fraction >= ((fractype)1<<(52 +8L)))
      {
-        solver_find(6);
+        solver_find();
        exp += 1;
      }
    fraction >>= 8L;
@@ -946,8 +805,12 @@ __pack_d_drill (const fp_number_type *src)
       {
         if (fraction & (1 << 8L))
         {
-            solver_find(7);
+            solver_find();
           fraction += 0x7f + 1;
+        }
+        else
+        {
+            solver_find();
         }
       }
        else
@@ -957,7 +820,7 @@ __pack_d_drill (const fp_number_type *src)
       }
        if (fraction >= ((fractype)1<<(52 +1+8L)))
   {
-    solver_find(8);
+    solver_find();
     fraction >>= 1;
     exp += 1;
   }
@@ -980,11 +843,11 @@ __pack_d_drill (const fp_number_type *src)
 //  dst.bits.fraction = fraction;
 //  dst.bits.exp = exp;
 //  dst.bits.sign = sign;
-  dst.raw_value[0] = fraction | (((fractype)exp)<<52) | ((fractype)sign<<63);
+  dst.raw_value = fraction | (((fractype)exp)<<52) | ((fractype)sign<<63);
   return dst.value;
 }
-*/
 
+/*
 FLO_type
 __muldf3 (FLO_type arg_a, FLO_type arg_b)
 {
@@ -1004,27 +867,6 @@ __muldf3 (FLO_type arg_a, FLO_type arg_b)
 
   return __pack_d (res);
 }
-
-/*
-FLO_type
-__mymuldf3 (FLO_type arg_a, FLO_type arg_b)
-{
-  fp_number_type a;
-  fp_number_type b;
-  fp_number_type tmp;
-  const fp_number_type *res;
-  FLO_union_type au, bu;
-
-  au.value = arg_a;
-  bu.value = arg_b;
-
-  __unpack_d_drill (&au, &a);
-  __unpack_d_drill (&bu, &b);
-
-  res = _fpmul_parts (&a, &b, &tmp);
-
-  return (__pack_d(res));
-}
 */
 
 #ifdef MAN
@@ -1041,7 +883,6 @@ __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
       fractype lla;
     } fraction;
 */
-
 void main(void)
 {
 /*
@@ -1050,30 +891,36 @@ void main(void)
     fp_number_type tmp;
 */
 
-    FLO_union_type a,b;
+    FLO_union_type d; d.value = 3.141592e-3;
+    printf("d.value=%f\n",d.value);
 
-    unsigned long long int MAX = 1ULL<<52 - 1;
-	unsigned long long int stepi = 50, stepj = 1000000;
+    fp_number_type e1,e2;
 
-    for(unsigned long long int i=0;i<(1<<11)-1;i+=stepi)
-    {
-        a.value = 3.14159265;
-        a.bits.exp = i;
-        for(unsigned long long int j=0;j<MAX;j+=stepj)
-        {
-            if(j%(10000000*stepj)==0) printf("%llu/%llu      \r",i,j);
-            b.value = 3.14159265;
-			b.bits.fraction = j;
+    __unpack_d_drill (&d, &e1);
+    printf("__unpack_d_drill(d.raw_value = %llx, dst->class = %u, dst->sign = %u, dst->normal_exp = %i,\n  dst->fraction.lla = %llx = %llu) = \n",d.raw_value, e1.class, e1.sign, e1.normal_exp, e1.fraction.lla,e1.fraction.lla);
 
-            found_new = -1;
-            __muldf3(a.value,b.value);
-            if(found_new>=0)
-            {
-                FLO_union_type au,bu;
-                printf("FOUND %i: a = %f = %16.16llx , b = %f = %16.16llx\n",found_new,a.value,a.raw_value,b.value,b.raw_value);
-            }
-        }
-    }
+    double ad = __pack_d_drill (&e1);
+    printf("__pack_d_drill(e1) = %f\n",ad);
 }
 #endif
+
+fractype
+__mymuldf3 (FLO_type arg_a, FLO_type arg_b)
+{
+  fp_number_type a;
+  fp_number_type b;
+  fp_number_type tmp;
+  const fp_number_type *res;
+  FLO_union_type au, bu;
+
+  au.value = arg_a;
+  bu.value = arg_b;
+
+  __unpack_d_drill (&au, &a);
+  __unpack_d_drill (&bu, &b);
+
+  res = _fpmul_parts (&a, &b, &tmp);
+
+  return (a.fraction.lla); //__pack_d_drill(res);
+}
 

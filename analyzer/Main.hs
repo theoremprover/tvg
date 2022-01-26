@@ -95,9 +95,9 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "__unpack_d_drill" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,subfuncovOpt]
+--		[] → "gcc" : "__unpack_d_drill" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,subfuncovOpt]
 --		[] → "gcc" : "__mymuldf3" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,findModeOpt,subfuncovOpt]
---		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\tvg_mul_df.c") : [{-cutoffsOpt-}findModeOpt]
+		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}findModeOpt]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
 --		[] → "gcc" : "__pack_d" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df_double.i"]) ++ [cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
@@ -3570,6 +3570,7 @@ checkSolutionM traceid resultdata@(model_string,Just (param_env0,ret_env0,soluti
 	when (findmode && not (solverFindMagicString `isInfixOf` stdout)) $ do
 		let errtxt = "\nsolver_find() not called!"
 		printToSolutions errtxt
+		liftIO $ writeFile (errorModelPath </> "ERROR_" ++ show traceid <.> ".smtlib2") model_string
 		modify $ \ s → s { verificationErrsCVS = verificationErrsCVS s + 1 }
 		case nohalt of
 			False → myError errtxt
