@@ -2151,12 +2151,19 @@ eqConstraintsM expr ty = do
 	union_eq_constraints sueref is_ptr = do
 		((ident_0,member_ty_0) : ident_types) <- getMembersM sueref
 		ident_0_ty <- ty2Z3Type member_ty_0
-		forM ident_types $ \ (ident_i,member_ty_i) -> do
+		concatForM ident_types $ \ (ident_i,member_ty_i) -> do
 			ident_i_ty <- ty2Z3Type member_ty_i
-			return $ Assignment (Normal $ CMember expr ident_0 is_ptr (undefNode,ident_0_ty)) $
+			mb_float_cond <- return [] {- case (fst ident_i_ty) `elem` [Z3_Float,Z3_Double,Z3_LDouble] of
+				False -> return []
+				True  -> do
+					bv_z3ty <- sizeofZ3Ty (fst ident_i_ty) >>= sizeToIntTypeM >>= ty2Z3Type
+					let bv_ident = internalIdent $ makeFloatBVVarName (lValueToVarName expr)
+					return [ Condition $ Left (CVar bv_ident (undefNode,bv_z3ty) ,
+						CMember expr ident_0 is_ptr (undefNode,ident_0_ty) ) ] -}
+			return $ mb_float_cond ++ [ Assignment (Normal $ CMember expr ident_0 is_ptr (undefNode,ident_0_ty)) $
 				CCast (CDecl [] [] (undefNode,ident_0_ty))
 					( CMember expr ident_i is_ptr (undefNode,ident_i_ty) )
-					(undefNode,ident_0_ty)
+					(undefNode,ident_0_ty) ]
 {-
 			return $ Condition $ Left
 				(CMember expr ident_0 is_ptr (undefNode,ident_0_ty),
