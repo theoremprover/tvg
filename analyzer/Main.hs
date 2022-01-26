@@ -95,9 +95,9 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] → "gcc" : "__unpack_d_drill" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,subfuncovOpt]
---		[] → "gcc" : "__mymuldf3" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,findModeOpt,subfuncovOpt]
-		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}findModeOpt]
+--		[] → "gcc" : "__unpack_d_drill" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,findModeOpt,subfuncovOpt]
+		[] → "gcc" : "__mymuldf3" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noHaltOnVerificationErrorOpt,noIndentLogOpt,findModeOpt,subfuncovOpt]
+--		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}minimizeOpt,writeModelsOpt,findModeOpt]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
 --		[] → "gcc" : "__pack_d" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df_double.i"]) ++ [cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
@@ -318,7 +318,7 @@ printTypes = False
 printLocations = False
 errorModelPath = analyzerPath </> "models"
 
-mAX_UNROLLS = 3
+mAX_UNROLLS = 10
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
 
 sizeConditionChunks = 4

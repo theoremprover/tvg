@@ -77,11 +77,12 @@ void solver_debug_LongLong(char *s, long long x)
 printf("DEBUG_VAL LongLong %s = %lli = 0x%llx\n", s, x, x);
 }
 
-void solver_find()
+void solver_find(int i)
 {
-printf("solver_find() encountered! \n");
+printf("solver_find() encountered! %i\n",i);
 }
 #endif
+
 
 
 
@@ -125,10 +126,6 @@ typedef enum
 
 typedef struct
 {
-
-
-
-
 
   fp_class_type class;
   unsigned int sign;
@@ -286,7 +283,7 @@ _fpmul_parts ( fp_number_type * a,
       if (ps_hh__ < pp_hl)
          {
             res2 += (UDItype)1 << (4 * (8));
-            solver_find();
+            solver_find(1);
          }
       pp_hl = (UDItype)(USItype)ps_hh__ << (4 * (8));
       res0 = pp_ll + pp_hl;
@@ -309,13 +306,13 @@ _fpmul_parts ( fp_number_type * a,
       tmp->normal_exp++;
       if (high & 1)
          {
-           solver_find();
+           solver_find(2);
            low >>= 1;
            low |= 0x8000000000000000LL;
          }
          else
          {
-            solver_find();
+            solver_find(3);
 		}
       high >>= 1;
     }
@@ -331,7 +328,7 @@ _fpmul_parts ( fp_number_type * a,
 
   if (!0 && (high & 0xff) == 0x80)
     {
-      if((high & 0xff) == 0x80) solver_find();
+      if((high & 0xff) == 0x80) solver_find(4);
 
       if (high & (1 << 8L))
  {
@@ -463,16 +460,6 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
   exp = ((src->raw_value) >> 52) & (0x7ffULL);
   sign = (src->raw_value) >> 63 ;
 
-/*
-  struct
-    {
-      fractype fraction:52 __attribute__ ((packed));
-      unsigned int exp:11 __attribute__ ((packed));
-      unsigned int sign:1 __attribute__ ((packed));
-    }
-  bits;
-*/
-
   dst->sign = sign;
   if (exp == 0)
     {
@@ -540,18 +527,30 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
       dst->fraction.lla = (fraction << 8L) | ((fractype)1<<(52 +8L));
     }
 
+	if(dst->fraction.lla == 18057938842667572570ULL &&
+		dst->normal_exp == 0 &&
+		dst->sign == 0 &&
+		dst->class == CLASS_NUMBER)
+	{
+		solver_find(5);
+	}
+/*
+typedef struct
+{
+
+  fp_class_type class;
+  unsigned int sign;
+  int normal_exp;
+
+  union
+    {
+      fractype lla;
+    } fraction;
+} fp_number_type;
+*/
     return(dst->fraction.lla);
 }
 
-/*
-  struct
-    {
-      fractype fraction:52 __attribute__ ((packed));
-      unsigned int exp:11 __attribute__ ((packed));
-      unsigned int sign:1 __attribute__ ((packed));
-    }
-  bits;
-*/
 
 /*
 FLO_type
@@ -739,7 +738,7 @@ __pack_d_drill (const fp_number_type *src)
     }
   else if (fraction == 0)
     {
-        solver_find();
+        solver_find(6);
       exp = 0;
     }
   else
@@ -764,12 +763,12 @@ __pack_d_drill (const fp_number_type *src)
      {
        if ((fraction & (1 << 8L)))
        {
-            solver_find();
+            solver_find(7);
             fraction += 0x7f + 1;
         }
         else
         {
-            solver_find();
+            solver_find(8);
         }
      }
    else
@@ -781,7 +780,7 @@ __pack_d_drill (const fp_number_type *src)
 
    if (fraction >= ((fractype)1<<(52 +8L)))
      {
-        solver_find();
+        solver_find(9);
        exp += 1;
      }
    fraction >>= 8L;
@@ -805,12 +804,12 @@ __pack_d_drill (const fp_number_type *src)
       {
         if (fraction & (1 << 8L))
         {
-            solver_find();
+            solver_find(10);
           fraction += 0x7f + 1;
         }
         else
         {
-            solver_find();
+            solver_find(11);
         }
       }
        else
@@ -820,7 +819,7 @@ __pack_d_drill (const fp_number_type *src)
       }
        if (fraction >= ((fractype)1<<(52 +1+8L)))
   {
-    solver_find();
+    solver_find(12);
     fraction >>= 1;
     exp += 1;
   }
@@ -869,41 +868,6 @@ __muldf3 (FLO_type arg_a, FLO_type arg_b)
 }
 */
 
-#ifdef MAN
-
-
-/*
-  fp_class_type class;
-  unsigned int sign;
-  int normal_exp;
-
-
-  union
-    {
-      fractype lla;
-    } fraction;
-*/
-void main(void)
-{
-/*
-    fp_number_type a = { 3,0,0,{ 4006005331805730806ULL } };
-    fp_number_type b = { 3,0,0,{ 17586381064309348604ULL } };
-    fp_number_type tmp;
-*/
-
-    FLO_union_type d; d.value = 3.141592e-3;
-    printf("d.value=%f\n",d.value);
-
-    fp_number_type e1,e2;
-
-    __unpack_d_drill (&d, &e1);
-    printf("__unpack_d_drill(d.raw_value = %llx, dst->class = %u, dst->sign = %u, dst->normal_exp = %i,\n  dst->fraction.lla = %llx = %llu) = \n",d.raw_value, e1.class, e1.sign, e1.normal_exp, e1.fraction.lla,e1.fraction.lla);
-
-    double ad = __pack_d_drill (&e1);
-    printf("__pack_d_drill(e1) = %f\n",ad);
-}
-#endif
-
 fractype
 __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
 {
@@ -923,4 +887,93 @@ __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
 
   return (a.fraction.lla); //__pack_d_drill(res);
 }
+
+#ifdef MAN
+
+
+/*
+  fp_class_type class;
+  unsigned int sign;
+  int normal_exp;
+
+
+  union
+    {
+      fractype lla;
+    } fraction;
+*/
+void main(void)
+{
+	FLO_union_type f0a,f0b;
+	f0a.raw_value = 4607182418815746050;
+	f0b.raw_value = 4607182418800017408;
+	__mymuldf3(f0a.value,f0b.value);
+
+    fp_number_type fp_a = { 3,0,0,{  1152921508633379328ULL } };
+    fp_number_type fp_b = { 3,0,0,{ 18446744073709551601ULL } };
+    fp_number_type tmp;
+	fp_number_type ea,eb;
+
+	//_fpmul_parts(&fp_a, &fp_b, &tmp);
+
+	double xa,xb;
+	xa = __pack_d_drill(&fp_a);
+	xb = __pack_d_drill(&fp_b);
+	//printf("a=%g\n",a);
+
+	FLO_union_type fua,fub;
+	fua.value = xa;
+	fub.value = xb;
+    __unpack_d_drill (&fua, &ea);
+    __unpack_d_drill (&fub, &eb);
+	printf("ea.sign=%i,ea.exp=%i,ea.fraction=%llu,\nfua.raw_value=%llu\n",ea.sign,ea.normal_exp,ea.fraction.lla,fua.raw_value);
+	printf("eb.sign=%i,eb.exp=%i,eb.fraction=%llu,\nfub.raw_value=%llu\n",eb.sign,eb.normal_exp,eb.fraction.lla,fub.raw_value);
+
+
+/*
+
+    fp_number_type tmp;
+
+	double a;
+	a = __pack_d_drill(&fp_a);
+	FLO_union_type fua;
+	fua.value = a;
+	printf("a=%g, fua.raw_value=%llx\n",a,fua.raw_value);
+
+	fp_number_type e1;
+    __unpack_d_drill (&fua, &e1);
+	printf("e1.sign=%i,e1.exp=%i,e1.fraction=%llu\n",e1.sign,e1.normal_exp,e1.fraction.lla);
+*/
+/*
+	FLO_union_type a;
+	a.value = ?;
+
+	fp_number_type e1;
+    __unpack_d_drill (&a, &e1);
+
+	printf("e1.
+*/
+/*
+FLO_type
+__pack_d (const fp_number_type *src)
+
+fractype
+__unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
+*/
+/*
+    FLO_union_type d; d.value = 3.141592e-3;
+    printf("d.value=%f\n",d.value);
+
+    fp_number_type e1,e2;
+
+    __unpack_d_drill (&d, &e1);
+    printf("__unpack_d_drill(d.raw_value = %llx, dst->class = %u, dst->sign = %u, dst->normal_exp = %i,\n  dst->fraction.lla = %llx = %llu) = \n",d.raw_value, e1.class, e1.sign, e1.normal_exp, e1.fraction.lla,e1.fraction.lla);
+
+    double ad = __pack_d_drill (&e1);
+    printf("__pack_d_drill(e1) = %f\n",ad);
+*/
+}
+#endif
+
+
 
