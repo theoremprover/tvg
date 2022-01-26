@@ -1050,14 +1050,88 @@ void main(void)
     fp_number_type tmp;
 */
 
-    FLO_union_type a,b;
+    FLO_union_type au,bu;
+	
+	unsigned long long int cnt = 0;
+
+	double stepa = 1e20;
+	double stepb = stepa;
+	for(double a = 1e-308;a<1e308;a+=stepa)
+	{
+		for(double b = 1e-308;b<1e308;b+=stepb)
+		{
+			au.value = a;
+			bu.value = b;
+			if((cnt++)%10000000 == 0) printf("%g / %g     \r",a,b);
+			
+			found_new = -1;
+			__muldf3(a,b);
+			if(found_new>=0)
+			{
+				printf("FOUND %i: a = %g = %16.16llx , b = %g = %16.16llx\n\n",found_new,a,au.raw_value,b,bu.raw_value);
+			}
+			
+		}
+	}
+/*
+	unsigned int stepexpa = 50;
+	for(unsigned int expa=0;expa<(1<<11);expa+=stepexpa)
+	{
+		a.bits.exp = expa;
+							
+		for(unsigned int signa=0;signa<=1;signa++)
+		{
+			a.bits.sign = signa;
+			
+			unsigned long long stepfraca = 10000000, FRACAMAX = 1ULL<<52;
+			for(unsigned long long fraca=0;fraca<=FRACAMAX-stepfraca;fraca+=stepfraca)
+			{
+				a.bits.fraction = fraca;
+				
+				printf("%f %%     \r",(double)fraca*100/FRACAMAX);
+				
+				unsigned int stepexpb = 50;
+				for(unsigned int expb=0;expb<(1<<11);expb+=stepexpb)
+				{
+					b.bits.exp = expb;
+					
+					for(unsigned int signb=0;signb<=1;signb++)
+					{
+						b.bits.sign = signb;
+
+						unsigned long long stepfracb = 100000000, FRACBMAX = 1ULL<<52;
+						for(unsigned long long fracb=0;fracb<=FRACBMAX-stepfracb;fracb+=stepfracb)
+						{
+							b.bits.fraction = fracb;
+
+							// if(((fraca*stepfraca)%1000000)==0) printf("%f %%     \r",(double)fraca*(double)fracb*100/((double)FRACAMAX*FRACBMAX));
+							if((cnt++)%10000000 == 0) printf("%16.16llx / %16.16llx     \r",fraca,fracb);
+							
+							found_new = -1;
+							__muldf3(a.value,b.value);
+							if(found_new>=0)
+							{
+								FLO_union_type au,bu;
+								printf("FOUND %i: a = %f = %16.16llx , b = %f = %16.16llx\n\n",found_new,a.value,a.raw_value,b.value,b.raw_value);
+							}
+											
+
+						}
+					}
+				}
+
+			}
+		}
+	}
+*/
+/*
 
     unsigned long long int MAX = 1ULL<<52 - 1;
 	unsigned long long int stepi = 50, stepj = 1000000;
 
     for(unsigned long long int i=0;i<(1<<11)-1;i+=stepi)
     {
-        a.value = 3.14159265;
+        a.value = -3.14159265;
         a.bits.exp = i;
         for(unsigned long long int j=0;j<MAX;j+=stepj)
         {
@@ -1074,6 +1148,7 @@ void main(void)
             }
         }
     }
+	*/
 }
 #endif
 
