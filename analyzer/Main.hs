@@ -63,7 +63,7 @@ import Logging
 
 --------------
 
-fastMode :: Bool = False
+fastMode :: Bool = True
 
 dontShowDeclsInTrace :: Bool = True
 
