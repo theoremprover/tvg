@@ -85,6 +85,32 @@ noLoopInferenceOpt = "-noloopinference"
 writeASTOpt = "-writeAST"
 writeGlobalDeclsOpt = "-writeGlobalDecls"
 
+outputVerbosity = if fastMode then 1 else 2
+logFileVerbosity = if fastMode then 0 else 5
+
+mAX_REN_LIST_LENGTH = 3
+
+showInitialTrace = True && not fastMode
+showOnlySolutions = True
+showTraces = True && not fastMode
+showFinalTrace = True && not fastMode
+checkSolutions = True
+returnval_var_name = "return_val"
+floatTolerance = 1e-7 :: Float
+doubleTolerance = 1e-10 :: Double
+showBuiltins = False
+logToFile = not fastMode
+mainFileName = "main.c"
+printTypes = False
+printLocations = False
+errorModelPath = analyzerPath </> "models"
+
+mAX_UNROLLS = 2
+uNROLLING_STRATEGY = [0..mAX_UNROLLS]
+
+sizeConditionChunks = 4
+
+
 main :: IO ()
 main = do
 	-- when there is an error, we'd like to have *all* output till then
@@ -95,9 +121,9 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
---		[] → "gcc" : "__unpack_d_drill" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,findModeOpt,subfuncovOpt]
-		[] → "gcc" : "__mymuldf3" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noHaltOnVerificationErrorOpt,noIndentLogOpt,findModeOpt,subfuncovOpt]
---		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}minimizeOpt,writeModelsOpt,findModeOpt]
+--		[] → "gcc" : "__unpack_d_drill" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,writeModelsOpt,subfuncovOpt]
+		[] → "gcc" : "__mymuldf3" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,findModeOpt,subfuncovOpt]
+--		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}writeModelsOpt,findModeOpt]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
 --		[] → "gcc" : "__pack_d" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df_double.i"]) ++ [cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
@@ -297,31 +323,6 @@ main = do
 				createHTMLLog
 
 			printConsole 0 $ "\nEnd."
-
-outputVerbosity = if fastMode then 1 else 2
-logFileVerbosity = if fastMode then 0 else 10
-
-mAX_REN_LIST_LENGTH = 3
-
-showInitialTrace = True && not fastMode
-showOnlySolutions = True
-showTraces = True && not fastMode
-showFinalTrace = True && not fastMode
-checkSolutions = True
-returnval_var_name = "return_val"
-floatTolerance = 1e-7 :: Float
-doubleTolerance = 1e-10 :: Double
-showBuiltins = False
-logToFile = not fastMode
-mainFileName = "main.c"
-printTypes = False
-printLocations = False
-errorModelPath = analyzerPath </> "models"
-
-mAX_UNROLLS = 2
-uNROLLING_STRATEGY = [0..mAX_UNROLLS]
-
-sizeConditionChunks = 4
 
 -------------
 
@@ -532,7 +533,7 @@ printDateTimeM :: Int -> CovVecM ()
 printDateTimeM verbosity = do
 	last_time <- gets lastTimeCVS
 	(current_time,duration_s) <- liftIO $ diffToCurrentTime last_time
-	printLogV verbosity $ "Last Duration (hour:min:sec): " ++ duration_s
+	printLogV verbosity $ "Last Duration (hour:min:sec): " ++ duration_s ++ "\n"
 	modify $ \ s -> s { lastTimeCVS = current_time }
 	return ()
 
@@ -631,7 +632,7 @@ incNumSolutionM = modify $ \ s → s { statsCVS = (statsCVS s) { numSolutionS = 
 incNumTracesM :: CovVecM ()
 incNumTracesM = modify $ \ s → s { statsCVS = (statsCVS s) { numTracesS = numTracesS (statsCVS s) + 1 } }
 printStatsM :: Int -> CovVecM ()
-printStatsM verbosity = gets statsCVS >>= (printLogV verbosity) . show
+printStatsM verbosity = gets statsCVS >>= printLogV verbosity . ((++"\n") . show)
 
 type CovVecM = StateT CovVecState IO
 
@@ -1127,10 +1128,10 @@ type Progress = [(Int,Int)]
 
 printProgressM :: Progress → CovVecM ()
 printProgressM progress = do
-	printLogV 20 $ printf "Current progress = %s" (show progress)
-	printLogV 1 $ printf "Current depth = %i" (length progress)
-	printLogV 1 $ printf "Current estimated total number of traces: %i" (product $ map snd progress) 
-	printLogV 1 $ printf "Progress: %.1f %%" (100.0 * (pct $ reverse progress))
+	printLogV 20 $ printf "Current progress = %s\n" (show progress)
+	printLogV 1 $ printf "Current depth = %i\n" (length progress)
+	printLogV 1 $ printf "Current estimated total number of traces: %i\n" (product $ map snd progress)
+	printLogV 1 $ printf "Progress: %.1f %%\n" (100.0 * (pct $ reverse progress))
 	where
 	pct :: Progress → Float
 	pct [] = 0.0
@@ -2153,13 +2154,17 @@ eqConstraintsM expr ty = do
 		ident_0_ty <- ty2Z3Type member_ty_0
 		concatForM ident_types $ \ (ident_i,member_ty_i) -> do
 			ident_i_ty <- ty2Z3Type member_ty_i
-			mb_float_cond <- return [] {- case (fst ident_i_ty) `elem` [Z3_Float,Z3_Double,Z3_LDouble] of
+			mb_float_cond <- case fst ident_0_ty `elem` [Z3_Float,Z3_Double,Z3_LDouble] of
 				False -> return []
 				True  -> do
-					bv_z3ty <- sizeofZ3Ty (fst ident_i_ty) >>= sizeToIntTypeM >>= ty2Z3Type
-					let bv_ident = internalIdent $ makeFloatBVVarName (lValueToVarName expr)
-					return [ Condition $ Left (CVar bv_ident (undefNode,bv_z3ty) ,
-						CMember expr ident_0 is_ptr (undefNode,ident_0_ty) ) ] -}
+					bv_z3ty <- sizeofZ3Ty (fst ident_0_ty) >>= sizeToIntTypeM >>= ty2Z3Type
+					case fst bv_z3ty == fst ident_i_ty of
+						False -> return []
+						True  -> do
+							let bv_ident = internalIdent $ makeFloatBVVarName $
+								lValueToVarName $ CMember expr ident_0 is_ptr (undefNode,bv_z3ty)
+							return [ Condition $ Left (CVar bv_ident (undefNode,bv_z3ty) ,
+								CMember expr ident_0 is_ptr (undefNode,bv_z3ty) ) ]
 			return $ mb_float_cond ++ [ Assignment (Normal $ CMember expr ident_0 is_ptr (undefNode,ident_0_ty)) $
 				CCast (CDecl [] [] (undefNode,ident_0_ty))
 					( CMember expr ident_i is_ptr (undefNode,ident_i_ty) )
@@ -3279,7 +3284,7 @@ declConst2SExpr id_name ty = do
 prefix_a :: Ident → Ident
 prefix_a (Ident s@('_':_) i ni) = Ident (safeZ3IdentifierPrefix:s) i ni
 prefix_a ident = ident
-
+{-
 makeAndSolveZ3ModelM :: [Int] → [(Ident,Z3_Type)] → [Constraint] → [SExpr] → [Ident] → String → CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_idents0 modelpathfile = do
 	printLogV 20 $ "### makeAndSolveZ3ModelM ########################\n"
@@ -3301,11 +3306,11 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 		Just ty | ty `elem` [Z3_Float,Z3_Double,Z3_LDouble] → do
 			-- only replace the identifier by bv$.. if it is in output_idents0
 			case oid `elem` output_idents0 of
-				True  → do
+				True  -> do
 					let bvid = internalIdent $ makeFloatBVVarName (identToString oid)
 					printLogV 20 $ "XXX replacing " ++ (render.pretty) oid ++ " by " ++ (render.pretty) bvid
 					return (bvid,ty)
-				False → return (oid,ty)
+				False -> return (oid,ty)
 		Just ty → return (oid,ty)
 		_ → myError $ "output_idents: oid " ++ show oid ++ " not found in z3tyenv0" --return oid
 	forM_ output_idents $ \ (v,vty) -> printLogV 20 $ "output_idents: " ++ (render.pretty) v ++ " :: " ++ (render.pretty) vty ++ "\n"
@@ -3357,6 +3362,172 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	constraintsZ3 :: [SCompound] <- concatForM a_constraints expr2SCompounds
 
 	-- for all a_output_idents, create a (get-value ...) in the Z3 model 
+	let
+		outputvarsZ3 = for a_output_idents $ \ (ident,_) → SExprLine $ SOnOneLine $
+			SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
+
+		model :: [SCompound] = [
+			SComment $ show traceid,
+			SEmptyLine,
+			SExprLine $ SOnOneLine $ SExpr [SLeaf "set-option", SLeaf ":smt.relevancy", SLeaf "0"],
+			SExprLine $ SOnOneLine $ SExpr [SLeaf "set-option", SLeaf ":produce-models", SLeaf "true"],
+			SEmptyLine ] ++
+			varsZ3 ++
+			[SEmptyLine] ++
+			eqconstraintsZ3 ++
+			[SEmptyLine] ++
+			constraintsZ3 ++
+			[SEmptyLine] ++
+			map (SExprLine . SOnOneLine) additional_sexprs ++
+			[SEmptyLine] ++
+			[ SExprLine $ SOnOneLine $ SExpr [SLeaf "apply",SExpr [SLeaf "then",SLeaf "simplify",SLeaf "solve-eqs"]] ] ++
+			[ SExprLine $ SOnOneLine $ SExpr [SLeaf "check-sat"] ] ++
+			[SEmptyLine] ++
+			outputvarsZ3
+		model_string = unlines $ map (render.pretty) model
+		model_string_linenumbers = unlines $ map (\ (i,l) → show i ++ ": " ++ l) (zip [1..] (lines model_string))
+
+	whenOptionSet writeModelsOpt True $ liftIO $ writeFile modelpathfile model_string
+	whenOptionSet showModelsOpt True $ printLogM 0 $ "Model " ++ takeFileName modelpathfile ++ " =\n" ++ model_string_linenumbers
+	printLogV 2 $ "Running model " ++ takeFileName modelpathfile ++ "..."
+	let z3timeout_opt = case z3TimeoutSecs of
+		Nothing -> []
+		Just timeout_secs -> [ "-T:" ++ show timeout_secs ]
+	(_,output,_) <- liftIO $ withCurrentDirectory (takeDirectory modelpathfile) $ do
+		readProcessWithExitCode z3FilePath
+			(z3timeout_opt ++ ["-smt2","-in","parallel.enable=true"])
+			model_string
+	let
+		drop_prelude [] = []
+		drop_prelude (l:ls) = case l of
+			_ | l `elem` ["unsat","sat","unknown"] → l:ls
+			_ | "(error " `isPrefixOf` l → l:ls
+			_ | "timeout" `isPrefixOf` l → l:ls
+			_ → drop_prelude ls
+		dropped_output = drop_prelude $ lines output
+	printLogV 0 $ "\nZ3 says:\n" ++ unlines dropped_output
+	case dropped_output of
+		"timeout" : _ → do
+			let timeout_txt = "Timeout for " ++ show traceid
+			printLogV 0 timeout_txt
+			liftIO $ printToSolutions timeout_txt
+			liftIO $ writeFile (errorModelPath </> "TIMEOUT_" ++ show traceid ++ ".smtlib2") model_string
+			return (model_string,Nothing)
+		"unsat"   : _ → return (model_string,Nothing)
+		"unknown" : _ → return (model_string,Nothing)
+		"sat" : rest → do
+			sol_params <- forM (zip a_output_idents rest) $ \ ((ident0,ty0),line) → do
+				let
+					ident_s = identToString ident0
+					ident = case stripPrefix bvPrefix ident_s of
+						Just ident_wo_prefix → internalIdent ident_wo_prefix
+						Nothing → ident0
+					is = escapeDollars $ identToString ident0
+				case line =~ ("\\(\\(" ++ is ++ " ([^\\)]+)\\)\\)") :: (String,String,String,[String]) of
+					(_,_,_,[val_string]) → case lookup ident z3tyenv of
+						Nothing → myError $ "Parsing z3 output: Could not find type of " ++ (render.pretty) ident
+						Just ty → return (identToString ident, case ty of
+							Z3_BitVector size unsigned → let
+								'#':'x':hexdigits = val_string
+								[(i :: Integer,"")] = readHex hexdigits
+								in
+								IntegerVal $ case unsigned of
+									True  → fromIntegral i
+									False → fromIntegral $ if i < 2^(size-1) then i else i - 2^size
+							Z3_Float → parseFloat val_string
+							Z3_Double → parseDouble val_string
+							Z3_LDouble → error $ "long double is not supported"
+							Z3_Ptr _ → PtrVal
+							other → error $ "case ty2Z3Type " ++ show other ++ " not implemented" )
+					_ → myError $ "Parsing z3 output: Could not find " ++ is
+			return (model_string,Just sol_params)
+		_ → do
+			let err_msg = "Execution of " ++ z3FilePath ++ " failed:\n" ++ output ++ "\n\n" ++ "Model is\n" ++ model_string_linenumbers
+			printLogV 0 err_msg
+			liftIO $ writeFile modelpathfile model_string
+			whenOptionSet noHaltOnVerificationErrorOpt False $ myError err_msg
+			return (model_string,Nothing)
+-}
+
+makeAndSolveZ3ModelM :: [Int] → [(Ident,Z3_Type)] → [Constraint] → [SExpr] → [Ident] → String → CovVecM (String,Maybe Solution)
+makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_idents0 modelpathfile = do
+	printLogV 20 $ "### makeAndSolveZ3ModelM ########################\n"
+	forM_ z3tyenv0 $ \ (ident,z3ty) -> printLogV 20 $ "z3tyenv0: " ++ (render.pretty) ident ++ " :: " ++ show z3ty ++ "\n"
+
+	-- collect all variables that appear in the constraints and assignments
+	let
+		constraints_vars = nub $ concat $ for constraints $ \case
+			Condition (Left (varexpr,expr)) → fvar varexpr ++ fvar expr
+			Condition (Right (_,expr)) → fvar expr
+			Assignment (Normal lexpr@(CIndex _ _ _)) ass_expr → fvar lexpr ++ fvar ass_expr
+			Assignment (ArrayUpdate ident1 ident2 (arrty,_) index) ass_expr → [(ident1,arrty),(ident2,arrty)] ++ fvar index ++ fvar ass_expr
+			Comment _ → []
+	forM_ constraints_vars $ \ (v,vty) -> printLogV 20 $ "constraints_vars: " ++ (render.pretty) v ++ " :: " ++ (render.pretty) vty ++ "\n"
+
+	-- For all floats, replace the float-Varname by the bitvector_Varname "bv$<floatvar>" in the output idents
+	output_idents <- forM output_idents0 $ \ oid → case lookup oid z3tyenv0 of
+		-- if ty is floating point, add bv$fp :: Z3_BitVector size to tyenv and replace fp by bv$fp in output_idents
+		Just ty | ty `elem` [Z3_Float,Z3_Double,Z3_LDouble] → do
+			-- only replace the identifier by bv$.. if it is in output_idents0
+			case oid `elem` output_idents0 of
+				True  -> do
+					let bvid = internalIdent $ makeFloatBVVarName (identToString oid)
+					printLogV 20 $ "XXX replacing " ++ (render.pretty) oid ++ " by " ++ (render.pretty) bvid
+					return (bvid,ty)
+				False -> return (oid,ty)
+		Just ty → return (oid,ty)
+		_ → myError $ "output_idents: oid " ++ show oid ++ " not found in z3tyenv0" --return oid
+	forM_ output_idents $ \ (v,vty) -> printLogV 20 $ "output_idents: " ++ (render.pretty) v ++ " :: " ++ (render.pretty) vty ++ "\n"
+
+	-- prefix a "a_" for identifiers starting with underscore (Z3 does not like leading underscores...)
+	-- in constraints and output_idents
+	let
+		(a_constraints_vars,a_constraints,a_output_idents,a_z3tyenv) =
+			everywhere (mkT prefix_a) (constraints_vars,constraints,output_idents,z3tyenv0)
+
+--	forM_ a_z3tyenv $ \ (ident,z3ty) -> printLogV 0 $ "### " ++ (render.pretty) ident ++ " :: " ++ show z3ty ++ "\n"
+--	forM_ a_constraints_vars $ \ v -> printLogV 0 $ "*** " ++ (render.pretty) v
+
+	-- create declarations in the Z3 model for all variables from the z3tyenv that
+	-- appear in the constraints and assignments, or
+	-- are a_output_idents, or
+	-- ?
+
+	let output_idents0ty = for output_idents0 $ \ ident -> (ident,fromJust $ lookup ident z3tyenv0)
+
+	let all_idents = filter (isNothing.stripBVPrefix.fst) $
+		nubBy (\ (a,_) (b,_) -> a==b) $ a_constraints_vars ++ a_output_idents ++ output_idents0ty
+	forM_ all_idents $ \ v -> printLogV 20 $ "all_idents: " ++ ren v ++ "\n"
+
+	bvs :: [((Ident,Z3_Type),SCompound)] <- concatForM all_idents $ \ (ident,ty) → do
+		case stripBVPrefix ident of
+			-- Ignore it if ident = bv$..
+			Just _ -> return []
+			-- Create equality constraint for bv$<ident>
+			Nothing -> case ty of
+				ty | ty `elem` [Z3_Float,Z3_Double,Z3_LDouble] -> do
+					let bvident = internalIdent $ makeFloatBVVarName $ identToString ident
+					bv_size <- sizeofZ3Ty ty
+					let eq_constraint = createAssertEq (SLeaf $ identToString ident) bv_size (SLeaf $ identToString bvident)
+					return [((bvident,Z3_BitVector bv_size True),SExprLine $ SOnOneLine eq_constraint)]
+				_ -> return []
+	let
+		(bvsenv,eqconstraintsZ3) = unzip bvs
+		z3tyenv = bvsenv ++ a_z3tyenv
+	forM_ bvs $ \ v -> printLogV 20 $ "bvs: " ++ ren v ++ "\n"
+
+	let rest_bvs = filter (isJust.stripBVPrefix.fst) a_constraints_vars
+
+	varsZ3 :: [SCompound] <- forM (nubBy (\ (a,_) (b,_) -> a==b) $ all_idents ++ bvsenv ++ rest_bvs) $ \ (ident,ty) → do
+		printLogV 20 $ "varsZ3: " ++ (render.pretty) ident
+		let varname = identToString ident
+		decl <- declConst2SExpr varname ty
+		return $ SExprLine (SOnOneLine decl)
+
+	-- create Z3 constraints
+	constraintsZ3 :: [SCompound] <- concatForM a_constraints expr2SCompounds
+
+	-- for all a_output_idents, create a (get-value ...) in the Z3 model
 	let
 		outputvarsZ3 = for a_output_idents $ \ (ident,_) → SExprLine $ SOnOneLine $
 			SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
