@@ -228,24 +228,24 @@ _fpmul_parts ( fp_number_type * a,
   fractype low = 0;
   fractype high = 0;
 
-  if (isnan (a))
+  if (solver_pragma(2) && isnan (a))
     {
       a->sign = a->sign != b->sign;
       return a;
     }
-  if (isnan (b))
+  if (solver_pragma(2) && isnan (b))
     {
       b->sign = a->sign != b->sign;
       return b;
     }
-  if (isinf (a))
+  if (solver_pragma(2) && isinf (a))
     {
       if (iszero (b))
  return makenan ();
       a->sign = a->sign != b->sign;
       return a;
     }
-  if (isinf (b))
+  if (solver_pragma(2) && isinf (b))
     {
       if (iszero (a))
  {
@@ -254,12 +254,12 @@ _fpmul_parts ( fp_number_type * a,
       b->sign = a->sign != b->sign;
       return b;
     }
-  if (iszero (a))
+  if (solver_pragma(2) && iszero (a))
     {
       a->sign = a->sign != b->sign;
       return a;
     }
-  if (iszero (b))
+  if (solver_pragma(2) && iszero (b))
     {
       b->sign = a->sign != b->sign;
       return b;
@@ -459,7 +459,7 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
   sign = (src->raw_value) >> 63 ;
 
   dst->sign = sign;
-  if (exp == 0)
+  if (solver_pragma(2) && exp == 0)
     {
          if (fraction == 0)
          {
@@ -481,8 +481,7 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
            dst->fraction.lla = fraction;
          }
     }
-  else if (!0
-    && __builtin_expect (exp == (0x7ff), 0))
+  else if (solver_pragma(2) && exp == (0x7ff))
     {
 
       if (fraction == 0)
