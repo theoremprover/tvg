@@ -140,8 +140,8 @@ typedef struct
 
 typedef union
 {
-  unsigned long long int raw_value;
   FLO_type value;
+  unsigned long long int raw_value;
 
 /*
   struct
@@ -448,11 +448,9 @@ printf("__unpack_d: raw=%llx, fraction=%llx, exp=%llx, sign=%llx\n",src->raw_val
 }
 */
 
-fractype
+fp_number_type*
 __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
 {
-
-    solver_debug_ULongLong("src->raw_value",src->raw_value);
   fractype fraction;
   int exp;
   int sign;
@@ -463,18 +461,12 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
   dst->sign = sign;
   if (exp == 0)
     {
-
-         if (fraction == 0
-           )
+         if (fraction == 0)
          {
-
            dst->class = CLASS_ZERO;
          }
       else
          {
-
-
-
            dst->normal_exp = exp - 1023 + 1;
            fraction <<= 8L;
 
@@ -500,10 +492,6 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
      }
       else
      {
-
-
-
-
        if (fraction & 0x8000000000000LL)
 
          {
@@ -526,21 +514,8 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
       dst->class = CLASS_NUMBER;
       dst->fraction.lla = (fraction << 8L) | ((fractype)1<<(52 +8L));
     }
-/*
-typedef struct
-{
 
-  fp_class_type class;
-  unsigned int sign;
-  int normal_exp;
-
-  union
-    {
-      fractype lla;
-    } fraction;
-} fp_number_type;
-*/
-    return(dst->fraction.lla);
+    return(dst);
 }
 
 
@@ -860,7 +835,7 @@ __muldf3 (FLO_type arg_a, FLO_type arg_b)
 }
 */
 
-fractype
+fp_number_type
 __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
 {
   fp_number_type a;
@@ -872,12 +847,12 @@ __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
   au.value = arg_a;
   bu.value = arg_b;
 
-  __unpack_d_drill (&au, &a);
-  __unpack_d_drill (&bu, &b);
+  fp_number_type* fp1 = __unpack_d_drill (&au, &a);
+  fp_number_type* fp2 = __unpack_d_drill (&bu, &b);
+  res = _fpmul_parts (fp1, fp2, &tmp);
 
-  res = _fpmul_parts (&a, &b, &tmp);
-
-  return (a.fraction.lla); //__pack_d_drill(res);
+//  return (__pack_d_drill(res));
+	return (*res);
 }
 
 #ifdef MAN
