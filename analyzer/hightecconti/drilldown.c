@@ -205,21 +205,6 @@ flip_sign ( fp_number_type * x)
 }
 
 
-__inline__
-static int
-clzusi (USItype n)
-{
-  extern int __clzsi2 (USItype);
-  if (sizeof (USItype) == sizeof (unsigned int))
-    return __builtin_clz (n);
-  else if (sizeof (USItype) == sizeof (unsigned long))
-    return __builtin_clzl (n);
-  else if (sizeof (USItype) == sizeof (unsigned long long))
-    return __builtin_clzll (n);
-  else
-    return __clzsi2 (n);
-}
-
 static __inline__ __attribute__ ((__always_inline__)) const fp_number_type *
 _fpmul_parts ( fp_number_type * a,
         fp_number_type * b,
@@ -362,92 +347,6 @@ const fp_number_type __thenan_df = { CLASS_SNAN, 0, 0,
 	}
 };
 
-/*
-void
-__unpack_d (FLO_union_type * src, fp_number_type * dst)
-{
-
-  fractype fraction;
-  int exp;
-  int sign;
-  fraction = src->bits.fraction;
-  exp = src->bits.exp;
-  sign = src->bits.sign;
-
-printf("__unpack_d: raw=%llx, fraction=%llx, exp=%llx, sign=%llx\n",src->raw_value,fraction,exp,sign);
-
-  dst->sign = sign;
-  if (exp == 0)
-    {
-
-      if (fraction == 0
-
-
-
-   )
- {
-
-   dst->class = CLASS_ZERO;
- }
-      else
- {
-
-
-
-   dst->normal_exp = exp - 1023 + 1;
-   fraction <<= 8L;
-
-   dst->class = CLASS_NUMBER;
-
-   while (fraction < ((fractype)1<<(52 +8L)))
-     {
-       fraction <<= 1;
-       dst->normal_exp--;
-     }
-
-   dst->fraction.lla = fraction;
- }
-    }
-  else if (!0
-    && __builtin_expect (exp == (0x7ff), 0))
-    {
-
-      if (fraction == 0)
- {
-
-   dst->class = CLASS_INFINITY;
- }
-      else
- {
-
-
-
-
-   if (fraction & 0x8000000000000LL)
-
-     {
-       dst->class = CLASS_QNAN;
-     }
-   else
-     {
-       dst->class = CLASS_SNAN;
-     }
-
-
-   fraction &= ~0x8000000000000LL;
-   dst->fraction.lla = fraction << 8L;
- }
-    }
-  else
-    {
-
-      dst->normal_exp = exp - 1023;
-      dst->class = CLASS_NUMBER;
-      dst->fraction.lla = (fraction << 8L) | ((fractype)1<<(52 +8L));
-    }
-}
-*/
-
 fp_number_type*
 __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
 {
@@ -517,145 +416,6 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
     return(dst);
 }
 
-
-/*
-FLO_type
-__pack_d (const fp_number_type *src)
-{
-  FLO_union_type dst;
-  fractype fraction = src->fraction.lla;
-  int sign = src->sign;
-  int exp = 0;
-
-  if (0 && (isnan (src) || isinf (src)))
-    {
-
-
-
-      exp = (0x7ff);
-      fraction = ((fractype) 1 << 52) - 1;
-    }
-  else if (isnan (src))
-    {
-      exp = (0x7ff);
-
-      fraction >>= 8L;
-      fraction &= 0x8000000000000LL - 1;
-      if (src->class == CLASS_QNAN || 1)
- {
-
-
-
-
-
-
-
-   fraction |= 0x8000000000000LL;
-
- }
-    }
-  else if (isinf (src))
-    {
-      exp = (0x7ff);
-      fraction = 0;
-    }
-  else if (iszero (src))
-    {
-      exp = 0;
-      fraction = 0;
-    }
-  else if (fraction == 0)
-    {
-      exp = 0;
-    }
-  else
-    {
-      if (__builtin_expect (src->normal_exp < (-(1023)+1), 0))
- {
-   int shift = (-(1023)+1) - src->normal_exp;
-
-   exp = 0;
-
-   if (shift > 64 - 8L)
-     {
-
-       fraction = 0;
-     }
-   else
-     {
-       int lowbit = (fraction & (((fractype)1 << shift) - 1)) ? 1 : 0;
-       fraction = (fraction >> shift) | lowbit;
-     }
-   if ((fraction & 0xff) == 0x80)
-     {
-       if ((fraction & (1 << 8L)))
-  fraction += 0x7f + 1;
-     }
-   else
-     {
-
-       fraction += 0x7f;
-     }
-
-
-   if (fraction >= ((fractype)1<<(52 +8L)))
-     {
-       exp += 1;
-     }
-   fraction >>= 8L;
-
- }
-      else if (!0
-        && __builtin_expect (src->normal_exp > 1023, 0))
- {
-   exp = (0x7ff);
-   fraction = 0;
- }
-      else
- {
-   exp = src->normal_exp + 1023;
-   if (!0)
-     {
-
-
-
-       if ((fraction & 0xff) == 0x80)
-  {
-    if (fraction & (1 << 8L))
-      fraction += 0x7f + 1;
-  }
-       else
-  {
-
-    fraction += 0x7f;
-  }
-       if (fraction >= ((fractype)1<<(52 +1+8L)))
-  {
-    fraction >>= 1;
-    exp += 1;
-  }
-     }
-   fraction >>= 8L;
-
-   if (0 && exp > (0x7ff))
-     {
-
-       exp = (0x7ff);
-       fraction = ((fractype) 1 << 52) - 1;
-     }
- }
-    }
-
-
-
-
-
-  dst.bits.fraction = fraction;
-  dst.bits.exp = exp;
-  dst.bits.sign = sign;
-  return dst.value;
-}
-*/
 
 FLO_type
 __pack_d_drill (const fp_number_type *src)
@@ -801,10 +561,6 @@ __pack_d_drill (const fp_number_type *src)
  }
     }
 
-
-
-
-
 //  dst.bits.fraction = fraction;
 //  dst.bits.exp = exp;
 //  dst.bits.sign = sign;
@@ -825,26 +581,26 @@ _fpadd_parts_drill (fp_number_type * a,
   fractype a_fraction;
   fractype b_fraction;
 
-  if (isnan (a))
+  if (solver_pragma(2) && isnan (a))
     {
       return a;
     }
-  if (isnan (b))
+  if (solver_pragma(2) && isnan (b))
     {
       return b;
     }
-  if (isinf (a))
+  if (solver_pragma(2) && isinf (a))
     {
 
       if (isinf (b) && a->sign != b->sign)
  return makenan ();
       return a;
     }
-  if (isinf (b))
+  if (solver_pragma(2) && isinf (b))
     {
       return b;
     }
-  if (iszero (b))
+  if (solver_pragma(2) && iszero (b))
     {
       if (iszero (a))
  {
@@ -854,7 +610,7 @@ _fpadd_parts_drill (fp_number_type * a,
  }
       return a;
     }
-  if (iszero (a))
+  if (solver_pragma(2) && iszero (a))
     {
       return b;
     }
@@ -952,6 +708,14 @@ _fpadd_parts_drill (fp_number_type * a,
   return tmp;
 }
 
+/* Noch zu covern:
+pack_d von __floatsidf   Dokument! R2? erledigt.
+pack_d von __subdf3  ()
+pack_d von __adddf3  ()
+
+*/
+
+
 fp_number_type
 __adddf3_drill (FLO_type arg_a, FLO_type arg_b)
 {
@@ -964,34 +728,12 @@ __adddf3_drill (FLO_type arg_a, FLO_type arg_b)
   au.value = arg_a;
   bu.value = arg_b;
 
-  __unpack_d_drill (&au, &a);
-  __unpack_d_drill (&bu, &b);
+  fp_number_type* fp1 = __unpack_d_drill (&au, &a);
+  fp_number_type* fp2 = __unpack_d_drill (&bu, &b);
 
-  res = _fpadd_parts_drill (&a, &b, &tmp);
+  res = _fpadd_parts_drill (fp1, fp2, &tmp);
 
   return (*res); //__pack_d (res);
-}
-
-/* Noch zu covern:
-pack_d von __floatsidf   Dokument! R2?
-pack_d von __subdf3  ()
-pack_d von __adddf3  ()
-
-*/
-
-__inline__
-static int
-clzusi (USItype n)
-{
-  extern int __clzsi2 (USItype);
-  if (sizeof (USItype) == sizeof (unsigned int))
-    return __builtin_clz (n);
-  else if (sizeof (USItype) == sizeof (unsigned long))
-    return __builtin_clzl (n);
-  else if (sizeof (USItype) == sizeof (unsigned long long))
-    return __builtin_clzll (n);
-  else
-    return __clzsi2 (n);
 }
 
 fp_number_type
@@ -1006,37 +748,15 @@ __subdf3_drill (FLO_type arg_a, FLO_type arg_b)
   au.value = arg_a;
   bu.value = arg_b;
 
-  __unpack_d_drill (&au, &a);
-  __unpack_d_drill (&bu, &b);
+  fp_number_type* fp1 = __unpack_d_drill (&au, &a);
+  fp_number_type* fp2 = __unpack_d_drill (&bu, &b);
 
   b.sign ^= 1;
 
-  res = _fpadd_parts_drill (&a, &b, &tmp);
+  res = _fpadd_parts_drill (fp1, fp2, &tmp);
 
   return(*res); // __pack_d (res);
 }
-
-/*
-FLO_type
-__muldf3 (FLO_type arg_a, FLO_type arg_b)
-{
-  fp_number_type a;
-  fp_number_type b;
-  fp_number_type tmp;
-  const fp_number_type *res;
-  FLO_union_type au, bu;
-
-  au.value = arg_a;
-  bu.value = arg_b;
-
-  __unpack_d (&au, &a);
-  __unpack_d (&bu, &b);
-
-  res = _fpmul_parts (&a, &b, &tmp);
-
-  return __pack_d (res);
-}
-*/
 
 fp_number_type
 __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
