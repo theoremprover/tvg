@@ -665,6 +665,7 @@ __pack_d_drill (const fp_number_type *src)
   int sign = src->sign;
   int exp = 0;
 
+/* DEAD
   if (0 && (isnan (src) || isinf (src)))
     {
 
@@ -673,7 +674,7 @@ __pack_d_drill (const fp_number_type *src)
       exp = (0x7ff);
       fraction = ((fractype) 1 << 52) - 1;
     }
-  else if (isnan (src))
+  else */if (solver_pragma(2) && isnan (src))
     {
       exp = (0x7ff);
 
@@ -692,12 +693,12 @@ __pack_d_drill (const fp_number_type *src)
 
  }
     }
-  else if (isinf (src))
+  else if (solver_pragma(2) && isinf (src))
     {
       exp = (0x7ff);
       fraction = 0;
     }
-  else if (iszero (src))
+  else if (solver_pragma(2) && iszero (src))
     {
       exp = 0;
       fraction = 0;
@@ -834,7 +835,7 @@ __muldf3 (FLO_type arg_a, FLO_type arg_b)
 }
 */
 
-fp_number_type
+FLO_type
 __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
 {
   fp_number_type a;
@@ -850,8 +851,8 @@ __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
   fp_number_type* fp2 = __unpack_d_drill (&bu, &b);
   res = _fpmul_parts (fp1, fp2, &tmp);
 
-//  return (__pack_d_drill(res));
-	return (*res);
+  return (__pack_d_drill(res));
+//	return (*res);
 }
 
 #ifdef MAN
