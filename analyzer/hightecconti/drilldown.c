@@ -952,7 +952,7 @@ _fpadd_parts_drill (fp_number_type * a,
   return tmp;
 }
 
-fp_number_type*
+fp_number_type
 __adddf3_drill (FLO_type arg_a, FLO_type arg_b)
 {
   fp_number_type a;
@@ -969,7 +969,7 @@ __adddf3_drill (FLO_type arg_a, FLO_type arg_b)
 
   res = _fpadd_parts_drill (&a, &b, &tmp);
 
-  return (res); //__pack_d (res);
+  return (*res); //__pack_d (res);
 }
 
 /* Noch zu covern:
