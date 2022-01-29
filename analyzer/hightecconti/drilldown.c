@@ -317,19 +317,9 @@ _fpmul_parts ( fp_number_type * a,
 
       if (high & (1 << 8L))
  {
-
-
-
-
-
-
  }
       else if (low)
  {
-
-
-
-
    high += 0x7f + 1;
 
 
@@ -471,7 +461,7 @@ __pack_d_drill (const fp_number_type *src)
 
    if (shift > 64 - 8L)
      {
-		// solver_find() __adddf3 und __subdf3
+	   solver_find(); // __adddf3 und __subdf3
        fraction = 0;
      }
    else
@@ -479,8 +469,8 @@ __pack_d_drill (const fp_number_type *src)
        int lowbit;
        if(fraction & (((fractype)1 << shift) - 1))
        {
-       // solver_find(); für addf3 und subdf3
-       lowbit=1;
+         solver_find(); //für addf3 und subdf3
+         lowbit=1;
        }
         else lowbit=0;
        fraction = (fraction >> shift) | lowbit;
@@ -530,12 +520,12 @@ __pack_d_drill (const fp_number_type *src)
       {
         if (fraction & (1 << 8L))
         {
-            solver_find(10);
+            //solver_find(10);
           fraction += 0x7f + 1;
         }
         else
         {
-            solver_find(11);
+            //solver_find(11);
         }
       }
        else
@@ -592,8 +582,7 @@ _fpadd_parts_drill (fp_number_type * a,
   if (solver_pragma(2) && isinf (a))
     {
 
-      if (isinf (b) && a->sign != b->sign)
- return makenan ();
+      if (isinf (b) && a->sign != b->sign) return makenan ();
       return a;
     }
   if (solver_pragma(2) && isinf (b))
