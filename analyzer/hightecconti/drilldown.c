@@ -157,11 +157,11 @@ FLO_union_type;
 
 
 extern int __fpcmp_parts_d (fp_number_type *, fp_number_type *);
-extern const fp_number_type __thenan_df;
+extern fp_number_type __thenan_df;
 
 
 __inline__
-static const fp_number_type *
+static fp_number_type *
 makenan (void)
 {
 
@@ -331,7 +331,7 @@ _fpmul_parts ( fp_number_type * a,
   return tmp;
 }
 
-const fp_number_type __thenan_df = { CLASS_SNAN, 0, 0,
+fp_number_type __thenan_df = { CLASS_SNAN, 0, 0,
 	{
 		(fractype) 0
 	}
@@ -348,7 +348,7 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
   sign = (src->raw_value) >> 63 ;
 
   dst->sign = sign;
-  if (solver_pragma(2) && exp == 0)
+  if (solver_pragma(2,2) && exp == 0)
     {
          if (fraction == 0)
          {
@@ -370,7 +370,7 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
            dst->fraction.lla = fraction;
          }
     }
-  else if (solver_pragma(2) && exp == (0x7ff))
+  else if (solver_pragma(2,2) && exp == (0x7ff))
     {
 
       if (fraction == 0)
@@ -448,7 +448,7 @@ __pack_d_drill (const fp_number_type *src)
     }
   else if (fraction == 0)
     {
-        solver_find(6);   // auch für addf und subdf
+        solver_find(1);   // auch für addf und subdf
       exp = 0;
     }
   else
@@ -461,7 +461,7 @@ __pack_d_drill (const fp_number_type *src)
 
    if (shift > 64 - 8L)
      {
-	   solver_find(); // __adddf3 und __subdf3
+	   solver_find(2); // __adddf3 und __subdf3
        fraction = 0;
      }
    else
@@ -469,7 +469,7 @@ __pack_d_drill (const fp_number_type *src)
        int lowbit;
        if(fraction & (((fractype)1 << shift) - 1))
        {
-         solver_find(); //für addf3 und subdf3
+         solver_find(3); //für addf3 und subdf3
          lowbit=1;
        }
         else lowbit=0;
@@ -479,12 +479,12 @@ __pack_d_drill (const fp_number_type *src)
      {
        if ((fraction & (1 << 8L)))
        {
-            solver_find(7); // auch für addf3 und subdf3
+            solver_find(4); // auch für addf3 und subdf3
             fraction += 0x7f + 1;
         }
         else
         {
-            solver_find(8); // auch für addf3 und subdf3
+            solver_find(5); // auch für addf3 und subdf3
         }
      }
    else
@@ -496,7 +496,7 @@ __pack_d_drill (const fp_number_type *src)
 
    if (fraction >= ((fractype)1<<(52 +8L)))
      {
-        solver_find(9); // auch für addf3 und subdf3
+        solver_find(6); // auch für addf3 und subdf3
        exp += 1;
      }
    fraction >>= 8L;
@@ -535,7 +535,7 @@ __pack_d_drill (const fp_number_type *src)
       }
        if (fraction >= ((fractype)1<<(52 +1+8L)))
   {
-    solver_find(12); // auch für addf3 und subdf3
+    solver_find(7); // auch für addf3 und subdf3
     fraction >>= 1;
     exp += 1;
   }
@@ -558,7 +558,7 @@ __pack_d_drill (const fp_number_type *src)
   return dst.value;
 }
 
-static const fp_number_type *
+static fp_number_type*
 _fpadd_parts_drill (fp_number_type * a,
        fp_number_type * b,
        fp_number_type * tmp)
@@ -582,7 +582,7 @@ _fpadd_parts_drill (fp_number_type * a,
   if (solver_pragma(2) && isinf (a))
     {
 
-      if (isinf (b) && a->sign != b->sign) return makenan ();
+      if (isinf (b) && a->sign != b->sign) return (makenan ());
       return a;
     }
   if (solver_pragma(2) && isinf (b))
@@ -705,13 +705,13 @@ pack_d von __adddf3  ()
 */
 
 
-fp_number_type
+FLO_type
 __adddf3_drill (FLO_type arg_a, FLO_type arg_b)
 {
   fp_number_type a;
   fp_number_type b;
   fp_number_type tmp;
-  const fp_number_type *res;
+  fp_number_type *res;
   FLO_union_type au, bu;
 
   au.value = arg_a;
@@ -721,10 +721,10 @@ __adddf3_drill (FLO_type arg_a, FLO_type arg_b)
   fp_number_type* fp2 = __unpack_d_drill (&bu, &b);
 
   res = _fpadd_parts_drill (fp1, fp2, &tmp);
-
-  return (*res); //__pack_d (res);
+  return (__pack_d_drill (res));
 }
 
+/*
 fp_number_type
 __subdf3_drill (FLO_type arg_a, FLO_type arg_b)
 {
@@ -766,6 +766,7 @@ __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
   //return (__pack_d_drill(res));
   return (*res);
 }
+*/
 
 #ifdef MAN
 
@@ -784,10 +785,11 @@ __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
 void main(void)
 {
 	FLO_union_type f0a,f0b;
-	f0a.raw_value = 4607182418815746050;
-	f0b.raw_value = 4607182418800017408;
-	__mymuldf3(f0a.value,f0b.value);
+	f0a.raw_value = 0x8010000000000001ull;
+	f0b.raw_value = 0x003ffeffffffffffull;
+	__adddf3_drill(f0a.value,f0b.value);
 
+/*
     fp_number_type fp_a = { 3,0,0,{  1152921508633379328ULL } };
     fp_number_type fp_b = { 3,0,0,{ 18446744073709551601ULL } };
     fp_number_type tmp;
@@ -807,7 +809,7 @@ void main(void)
     __unpack_d_drill (&fub, &eb);
 	printf("ea.sign=%i,ea.exp=%i,ea.fraction=%llu,\nfua.raw_value=%llu\n",ea.sign,ea.normal_exp,ea.fraction.lla,fua.raw_value);
 	printf("eb.sign=%i,eb.exp=%i,eb.fraction=%llu,\nfub.raw_value=%llu\n",eb.sign,eb.normal_exp,eb.fraction.lla,fub.raw_value);
-
+*/
 
 /*
 
