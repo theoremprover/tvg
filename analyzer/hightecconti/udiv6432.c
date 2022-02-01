@@ -156,9 +156,10 @@ uint32_t __udiv6432 (uint64_t n, uint32_t d)
 again1:
   if (q1 >= b || q1*dn0 > b*rhat + nn1)
     {
+        if(q1>=b) solver_find(1);
       q1 = q1 - 1;
       rhat = rhat + dn1;
-      if (rhat < b)
+      if (solver_pragma(12,12,12,12,12,2) && rhat < b)
         goto again1;
     }
 
@@ -174,7 +175,7 @@ again2:
     {
       q0 = q0 - 1;
       rhat = rhat + dn1;
-      if (rhat < b)
+      if (solver_pragma(12,12,12,12,12,2) && rhat < b)
         goto again2;
     }
 

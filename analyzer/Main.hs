@@ -63,7 +63,7 @@ import Logging
 
 --------------
 
-fastMode :: Bool = True
+fastMode :: Bool = False
 
 dontShowDeclsInTrace :: Bool = True
 
@@ -92,8 +92,8 @@ noLoopInferenceOpt = "-noloopinference"
 writeASTOpt = "-writeAST"
 writeGlobalDeclsOpt = "-writeGlobalDecls"
 
-outputVerbosity = if fastMode then 1 else 2
-logFileVerbosity = if fastMode then 0 else 5
+outputVerbosity = if fastMode then 1 else 10 --2
+logFileVerbosity = if fastMode then 0 else 10 --5
 
 mAX_REN_LIST_LENGTH = 3
 
@@ -112,7 +112,7 @@ printTypes = False
 printLocations = False
 errorModelPath = analyzerPath </> "models"
 
-mAX_UNROLLS = 2
+mAX_UNROLLS = 4
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
 
 sizeConditionChunks = 4
@@ -130,6 +130,7 @@ main = do
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
 --		[] → "gcc" : "__unpack_d_drill" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,writeModelsOpt,subfuncovOpt]
 		[] → "gcc" : "__subdf3_drill" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noHaltOnVerificationErrorOpt,noIndentLogOpt,findModeOpt,subfuncovOpt]
+--		[] → "gcc" : "__udiv6432" : (analyzerPath++"\\hightecconti\\udiv6432.c") : [{-cutoffsOpt-}noIndentLogOpt,findModeOpt]
 --		[] → "gcc" : "__mymuldf3" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,subfuncovOpt]
 --		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}writeModelsOpt,findModeOpt]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
@@ -1744,7 +1745,7 @@ type LabelEnv = [(Ident,Trace → Int → CovVecM UnfoldTracesRet)]
 
 unfoldTracesM :: LabelEnv → Maybe Type → Bool → Int → Progress → [Env] → Trace → [([CBlockItem],Bool)] → CovVecM UnfoldTracesRet
 unfoldTracesM labelϵ ret_type toplevel forks progress ϵs trace cbss = do
---	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren ϵs,ren trace,'\n':ren cbss] $ do
+	logWrapper [ren "unfoldTracesM",ren ret_type,ren toplevel,ren forks,ren ϵs,ren trace,'\n':ren cbss] $ do
 		(if forks > 0 && forks `mod` sizeConditionChunks == 0 then maybe_cutoff else id) $ do
 			unfoldTraces1M labelϵ ret_type toplevel forks progress ϵs trace cbss
 		where
@@ -3095,7 +3096,7 @@ expr2SCompounds traceelem = case traceelem of
 				modify (++[n_decl,n_cond])
 				return n
 
-			ccall@(CCall _ _ _) → lift $ myError $ "expr2sexpr of call " ++ (render.pretty) ccall ++ " should not occur!"
+			ccall@(CCall _ _ _) → lift $ myError $ "expr2sexpr' of call " ++ (render.pretty) ccall ++ " should not occur!"
 
 			other → lift $ myError $ "expr2SExpr " ++ (render.pretty) other ++ " not implemented"
 
@@ -3456,6 +3457,9 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			return (model_string,Nothing)
 -}
 
+isBuiltinIdent :: (Ident,Z3_Type) -> Bool
+isBuiltinIdent (ident,_) = (identToString ident) `elem` ["__builtin_clz"]
+
 makeAndSolveZ3ModelM :: [Int] → [(Ident,Z3_Type)] → [Constraint] → [SExpr] → [Ident] → String → CovVecM (String,Maybe Solution)
 makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_idents0 modelpathfile = do
 	printLogV 20 $ "### makeAndSolveZ3ModelM ########################\n"
@@ -3463,13 +3467,13 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 
 	-- collect all variables that appear in the constraints and assignments
 	let
-		constraints_vars = nub $ concat $ for constraints $ \case
+		constraints_vars = filter (not.isBuiltinIdent) $ nub $ concat $ for constraints $ \case
 			Condition (Left (varexpr,expr)) → fvar varexpr ++ fvar expr
 			Condition (Right (_,expr)) → fvar expr
 			Assignment (Normal lexpr@(CIndex _ _ _)) ass_expr → fvar lexpr ++ fvar ass_expr
 			Assignment (ArrayUpdate ident1 ident2 (arrty,_) index) ass_expr → [(ident1,arrty),(ident2,arrty)] ++ fvar index ++ fvar ass_expr
 			Comment _ → []
-	forM_ constraints_vars $ \ (v,vty) -> printLogV 20 $ "constraints_vars: " ++ (render.pretty) v ++ " :: " ++ (render.pretty) vty ++ "\n"
+	forM_ constraints_vars $ \ (v,vty) -> printLogV 10 $ "constraints_vars: " ++ (render.pretty) v ++ " :: " ++ (render.pretty) vty ++ "\n"
 
 	-- For all floats, replace the float-Varname by the bitvector_Varname "bv$<floatvar>" in the output idents
 	output_idents <- forM output_idents0 $ \ oid → case lookup oid z3tyenv0 of
@@ -3539,13 +3543,10 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 		outputvarsZ3 = for a_output_idents $ \ (ident,_) → SExprLine $ SOnOneLine $
 			SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
 
-{-
-(assert (= bv$arg_a au$5_DOT_raw_value))
-(assert (= bv$arg_b bu$6_DOT_raw_value))
--}
-		debugconstraints = [
+
+		debugconstraints = [] {-[
 			SExprLine $ SOnOneLine $ SExpr [ SLeaf "=", SLeaf "bv$arg_a", SLeaf "au$5_DOT_raw_value" ],
-			SExprLine $ SOnOneLine $ SExpr [ SLeaf "=", SLeaf "bv$arg_b", SLeaf "bu$6_DOT_raw_value" ] ]
+			SExprLine $ SOnOneLine $ SExpr [ SLeaf "=", SLeaf "bv$arg_b", SLeaf "bu$6_DOT_raw_value" ] ] -}
 
 		model :: [SCompound] = [
 			SComment $ show traceid,
