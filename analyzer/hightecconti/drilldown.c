@@ -431,10 +431,10 @@ __pack_d_drill (const fp_number_type *src)
       fraction >>= 8L;
       fraction &= 0x8000000000000LL - 1;
       if (src->class == CLASS_QNAN || 1)
- {
-   fraction |= 0x8000000000000LL;
+		 {
+		   fraction |= 0x8000000000000LL;
 
- }
+		 }
     }
   else if (solver_pragma(2) && isinf (src))
     {
@@ -453,96 +453,93 @@ __pack_d_drill (const fp_number_type *src)
     }
   else
     {
+      // A
       if (__builtin_expect (src->normal_exp < (-(1023)+1), 0))
- {
-   int shift = (-(1023)+1) - src->normal_exp;
+	 {
+	   int shift = (-(1023)+1) - src->normal_exp;
 
-   exp = 0;
+	   exp = 0;
 
-   if (shift > 64 - 8L)
-     {
-	   solver_find(2); // __adddf3 und __subdf3
-       fraction = 0;
-     }
-   else
-     {
-       int lowbit;
-       if(fraction & (((fractype)1 << shift) - 1))
-       {
-         solver_find(3); //für addf3 und subdf3
-         lowbit=1;
-       }
-        else lowbit=0;
-       fraction = (fraction >> shift) | lowbit;
-     }
-   if ((fraction & 0xff) == 0x80)
-     {
-       if ((fraction & (1 << 8L)))
-       {
-            solver_find(4); // auch für addf3 und subdf3
-            fraction += 0x7f + 1;
-        }
-        else
-        {
-            solver_find(5); // auch für addf3 und subdf3
-        }
-     }
-   else
-     {
+	   if (shift > 64 - 8L)
+	     {
+		   solver_find(2); // __adddf3 und __subdf3
+	       fraction = 0;
+	     }
+	   else
+	     {
+	       int lowbit;
+	       if(fraction & (((fractype)1 << shift) - 1))
+	       {
+	         solver_find(3); //für addf3 und subdf3
+	         lowbit=1;
+	       }
+	        else lowbit=0;
+	       fraction = (fraction >> shift) | lowbit;
+	     }
+	   if ((fraction & 0xff) == 0x80)
+	     {
+	       if ((fraction & (1 << 8L)))
+	       {
+	            solver_find(4); // auch für addf3 und subdf3
+	            fraction += 0x7f + 1;
+	        }
+	        else
+	        {
+	            solver_find(5); // auch für addf3 und subdf3
+	        }
+	     }
+	   else
+	     {
 
-       fraction += 0x7f;
-     }
+	       fraction += 0x7f;
+	     }
 
 
-   if (fraction >= ((fractype)1<<(52 +8L)))
-     {
-        solver_find(6); // auch für addf3 und subdf3
-       exp += 1;
-     }
-   fraction >>= 8L;
+	   if (fraction >= ((fractype)1<<(52 +8L)))
+	     {
+	        solver_find(6); // auch für addf3 und subdf3
+	       exp += 1;
+	     }
+	   fraction >>= 8L;
 
- }
-      else if (!0
-        && __builtin_expect (src->normal_exp > 1023, 0))
- {
-   exp = (0x7ff);
-   fraction = 0;
- }
+	 }
+      else if ((!0
+        && __builtin_expect (src->normal_exp > 1023, 0)))
+	 {
+	   exp = (0x7ff);
+	   fraction = 0;
+	 }
       else
- {
-   exp = src->normal_exp + 1023;
-   if (!0)
-     {
-
-
-
-       if ((fraction & 0xff) == 0x80)
-      {
-        if (fraction & (1 << 8L))
-        {
-            //solver_find(10);
-          fraction += 0x7f + 1;
-        }
-        else
-        {
-            //solver_find(11);
-        }
-      }
-       else
-      {
-
-        fraction += 0x7f;
-      }
-       if (fraction >= ((fractype)1<<(52 +1+8L)))
-  {
-    solver_find(7); // auch für addf3 und subdf3
-    fraction >>= 1;
-    exp += 1;
-  }
+		 {
+		   exp = src->normal_exp + 1023;
+		   if (solver_pragma(1) && (!0))
+		     {
+		       if (((fraction & 0xff) == 0x80))
+		      {
+		        if ((fraction & (1 << 8L)))
+		        {
+		            //solver_find(10);
+		          fraction += 0x7f + 1;
+		        }
+		        else
+		        {
+		            //solver_find(11);
+		        }
+		      }
+		       else
+		      {
+		        fraction += 0x7f;
+		      }
+		       if (fraction >= ((fractype)1<<(52 +1+8L)))
+		  {
+		    solver_find(7); // auch für addf3 und subdf3
+		    fraction >>= 1;
+		    exp += 1;
+		  }
      }
    fraction >>= 8L;
 
-   if (0 && exp > (0x7ff))
+   if ((0 && exp > (0x7ff)))
      {
        // DEAD anyway
        exp = (0x7ff);
@@ -622,69 +619,70 @@ _fpadd_parts_drill (fp_number_type * a,
       diff = -diff;
     if (diff < 64)
       {
- if (sdiff > 0)
-   {
-     b_normal_exp += diff;
-     { b_fraction = (b_fraction >> diff) | !!(b_fraction & (((fractype) 1 << diff) - 1)); };
-   }
- else if (sdiff < 0)
-   {
-     a_normal_exp += diff;
-     { a_fraction = (a_fraction >> diff) | !!(a_fraction & (((fractype) 1 << diff) - 1)); };
-   }
+		 if (sdiff > 0)
+		   {
+		     b_normal_exp += diff;
+		     { b_fraction = (b_fraction >> diff) | !!(b_fraction & (((fractype) 1 << diff) - 1)); };
+		   }
+		 else if (sdiff < 0)
+		   {
+		     a_normal_exp += diff;
+		     { a_fraction = (a_fraction >> diff) | !!(a_fraction & (((fractype) 1 << diff) - 1)); };
+		   }
       }
     else
       {
 
- if (a_normal_exp > b_normal_exp)
-   {
-     b_normal_exp = a_normal_exp;
-     b_fraction = 0;
-   }
- else
-   {
-     a_normal_exp = b_normal_exp;
-     a_fraction = 0;
-   }
+		 if (a_normal_exp > b_normal_exp)
+		   {
+		     b_normal_exp = a_normal_exp;
+		     b_fraction = 0;
+		   }
+		 else
+		   {
+		     a_normal_exp = b_normal_exp;
+		     a_fraction = 0;
+		   }
       }
   }
 
   if (a->sign != b->sign)
     {
       if (a->sign)
- {
-   tfraction = -a_fraction + b_fraction;
- }
-      else
- {
-   tfraction = a_fraction - b_fraction;
- }
-      if (tfraction >= 0)
- {
-   tmp->sign = 0;
-   tmp->normal_exp = a_normal_exp;
-   tmp->fraction.lla = tfraction;
- }
-      else
- {
-   tmp->sign = 1;
-   tmp->normal_exp = a_normal_exp;
-   tmp->fraction.lla = -tfraction;
- }
+	 {
+	   tfraction = -a_fraction + b_fraction;
+	 }
+	 else
+	 {
+	   tfraction = a_fraction - b_fraction;
+	 }
+
+	 if (tfraction >= 0)
+	 {
+	   tmp->sign = 0;
+	   tmp->normal_exp = a_normal_exp;
+	   tmp->fraction.lla = tfraction;
+	 }
+	 else
+	 {
+	   tmp->sign = 1;
+	   tmp->normal_exp = a_normal_exp;
+	   tmp->fraction.lla = -tfraction;
+	 }
 
 
       while (tmp->fraction.lla < ((fractype)1<<(52 +8L)) && tmp->fraction.lla)
- {
-   tmp->fraction.lla <<= 1;
-   tmp->normal_exp--;
- }
-    }
+	 {
+	   tmp->fraction.lla <<= 1;
+	   tmp->normal_exp--;
+	 }
+  }
   else
-    {
+  {
       tmp->sign = a->sign;
       tmp->normal_exp = a_normal_exp;
       tmp->fraction.lla = a_fraction + b_fraction;
-    }
+  }
   tmp->class = CLASS_NUMBER;
 
 
@@ -724,8 +722,7 @@ __adddf3_drill (FLO_type arg_a, FLO_type arg_b)
   return (__pack_d_drill (res));
 }
 
-/*
-fp_number_type
+FLO_type
 __subdf3_drill (FLO_type arg_a, FLO_type arg_b)
 {
   fp_number_type a;
@@ -744,9 +741,10 @@ __subdf3_drill (FLO_type arg_a, FLO_type arg_b)
 
   res = _fpadd_parts_drill (fp1, fp2, &tmp);
 
-  return(*res); // __pack_d (res);
+  return (__pack_d_drill (res));
 }
 
+/*
 fp_number_type
 __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
 {
@@ -785,9 +783,22 @@ __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
 void main(void)
 {
 	FLO_union_type f0a,f0b;
-	f0a.raw_value = 0x8010000000000001ull;
-	f0b.raw_value = 0x003ffeffffffffffull;
-	__adddf3_drill(f0a.value,f0b.value);
+	unsigned long long int ds[][2] = {
+		{ 0x107d000000000000ull, 0x138ffffffffffff1ull },
+		{ 0x400ffffff7fffffdull, 0x403c000001000000ull },
+		{ 0x03e3a89a06a1dfc4ull, 0x03d8aecbf2bc4077ull },
+		{ 0x019fffffe7249f7aull, 0x0018db6085800001ull },
+		{ 0x8010000000000003ull, 0x0010000000000003ull },
+		{ 0x0010000000000001ull, 0x8010000000000001ull },
+		{ 0x02affffffeb55a9cull, 0x00e4aa5638000000ull }
+	};
+	for(int i=0;i<sizeof(ds)/sizeof(ds[0]);i++)
+	{
+		printf("##### %i\n",i);
+		f0a.raw_value = ds[i][0];
+		f0b.raw_value = ds[i][1];
+		__adddf3_drill(f0a.value,f0b.value);
+	}
 
 /*
     fp_number_type fp_a = { 3,0,0,{  1152921508633379328ULL } };
