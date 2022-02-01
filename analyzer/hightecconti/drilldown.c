@@ -407,7 +407,7 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
 }
 
 
-FLO_type
+fractype
 __pack_d_drill (const fp_number_type *src)
 {
   FLO_union_type dst;
@@ -552,7 +552,7 @@ __pack_d_drill (const fp_number_type *src)
 //  dst.bits.exp = exp;
 //  dst.bits.sign = sign;
   dst.raw_value = fraction | (((fractype)exp)<<52) | ((fractype)sign<<63);
-  return dst.value;
+  return dst.raw_value;
 }
 
 static fp_number_type*
@@ -702,7 +702,7 @@ pack_d von __adddf3  ()
 
 */
 
-
+/*
 FLO_type
 __adddf3_drill (FLO_type arg_a, FLO_type arg_b)
 {
@@ -721,8 +721,9 @@ __adddf3_drill (FLO_type arg_a, FLO_type arg_b)
   res = _fpadd_parts_drill (fp1, fp2, &tmp);
   return (__pack_d_drill (res));
 }
+*/
 
-FLO_type
+fractype
 __subdf3_drill (FLO_type arg_a, FLO_type arg_b)
 {
   fp_number_type a;

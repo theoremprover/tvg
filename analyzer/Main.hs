@@ -3539,6 +3539,14 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 		outputvarsZ3 = for a_output_idents $ \ (ident,_) → SExprLine $ SOnOneLine $
 			SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
 
+{-
+(assert (= bv$arg_a au$5_DOT_raw_value))
+(assert (= bv$arg_b bu$6_DOT_raw_value))
+-}
+		debugconstraints = [
+			SExprLine $ SOnOneLine $ SExpr [ SLeaf "=", SLeaf "bv$arg_a", SLeaf "au$5_DOT_raw_value" ],
+			SExprLine $ SOnOneLine $ SExpr [ SLeaf "=", SLeaf "bv$arg_b", SLeaf "bu$6_DOT_raw_value" ] ]
+
 		model :: [SCompound] = [
 			SComment $ show traceid,
 			SEmptyLine,
@@ -3548,6 +3556,8 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			varsZ3 ++
 			[SEmptyLine] ++
 			eqconstraintsZ3 ++
+			[SEmptyLine] ++
+			debugconstraints ++
 			[SEmptyLine] ++
 			constraintsZ3 ++
 			[SEmptyLine] ++
