@@ -128,7 +128,7 @@ main = do
 	writeFile solutionsFile (show starttime ++ "\n\n")
 
 	gcc:funname:opts_filenames <- getArgs >>= return . \case
-		[] → "gcc" : "__truncdfsf2" : (analyzerPath++"\\hightecconti\\my_df_to_sf.c") : [noHaltOnVerificationErrorOpt,noIndentLogOpt,subfuncovOpt]
+		[] → "gcc" : "__truncdfsf2" : (analyzerPath++"\\hightecconti\\my_df_to_sf.c") : [noIndentLogOpt,subfuncovOpt]
 --		[] → "gcc" : "__unpack_d_drill" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,writeModelsOpt,subfuncovOpt]
 --		[] → "gcc" : "__subdf3_drill" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noHaltOnVerificationErrorOpt,noIndentLogOpt,findModeOpt,subfuncovOpt]
 --		[] → "gcc" : "__udiv6432" : (analyzerPath++"\\hightecconti\\udiv6432.c") : [{-cutoffsOpt-}noIndentLogOpt,findModeOpt]
@@ -3545,9 +3545,8 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 			SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
 
 
-		debugconstraints = [] {-[
-			SExprLine $ SOnOneLine $ SExpr [ SLeaf "=", SLeaf "bv$arg_a", SLeaf "au$5_DOT_raw_value" ],
-			SExprLine $ SOnOneLine $ SExpr [ SLeaf "=", SLeaf "bv$arg_b", SLeaf "bu$6_DOT_raw_value" ] ] -}
+		debugconstraints = [
+			SExprLine $ SOnOneLine $ 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ SLeaf "=", SLeaf "bv$arg_a", SLeaf "au$3_DOT_raw_value" ] ]
 
 		model :: [SCompound] = [
 			SComment $ show traceid,

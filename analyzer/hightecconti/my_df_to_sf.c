@@ -167,9 +167,6 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
     return(dst);
 }
 
-//extern const fp_number_type __thenan_df;
-
-
 __inline__
 static int
 isnan (const fp_number_type *x)
