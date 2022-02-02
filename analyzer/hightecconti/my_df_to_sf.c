@@ -113,7 +113,7 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
   dst->sign = sign;
   if (exp == 0)
     {
-         if (fraction == 0)
+         if (solver_pragma(2) && fraction == 0)
          {
            dst->class = CLASS_ZERO;
          }
@@ -133,30 +133,28 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
            dst->fraction.lla = fraction;
          }
     }
-  else if (exp == (0x7ff))
+  else if (solver_pragma(2) && exp == (0x7ff))
     {
+	     if (fraction == 0)
+	     {
+	       dst->class = CLASS_INFINITY;
+	     }
+	      else
+	     {
+	       if (fraction & 0x8000000000000LL)
 
-      if (fraction == 0)
-     {
-
-       dst->class = CLASS_INFINITY;
-     }
-      else
-     {
-       if (fraction & 0x8000000000000LL)
-
-         {
-           dst->class = CLASS_QNAN;
-         }
-       else
-         {
-           dst->class = CLASS_SNAN;
-         }
+	         {
+	           dst->class = CLASS_QNAN;
+	         }
+	       else
+	         {
+	           dst->class = CLASS_SNAN;
+	         }
 
 
-       fraction &= ~0x8000000000000LL;
-       dst->fraction.lla = fraction << 8L;
-     }
+	       fraction &= ~0x8000000000000LL;
+	       dst->fraction.lla = fraction << 8L;
+	     }
     }
   else
     {
@@ -234,15 +232,12 @@ __pack_f (const fp_number_type_s *src)
   int sign = src->sign;
   int exp = 0;
 
-  if (0 && (isnan_s (src) || isinf_s (src)))
+  if (solver_pragma (1) && (0 && (isnan_s (src) || isinf_s (src))))
     {
-
-
-
       exp = (0xff);
       fraction = ((fractype) 1 << 23) - 1;
     }
-  else if (isnan_s (src))
+  else if (solver_pragma(2) && isnan_s (src))
     {
       exp = (0xff);
 
@@ -250,23 +245,16 @@ __pack_f (const fp_number_type_s *src)
       fraction &= 0x400000L - 1;
       if (src->class == CLASS_QNAN || 1)
  {
-
-
-
-
-
-
-
    fraction |= 0x400000L;
 
  }
     }
-  else if (isinf_s (src))
+  else if (solver_pragma(2) && isinf_s (src))
     {
       exp = (0xff);
       fraction = 0;
     }
-  else if (iszero_s (src))
+  else if (solver_pragma(2) && iszero_s (src))
     {
       exp = 0;
       fraction = 0;
@@ -312,8 +300,7 @@ __pack_f (const fp_number_type_s *src)
    fraction >>= 7L;
 
  }
-      else if (!0
-        && __builtin_expect (src->normal_exp > 127, 0))
+      else if (__builtin_expect (src->normal_exp > 127, 0))
  {
    exp = (0xff);
    fraction = 0;
@@ -321,32 +308,28 @@ __pack_f (const fp_number_type_s *src)
       else
  {
    exp = src->normal_exp + 127;
-   if (!0)
+
      {
+		  if ((fraction & 0x7f) == 0x40)
+		  {
+		    if (fraction & (1 << 7L))
+		      fraction += 0x3f + 1;
+		  }
+		       else
+		  {
 
-
-
-       if ((fraction & 0x7f) == 0x40)
-  {
-    if (fraction & (1 << 7L))
-      fraction += 0x3f + 1;
-  }
-       else
-  {
-
-    fraction += 0x3f;
-  }
-       if (fraction >= ((fractype)1<<(23 +1+7L)))
-  {
-    fraction >>= 1;
-    exp += 1;
-  }
+		    fraction += 0x3f;
+		  }
+		       if (fraction >= ((fractype)1<<(23 +1+7L)))
+		  {
+		    fraction >>= 1;
+		    exp += 1;
+		  }
      }
    fraction >>= 7L;
 
-   if (0 && exp > (0xff))
+   if (solver_pragma(2) && exp > (0xff))
      {
-
        exp = (0xff);
        fraction = ((fractype) 1 << 23) - 1;
      }
