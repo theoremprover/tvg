@@ -132,7 +132,7 @@ main = do
 --		[] → "gcc" : "__unpack_d_drill" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,writeModelsOpt,subfuncovOpt]
 --		[] → "gcc" : "__subdf3_drill" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noHaltOnVerificationErrorOpt,noIndentLogOpt,findModeOpt,subfuncovOpt]
 --		[] → "gcc" : "__udiv6432" : (analyzerPath++"\\hightecconti\\udiv6432.c") : [{-cutoffsOpt-}noIndentLogOpt,findModeOpt]
-		[] → "gcc" : "__mymuldf3" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,findModeOpt,noHaltOnVerificationErrorOpt,subfuncovOpt]
+		[] → "gcc" : "__mymuldf3" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,noHaltOnVerificationErrorOpt,subfuncovOpt]
 --		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}writeModelsOpt,findModeOpt]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
@@ -543,7 +543,7 @@ printDateTimeM :: Int -> CovVecM ()
 printDateTimeM verbosity = do
 	last_time <- gets lastTimeCVS
 	(current_time,duration_s) <- liftIO $ diffToCurrentTime last_time
-	printLogV verbosity $ "Last Duration (hour:min:sec): " ++ duration_s ++ "\n"
+	--printLogV verbosity $ "Last Duration (hour:min:sec): " ++ duration_s ++ "\n"
 	modify $ \ s -> s { lastTimeCVS = current_time }
 	return ()
 
@@ -1138,8 +1138,8 @@ type Progress = [(Int,Int)]
 
 printProgressM :: Progress → CovVecM ()
 printProgressM progress = do
-	printLogV 20 $ printf "Current progress = %s\n" (show progress)
-	printLogV 1 $ printf "Current depth = %i\n" (length progress)
+	--printLogV 20 $ printf "Current progress = %s\n" (show progress)
+	--printLogV 1 $ printf "Current depth = %i\n" (length progress)
 	printLogV 1 $ printf "Current estimated total number of traces: %i\n" (product $ map snd progress)
 	printLogV 1 $ printf "Progress: %.1f %%\n" (100.0 * (pct $ reverse progress))
 	where
