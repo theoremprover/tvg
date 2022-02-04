@@ -204,7 +204,6 @@ flip_sign ( fp_number_type * x)
   x->sign = !x->sign;
 }
 
-
 static __inline__ __attribute__ ((__always_inline__)) const fp_number_type *
 _fpmul_parts ( fp_number_type * a,
         fp_number_type * b,
@@ -226,7 +225,7 @@ _fpmul_parts ( fp_number_type * a,
   if (solver_pragma(2) && isinf (a))
     {
       if (iszero (b))
- return makenan ();
+           return makenan ();
       a->sign = a->sign != b->sign;
       return a;
     }
@@ -249,8 +248,6 @@ _fpmul_parts ( fp_number_type * a,
       b->sign = a->sign != b->sign;
       return b;
     }
-
-
 
   USItype nl = a->fraction.lla;
   USItype nh = a->fraction.lla >> (4 * (8));
@@ -301,6 +298,8 @@ _fpmul_parts ( fp_number_type * a,
       if (low & 0x8000000000000000LL) high |= 1;
       low <<= 1;
     }
+
+	solver_find(0);
 
   if ((high & 0xff) == 0x80)
     {
