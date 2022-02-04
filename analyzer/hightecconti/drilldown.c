@@ -299,7 +299,7 @@ _fpmul_parts ( fp_number_type * a,
       low <<= 1;
     }
 
-	solver_find(0);
+	//solver_find(0);
 
   if ((high & 0xff) == 0x80)
     {
