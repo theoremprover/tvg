@@ -305,8 +305,6 @@ _fpmul_parts ( fp_number_type * a,
 
   if (!0 && (high & 0xff) == 0x80)
     {
-      if((high & 0xff) == 0x80) solver_find(4);
-
       if (high & (1 << 8L))
 	 {
 	 }
