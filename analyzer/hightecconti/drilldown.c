@@ -249,6 +249,8 @@ _fpmul_parts ( fp_number_type * a,
       return b;
     }
 
+	solver_find(0);
+
   USItype nl = a->fraction.lla;
   USItype nh = a->fraction.lla >> (4 * (8));
   USItype ml = b->fraction.lla;
@@ -274,8 +276,7 @@ _fpmul_parts ( fp_number_type * a,
   high = res2;
   low = res0;
 
-  tmp->normal_exp = a->normal_exp + b->normal_exp
-    + 64 - (52 + 8L);
+  tmp->normal_exp = a->normal_exp + b->normal_exp + 64 - (52 + 8L);
   tmp->sign = a->sign != b->sign;
   while (high >= ((fractype)1<<(52 +1+8L)))
     {
@@ -285,9 +286,6 @@ _fpmul_parts ( fp_number_type * a,
            low >>= 1;
            low |= 0x8000000000000000LL;
          }
-         else
-         {
-		 }
       high >>= 1;
     }
   while (high < ((fractype)1<<(52 +8L)))
@@ -299,23 +297,21 @@ _fpmul_parts ( fp_number_type * a,
       low <<= 1;
     }
 
-	//solver_find(0);
-
   if ((high & 0xff) == 0x80)
-    {
-      if (high & (1 << 8L))
+  {
+     if (high & (1 << 8L))
 	 {
 	    solver_find(1);
 	 }
-      else if (low)
+     else if (low)
 	 {
 	    solver_find(2);
-	   high += 0x7f + 1;
+	    high += 0x7f + 1;
 
-	   high &= ~(fractype) 0xff;
+	    high &= ~(fractype) 0xff;
 	 }
-	   else solver_find(3);
-    }
+	 else solver_find(3);
+  }
   tmp->fraction.lla = high;
   tmp->class = CLASS_NUMBER;
   return tmp;
@@ -362,7 +358,6 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
     }
   else if (solver_pragma(2,2) && (exp == (0x7ff)))
     {
-
       if (fraction == 0)
      {
 
@@ -371,7 +366,6 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
       else
      {
        if (fraction & 0x8000000000000LL)
-
          {
            dst->class = CLASS_QNAN;
          }
@@ -380,14 +374,12 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
            dst->class = CLASS_SNAN;
          }
 
-
        fraction &= ~0x8000000000000LL;
        dst->fraction.lla = fraction << 8L;
      }
     }
   else
     {
-
       dst->normal_exp = exp - 1023;
       dst->class = CLASS_NUMBER;
       dst->fraction.lla = (fraction << 8L) | ((fractype)1<<(52 +8L));
@@ -395,7 +387,6 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
 
     return(dst);
 }
-
 
 fractype
 __pack_d_drill (const fp_number_type *src)
@@ -542,14 +533,13 @@ __pack_d_drill (const fp_number_type *src)
   dst.raw_value = fraction | (((fractype)exp)<<52) | ((fractype)sign<<63);
   return dst.raw_value;
 }
-
+/*
 static fp_number_type*
 _fpadd_parts_drill (fp_number_type * a,
        fp_number_type * b,
        fp_number_type * tmp)
 {
   intfrac tfraction;
-
 
   int a_normal_exp;
   int b_normal_exp;
@@ -566,7 +556,6 @@ _fpadd_parts_drill (fp_number_type * a,
     }
   if (solver_pragma(2) && isinf (a))
     {
-
       if (isinf (b) && a->sign != b->sign) return (makenan ());
       return a;
     }
@@ -577,11 +566,11 @@ _fpadd_parts_drill (fp_number_type * a,
   if (solver_pragma(2) && iszero (b))
     {
       if (iszero (a))
- {
-   *tmp = *a;
-   tmp->sign = a->sign & b->sign;
-   return tmp;
- }
+	 {
+	   *tmp = *a;
+	   tmp->sign = a->sign & b->sign;
+	   return tmp;
+	 }
       return a;
     }
   if (solver_pragma(2) && iszero (a))
@@ -681,7 +670,7 @@ _fpadd_parts_drill (fp_number_type * a,
     }
   return tmp;
 }
-
+*/
 /* Noch zu covern:
 pack_d von __floatsidf   Dokument! R2? erledigt.
 pack_d von __subdf3  ()
@@ -709,7 +698,7 @@ __adddf3_drill (FLO_type arg_a, FLO_type arg_b)
   return (__pack_d_drill (res));
 }
 */
-
+/*
 fractype
 __subdf3_drill (FLO_type arg_a, FLO_type arg_b)
 {
@@ -731,7 +720,7 @@ __subdf3_drill (FLO_type arg_a, FLO_type arg_b)
 
   return (__pack_d_drill (res));
 }
-
+*/
 fp_number_type
 __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
 {
