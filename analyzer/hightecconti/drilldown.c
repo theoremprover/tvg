@@ -290,7 +290,7 @@ _fpmul_parts ( fp_number_type * a,
          }
          else
          {
-		}
+		 }
       high >>= 1;
     }
   while (high < ((fractype)1<<(52 +8L)))
@@ -298,8 +298,7 @@ _fpmul_parts ( fp_number_type * a,
       tmp->normal_exp--;
 
       high <<= 1;
-      if (low & 0x8000000000000000LL)
- high |= 1;
+      if (low & 0x8000000000000000LL) high |= 1;
       low <<= 1;
     }
 
@@ -313,7 +312,6 @@ _fpmul_parts ( fp_number_type * a,
 	 {
 	    solver_find(2);
 	   high += 0x7f + 1;
-
 
 	   high &= ~(fractype) 0xff;
 	 }
@@ -341,7 +339,7 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
   sign = (src->raw_value) >> 63 ;
 
   dst->sign = sign;
-  if (solver_pragma(2,2) && exp == 0)
+  if (exp == 0)
     {
          if (fraction == 0)
          {
@@ -363,7 +361,7 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
            dst->fraction.lla = fraction;
          }
     }
-  else if (solver_pragma(2,2) && exp == (0x7ff))
+  else if (exp == (0x7ff))
     {
 
       if (fraction == 0)
@@ -441,12 +439,10 @@ __pack_d_drill (const fp_number_type *src)
     }
   else if (fraction == 0)
     {
-        solver_find(1);   // auch für addf und subdf
       exp = 0;
     }
   else
     {
-      // A
       if (__builtin_expect (src->normal_exp < (-(1023)+1), 0))
 	 {
 	   int shift = (-(1023)+1) - src->normal_exp;
