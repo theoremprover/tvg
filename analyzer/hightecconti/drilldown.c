@@ -303,20 +303,21 @@ _fpmul_parts ( fp_number_type * a,
       low <<= 1;
     }
 
-  if (!0 && (high & 0xff) == 0x80)
+  if ((high & 0xff) == 0x80)
     {
       if (high & (1 << 8L))
 	 {
+	    solver_find(1);
 	 }
       else if (low)
 	 {
-	    solver_find(1);
+	    solver_find(2);
 	   high += 0x7f + 1;
 
 
 	   high &= ~(fractype) 0xff;
 	 }
-	 else solver_find(2);
+	   else solver_find(3);
     }
   tmp->fraction.lla = high;
   tmp->class = CLASS_NUMBER;
