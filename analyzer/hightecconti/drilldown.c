@@ -131,7 +131,6 @@ typedef struct
   unsigned int sign;
   int normal_exp;
 
-
   union
     {
       fractype lla;
@@ -140,8 +139,8 @@ typedef struct
 
 typedef union
 {
-  FLO_type value;
   unsigned long long int raw_value;
+  FLO_type value;
 
 /*
   struct
@@ -195,13 +194,6 @@ static int
 iszero (const fp_number_type * x)
 {
   return x->class == CLASS_ZERO;
-}
-
-__inline__
-static void
-flip_sign ( fp_number_type * x)
-{
-  x->sign = !x->sign;
 }
 
 static __inline__ __attribute__ ((__always_inline__)) const fp_number_type *
@@ -295,7 +287,6 @@ _fpmul_parts ( fp_number_type * a,
       low <<= 1;
     }
 
-	solver_find(99);
   if ((high & 0xff) == 0x80)
   {
      if (high & (1 << 8L))
@@ -713,7 +704,7 @@ __subdf3_drill (FLO_type arg_a, FLO_type arg_b)
   fp_number_type* fp1 = __unpack_d_drill (&au, &a);
   fp_number_type* fp2 = __unpack_d_drill (&bu, &b);
 
-  b.sign ^= 1;
+  fp2->sign ^= 1;
 
   res = _fpadd_parts_drill (fp1, fp2, &tmp);
 
@@ -734,6 +725,10 @@ __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
 
   fp_number_type* fp1 = __unpack_d_drill (&au, &a);
   fp_number_type* fp2 = __unpack_d_drill (&bu, &b);
+
+//    solver_find(1);
+//    return(*fp1);
+
   res = _fpmul_parts (fp1, fp2, &tmp);
 
   //return (__pack_d_drill(res));
