@@ -469,25 +469,24 @@ void main(void)
 //		 0x0004000000000001ull ,
 //		 0x0004000000000000ull ,
 //		 0x0010000000000001ull ,
-//		 0x380fffffe0000001ull ,
+		 0x380ffffff0000001ull ,
 //		 0x36bc000008000008ull ,
 //		 0x7270000000000001ull ,
-//		 0x381ffffff0000001ull ,
-//		 0x3820305c20000001ull ,
-//	10	 0x0010000000000000ull ,
-//		 0x380fffffe0c00000ull ,
+//		 0x39fffffff0000001ull ,
+//		 0x38830815c0000002ull ,
+//		 0x380fffffe0400000ull ,
 //		 0x376bef0002000000ull ,
-		 0x380fffffe0000000ull , // solver_find(2,4
-//		 0x38000000e0000000ull ,
-		 0x3690000000000000ull ,   // solver_find(3
-//		 0x380fffffe0800000ull ,
+		 0x380fffffe0000000ull ,
+//13		 0x38000000e0000000ull ,
+		 0x3690000000000000ull ,
+//		 0x380ffffff0000000ull ,
 //		 0x375bc4c000000000ull ,
 //		 0x6000000000000000ull ,
-		 0x381ffffff0000000ull ,  // solver_find(5)
-//		 0x3a01082bf0000000ull ,
-		 0x3810000010000000ull   // solver_find(6)
-//		 0x419ffffff0400000ull ,
-//		 0x3a00750860000000ull
+		 0x381ffffff0000000ull ,
+//		 0x3820000730000000ull ,
+		 0x3820000010000000ull
+//		 0x381ffffff8000000ull ,
+// 22		 0x3a00c20ae0400000ull
 	};
 	for(int i=0;i<sizeof(ds)/sizeof(ds[0]);i++)
 	{
@@ -500,8 +499,9 @@ void main(void)
 #endif
 
 /*
-		 0x380fffffe0000000ull , // solver_find(2,4)
-		 0x3690000000000000ull ,   // solver_find(3)
-		 0x381ffffff0000000ull ,  // solver_find(5)
-		 0x3810000010000000ull   // solver_find(6)
+		 0x380ffffff0000001ull ,
+		 0x380fffffe0000000ull ,
+		 0x3690000000000000ull ,
+		 0x381ffffff0000000ull ,
+		 0x3820000010000000ull
 */

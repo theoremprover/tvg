@@ -233,9 +233,9 @@ _fpmul_parts ( fp_number_type * a,
   if (solver_pragma(2) && isinf (b))
     {
       if (iszero (a))
- {
-   return makenan ();
- }
+	 {
+	   return makenan ();
+	 }
       b->sign = a->sign != b->sign;
       return b;
     }
@@ -252,36 +252,30 @@ _fpmul_parts ( fp_number_type * a,
 
 
 
-  {
+  USItype nl = a->fraction.lla;
+  USItype nh = a->fraction.lla >> (4 * (8));
+  USItype ml = b->fraction.lla;
+  USItype mh = b->fraction.lla >> (4 * (8));
+  UDItype pp_ll = (UDItype) ml * nl;
+  UDItype pp_hl = (UDItype) mh * nl;
+  UDItype pp_lh = (UDItype) ml * nh;
+  UDItype pp_hh = (UDItype) mh * nh;
+  UDItype res2 = 0;
+  UDItype res0 = 0;
+  UDItype ps_hh__ = pp_hl + pp_lh;
+  if (ps_hh__ < pp_hl)
+     {
+        res2 += (UDItype)1 << (4 * (8));
+     }
+  pp_hl = (UDItype)(USItype)ps_hh__ << (4 * (8));
+  res0 = pp_ll + pp_hl;
+  if (res0 < pp_ll)
     {
-      USItype nl = a->fraction.lla;
-      USItype nh = a->fraction.lla >> (4 * (8));
-      USItype ml = b->fraction.lla;
-      USItype mh = b->fraction.lla >> (4 * (8));
-      UDItype pp_ll = (UDItype) ml * nl;
-      UDItype pp_hl = (UDItype) mh * nl;
-      UDItype pp_lh = (UDItype) ml * nh;
-      UDItype pp_hh = (UDItype) mh * nh;
-      UDItype res2 = 0;
-      UDItype res0 = 0;
-      UDItype ps_hh__ = pp_hl + pp_lh;
-      if (ps_hh__ < pp_hl)
-         {
-            res2 += (UDItype)1 << (4 * (8));
-            solver_find(1);
-         }
-      pp_hl = (UDItype)(USItype)ps_hh__ << (4 * (8));
-      res0 = pp_ll + pp_hl;
-      if (res0 < pp_ll)
-        {
-         res2++;
-        }
-      res2 += (ps_hh__ >> (4 * (8))) + pp_hh;
-      high = res2;
-      low = res0;
+     res2++;
     }
-
-  }
+  res2 += (ps_hh__ >> (4 * (8))) + pp_hh;
+  high = res2;
+  low = res0;
 
   tmp->normal_exp = a->normal_exp + b->normal_exp
     + 64 - (52 + 8L);
@@ -291,13 +285,11 @@ _fpmul_parts ( fp_number_type * a,
       tmp->normal_exp++;
       if (high & 1)
          {
-           solver_find(2);
            low >>= 1;
            low |= 0x8000000000000000LL;
          }
          else
          {
-            solver_find(3);
 		}
       high >>= 1;
     }
@@ -316,15 +308,17 @@ _fpmul_parts ( fp_number_type * a,
       if((high & 0xff) == 0x80) solver_find(4);
 
       if (high & (1 << 8L))
- {
- }
+	 {
+	 }
       else if (low)
- {
-   high += 0x7f + 1;
+	 {
+	    solver_find(1);
+	   high += 0x7f + 1;
 
 
-   high &= ~(fractype) 0xff;
- }
+	   high &= ~(fractype) 0xff;
+	 }
+	 else solver_find(2);
     }
   tmp->fraction.lla = high;
   tmp->class = CLASS_NUMBER;
@@ -632,7 +626,6 @@ _fpadd_parts_drill (fp_number_type * a,
       }
     else
       {
-
 		 if (a_normal_exp > b_normal_exp)
 		   {
 		     b_normal_exp = a_normal_exp;
@@ -745,7 +738,6 @@ __subdf3_drill (FLO_type arg_a, FLO_type arg_b)
   return (__pack_d_drill (res));
 }
 
-/*
 fp_number_type
 __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
 {
@@ -765,7 +757,7 @@ __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
   //return (__pack_d_drill(res));
   return (*res);
 }
-*/
+
 
 #ifdef MAN
 
