@@ -726,9 +726,6 @@ __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
   fp_number_type* fp1 = __unpack_d_drill (&au, &a);
   fp_number_type* fp2 = __unpack_d_drill (&bu, &b);
 
-//    solver_find(1);
-//    return(*fp1);
-
   res = _fpmul_parts (fp1, fp2, &tmp);
 
   //return (__pack_d_drill(res));
