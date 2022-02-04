@@ -249,8 +249,6 @@ _fpmul_parts ( fp_number_type * a,
       return b;
     }
 
-	solver_find(0);
-
   USItype nl = a->fraction.lla;
   USItype nh = a->fraction.lla >> (4 * (8));
   USItype ml = b->fraction.lla;
@@ -334,9 +332,9 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
   sign = (src->raw_value) >> 63 ;
 
   dst->sign = sign;
-  if (solver_pragma(2,2) && exp == 0)
+  if (exp == 0)
     {
-         if (fraction == 0)
+         if (solver_pragma(2,2) && fraction == 0)
          {
            dst->class = CLASS_ZERO;
          }
@@ -360,7 +358,6 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
     {
       if (fraction == 0)
      {
-
        dst->class = CLASS_INFINITY;
      }
       else
@@ -388,6 +385,7 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
     return(dst);
 }
 
+/*
 fractype
 __pack_d_drill (const fp_number_type *src)
 {
@@ -396,16 +394,14 @@ __pack_d_drill (const fp_number_type *src)
   int sign = src->sign;
   int exp = 0;
 
-/* DEAD
-  if (0 && (isnan (src) || isinf (src)))
-    {
-
-
-
-      exp = (0x7ff);
-      fraction = ((fractype) 1 << 52) - 1;
-    }
-  else */if (solver_pragma(2) && isnan (src))
+// DEAD
+//  if (0 && (isnan (src) || isinf (src)))
+//    {
+//      exp = (0x7ff);
+//      fraction = ((fractype) 1 << 52) - 1;
+//    }
+//  else
+	if (solver_pragma(2) && isnan (src))
     {
       exp = (0x7ff);
 
@@ -533,6 +529,8 @@ __pack_d_drill (const fp_number_type *src)
   dst.raw_value = fraction | (((fractype)exp)<<52) | ((fractype)sign<<63);
   return dst.raw_value;
 }
+*/
+
 /*
 static fp_number_type*
 _fpadd_parts_drill (fp_number_type * a,
