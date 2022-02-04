@@ -341,7 +341,7 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
   dst->sign = sign;
   if (exp == 0)
     {
-         if (fraction == 0)
+         if (solver_pragma(2,2) && fraction == 0)
          {
            dst->class = CLASS_ZERO;
          }
@@ -361,7 +361,7 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
            dst->fraction.lla = fraction;
          }
     }
-  else if (exp == (0x7ff))
+  else if (solver_pragma(2,2) && (exp == (0x7ff)))
     {
 
       if (fraction == 0)
