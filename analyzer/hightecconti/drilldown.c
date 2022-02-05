@@ -287,7 +287,7 @@ _fpmul_parts ( fp_number_type * a,
       low <<= 1;
     }
 
-  if ((high & 0xff) == 0x80)
+  if (solver_pragma(1) && ((high & 0xff) == 0x80))
   {
      if (high & (1 << 8L))
 	 {
