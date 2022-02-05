@@ -103,10 +103,16 @@ printTypes = False
 printLocations = False
 errorModelPath = analyzerPath </> "models"
 
-mAX_UNROLLS = 3
+mAX_UNROLLS = 1
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
 
 sizeConditionChunks = 4
+
+--(assert (= bv$au$5_DOT_value bv$arg_a))
+--(assert (= bv$bu$6_DOT_value bv$arg_b))
+debugconstraints = if True then [] else [
+	SExprLine $ SOnOneLine $ 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ SLeaf "=", SLeaf "bv$arg_a", SLeaf "bv$au$5_DOT_value" ],
+	SExprLine $ SOnOneLine $ 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ SLeaf "=", SLeaf "bv$arg_b", SLeaf "bv$bu$6_DOT_value" ] ]
 
 
 main :: IO ()
@@ -124,7 +130,7 @@ main = do
 --		[] → "gcc" : "__subdf3_drill" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noHaltOnVerificationErrorOpt,noIndentLogOpt,findModeOpt,subfuncovOpt]
 --		[] → "gcc" : "__udiv6432" : (analyzerPath++"\\hightecconti\\udiv6432.c") : [{-cutoffsOpt-}noIndentLogOpt,findModeOpt]
 		[] → "gcc" : "__mymuldf3" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}noIndentLogOpt,noLoopInferenceOpt,findModeOpt,noHaltOnVerificationErrorOpt,subfuncovOpt]
---		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}writeModelsOpt,findModeOpt]
+--		[] → "gcc" : "_fpmul_parts" : (analyzerPath++"\\hightecconti\\drilldown.c") : [{-cutoffsOpt-}writeModelsOpt,findModeOpt,subfuncovOpt]
 --		[] → "gcc" : "_fpdiv_parts" : (analyzerPath++"\\myfp-bit_mul.c") : [cutoffsOpt,writeModelsOpt] --"-writeAST","-writeGlobalDecls"]
 --		[] → "gcc" : "__adddf3" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df.i"]) ++ [noIndentLogOpt,cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
 --		[] → "gcc" : "__pack_d" : (map ((analyzerPath++"\\hightecconti\\")++) ["_addsub_df_double.i"]) ++ [cutoffsOpt,subfuncovOpt,writeModelsOpt,htmlLogOpt]
@@ -3370,12 +3376,6 @@ makeAndSolveZ3ModelM traceid z3tyenv0 constraints additional_sexprs output_ident
 	let
 		outputvarsZ3 = for a_output_idents $ \ (ident,_) → SExprLine $ SOnOneLine $
 			SExpr [SLeaf "get-value", SExpr [ SLeaf $ identToString ident ] ]
-
---(assert (= bv$au$5_DOT_value bv$arg_a))
---(assert (= bv$bu$6_DOT_value bv$arg_b))
-		debugconstraints = [
-			SExprLine $ SOnOneLine $ 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ SLeaf "=", SLeaf "bv$arg_a", SLeaf "bv$au$5_DOT_value" ],
-			SExprLine $ SOnOneLine $ 𝒶𝓈𝓈𝑒𝓇𝓉 $ SExpr [ SLeaf "=", SLeaf "bv$arg_b", SLeaf "bv$bu$6_DOT_value" ] ]
 
 		model :: [SCompound] = [
 			SComment $ show traceid,
