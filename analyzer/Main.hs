@@ -69,15 +69,6 @@ dontShowDeclsInTrace :: Bool = True
 
 z3TimeoutSecs :: Maybe Int = Just $ 2*60
 
-{-
-reachFixedTrace :: Maybe [[Int]] = Just [     pack_d_drill  A      B
-	[2,2,2,2, 2,2,2,2,2,2, 1, 1, 2,1, 2,2,    2,2,2,2,      2,3,1, 1,1,1,1]
-	[2,2,2,2, 2,2,2,2,2,2, 2, 1, 1,   2,2,    2,2,2,2,      2,3,1, 1,1,1,1] ]
-
-    [2,2,2,2, 2,2,2,2,2,2, 1,1,  2,1, 2,2,    2,2,2,2,      2,3,1, 1,1,1,1]
-    [2,2,2,2,2,2,2,2,2,2,  2, 1, 1,   2,2,    2,2,2,2,      2,3,1, 1,1,1,1]
--}
-
 subfuncovOpt = "-subfuncov"
 noHaltOnVerificationErrorOpt = "-nohalt"
 noIndentLogOpt = "-noindentlog"
@@ -112,7 +103,7 @@ printTypes = False
 printLocations = False
 errorModelPath = analyzerPath </> "models"
 
-mAX_UNROLLS = 1
+mAX_UNROLLS = 3
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
 
 sizeConditionChunks = 4
