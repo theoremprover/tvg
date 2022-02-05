@@ -154,20 +154,17 @@ typedef union
 }
 FLO_union_type;
 
-
-extern int __fpcmp_parts_d (fp_number_type *, fp_number_type *);
-extern fp_number_type __thenan_df;
+fp_number_type __thenan_df = { CLASS_SNAN, 0, 0,
+	{
+		(fractype) 0
+	}
+};
 
 
 __inline__
 static fp_number_type *
 makenan (void)
 {
-
-
-
-
-
   return & __thenan_df;
 
 }
@@ -306,12 +303,6 @@ _fpmul_parts ( fp_number_type * a,
   tmp->class = CLASS_NUMBER;
   return tmp;
 }
-
-fp_number_type __thenan_df = { CLASS_SNAN, 0, 0,
-	{
-		(fractype) 0
-	}
-};
 
 fp_number_type*
 __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
