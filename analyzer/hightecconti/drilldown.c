@@ -193,6 +193,70 @@ iszero (const fp_number_type * x)
   return x->class == CLASS_ZERO;
 }
 
+fp_number_type*
+__unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
+{
+  fractype fraction;
+  int exp;
+  int sign;
+  fraction = (src->raw_value) & (0x000fffffffffffffULL) ;
+  exp = ((src->raw_value) >> 52) & (0x7ffULL);
+  sign = (src->raw_value) >> 63 ;
+
+  dst->sign = sign;
+  if (exp == 0)
+    {
+         if (solver_pragma(2,2) && (fraction == 0))
+         {
+           dst->class = CLASS_ZERO;
+         }
+      else
+         {
+           dst->normal_exp = exp - 1023 + 1;
+           fraction <<= 8L;
+
+           dst->class = CLASS_NUMBER;
+
+           while (fraction < ((fractype)1<<(52 +8L)))
+             {
+               fraction <<= 1;
+               dst->normal_exp--;
+             }
+
+           dst->fraction.lla = fraction;
+         }
+    }
+  else if (solver_pragma(2,2) && (exp == (0x7ff)))
+    {
+      if (fraction == 0)
+     {
+       dst->class = CLASS_INFINITY;
+     }
+      else
+     {
+       if (fraction & 0x8000000000000LL)
+         {
+           dst->class = CLASS_QNAN;
+         }
+       else
+         {
+           dst->class = CLASS_SNAN;
+         }
+
+       fraction &= ~0x8000000000000LL;
+       dst->fraction.lla = fraction << 8L;
+     }
+    }
+  else
+    {
+      dst->normal_exp = exp - 1023;
+      dst->class = CLASS_NUMBER;
+      dst->fraction.lla = (fraction << 8L) | ((fractype)1<<(52 +8L));
+    }
+
+    return(dst);
+}
+
 static __inline__ __attribute__ ((__always_inline__)) const fp_number_type *
 _fpmul_parts ( fp_number_type * a,
         fp_number_type * b,
@@ -302,70 +366,6 @@ _fpmul_parts ( fp_number_type * a,
   tmp->fraction.lla = high;
   tmp->class = CLASS_NUMBER;
   return tmp;
-}
-
-fp_number_type*
-__unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
-{
-  fractype fraction;
-  int exp;
-  int sign;
-  fraction = (src->raw_value) & (0x000fffffffffffffULL) ;
-  exp = ((src->raw_value) >> 52) & (0x7ffULL);
-  sign = (src->raw_value) >> 63 ;
-
-  dst->sign = sign;
-  if (exp == 0)
-    {
-         if (solver_pragma(2,2) && fraction == 0)
-         {
-           dst->class = CLASS_ZERO;
-         }
-      else
-         {
-           dst->normal_exp = exp - 1023 + 1;
-           fraction <<= 8L;
-
-           dst->class = CLASS_NUMBER;
-
-           while (fraction < ((fractype)1<<(52 +8L)))
-             {
-               fraction <<= 1;
-               dst->normal_exp--;
-             }
-
-           dst->fraction.lla = fraction;
-         }
-    }
-  else if (solver_pragma(2,2) && (exp == (0x7ff)))
-    {
-      if (fraction == 0)
-     {
-       dst->class = CLASS_INFINITY;
-     }
-      else
-     {
-       if (fraction & 0x8000000000000LL)
-         {
-           dst->class = CLASS_QNAN;
-         }
-       else
-         {
-           dst->class = CLASS_SNAN;
-         }
-
-       fraction &= ~0x8000000000000LL;
-       dst->fraction.lla = fraction << 8L;
-     }
-    }
-  else
-    {
-      dst->normal_exp = exp - 1023;
-      dst->class = CLASS_NUMBER;
-      dst->fraction.lla = (fraction << 8L) | ((fractype)1<<(52 +8L));
-    }
-
-    return(dst);
 }
 
 /*
