@@ -112,7 +112,7 @@ printTypes = False
 printLocations = False
 errorModelPath = analyzerPath </> "models"
 
-mAX_UNROLLS = 2
+mAX_UNROLLS = 1
 uNROLLING_STRATEGY = [0..mAX_UNROLLS]
 
 sizeConditionChunks = 4
