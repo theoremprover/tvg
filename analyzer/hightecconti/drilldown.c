@@ -204,7 +204,7 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
   sign = (src->raw_value) >> 63 ;
 
   dst->sign = sign;
-  if (solver_pragma(2,2) && (exp == 0))
+  if (exp == 0)
     {
          if (solver_pragma(2,2) && (fraction == 0))
          {
@@ -352,7 +352,7 @@ _fpmul_parts ( fp_number_type * a,
       low <<= 1;
     }
 
-  if (solver_pragma(1) && ((high & 0xff) == 0x80))
+  if ((high & 0xff) == 0x80)
   {
      if (high & (1 << 8L))
 	 {
