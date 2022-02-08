@@ -131,7 +131,6 @@ typedef struct
   unsigned int sign;
   int normal_exp;
 
-
   union
     {
       fractype lla;
@@ -140,8 +139,8 @@ typedef struct
 
 typedef union
 {
-  FLO_type value;
   unsigned long long int raw_value;
+  FLO_type value;
 
 /*
   struct
@@ -155,20 +154,17 @@ typedef union
 }
 FLO_union_type;
 
-
-extern int __fpcmp_parts_d (fp_number_type *, fp_number_type *);
-extern fp_number_type __thenan_df;
+fp_number_type __thenan_df = { CLASS_SNAN, 0, 0,
+	{
+		(fractype) 0
+	}
+};
 
 
 __inline__
 static fp_number_type *
 makenan (void)
 {
-
-
-
-
-
   return & __thenan_df;
 
 }
@@ -197,11 +193,68 @@ iszero (const fp_number_type * x)
   return x->class == CLASS_ZERO;
 }
 
-__inline__
-static void
-flip_sign ( fp_number_type * x)
+fp_number_type*
+__unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
 {
-  x->sign = !x->sign;
+  fractype fraction;
+  int exp;
+  int sign;
+  fraction = (src->raw_value) & (0x000fffffffffffffULL) ;
+  exp = ((src->raw_value) >> 52) & (0x7ffULL);
+  sign = (src->raw_value) >> 63 ;
+
+  dst->sign = sign;
+  if (exp == 0)
+    {
+         if (solver_pragma(2,2) && (fraction == 0))
+         {
+           dst->class = CLASS_ZERO;
+         }
+      else
+         {
+           dst->normal_exp = exp - 1023 + 1;
+           fraction <<= 8L;
+
+           dst->class = CLASS_NUMBER;
+
+           while (fraction < ((fractype)1<<(52 +8L)))
+             {
+               fraction <<= 1;
+               dst->normal_exp--;
+             }
+
+           dst->fraction.lla = fraction;
+         }
+    }
+  else if (solver_pragma(2,2) && (exp == (0x7ff)))
+    {
+      if (fraction == 0)
+     {
+       dst->class = CLASS_INFINITY;
+     }
+      else
+     {
+       if (fraction & 0x8000000000000LL)
+         {
+           dst->class = CLASS_QNAN;
+         }
+       else
+         {
+           dst->class = CLASS_SNAN;
+         }
+
+       fraction &= ~0x8000000000000LL;
+       dst->fraction.lla = fraction << 8L;
+     }
+    }
+  else
+    {
+      dst->normal_exp = exp - 1023;
+      dst->class = CLASS_NUMBER;
+      dst->fraction.lla = (fraction << 8L) | ((fractype)1<<(52 +8L));
+    }
+
+    return(dst);
 }
 
 static __inline__ __attribute__ ((__always_inline__)) const fp_number_type *
@@ -262,6 +315,7 @@ _fpmul_parts ( fp_number_type * a,
   UDItype ps_hh__ = pp_hl + pp_lh;
   if (ps_hh__ < pp_hl)
      {
+        solver_find(1);
         res2 += (UDItype)1 << (4 * (8));
      }
   pp_hl = (UDItype)(USItype)ps_hh__ << (4 * (8));
@@ -281,9 +335,12 @@ _fpmul_parts ( fp_number_type * a,
       tmp->normal_exp++;
       if (high & 1)
          {
+           solver_find(2);
            low >>= 1;
            low |= 0x8000000000000000LL;
          }
+         else solver_find(3);
+
       high >>= 1;
     }
   while (high < ((fractype)1<<(52 +8L)))
@@ -295,95 +352,21 @@ _fpmul_parts ( fp_number_type * a,
       low <<= 1;
     }
 
-	solver_find(99);
   if ((high & 0xff) == 0x80)
   {
      if (high & (1 << 8L))
 	 {
-	    solver_find(1);
 	 }
      else if (low)
 	 {
-	    solver_find(2);
 	    high += 0x7f + 1;
 
 	    high &= ~(fractype) 0xff;
 	 }
-	 else solver_find(3);
   }
   tmp->fraction.lla = high;
   tmp->class = CLASS_NUMBER;
   return tmp;
-}
-
-fp_number_type __thenan_df = { CLASS_SNAN, 0, 0,
-	{
-		(fractype) 0
-	}
-};
-
-fp_number_type*
-__unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
-{
-  fractype fraction;
-  int exp;
-  int sign;
-  fraction = (src->raw_value) & (0x000fffffffffffffULL) ;
-  exp = ((src->raw_value) >> 52) & (0x7ffULL);
-  sign = (src->raw_value) >> 63 ;
-
-  dst->sign = sign;
-  if (exp == 0)
-    {
-         if (solver_pragma(2,2) && fraction == 0)
-         {
-           dst->class = CLASS_ZERO;
-         }
-      else
-         {
-           dst->normal_exp = exp - 1023 + 1;
-           fraction <<= 8L;
-
-           dst->class = CLASS_NUMBER;
-
-           while (fraction < ((fractype)1<<(52 +8L)))
-             {
-               fraction <<= 1;
-               dst->normal_exp--;
-             }
-
-           dst->fraction.lla = fraction;
-         }
-    }
-  else if (solver_pragma(2,2) && (exp == (0x7ff)))
-    {
-      if (fraction == 0)
-     {
-       dst->class = CLASS_INFINITY;
-     }
-      else
-     {
-       if (fraction & 0x8000000000000LL)
-         {
-           dst->class = CLASS_QNAN;
-         }
-       else
-         {
-           dst->class = CLASS_SNAN;
-         }
-
-       fraction &= ~0x8000000000000LL;
-       dst->fraction.lla = fraction << 8L;
-     }
-    }
-  else
-    {
-      dst->normal_exp = exp - 1023;
-      dst->class = CLASS_NUMBER;
-      dst->fraction.lla = (fraction << 8L) | ((fractype)1<<(52 +8L));
-    }
-
-    return(dst);
 }
 
 /*
@@ -713,7 +696,7 @@ __subdf3_drill (FLO_type arg_a, FLO_type arg_b)
   fp_number_type* fp1 = __unpack_d_drill (&au, &a);
   fp_number_type* fp2 = __unpack_d_drill (&bu, &b);
 
-  b.sign ^= 1;
+  fp2->sign ^= 1;
 
   res = _fpadd_parts_drill (fp1, fp2, &tmp);
 
@@ -734,6 +717,7 @@ __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
 
   fp_number_type* fp1 = __unpack_d_drill (&au, &a);
   fp_number_type* fp2 = __unpack_d_drill (&bu, &b);
+
   res = _fpmul_parts (fp1, fp2, &tmp);
 
   //return (__pack_d_drill(res));
@@ -745,34 +729,36 @@ __mymuldf3 (FLO_type arg_a, FLO_type arg_b)
 
 
 /*
-  fp_class_type class;
-  unsigned int sign;
-  int normal_exp;
+((bv$arg_a #xffb9ff9e125bcfb7))
+((bv$arg_b #xffb5717273cae891))
 
+((bv$arg_a #xffb6896a0347e1ab))
+((bv$arg_b #xeff7c2fffbcb221d))
 
-  union
-    {
-      fractype lla;
-    } fraction;
+((bv$arg_a #xffbec7cec7b8692c))
+((bv$arg_b #xffba50a9e705aead))
+
+((bv$arg_a #xffbf7304ab1b8d16))
+((bv$arg_b #xeff417d793c8a7f5))
+
+((bv$arg_a #xffb020f410000000))
+((bv$arg_b #xffbfcdafd1000000))
+
 */
 void main(void)
 {
 	FLO_union_type f0a,f0b;
 	unsigned long long int ds[][2] = {
-		{ 0x107d000000000000ull, 0x138ffffffffffff1ull },
-		{ 0x400ffffff7fffffdull, 0x403c000001000000ull },
-		{ 0x03e3a89a06a1dfc4ull, 0x03d8aecbf2bc4077ull },
-		{ 0x019fffffe7249f7aull, 0x0018db6085800001ull },
-		{ 0x8010000000000003ull, 0x0010000000000003ull },
-		{ 0x0010000000000001ull, 0x8010000000000001ull },
-		{ 0x02affffffeb55a9cull, 0x00e4aa5638000000ull }
+		{ 0xffb9ff9e125bcfb7ull, 0xffb5717273cae891ull },
+		{ 0xffb6896a0347e1abull, 0xeff7c2fffbcb221dull },
+		{ 0xffb020f410000000ull, 0xffbfcdafd1000000ull }
 	};
 	for(int i=0;i<sizeof(ds)/sizeof(ds[0]);i++)
 	{
 		printf("##### %i\n",i);
 		f0a.raw_value = ds[i][0];
 		f0b.raw_value = ds[i][1];
-		__adddf3_drill(f0a.value,f0b.value);
+		__mymuldf3(f0a.value,f0b.value);
 	}
 
 /*
@@ -844,3 +830,12 @@ __unpack_d_drill (FLO_union_type * src, fp_number_type * dst)
 
 
 
+/*
+cracknum --dp ffb9ff9e125bcfb7 > stimuli.txt
+cracknum --dp ffb5717273cae891 >> stimuli.txt
+cracknum --dp ffb6896a0347e1ab >> stimuli.txt
+cracknum --dp eff7c2fffbcb221d >> stimuli.txt
+cracknum --dp ffb020f410000000 >> stimuli.txt
+cracknum --dp ffbfcdafd1000000 >> stimuli.txt
+
+*/
